@@ -16,15 +16,21 @@ const REFS = { "7": [{ start: 1, length: 32 }] }
 
 describe("maskedRuntimeHashes", () => {
 	it("matches a deployment that differs from the build only in its immutables and metadata trailer", () => {
-		const { onChain, built } = maskedRuntimeHashes(runtime(DEPLOYED, 0x11), runtime(CODE, 0x22), REFS)
+		const deployed = runtime(DEPLOYED, 0x11)
+		// The chain's own length word is ignored: the mask is bounded by the build alone.
+		deployed.set([0xff, 0xff], deployed.length - 2)
+		const { onChain, built } = maskedRuntimeHashes(deployed, runtime(CODE, 0x22), REFS)
 		expect(onChain).toBe(built)
 	})
 
 	it("fails on a single changed byte of code before the trailer, or any difference in length", () => {
-		const tampered = runtime(DEPLOYED, 0x11)
-		tampered[33] = 0x00 // POP → STOP
-		const { onChain, built } = maskedRuntimeHashes(tampered, runtime(CODE, 0x22), REFS)
-		expect(onChain).not.toBe(built)
+		// POP, and the INVALID guard right before the trailer.
+		for (const index of [33, 35]) {
+			const tampered = runtime(DEPLOYED, 0x11)
+			tampered[index] = 0x00
+			const { onChain, built } = maskedRuntimeHashes(tampered, runtime(CODE, 0x22), REFS)
+			expect(onChain).not.toBe(built)
+		}
 		// Bytes past the build's length would fall inside the masked tail.
 		const extended = Uint8Array.from([...runtime(DEPLOYED, 0x11), 0x00])
 		expect(() => maskedRuntimeHashes(extended, runtime(CODE, 0x22), REFS)).toThrow(/length 90 != build 89/)
@@ -36,7 +42,7 @@ describe("maskedRuntimeHashes", () => {
 		expect(() => maskedRuntimeHashes(overlong, overlong, REFS)).toThrow(/metadata trailer is malformed/)
 		// In range, but pointing into code rather than at a CBOR map.
 		const intoCode = runtime(CODE, 0x22)
-		intoCode.set([0x00, intoCode.length - 2], intoCode.length - 2)
+		intoCode.set([0x00, intoCode.length - 3], intoCode.length - 2)
 		expect(() => maskedRuntimeHashes(intoCode, intoCode, REFS)).toThrow(/metadata trailer is malformed/)
 	})
 })

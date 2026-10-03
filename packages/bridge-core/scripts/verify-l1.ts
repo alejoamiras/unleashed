@@ -307,13 +307,14 @@ function maskImmutables(code: Uint8Array, refs: Record<string, ImmutableSpan[]>)
 
 /** solc ends the runtime with a CBOR metadata map and its 2-byte big-endian length. The map hashes the
  *  compiler input, remapped absolute paths included, so it differs per checkout; execution never
- *  reaches it. Anything that does not parse as such a trailer throws rather than masking real code. */
+ *  reaches it. A sanity check on trusted compiler output, not a parser: a declared length that leaves
+ *  no code before it or does not land on a CBOR map header throws. */
 function metadataTrailerSize(code: Uint8Array): number {
 	const n = code.length
 	const cborLength = n >= 2 ? ((code[n - 2] ?? 0) << 8) | (code[n - 1] ?? 0) : 0
 	const size = cborLength + 2
 	// Major type 5 (a map) is the top three bits 101.
-	if (cborLength === 0 || size > n || ((code[n - size] ?? 0) & 0xe0) !== 0xa0) {
+	if (cborLength === 0 || size >= n || ((code[n - size] ?? 0) & 0xe0) !== 0xa0) {
 		throw new Error(`the build's metadata trailer is malformed (declared length ${cborLength} in ${n} bytes)`)
 	}
 	return size
@@ -322,7 +323,8 @@ function metadataTrailerSize(code: Uint8Array): number {
 /**
  * The deployed and built runtimes, each hashed with the build's immutable spans and metadata trailer
  * zeroed. Both masks come from the build alone, and equal lengths are required, so every byte before
- * the trailer must match exactly. Throws on a length mismatch or a malformed build trailer.
+ * the trailer, immutables aside, must match exactly. Throws on a length mismatch or a malformed build
+ * trailer.
  */
 export function maskedRuntimeHashes(
 	onChain: Uint8Array,
