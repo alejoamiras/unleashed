@@ -12,7 +12,8 @@
  *  - each token: its portal is the factory's CREATE2, the frozen registration matches the manifest's
  *    words, and the live ERC-20 still sanitizes to exactly those words at exactly that `decimals()`;
  *  - the deployed runtime code of the implementation, factory, router and swap target against this
- *    checkout's forge build, with each artifact's immutable slots masked out (they hold per-deployment values).
+ *    checkout's forge build, with each artifact's immutable slots (per-deployment values) and metadata
+ *    trailer (per-checkout paths) masked out, so it passes from any checkout of the deployed sources.
  *
  * `--strict` is the promotion gate: the artifacts are rebuilt from source first, and every input the
  * code-hash pass cannot obtain is a FAILURE rather than a noted skip — a stale or planted `out/`
@@ -255,7 +256,7 @@ async function checkToken(pub: PublicClient, b: BridgeBlock, t: ManifestToken): 
 	await guarded(`${label} metadata`, () => checkTokenMetadata(pub, t, label))
 }
 
-interface ImmutableSpan {
+export interface ImmutableSpan {
 	start: number
 	length: number
 }
@@ -304,6 +305,36 @@ function maskImmutables(code: Uint8Array, refs: Record<string, ImmutableSpan[]>)
 	return masked
 }
 
+/** solc ends the runtime with a CBOR metadata map and its 2-byte big-endian length. The map hashes the
+ *  compiler input, remapped absolute paths included, so it differs per checkout; execution never
+ *  reaches it. Anything that does not parse as such a trailer throws rather than masking real code. */
+function metadataTrailerSize(code: Uint8Array): number {
+	const n = code.length
+	const cborLength = n >= 2 ? ((code[n - 2] ?? 0) << 8) | (code[n - 1] ?? 0) : 0
+	const size = cborLength + 2
+	// Major type 5 (a map) is the top three bits 101.
+	if (cborLength === 0 || size > n || ((code[n - size] ?? 0) & 0xe0) !== 0xa0) {
+		throw new Error(`the build's metadata trailer is malformed (declared length ${cborLength} in ${n} bytes)`)
+	}
+	return size
+}
+
+/**
+ * The deployed and built runtimes, each hashed with the build's immutable spans and metadata trailer
+ * zeroed. Both masks come from the build alone, and equal lengths are required, so every byte before
+ * the trailer must match exactly. Throws on a length mismatch or a malformed build trailer.
+ */
+export function maskedRuntimeHashes(
+	onChain: Uint8Array,
+	built: Uint8Array,
+	refs: Record<string, ImmutableSpan[]>,
+): { onChain: Hex; built: Hex } {
+	if (onChain.length !== built.length) throw new Error(`length ${onChain.length} != build ${built.length}`)
+	const trailerStart = built.length - metadataTrailerSize(built)
+	const hash = (code: Uint8Array) => keccak256(maskImmutables(code, refs).fill(0, trailerStart))
+	return { onChain: hash(onChain), built: hash(built) }
+}
+
 async function checkCodeHash(pub: PublicClient, out: string, contract: string, address: Address, strict: boolean): Promise<void> {
 	const label = `${contract} runtime code`
 	const artifactPath = join(out, `${contract}.sol`, `${contract}.json`)
@@ -327,7 +358,8 @@ async function checkCodeHash(pub: PublicClient, out: string, contract: string, a
 		else fail(label, `length ${onChain.length} != build ${built.length}; immutables-masked comparison unavailable`)
 		return
 	}
-	same(`${label} hash (immutables masked)`, keccak256(maskImmutables(onChain, refs)), keccak256(maskImmutables(built, refs)), "build")
+	const hashes = maskedRuntimeHashes(onChain, built, refs)
+	same(`${label} hash (immutables and metadata masked)`, hashes.onChain, hashes.built, "build")
 }
 
 async function checkCodeHashes(pub: PublicClient, b: BridgeBlock, strict: boolean): Promise<void> {
