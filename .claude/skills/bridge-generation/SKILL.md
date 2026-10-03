@@ -135,8 +135,8 @@ change means never promote) and the working-tree allowlist (`OPERATIONAL_ALLOWLI
 `lessons/` directories — a new arc adds its lessons directory there first). With `--candidate` it also
 strict-validates the candidate through the full `verify-l1` verifier (code at every address, the
 factory ↔ router ↔ hub cross-bindings, each token's portal derivation, frozen registration and live
-metadata, immutables-masked runtime code hashes against the forge build) and reads the hub's
-initialization hash off the node to prove it was initialized with the candidate's
+metadata, runtime code hashes against the forge build with immutables and the metadata trailer
+masked) and reads the hub's initialization hash off the node to prove it was initialized with the candidate's
 `[token_class_id, l1_factory, guardian]`. The caps are recorded and reconciled against the signer's
 balance at `verify` (`maxTotalEthSpend` is the balance delta; incoming ETH can mask a spend, so keep
 your own tally per broadcast group), not enforced per transaction. Committing does not make a dirty
