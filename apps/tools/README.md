@@ -129,7 +129,8 @@ Each Worker is created once by hand (build, then `worker:deploy:<target>`), live
 Workers Builds is connected to it; the Cloudflare token for that run arrives as a keyed run from
 `cloudflare.env.example`, never as a file or a CI secret. Workers Builds takes only user tokens,
 which cannot be scoped to one Worker: at connection, select an existing token holding just Workers
-Scripts: Edit and Account Settings: Read, not the one the dialog offers to create (it adds KV, R2
+Scripts: Edit and Account Settings: Read on this one account (the configs name no account, so
+wrangler takes the only one the token sees), not the one the dialog offers to create (it adds KV, R2
 and Workers Routes on every zone). Any such token can overwrite every Worker on the account.
 
 Each build runs at exactly two production hosts (`src/lib/network-targets.ts`): its custom domain
