@@ -1,0 +1,33 @@
+name: _Unit tests (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to checkout.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Vitest + bun test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Unit tests in every workspace
+        run: bun run test:all
+
+      # scripts/ci-cd/ is not a workspace, so `test:all` skips it. It holds the guards that pin
+      # these workflows' filters and aggregators; without this step they would never run on a PR.
+      - name: CI-gating tests
+        run: bun run test:ci-gating

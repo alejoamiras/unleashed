@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+bunx biome check --staged --no-errors-on-unmatched
+./scripts/check-no-local-paths.sh
+bun scripts/complexity-baseline/check.ts --staged

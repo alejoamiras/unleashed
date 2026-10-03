@@ -1,0 +1,109 @@
+name: Tools e2e
+
+# PR gate for the tools app's browser suite: the real UI against an embedded wallet-sdk test wallet
+# and an injected Ethereum wallet, on a per-shard sandbox. Runs when the tools graph moves or the
+# PR carries the `e2e:tools` label; `tools-e2e-status` is the one check-run to gate on.
+#
+# NO `branches:` filter, deliberately — see the long note in pr-quick.yml. That key filters
+# on the PR's BASE, so a stacked arc targeting its parent branch would get zero CI.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    # `labeled` so adding `e2e:tools` after open triggers a run; `unlabeled` so removing it
+    # re-evaluates the gate instead of leaving the last verdict standing.
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+
+concurrency:
+  group: tools-e2e-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: paths-filter needs the merge-base with the comparison branch; a
+          # shallow clone falls back to a `fetch --deepen` loop that races on long branches.
+          fetch-depth: 0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          # Positive-only, no `!` negations — the dorny `some`-quantifier footgun. The tools app and
+          # everything it builds from: the bridge contracts (the sandbox deploys them), bridge-core
+          # whole (its scripts ARE the sandbox harness), the src + manifest of every package in the
+          # tools graph, the root config, the patches, and this pipeline's own files. The npm
+          # packages the app imports move with bun.lock.
+          # Pinned by scripts/ci-cd/behavior-gating.test.ts.
+          filters: |
+            tools-e2e:
+              - 'apps/tools/**'
+              - 'contracts/bridge/**'
+              - 'packages/bridge-core/**'
+              - 'packages/bridge-core/src/**'
+              - 'packages/bridge-core/package.json'
+              - 'packages/design/src/**'
+              - 'packages/design/package.json'
+              - 'package.json'
+              - 'bun.lock'
+              - 'bunfig.toml'
+              - 'patches/**'
+              - '.github/workflows/pr-tools-e2e.yml'
+              - '.github/workflows/_tools-e2e.yml'
+              - '.github/actions/setup-aztec/**'
+              - '.github/actions/setup-bun/**'
+              - '.github/actions/setup-playwright/**'
+      - name: Decide
+        id: decide
+        env:
+          FILTER: ${{ steps.filter.outputs.tools-e2e }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'e2e:tools') }}
+          DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [ "$DISPATCH" = "true" ] || [ "$LABELED" = "true" ] || [ "$FILTER" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  shards:
+    name: Shards
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    uses: ./.github/workflows/_tools-e2e.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      shard: ${{ matrix.shard }}/6
+      shard_label: ${{ matrix.shard }}-of-6
+
+  status:
+    name: tools-e2e-status
+    if: always()
+    needs: [changes, shards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci-cd/aggregate-status.sh
+          sparse-checkout-cone-mode: false
+      - name: Aggregate results
+        # The exact state machine lives in a script with its own truth-table test; an empty filter
+        # verdict is an error there, never a skip.
+        run: bash scripts/ci-cd/aggregate-status.sh "${{ needs.changes.result }}" "${{ needs.changes.outputs.run }}" "${{ needs.shards.result }}"

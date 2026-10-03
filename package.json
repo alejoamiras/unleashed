@@ -1,0 +1,42 @@
+{
+	"name": "unleashed",
+	"private": true,
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"dev:tools": "bun run --cwd apps/tools dev",
+		"build:tools": "bun run --cwd apps/tools build",
+		"test:tools": "bun run --cwd apps/tools test",
+		"e2e:tools": "bash apps/tools/scripts/e2e/agent.sh",
+		"e2e:tools:reap": "bash apps/tools/scripts/e2e/agent.sh reap",
+		"lint": "biome check && bun scripts/complexity-baseline/check.ts",
+		"lint:fix": "biome check --fix",
+		"lint:actions": "actionlint",
+		"format": "biome format --write",
+		"check": "biome check",
+		"typecheck:all": "bun run --filter '@unleashed/*' typecheck",
+		"test:all": "bun run --filter '@unleashed/*' --if-present test",
+		"test:ci-gating": "bun test scripts/ci-cd/",
+		"baseline:complexity": "bun scripts/complexity-baseline/generate.ts",
+		"baseline:rescore": "bun scripts/complexity-baseline/rescore.ts",
+		"check:imports": "biome check apps/ packages/",
+		"audit:tools": "bun run typecheck:all && bun run test:tools && bun run lint && bun run --cwd apps/tools verify:deployments && bun run build:tools",
+		"prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.13",
+		"@commitlint/cli": "^21.0.2",
+		"@commitlint/config-conventional": "^21.0.2"
+	},
+	"packageManager": "bun@1.4.2",
+	"license": "Apache-2.0",
+	"overrides": {
+		"vite": "^8.0.0"
+	},
+	"patchedDependencies": {
+		"@aztec-foundation/noir-acvm_js@6.0.0-rc.1": "patches/@aztec-foundation%2Fnoir-acvm_js@6.0.0-rc.1.patch",
+		"@aztec-foundation/noir-noirc_abi@6.0.0-rc.1": "patches/@aztec-foundation%2Fnoir-noirc_abi@6.0.0-rc.1.patch"
+	}
+}

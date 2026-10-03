@@ -1,0 +1,13 @@
+# Noir build output is ignored, EXCEPT the compiled contract artifacts @unleashed/bridge-core imports —
+# committed so CI (which does not run nargo) can typecheck + bundle them. The .json.bak stay ignored.
+*/target/*
+!*/target/*.json
+target/*
+!target/*.json
+# Runtime-staged dependency artifact for the TXE suite (run-txe-tests.sh) — a derived
+# copy vendored from @aztec-foundation/aztec-standards, never source-of-truth.
+txe-run.log
+token_bridge_hub/target/token_contract-Token.json
+# The TXE server mini-project: its lockfile is committed, its install is not.
+txe-server/node_modules/
+txe-server/*.log

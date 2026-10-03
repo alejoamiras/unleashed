@@ -1,0 +1,19 @@
+{
+	"compilerOptions": {
+		"incremental": true,
+		"target": "ESNext",
+		"jsx": "preserve",
+		"lib": ["ESNext", "DOM"],
+		"useDefineForClassFields": true,
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"resolveJsonModule": true,
+		"strict": true,
+		"noEmit": true,
+		"esModuleInterop": true,
+		"isolatedModules": true,
+		"skipLibCheck": true
+	},
+	"include": ["package.json", "scripts/**/*.ts", "src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"],
+	"exclude": ["src/**/*.stories.ts"]
+}

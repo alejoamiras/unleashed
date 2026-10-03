@@ -1,0 +1,5 @@
+# Lessons — dedup-bridge-conductors phase 2
+
+- **A parallel edit-subagent ran a tree-wide git revert mid-arc**, wiping every uncommitted tracked-file change in the shared working tree (my Q-10 twin rewrites and the OTHER subagent's script migrations). Untracked files survived. Root cause class: an agent hitting typecheck errors caused by ANOTHER editor's in-progress files and "cleaning up" with git restore. Recovery: stop all editors, re-apply from context, commit each unit immediately.
+- **Standing rules for the rest of the goal**: (1) subagent edit prompts carry an explicit "NEVER run git checkout/restore/stash/clean — you do not own the tree"; (2) at most ONE edit-subagent at a time per working tree when the main session is also editing; (3) the main session commits its own units BEFORE launching any editor; (4) subagents verify with file-scoped tools, not tree-wide typecheck, when other editors may be mid-flight.
+- deploy-sandbox.ts's tsconfig exclusion is load-bearing (pre-existing upstream createAuthWit API-drift type error; deprecated local-sandbox path) — its migration gate is hand-review + biome, recorded here per plan.

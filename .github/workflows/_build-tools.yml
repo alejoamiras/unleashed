@@ -1,0 +1,61 @@
+name: _Build tools (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to checkout.
+        required: false
+        type: string
+        default: ""
+      target:
+        description: Network target to build (testnet | mainnet).
+        required: false
+        type: string
+        default: testnet
+      upload_artifacts:
+        description: Upload dist/ as a workflow artifact.
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: vite build (tools ${{ inputs.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: ./.github/actions/setup-bun
+
+      # Offline manifest-integrity gate. verify:deployments re-derives the tools app's own token
+      # instances AND — with BRIDGE_MANIFEST set to THIS target's manifest — the bridge L2 instances,
+      # asserting each recomputes to the committed address and that the required core router/permit2/
+      # swapTarget are present. No network: the live on-chain readbacks live at deploy time (verify-l1).
+      - name: Verify deployments + bridge manifest (offline, ${{ inputs.target }})
+        env:
+          BRIDGE_MANIFEST: public/${{ inputs.target }}-bridge.json
+        run: bun run --cwd apps/tools verify:deployments
+
+      - name: Tools jsdom smoke (mock wallet, no browser)
+        run: bun run --cwd apps/tools test:e2e
+
+      - name: Build (${{ inputs.target }})
+        run: bun run --cwd apps/tools build:${{ inputs.target }}
+
+      # Prove the built artifact IS the target it claims: build.json's target/chainId and its
+      # EMITTED manifestDigest must match this target + the bundled manifest (not a recomputed one).
+      - name: Verify build.json matches the target
+        run: bun run --cwd apps/tools verify:build-target ${{ inputs.target }}
+
+      - name: Upload tools build
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tools-dist-${{ inputs.target }}
+          path: apps/tools/dist
+          if-no-files-found: error
+          retention-days: 7

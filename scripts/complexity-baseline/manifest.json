@@ -1,0 +1,34 @@
+{
+	"biomeVersion": "2.5.13",
+	"rules": {
+		"noExcessiveCognitiveComplexity": {
+			"apps/tools/src/lib/errors.ts": 1,
+			"apps/tools/src/lib/phase-clock.ts": 1,
+			"packages/bridge-core/scripts/fpc-dust-canary-mainnet.ts": 1
+		},
+		"noExcessiveLinesPerFunction": {}
+	},
+	"accepted": [
+		{
+			"file": "apps/tools/src/lib/errors.ts",
+			"rule": "noExcessiveCognitiveComplexity",
+			"anchor": "export function normalizeError(err: unknown): NormalizedError {",
+			"accepted": 21,
+			"sentence": "ordered overlapping message predicates are the error-classification precedence policy"
+		},
+		{
+			"file": "apps/tools/src/lib/phase-clock.ts",
+			"rule": "noExcessiveCognitiveComplexity",
+			"anchor": "return phases.map((phase) => {",
+			"accepted": 22,
+			"sentence": "pending / active / failed / done transitions specify the latest-attempt temporal reducer"
+		},
+		{
+			"file": "packages/bridge-core/scripts/fpc-dust-canary-mainnet.ts",
+			"rule": "noExcessiveCognitiveComplexity",
+			"anchor": "async function main() {",
+			"accepted": 23,
+			"sentence": "the live canary binds fee sizing, deposit evidence, repriced retries and balance-delta acceptance"
+		}
+	]
+}

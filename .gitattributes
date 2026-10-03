@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.vue text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.scss text eol=lf
+
+implementations-plan/** linguist-generated=true
+implementations-plan/lessons.md -linguist-generated
+implementations-plan/follow-ups.md -linguist-generated

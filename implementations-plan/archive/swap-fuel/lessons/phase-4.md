@@ -1,0 +1,6 @@
+# swap-fuel — phase 4 lessons (manifest scope + scope-list re-consent)
+
+- **The wallet's scope-list re-consent landed**: its delta filter now covers transaction/simulation/data scope beside contracts. What a dApp sees: **coverage mirrors ENFORCEMENT's shape, not set-union** — one existing grant must cover the whole requested scope ("split-across-grants does NOT count as covered"), and an approved scope re-consent REPLACES the stored grant.
+- **The canonical FeeJuice L2 address is `0x…05`** (`AztecAddress.fromNumber(FEE_JUICE_ADDRESS)`) — a test fixture using `0x…05` as a bridge address collided with it and made a "no wildcards" pin chase ghosts. Protocol-address collisions in fixtures are easy to hit with low integers.
+- Faucet manifests: `claim_and_end_setup` on FEE_JUICE_L2 added to transaction scope AND simulation.transactions scope (the engine's claim gate dry-runs the token claim WITH the embedded fjwc payment) in bridge + combined manifests; exact-list pins updated; the entry is one function on one protocol contract — no wildcards.
+- Popup delta-prominence: the wallet's popup receives ONLY the delta for approval; existing grants ride along as context. Visual confusion, if any, surfaces in P7's manual regrant smoke.

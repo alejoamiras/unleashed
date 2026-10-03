@@ -1,0 +1,19 @@
+{
+	"name": "e2e community list",
+	"tokens": [
+		{
+			"chainId": 31337,
+			"address": "0x1111111111111111111111111111111111111111",
+			"name": "Wrapped BTC",
+			"symbol": "WBTC",
+			"decimals": 8
+		},
+		{
+			"chainId": 31337,
+			"address": "0x2222222222222222222222222222222222222222",
+			"name": "Dai Stablecoin",
+			"symbol": "DAI",
+			"decimals": 18
+		}
+	]
+}

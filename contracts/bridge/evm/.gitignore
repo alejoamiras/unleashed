@@ -1,0 +1,8 @@
+out/
+cache/
+broadcast/
+lib/
+foundry.lock
+remappings.txt
+remappings.txt.*.tmp
+halmos.log

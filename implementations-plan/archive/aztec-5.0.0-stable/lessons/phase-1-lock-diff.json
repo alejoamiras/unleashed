@@ -1,0 +1,1071 @@
+{
+	"aztecScope": [
+		{
+			"name": "@alejoamiras/aztec-accelerator",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@alejoamiras/aztec-fee-payment",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@alejoamiras/aztec-standards",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/accounts",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/aztec.js",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/bb-prover",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/bb.js",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/blob-lib",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/builder",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/constants",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/entrypoints",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/ethereum",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/foundation",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/key-store",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/kv-store",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/l1-artifacts",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/native",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/noir-acvm_js",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/noir-contracts.js",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/noir-noir_codegen",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/noir-noir_codegen/glob/minimatch/brace-expansion",
+			"old": "5.0.6",
+			"new": "5.0.7"
+		},
+		{
+			"name": "@aztec/noir-noirc_abi",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/noir-protocol-circuits-types",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/noir-types",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/protocol-contracts",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/pxe",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/simulator",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/sqlite3mc-wasm",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/standard-contracts",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/stdlib",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/telemetry-client",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/wallet-sdk",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/wallets",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		},
+		{
+			"name": "@aztec/world-state",
+			"old": "5.0.0-rc.2",
+			"new": "5.0.0"
+		}
+	],
+	"exceptions": [
+		{
+			"name": "@aws-sdk/checksums",
+			"old": "3.1000.8",
+			"new": "3.1000.13"
+		},
+		{
+			"name": "@aws-sdk/client-s3",
+			"old": "3.1075.0",
+			"new": "3.1080.0"
+		},
+		{
+			"name": "@aws-sdk/core",
+			"old": "3.974.23",
+			"new": "3.974.28"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-env",
+			"old": "3.972.49",
+			"new": "3.972.54"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-http",
+			"old": "3.972.51",
+			"new": "3.972.56"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-ini",
+			"old": "3.972.56",
+			"new": "3.972.61"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-login",
+			"old": "3.972.55",
+			"new": "3.972.60"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-node",
+			"old": "3.972.58",
+			"new": "3.972.63"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-process",
+			"old": "3.972.49",
+			"new": "3.972.54"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-sso",
+			"old": "3.972.55",
+			"new": "3.972.60"
+		},
+		{
+			"name": "@aws-sdk/credential-provider-web-identity",
+			"old": "3.972.55",
+			"new": "3.972.60"
+		},
+		{
+			"name": "@aws-sdk/middleware-sdk-s3",
+			"old": "3.972.54",
+			"new": "3.972.59"
+		},
+		{
+			"name": "@aws-sdk/nested-clients",
+			"old": "3.997.23",
+			"new": "3.997.28"
+		},
+		{
+			"name": "@aws-sdk/signature-v4-multi-region",
+			"old": "3.996.35",
+			"new": "3.996.38"
+		},
+		{
+			"name": "@aws-sdk/token-providers",
+			"old": "3.1074.0",
+			"new": "3.1080.0"
+		},
+		{
+			"name": "@aws-sdk/types",
+			"old": "3.973.13",
+			"new": "3.973.15"
+		},
+		{
+			"name": "@aws-sdk/xml-builder",
+			"old": "3.972.31",
+			"new": "3.972.33"
+		},
+		{
+			"name": "@aws/lambda-invoke-store",
+			"old": "0.2.4",
+			"new": "0.3.0"
+		},
+		{
+			"name": "@biomejs/biome",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@biomejs/cli-darwin-arm64",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@biomejs/cli-darwin-x64",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@biomejs/cli-linux-arm64",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@biomejs/cli-linux-arm64-musl",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@biomejs/cli-linux-x64",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@biomejs/cli-linux-x64-musl",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@biomejs/cli-win32-arm64",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@biomejs/cli-win32-x64",
+			"old": "2.5.1",
+			"new": "2.5.2"
+		},
+		{
+			"name": "@codemirror/state",
+			"old": "6.7.0",
+			"new": "6.7.1"
+		},
+		{
+			"name": "@codemirror/view",
+			"old": "6.43.3",
+			"new": "6.43.6"
+		},
+		{
+			"name": "@commitlint/cli",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/config-conventional",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/config-validator",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/ensure",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/format",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/is-ignored",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/lint",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/load",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/message",
+			"old": "21.0.2",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/parse",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/read",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/resolve-extends",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/rules",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/top-level",
+			"old": "21.0.2",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@commitlint/types",
+			"old": "21.1.0",
+			"new": "21.2.0"
+		},
+		{
+			"name": "@crxjs/vite-plugin",
+			"old": "2.7.0",
+			"new": "2.7.1"
+		},
+		{
+			"name": "@csstools/color-helpers",
+			"old": "6.0.2",
+			"new": "6.1.0"
+		},
+		{
+			"name": "@csstools/css-color-parser",
+			"old": "4.1.8",
+			"new": "4.1.9"
+		},
+		{
+			"name": "@csstools/css-syntax-patches-for-csstree",
+			"old": "1.1.5",
+			"new": "1.1.6"
+		},
+		{
+			"name": "@logtape/logtape",
+			"old": "2.2.1",
+			"new": "2.2.4"
+		},
+		{
+			"name": "@marijn/find-cluster-break",
+			"old": "1.0.2",
+			"new": "1.0.3"
+		},
+		{
+			"name": "@unleashed/tools/viem",
+			"old": "2.53.1",
+			"new": "2.54.6"
+		},
+		{
+			"name": "@unleashed/tools/viem/ox",
+			"old": "0.14.29",
+			"new": "0.14.30"
+		},
+		{
+			"name": "@unleashed/tools/viem/ws",
+			"old": "8.20.1",
+			"new": "8.21.0"
+		},
+		{
+			"name": "@opentelemetry/semantic-conventions",
+			"old": "1.41.1",
+			"new": "1.42.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-android-arm-eabi",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-android-arm64",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-darwin-arm64",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-darwin-x64",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-freebsd-x64",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-arm-gnueabihf",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-arm-musleabihf",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-arm64-gnu",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-arm64-musl",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-ppc64-gnu",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-riscv64-gnu",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-riscv64-musl",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-s390x-gnu",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-x64-gnu",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-linux-x64-musl",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-openharmony-arm64",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-wasm32-wasi",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-wasm32-wasi/@emnapi/core",
+			"old": "1.11.0",
+			"new": "1.11.1"
+		},
+		{
+			"name": "@oxc-resolver/binding-wasm32-wasi/@emnapi/runtime",
+			"old": "1.11.0",
+			"new": "1.11.1"
+		},
+		{
+			"name": "@oxc-resolver/binding-win32-arm64-msvc",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@oxc-resolver/binding-win32-x64-msvc",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "@protobufjs/utf8",
+			"old": "1.1.1",
+			"new": "1.1.2"
+		},
+		{
+			"name": "@puppeteer/browsers",
+			"old": "3.0.5",
+			"new": "3.0.6"
+		},
+		{
+			"name": "@rolldown/binding-android-arm64",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-darwin-arm64",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-darwin-x64",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-freebsd-x64",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-linux-arm-gnueabihf",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-linux-arm64-gnu",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-linux-arm64-musl",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-linux-ppc64-gnu",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-linux-s390x-gnu",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-linux-x64-gnu",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-linux-x64-musl",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-openharmony-arm64",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-wasm32-wasi",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-win32-arm64-msvc",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@rolldown/binding-win32-x64-msvc",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "@simple-libs/stream-utils",
+			"old": "1.2.0",
+			"new": "2.0.0"
+		},
+		{
+			"name": "@smithy/core",
+			"old": "3.26.0",
+			"new": "3.29.1"
+		},
+		{
+			"name": "@smithy/credential-provider-imds",
+			"old": "4.4.2",
+			"new": "4.4.6"
+		},
+		{
+			"name": "@smithy/fetch-http-handler",
+			"old": "5.5.2",
+			"new": "5.6.3"
+		},
+		{
+			"name": "@smithy/node-http-handler",
+			"old": "4.8.2",
+			"new": "4.9.3"
+		},
+		{
+			"name": "@smithy/signature-v4",
+			"old": "5.5.2",
+			"new": "5.6.2"
+		},
+		{
+			"name": "@smithy/types",
+			"old": "4.15.0",
+			"new": "4.15.1"
+		},
+		{
+			"name": "@storybook/icons",
+			"old": "2.0.2",
+			"new": "2.1.0"
+		},
+		{
+			"name": "@vitest/expect",
+			"old": "4.1.9",
+			"new": "4.1.10"
+		},
+		{
+			"name": "@vitest/mocker",
+			"old": "4.1.9",
+			"new": "4.1.10"
+		},
+		{
+			"name": "@vitest/pretty-format",
+			"old": "4.1.9",
+			"new": "4.1.10"
+		},
+		{
+			"name": "@vitest/runner",
+			"old": "4.1.9",
+			"new": "4.1.10"
+		},
+		{
+			"name": "@vitest/snapshot",
+			"old": "4.1.9",
+			"new": "4.1.10"
+		},
+		{
+			"name": "@vitest/spy",
+			"old": "4.1.9",
+			"new": "4.1.10"
+		},
+		{
+			"name": "@vitest/utils",
+			"old": "4.1.9",
+			"new": "4.1.10"
+		},
+		{
+			"name": "@vue/language-core",
+			"old": "3.3.5",
+			"new": "3.3.6"
+		},
+		{
+			"name": "asn1.js/bn.js",
+			"old": "4.12.3",
+			"new": "4.12.4"
+		},
+		{
+			"name": "bn.js",
+			"old": "5.2.3",
+			"new": "5.2.4"
+		},
+		{
+			"name": "chrome-types",
+			"old": "0.1.429",
+			"new": "0.1.433"
+		},
+		{
+			"name": "conventional-changelog-angular",
+			"old": "8.3.1",
+			"new": "9.2.1"
+		},
+		{
+			"name": "conventional-changelog-conventionalcommits",
+			"old": "9.3.1",
+			"new": "10.2.1"
+		},
+		{
+			"name": "conventional-commits-parser",
+			"old": "6.4.0",
+			"new": "7.0.1"
+		},
+		{
+			"name": "convert-source-map",
+			"old": "1.9.0",
+			"new": "2.0.0"
+		},
+		{
+			"name": "create-ecdh/bn.js",
+			"old": "4.12.3",
+			"new": "4.12.4"
+		},
+		{
+			"name": "crelt",
+			"old": "1.0.6",
+			"new": "1.0.7"
+		},
+		{
+			"name": "diffie-hellman/bn.js",
+			"old": "4.12.3",
+			"new": "4.12.4"
+		},
+		{
+			"name": "elliptic/bn.js",
+			"old": "4.12.3",
+			"new": "4.12.4"
+		},
+		{
+			"name": "es-module-lexer",
+			"old": "2.1.0",
+			"new": "2.3.0"
+		},
+		{
+			"name": "es-toolkit",
+			"old": "1.48.1",
+			"new": "1.49.0"
+		},
+		{
+			"name": "fast-uri",
+			"old": "3.1.2",
+			"new": "3.1.3"
+		},
+		{
+			"name": "fast-xml-builder",
+			"old": "1.2.0",
+			"new": "1.2.1"
+		},
+		{
+			"name": "fs-extra",
+			"old": "10.1.0",
+			"new": "11.3.6"
+		},
+		{
+			"name": "idb-keyval",
+			"old": "6.2.5",
+			"new": "6.2.6"
+		},
+		{
+			"name": "immutable",
+			"old": "5.1.7",
+			"new": "5.1.9"
+		},
+		{
+			"name": "js-yaml",
+			"old": "4.2.0",
+			"new": "4.3.0"
+		},
+		{
+			"name": "miller-rabin/bn.js",
+			"old": "4.12.3",
+			"new": "4.12.4"
+		},
+		{
+			"name": "oxc-resolver",
+			"old": "11.21.3",
+			"new": "11.23.0"
+		},
+		{
+			"name": "p-map",
+			"old": "7.0.4",
+			"new": "7.0.5"
+		},
+		{
+			"name": "picomatch",
+			"old": "4.0.4",
+			"new": "4.0.5"
+		},
+		{
+			"name": "postcss",
+			"old": "8.5.15",
+			"new": "8.5.16"
+		},
+		{
+			"name": "protobufjs",
+			"old": "7.6.4",
+			"new": "7.6.5"
+		},
+		{
+			"name": "public-encrypt/bn.js",
+			"old": "4.12.3",
+			"new": "4.12.4"
+		},
+		{
+			"name": "puppeteer",
+			"old": "25.2.1",
+			"new": "25.3.0"
+		},
+		{
+			"name": "puppeteer-core",
+			"old": "25.2.1",
+			"new": "25.3.0"
+		},
+		{
+			"name": "recast",
+			"old": "0.23.11",
+			"new": "0.23.12"
+		},
+		{
+			"name": "rolldown",
+			"old": "1.1.3",
+			"new": "1.1.4"
+		},
+		{
+			"name": "rolldown/@oxc-project/types",
+			"old": "0.137.0",
+			"new": "0.138.0"
+		},
+		{
+			"name": "tldts",
+			"old": "7.4.4",
+			"new": "7.4.7"
+		},
+		{
+			"name": "tldts-core",
+			"old": "7.4.4",
+			"new": "7.4.7"
+		},
+		{
+			"name": "type-fest",
+			"old": "5.7.0",
+			"new": "5.8.0"
+		},
+		{
+			"name": "unplugin-utils",
+			"old": "0.3.1",
+			"new": "0.3.2"
+		},
+		{
+			"name": "unplugin-vue-components/unplugin",
+			"old": "3.2.0",
+			"new": "3.3.0"
+		},
+		{
+			"name": "vite",
+			"old": "8.1.0",
+			"new": "8.1.3"
+		},
+		{
+			"name": "vitest",
+			"old": "4.1.9",
+			"new": "4.1.10"
+		},
+		{
+			"name": "vue-component-type-helpers",
+			"old": "3.3.5",
+			"new": "3.3.6"
+		},
+		{
+			"name": "vue-router/@vue/devtools-api",
+			"old": "8.1.4",
+			"new": "8.1.5"
+		},
+		{
+			"name": "vue-router/@vue/devtools-api/@vue/devtools-kit",
+			"old": "8.1.4",
+			"new": "8.1.5"
+		},
+		{
+			"name": "vue-router/@vue/devtools-api/@vue/devtools-kit/@vue/devtools-shared",
+			"old": "8.1.4",
+			"new": "8.1.5"
+		},
+		{
+			"name": "vue-router/unplugin",
+			"old": "3.2.0",
+			"new": "3.3.0"
+		},
+		{
+			"name": "vue-tsc",
+			"old": "3.3.5",
+			"new": "3.3.6"
+		}
+	],
+	"added": [
+		{
+			"name": "@conventional-changelog/git-client/@simple-libs/stream-utils",
+			"new": "1.2.0"
+		},
+		{
+			"name": "@conventional-changelog/template",
+			"new": "1.2.1"
+		},
+		{
+			"name": "@simple-libs/child-process-utils/@simple-libs/stream-utils",
+			"new": "1.2.0"
+		},
+		{
+			"name": "conventional-commits-parser/meow",
+			"new": "14.1.0"
+		}
+	],
+	"removed": [
+		{
+			"name": "@aws-crypto/crc32",
+			"old": "5.2.0",
+			"gone": true
+		},
+		{
+			"name": "@aws-crypto/crc32c",
+			"old": "5.2.0",
+			"gone": true
+		},
+		{
+			"name": "@aws-crypto/sha1-browser",
+			"old": "5.2.0",
+			"gone": true
+		},
+		{
+			"name": "@aws-crypto/sha256-browser",
+			"old": "5.2.0",
+			"gone": true
+		},
+		{
+			"name": "@aws-crypto/sha256-js",
+			"old": "5.2.0",
+			"gone": true
+		},
+		{
+			"name": "@aws-crypto/supports-web-crypto",
+			"old": "5.2.0",
+			"gone": true
+		},
+		{
+			"name": "@aws-crypto/util",
+			"old": "5.2.0",
+			"gone": true
+		},
+		{
+			"name": "@aws-sdk/middleware-flexible-checksums",
+			"old": "3.974.33",
+			"gone": true
+		},
+		{
+			"name": "@aws-sdk/util-locate-window",
+			"old": "3.965.8",
+			"gone": true
+		},
+		{
+			"name": "@smithy/is-array-buffer",
+			"old": "2.2.0",
+			"gone": true
+		},
+		{
+			"name": "@smithy/util-buffer-from",
+			"old": "2.2.0",
+			"gone": true
+		},
+		{
+			"name": "@smithy/util-utf8",
+			"old": "2.3.0",
+			"gone": true
+		},
+		{
+			"name": "@vitest/utils/convert-source-map",
+			"old": "2.0.0",
+			"gone": true
+		},
+		{
+			"name": "array-ify",
+			"old": "1.0.0",
+			"gone": true
+		},
+		{
+			"name": "compare-func",
+			"old": "2.0.0",
+			"gone": true
+		},
+		{
+			"name": "dot-prop",
+			"old": "5.3.0",
+			"gone": true
+		},
+		{
+			"name": "is-obj",
+			"old": "2.0.0",
+			"gone": true
+		},
+		{
+			"name": "md5.js/hash-base",
+			"old": "3.1.2",
+			"gone": true
+		},
+		{
+			"name": "md5.js/hash-base/readable-stream",
+			"old": "2.3.8",
+			"gone": true
+		},
+		{
+			"name": "md5.js/hash-base/readable-stream/safe-buffer",
+			"old": "5.1.2",
+			"gone": true
+		},
+		{
+			"name": "md5.js/hash-base/readable-stream/string_decoder",
+			"old": "1.1.1",
+			"gone": true
+		},
+		{
+			"name": "react-dom",
+			"old": "19.2.7",
+			"gone": true
+		},
+		{
+			"name": "scheduler",
+			"old": "0.27.0",
+			"gone": true
+		}
+	]
+}

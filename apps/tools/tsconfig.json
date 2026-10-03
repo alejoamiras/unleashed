@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"incremental": true,
+		"target": "ESNext",
+		"jsx": "preserve",
+		"lib": ["ESNext", "DOM"],
+		"useDefineForClassFields": true,
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"paths": {
+			"@/*": ["./src/*"]
+		},
+		"resolveJsonModule": true,
+		"strict": true,
+		"noEmit": true,
+		"esModuleInterop": true,
+		"isolatedModules": true,
+		"skipLibCheck": true
+	},
+	"include": ["package.json", "vite.config.ts", "scripts/**/*.ts", "src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "tests/**/*.ts"],
+	"exclude": ["tests/browser/**"]
+}

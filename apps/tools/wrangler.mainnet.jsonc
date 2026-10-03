@@ -1,0 +1,17 @@
+// Workers Builds, root directory = the repository root, non-production builds off:
+//   build          bun install --frozen-lockfile && bun run --cwd apps/tools build:mainnet
+//   deploy (main)  bun run --cwd apps/tools worker:deploy:mainnet
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "unleashed-mainnet",
+	"compatibility_date": "2026-08-01",
+	"account_id": "0f1688fc6a4b6acf3fa55cf71e1bed26",
+	// Assets only, as on testnet.
+	"assets": { "directory": "./dist", "not_found_handling": "single-page-application" },
+	// app.unleashed.systems is attached in the dashboard, Production only, and is not listed here on
+	// purpose: one `custom_domain` route makes this file the whole list and detaches the rest.
+	"workers_dev": true,
+	// A mainnet build accepts only its two production hosts, so a preview URL would serve a build
+	// that refuses to load.
+	"preview_urls": false
+}

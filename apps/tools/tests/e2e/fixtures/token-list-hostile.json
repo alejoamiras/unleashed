@@ -1,0 +1,47 @@
+{
+	"name": "e2e hostile list",
+	"tokens": [
+		{
+			"chainId": 31337,
+			"address": "0x1111111111111111111111111111111111111111",
+			"name": "Wrapped BTC",
+			"symbol": "WBTC",
+			"decimals": 8
+		},
+		{
+			"chainId": 31337,
+			"address": "0x4444444444444444444444444444444444444444",
+			"name": "Overflowing Decimals",
+			"symbol": "OVFL",
+			"decimals": 300
+		},
+		{
+			"chainId": 31337,
+			"address": "not-an-address",
+			"name": "Malformed Address",
+			"symbol": "BADADDR",
+			"decimals": 18
+		},
+		{
+			"chainId": 31337,
+			"address": "0x5555555555555555555555555555555555555555",
+			"name": "Ghost (no contract here)",
+			"symbol": "GHOST",
+			"decimals": 18
+		},
+		{
+			"chainId": 31337,
+			"address": "0x6666666666666666666666666666666666666666",
+			"name": "Fake USDC",
+			"symbol": "USDC",
+			"decimals": 6
+		},
+		{
+			"chainId": 31337,
+			"address": "0x7777777777777777777777777777777777777777",
+			"name": "Wide Symbol",
+			"symbol": "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
+			"decimals": 18
+		}
+	]
+}

@@ -1,0 +1,241 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true,
+		"defaultBranch": "main"
+	},
+	"files": {
+		"ignoreUnknown": false,
+		"includes": [
+			"apps/**",
+			"packages/**",
+			"vitest.base.ts",
+			"!**/node_modules",
+			"!**/dist",
+			"!**/target",
+			"!**/*.svg",
+			"!**/apps/tools/src/types"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"useEditorconfig": true,
+		"formatWithErrors": false,
+		"indentStyle": "tab",
+		"indentWidth": 4,
+		"lineEnding": "lf",
+		"lineWidth": 140,
+		"attributePosition": "auto",
+		"bracketSpacing": true
+	},
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": "off"
+			}
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"style": {
+				"noNonNullAssertion": "off",
+				"noParameterAssign": "off",
+				"useEnumInitializers": "off",
+				"useVueMultiWordComponentNames": "off"
+			},
+			"performance": {
+				"noDelete": "info",
+				"noAccumulatingSpread": "warn"
+			},
+			"suspicious": {
+				"noAsyncPromiseExecutor": "off",
+				"noExplicitAny": "error",
+				"noImplicitAnyLet": "warn",
+				"noAssignInExpressions": "warn",
+				"useIterableCallbackReturn": "warn"
+			},
+			"complexity": {
+				"noExtraBooleanCast": "off",
+				"noForEach": "off",
+				"noBannedTypes": "warn",
+				"noExcessiveCognitiveComplexity": {
+					"level": "error",
+					"options": {
+						"maxAllowedComplexity": 15
+					}
+				},
+				"noExcessiveLinesPerFunction": {
+					"level": "error",
+					"options": {
+						"maxLines": 80,
+						"skipBlankLines": true,
+						"skipIifes": false
+					}
+				},
+				"noExcessiveNestedTestSuites": "error"
+			}
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.test.ts"],
+			"linter": {
+				"rules": {
+					"complexity": {
+						"useArrowFunction": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["**/*.test.ts", "**/*.spec.*", "**/tests/**", "**/e2e/**", "**/vitest.setup.ts", "**/test-utils/**"],
+			"linter": {
+				"rules": {
+					"complexity": {
+						"noExcessiveLinesPerFunction": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/design/src/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": ["@unleashed/*"],
+										"message": "@unleashed/design is the lowest layer — it cannot import any @unleashed/* package"
+									}
+								]
+							}
+						},
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"chrome": "@unleashed/design is platform-agnostic — no chrome.*"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/design/src/core/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": ["@unleashed/*"],
+										"message": "@unleashed/design is the lowest layer — it cannot import any @unleashed/* package"
+									},
+									{
+										"group": ["../ui/*", "../ui/**"],
+										"message": "@unleashed/design core (L1) cannot import ui (L2) — core is the lower layer"
+									}
+								]
+							}
+						},
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"chrome": "@unleashed/design is platform-agnostic — no chrome.*"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/design/src/ui/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": ["@unleashed/*"],
+										"message": "@unleashed/design is the lowest layer — it cannot import any @unleashed/* package"
+									},
+									{
+										"group": ["../composite/*", "../composite/**"],
+										"message": "@unleashed/design ui (L2) cannot import composite (L3) — ui is the lower layer"
+									}
+								]
+							}
+						},
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"chrome": "@unleashed/design is platform-agnostic — no chrome.*"
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["**/*.vue"],
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noUnusedVariables": "off",
+						"noUnusedImports": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["apps/tools/src/**", "!apps/tools/src/lib/network.ts"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": ["viem/chains"],
+										"message": "Import chain identity from @/lib/network (NETWORK), not viem/chains directly — single-source the chain so a half-switched two-network build can't sign a Permit2 witness against the wrong chain id"
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		}
+	],
+	"javascript": {
+		"formatter": {
+			"jsxQuoteStyle": "double",
+			"quoteProperties": "asNeeded",
+			"trailingCommas": "all",
+			"semicolons": "asNeeded",
+			"arrowParentheses": "always",
+			"bracketSameLine": false,
+			"quoteStyle": "double",
+			"attributePosition": "auto",
+			"bracketSpacing": true
+		}
+	}
+}

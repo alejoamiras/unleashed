@@ -1,0 +1,19 @@
+// Workers Builds, root directory = the repository root:
+//   build                   bun install --frozen-lockfile && bun run --cwd apps/tools build:testnet
+//   deploy (main)           bun run --cwd apps/tools worker:deploy:testnet
+//   non-production deploy   bun run --cwd apps/tools worker:preview
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "unleashed-testnet",
+	"compatibility_date": "2026-08-01",
+	"account_id": "0f1688fc6a4b6acf3fa55cf71e1bed26",
+	// Assets only. The build writes dist/_headers (COOP/COEP and the target's CSP). The app has no
+	// path routes, so an unknown path serves index.html.
+	"assets": { "directory": "./dist", "not_found_handling": "single-page-application" },
+	// testnet.app.unleashed.systems is attached in the dashboard, Production only, and is not listed
+	// here on purpose: one `custom_domain` route makes this file the whole list and detaches the rest.
+	"workers_dev": true,
+	// Previews are served on workers.dev only, at the branch alias and the version URL; the testnet
+	// build accepts both.
+	"preview_urls": true
+}

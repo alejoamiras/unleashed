@@ -1,0 +1,339 @@
+name: _Bridge contracts (reusable)
+
+# Runs the L1 (Foundry) and L2 (Noir) contract suites for contracts/bridge/**, the hub's TXE
+# suite, and packages/bridge-core's integration suite: one anvil + `aztec start --local-network`
+# per job, a generation deployed onto it, every round trip driven through the same seams the
+# tools app calls.
+#
+# Nothing under contracts/ was gated before this workflow existed, so a build-breaking
+# remap regression went unnoticed: the only signal was a local run on a machine that
+# happened to still have a hoisted node_modules.
+#
+# The fork-gated Foundry suites need SEPOLIA_RPC_URL and live testnet state and stay manual.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  forge:
+    name: forge build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Pinned, not `stable`: a newer Foundry routes test-contract creation through the
+      # deployCode(string,bytes) cheatcode, which halmos 0.3.3 does not implement — setUp then
+      # finds no successful path and every proof fails. This is the version the suites were
+      # validated against. Bump it deliberately, re-running halmos when you do. 1.8.1 was tried
+      # with halmos 0.3.3: 0 of 12 proofs pass, and the gas snapshot moves by 8%.
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: "1.7.1"
+
+      # lib/ is gitignored and installed per-checkout. Pinned to COMMITS, not floating tags: the
+      # README's unpinned install is what a contributor runs locally, but CI resolving a different
+      # forge-std than the one the suites were validated against is a silent divergence — an older
+      # one made halmos abort in setUp with "Unsupported cheat code", passing nothing.
+      #
+      # v4-core MUST stay v4.0.0: >=1.0.0 moves the SwapParams and ModifyLiquidityParams structs
+      # the fuel contracts use.
+      - name: Install forge libraries
+        working-directory: contracts/bridge/evm
+        run: |
+          forge install \
+            foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
+            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
+            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
+
+      # foundry.toml's @aztec/ and @aztec-blob-lib/ remaps assume a hoisted node_modules;
+      # this repo uses bun's isolated linker, so the generated remappings.txt is what makes
+      # the project resolve at all.
+      - name: Generate remappings
+        run: bun packages/bridge-core/scripts/gen-remappings.ts
+
+      - name: forge build
+        working-directory: contracts/bridge/evm
+        run: forge build
+
+      - name: forge test (hermetic)
+        working-directory: contracts/bridge/evm
+        run: forge test --no-match-contract Fork
+
+      # The metered first-time vs known bridge() calls. A regression fails here rather than
+      # surfacing as a surprise on the user's first bridge; regenerate deliberately with
+      # `forge snapshot --match-test test_gas_` when the cost change is intended.
+      - name: gas snapshot
+        working-directory: contracts/bridge/evm
+        run: forge snapshot --match-test test_gas_ --no-match-contract Fork --check --tolerance 2
+
+      - name: halmos symbolic proofs
+        working-directory: contracts/bridge/evm
+        run: |
+          set -o pipefail
+          pipx install "halmos==$(cat halmos.version)"
+          # --ast --force: halmos reads the solc AST from the artifacts, and the plain `forge build`
+          # above writes them without it. Against those artifacts halmos does not fail — it reports
+          # "No tests with --match-contract" and exits 0, which passes for a missing suite.
+          forge build --ast --force
+          halmos --match-contract '^Formal' 2>&1 | tee halmos.log
+
+          # Counts alone cannot police this: halmos prints one summary per contract and no grand
+          # total, so a deleted proof file simply stops producing its line, and a renamed `check_`
+          # is invisible while the number stays right. Bind each expected count to the contract that
+          # must produce it, require every committed proof BY NAME to have passed, then require that
+          # nothing else ran and nothing failed. (halmos colors its output even into a pipe.)
+          sed -E 's/\x1b\[[0-9;]*m//g' halmos.log > halmos.clean
+          fail=0
+          while read -r n contract; do
+            grep -qE "^Running ${n} tests for .*:${contract}\$" halmos.clean || {
+              echo "::error::expected ${n} symbolic proofs in ${contract}; see the log above"
+              fail=1
+            }
+          done <<'EXPECTED'
+          8 FormalRouterTest
+          2 FormalFactoryTest
+          2 FormalCloneTest
+          EXPECTED
+
+          while read -r proof; do
+            grep -qE "^\[PASS\] ${proof}\(" halmos.clean || {
+              echo "::error::symbolic proof ${proof} did not pass (missing, renamed, or failed)"
+              fail=1
+            }
+          done <<'PROOFS'
+          check_bridge_conservesUserFunds
+          check_bridge_rejectsForeignPortal
+          check_bridgeWithFuel_conservesUserFunds
+          check_bridgeWithFuel_fuelOnly_conservesUserFunds
+          check_bridgeWithFuel_identity_conservesUserFunds
+          check_bridgeWithFuel_partialRejectsFeeJuicePortal
+          check_deposit_revertsWhenPaused
+          check_predictPortal_isCreate2OfInitcode
+          check_setPaused_revertsForNonOwner
+          check_setSwapTarget_revertsForNonOwner
+          check_sweep_revertsForNonOwner
+          check_withdraw_revertsWhenPaused
+          PROOFS
+
+          summaries=$(grep -c '^Symbolic test result: ' halmos.clean || true)
+          if [ "$summaries" -ne 3 ]; then
+            echo "::error::expected 3 proof contracts to run, saw ${summaries}"
+            fail=1
+          fi
+          if grep -qE '^Symbolic test result: [0-9]+ passed; [1-9]' halmos.clean; then
+            echo "::error::a symbolic proof failed; see the log above"
+            fail=1
+          fi
+          exit "$fail"
+
+      # The hand-written ABI consts bridge-core ships to the browser are pinned against the forge
+      # artifacts by vitest — which the unit-test job runs WITHOUT artifacts (it skips). This is the
+      # one place both exist.
+      - name: ABI pins (bridge-core ↔ forge artifacts)
+        run: |
+          # The pin suites skip when the artifacts are absent; here that would be a silent pass.
+          test -f contracts/bridge/evm/out/PortalFactory.sol/PortalFactory.json
+          test -f contracts/bridge/evm/out/SwapBridgeRouter.sol/SwapBridgeRouter.json
+          test -f contracts/bridge/evm/out/TokenPortalImpl.sol/TokenPortalImpl.json
+          bun run --cwd packages/bridge-core test -- factory-abi router-abi quoter-abi
+
+  noir:
+    name: nargo test (keystone)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # setup-aztec shells out to bun, so it has to be on PATH before that step runs.
+      - uses: ./.github/actions/setup-bun
+
+      # Read the toolchain out of the crate rather than hardcoding it: these Nargo.toml files pin
+      # aztec-nr to their own tag, and compiling that tag's aztec-nr with a newer nargo dies
+      # inside upstream's macros. Deriving it here means the job cannot drift from the pin.
+      - name: Resolve the pinned Aztec toolchain
+        id: aztec-pin
+        run: |
+          TAG=$(sed -n 's/.*aztec-nr".*tag = "v\([^"]*\)".*/\1/p' \
+            contracts/bridge/aztec/keystone/Nargo.toml | head -1)
+          if [ -z "$TAG" ]; then
+            echo "::error::could not read the aztec-nr tag from keystone/Nargo.toml"
+            exit 1
+          fi
+          echo "pinned Aztec toolchain: $TAG"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-aztec
+        with:
+          version: ${{ steps.aztec-pin.outputs.version }}
+
+      # Pure-library crates only; the hub's TXE suite has its own job below (it needs the oracle).
+      #
+      # --force because target/ is tracked: without it nargo can report a stale success having
+      # compiled nothing. The claim_secret crate is deliberately absent — it carries no #[test]
+      # functions of its own, and its vectors are exercised through keystone; running it would
+      # have been a step that always passes without asserting anything.
+      - name: keystone vectors
+        working-directory: contracts/bridge/aztec/keystone
+        run: aztec-nargo test --force
+
+      # The hub's address-derivation keystone is a plain #[test] on a contract_library_method —
+      # no oracle — selected by name so the crate's TXE suite (which needs the oracle server) is
+      # not swept in.
+      # nargo exits 0 when a name filter matches nothing, so the run must prove it ran something.
+      - name: hub keystone (derive_token, word decomposition)
+        working-directory: contracts/bridge/aztec/token_bridge_hub
+        run: |
+          set -o pipefail
+          aztec-nargo test --force keystone 2>&1 | tee keystone.log
+          grep -qE "[1-9][0-9]* tests? passed" keystone.log
+
+  hub-parity:
+    name: hub artifact parity (aztec compile)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      # The class-id helper runs on bridge-core's installed @aztec-labs/stdlib.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Resolve the pinned Aztec toolchain
+        id: aztec-pin
+        run: |
+          TAG=$(sed -n 's/.*aztec-nr".*tag = "v\([^"]*\)".*/\1/p' \
+            contracts/bridge/aztec/token_bridge_hub/Nargo.toml | head -1)
+          if [ -z "$TAG" ]; then
+            echo "::error::could not read the aztec-nr tag from token_bridge_hub/Nargo.toml"
+            exit 1
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-aztec
+        with:
+          version: ${{ steps.aztec-pin.outputs.version }}
+
+      # The committed hub artifact is what every deploy and every claim binds to. Rebuilding it from
+      # source with the pinned `aztec compile` (nargo + AVM transpile) and requiring the same DERIVED
+      # class id is the only proof that the bytes in git are the bytes the source describes.
+      # The toolchain this job resolved is the one the script must use — its default is a fixed
+      # version and would silently check parity against the wrong nargo after a tag bump.
+      - name: compile.sh --check token_bridge_hub
+        env:
+          AZTEC_PIN: ${{ steps.aztec-pin.outputs.version }}
+        run: AZTEC_HOME="$HOME/.aztec/versions/$AZTEC_PIN" bash contracts/bridge/aztec/scripts/compile.sh --check token_bridge_hub
+
+  txe:
+    name: hub TXE suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Resolve the pinned Aztec toolchain
+        id: aztec-pin
+        run: |
+          TAG=$(sed -n 's/.*aztec-nr".*tag = "v\([^"]*\)".*/\1/p' \
+            contracts/bridge/aztec/token_bridge_hub/Nargo.toml | head -1)
+          if [ -z "$TAG" ]; then
+            echo "::error::could not read the aztec-nr tag from token_bridge_hub/Nargo.toml"
+            exit 1
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-aztec
+        with:
+          version: ${{ steps.aztec-pin.outputs.version }}
+
+      # The runner spins the oracle server itself (the committed txe-server mini-project, frozen
+      # lockfile) and checks every name in txe-manifest.txt passed, so a dropped `mod test;` or a
+      # silently skipped file cannot read as green.
+      - name: run-txe-tests.sh token_bridge_hub
+        env:
+          AZTEC_PIN: ${{ steps.aztec-pin.outputs.version }}
+        run: AZTEC_HOME="$HOME/.aztec/versions/$AZTEC_PIN" bash contracts/bridge/aztec/scripts/run-txe-tests.sh --crate token_bridge_hub
+
+  integration:
+    name: sandbox integration (anvil + local network)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      # The sandbox runs on bridge-core's @aztec line, NOT the hub crate's older Nargo pin: the two
+      # jobs above compile Noir at the tag the crate names; this one runs the node the TS talks to.
+      - name: Resolve bridge-core's Aztec pin
+        id: aztec-pin
+        run: |
+          VERSION=$(bun -e "const v=JSON.parse(require('fs').readFileSync('packages/bridge-core/package.json','utf8')).dependencies['@aztec-labs/aztec.js']; if(!v) throw new Error('bridge-core pins no @aztec-labs/aztec.js'); console.log(v)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-aztec
+        with:
+          version: ${{ steps.aztec-pin.outputs.version }}
+
+      # Same pins as the forge job: the generation deploys from these artifacts.
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: "1.7.1"
+
+      - name: Install forge libraries
+        working-directory: contracts/bridge/evm
+        run: |
+          forge install \
+            foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
+            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
+            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
+
+      - name: Generate remappings + forge build
+        run: |
+          bun packages/bridge-core/scripts/gen-remappings.ts
+          forge build --root contracts/bridge/evm
+
+      - name: Integration suite
+        run: bun run --cwd packages/bridge-core test:integration
+
+      - name: Upload sandbox logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bridge-integration-logs
+          path: |
+            /tmp/bridge-integration-*
+            ~/.cache/unleashed/bridge-sandbox/logs/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  sole-consumer:
+    name: sole-consumer static guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Guards the F-007 invariant that claim_private is the only consumer of a mint_to_private
+      # message. It was never wired to anything. --self-test first: it replays crafted
+      # bearer regressions, so a guard whose own parser has broken fails here rather than
+      # reporting a clean scan of a file it can no longer read.
+      - name: check-sole-consumer (self-test)
+        run: bash contracts/bridge/aztec/scripts/check-sole-consumer.sh --self-test
+
+      - name: check-sole-consumer
+        run: bash contracts/bridge/aztec/scripts/check-sole-consumer.sh

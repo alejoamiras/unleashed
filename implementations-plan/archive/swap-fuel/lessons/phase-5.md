@@ -1,0 +1,6 @@
+# swap-fuel — phase 5 lessons (live headless validation)
+
+- `fuel-testnet.ts` proved the WHOLE loop on live testnet in 6.7 minutes (the 30-60 min budget assumed slower proving): mint live AZLO → quote → witness sign → `bridgeWithFuel` through the live router/pools → fresh L2 account (sponsored pays ONLY the account deploy) → **the claim tx pays for itself** via `FeeJuicePaymentMethodWithClaim`, public AND private variants. First-ever exercise of the fjwc path end-to-end against our deployment.
+- Numbers worth keeping: claim fees public **5.50 FJ** / private **3.03 FJ** (private is CHEAPER - less public dispatch); fuel delivery for a 0.25-AZLO slice ≈ 487 FJ quoted, 462.5 FJ banked after the private claim's fee. `minFuelFj` calibrated to 11.0 FJ (2× worst fee) - the provisional 100 FJ was 9× too conservative.
+- Live-contract registration pattern for scripts: rebuild instances from testnet-bridge.json metadata (`getContractInstanceFromInstantiationParams` + universal-deploy params) and ASSERT the rebuilt address equals the recorded one before registering - a silent mismatch would simulate against nothing.
+- The claim poll's first ~5.7m was message sync (both messages from one L1 tx sync together, as designed); the claim itself (sim + ClientIVC proof + send) took ~50s.

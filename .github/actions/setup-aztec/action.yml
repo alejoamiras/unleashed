@@ -1,0 +1,124 @@
+name: Setup Aztec
+description: Install the Aztec CLI matching the @aztec-labs/aztec.js version declared in apps/tools. Cached by version. The CLI installer provisions its own version-pinned Foundry (forge/anvil) into internal-bin with built-in retry.
+
+inputs:
+  skip_cli:
+    description: Skip Foundry + Aztec CLI install (use when the test points at a remote node).
+    required: false
+    default: "false"
+  version:
+    description: >
+      Override the detected Aztec version. Leave empty to derive it from apps/tools's
+      @aztec-labs/aztec.js, which is what every caller wants. The bridge contracts are the exception:
+      their Nargo.toml pins aztec-nr to its own tag, and compiling that tag's aztec-nr with
+      a newer nargo fails inside upstream's own macros.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Detect Aztec version
+      if: inputs.skip_cli != 'true'
+      id: detect
+      shell: bash
+      env:
+        OVERRIDE: ${{ inputs.version }}
+      run: |
+        if [ -n "$OVERRIDE" ]; then
+          VERSION="$OVERRIDE"
+          echo "Aztec version: $VERSION (caller override)"
+        else
+          VERSION=$(bun -e "const v=JSON.parse(require('fs').readFileSync('apps/tools/package.json','utf8')).dependencies['@aztec-labs/aztec.js']; if(!v) throw new Error('apps/tools pins no @aztec-labs/aztec.js'); console.log(v)")
+          echo "Aztec version: $VERSION (from apps/tools)"
+        fi
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Install Node.js 24
+      if: inputs.skip_cli != 'true'
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
+
+    # NOTE: no foundry-rs/foundry-toolchain here (removed after a 502 from its
+    # unpinned `foundryup` download killed a job). Its output (~/.foundry/bin)
+    # was never consumed: @aztec-labs/ethereum's resolveFoundryBinary hits the pin's
+    # internal-bin (priority 2, provisioned below with the aztec installer's own
+    # version-pinned + retry-wrapped foundry install) before ~/.foundry/bin
+    # (priority 4) — and an unpinned system forge silently taking over would
+    # break the L1 deploy anyway (version-forked `forge script --batch` args).
+    # The preflight step below makes any installer regression fail loudly here
+    # instead of mid-L1-deploy.
+
+    # Cache key suffix v2: bumped when the foundry-toolchain step was removed so
+    # one cold install certified the fresh path under the toolchain preflight.
+    - name: Cache Aztec CLI
+      if: inputs.skip_cli != 'true'
+      id: cache-aztec
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.aztec/versions/${{ steps.detect.outputs.version }}
+        key: ${{ runner.os }}-aztec-${{ steps.detect.outputs.version }}-v2
+
+    - name: Install Aztec CLI
+      if: inputs.skip_cli != 'true' && steps.cache-aztec.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        AZTEC_VERSION: ${{ steps.detect.outputs.version }}
+      run: |
+        export CI=1
+        curl -fsSL "https://install.aztec.network/${AZTEC_VERSION}/install" \
+          | VERSION="$AZTEC_VERSION" bash
+        ls -la ~/.aztec/versions/"$AZTEC_VERSION"/bin/
+
+
+    # Fail-loud toolchain preflight, on BOTH the cache-hit and fresh-install
+    # paths: the L1 deploy depends on the pin's bundled forge/anvil
+    # (internal-bin outranks every other resolveFoundryBinary source once
+    # `current` is symlinked). If a future aztec installer stops shipping them,
+    # this step names the cause at setup instead of a confusing
+    # missing-arguments failure mid-sandbox-boot.
+    - name: Assert bundled Foundry toolchain
+      if: inputs.skip_cli != 'true'
+      shell: bash
+      env:
+        AZTEC_VERSION: ${{ steps.detect.outputs.version }}
+      run: |
+        BIN="$HOME/.aztec/versions/${AZTEC_VERSION}/internal-bin"
+        for tool in forge anvil; do
+          if [ ! -x "$BIN/$tool" ]; then
+            echo "::error::aztec ${AZTEC_VERSION} install is missing executable internal-bin/$tool — the bundled Foundry toolchain regressed (or a partial cache was restored). Sandbox L1 deploys would fail."
+            ls -la "$BIN" || true
+            exit 1
+          fi
+          # Executable-bit alone can't catch a truncated/corrupt cached binary.
+          if ! "$BIN/$tool" --version; then
+            echo "::error::internal-bin/$tool exists but failed to run — corrupt binary or partial cache restore."
+            exit 1
+          fi
+        done
+        echo "Bundled toolchain OK: $BIN/{forge,anvil}"
+
+    - name: Update PATH
+      if: inputs.skip_cli != 'true'
+      shell: bash
+      env:
+        AZTEC_VERSION: ${{ steps.detect.outputs.version }}
+      run: |
+        echo "$HOME/.aztec/versions/${AZTEC_VERSION}/bin" >> "$GITHUB_PATH"
+        echo "$HOME/.aztec/versions/${AZTEC_VERSION}/node_modules/.bin" >> "$GITHUB_PATH"
+
+    # global-setup.ts probes ~/.aztec/current/bin/aztec-anvil + ~/.aztec/current/node_modules/.bin/aztec.
+    # (5.0 renamed bundled bare binaries to aztec-* on PATH — `anvil` is now `aztec-anvil`.)
+    # The install above writes to ~/.aztec/versions/<version>/ but does NOT create
+    # a `current` symlink (locally, `aztec-up` would). Without this, every CI
+    # network-e2e run silently skips because global-setup falls through the
+    # "binary not found" branch with aztecTestConfig undefined.
+    - name: Symlink ~/.aztec/current
+      if: inputs.skip_cli != 'true'
+      shell: bash
+      env:
+        AZTEC_VERSION: ${{ steps.detect.outputs.version }}
+      run: |
+        ln -sfn "$HOME/.aztec/versions/${AZTEC_VERSION}" "$HOME/.aztec/current"
+        ls -la "$HOME/.aztec/current/bin/aztec-anvil" "$HOME/.aztec/current/node_modules/.bin/aztec"

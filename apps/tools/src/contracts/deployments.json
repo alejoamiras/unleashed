@@ -1,0 +1,36 @@
+{
+	"tokens": [
+		{
+			"address": "0x2d949be8f7287458b1bf37c1c4bc80477808056618787e5a8b3272c56436a4d8",
+			"salt": 4246,
+			"deployer": "0x0000000000000000000000000000000000000000000000000000000000000000",
+			"constructorArtifact": "constructor_with_minter",
+			"constructorArgs": {
+				"name": "SIGNAL",
+				"symbol": "SIGNAL",
+				"decimals": 6,
+				"minter": "0x215737bae89da9d4703a162c1ccb9c3cae8f1f78b969956795e00d102e7f3e4a",
+				"authContract": "0x0000000000000000000000000000000000000000000000000000000000000000"
+			}
+		},
+		{
+			"address": "0x1423be142355f8b0c14823b76407eba8027f68db145b5addbbf29eb378aad182",
+			"salt": 4247,
+			"deployer": "0x0000000000000000000000000000000000000000000000000000000000000000",
+			"constructorArtifact": "constructor_with_minter",
+			"constructorArgs": {
+				"name": "NOISE",
+				"symbol": "NOISE",
+				"decimals": 18,
+				"minter": "0x215737bae89da9d4703a162c1ccb9c3cae8f1f78b969956795e00d102e7f3e4a",
+				"authContract": "0x0000000000000000000000000000000000000000000000000000000000000000"
+			}
+		}
+	],
+	"dripper": {
+		"address": "0x215737bae89da9d4703a162c1ccb9c3cae8f1f78b969956795e00d102e7f3e4a",
+		"salt": 1337,
+		"deployer": "0x0000000000000000000000000000000000000000000000000000000000000000",
+		"constructorArtifact": "constructor"
+	}
+}

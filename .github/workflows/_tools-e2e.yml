@@ -1,0 +1,85 @@
+name: _tools-e2e
+
+# Reusable: one shard of the tools browser suite against its own sandbox (anvil + local network).
+# Called with a shard index by pr-tools-e2e.yml; every shard boots and reaps its own network.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to test
+        required: true
+        type: string
+      shard:
+        description: Playwright shard, e.g. 1/6
+        required: true
+        type: string
+      shard_label:
+        description: A filename-safe name for this shard's artifacts, e.g. 1-of-6
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: tools e2e (${{ inputs.shard }})
+    runs-on: ubuntu-latest
+    # The heaviest shard runs its suite for 22–27 minutes after about 3 minutes of setup, so 30
+    # cancelled it on ordinary runs; 45 leaves room without hiding a hung shard for long.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: ./.github/actions/setup-bun
+
+      # The sandbox runs on bridge-core's @aztec line — the node the tools build talks to.
+      - name: Resolve bridge-core's Aztec pin
+        id: aztec-pin
+        run: |
+          VERSION=$(bun -e "const v=JSON.parse(require('fs').readFileSync('packages/bridge-core/package.json','utf8')).dependencies['@aztec-labs/aztec.js']; if(!v) throw new Error('bridge-core pins no @aztec-labs/aztec.js'); console.log(v)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-aztec
+        with:
+          version: ${{ steps.aztec-pin.outputs.version }}
+
+      # Same pins as the bridge-contracts forge job: the generation deploys from these artifacts.
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: "1.7.1"
+
+      - name: Install forge libraries
+        working-directory: contracts/bridge/evm
+        run: |
+          forge install \
+            foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
+            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
+            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
+
+      - name: Generate remappings + forge build
+        run: |
+          bun packages/bridge-core/scripts/gen-remappings.ts
+          forge build --root contracts/bridge/evm
+
+      - uses: ./.github/actions/setup-playwright
+
+      - name: Browser suite (shard ${{ inputs.shard }})
+        run: bun run e2e:tools -- --shard=${{ inputs.shard }}
+
+      - name: Upload traces and logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tools-e2e-${{ inputs.shard_label }}
+          path: |
+            apps/tools/.e2e-state/*/test-results/**
+            apps/tools/.e2e-state/*/sandbox.log
+            apps/tools/.e2e-state/*/build-*.log
+            ~/.cache/unleashed/bridge-sandbox/logs/*.log
+          if-no-files-found: ignore
+          retention-days: 7

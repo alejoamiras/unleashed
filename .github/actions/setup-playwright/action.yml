@@ -1,0 +1,23 @@
+name: Setup Playwright
+description: Restore the Playwright browser cache keyed on the tools app's pinned version, then install Chromium with its system deps.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: cache
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ hashFiles('apps/tools/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-playwright-
+    # The browser download is skipped on a cache hit; the OS deps are installed either way (they
+    # live outside the cache).
+    - name: Install Chromium
+      shell: bash
+      run: |
+        if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
+          apps/tools/node_modules/.bin/playwright install-deps chromium
+        else
+          apps/tools/node_modules/.bin/playwright install --with-deps chromium
+        fi

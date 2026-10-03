@@ -1,0 +1,128 @@
+{
+  "$comment": "Phase-8 MAINNET pre-spend baseline (minimal intent \u2014 live-intent.ts is testnet-hardwired; the burner's whole balance IS the cap per DP5). Recorded BEFORE any mainnet broadcast; verify balances vs caps before EACH broadcast group.",
+  "sourceCommit": "",
+  "signer": "0xE75e277a6800a37429dac55FcD2f3540E371059c",
+  "signerNonceAtBaseline": 0,
+  "network": {
+    "l1ChainId": 1,
+    "rollupVersion": 4248422647,
+    "nodeVersion": "5.1.0"
+  },
+  "baseline": {
+    "eth": "0.01",
+    "aztec": "1500",
+    "usdc": "14.703001"
+  },
+  "caps": {
+    "maxTotalEthSpend": "0.01",
+    "note": "burner holds ONLY the arc's funds; no other wallet ever signs"
+  },
+  "fpcRuling": {
+    "artifact": "5.0.1",
+    "node": "5.1.0",
+    "ruledBy": "owner",
+    "date": "",
+    "canaryStillRequired": true
+  },
+  "dressRehearsal": {
+    "forkBlock": 25626095,
+    "predictedAddresses": {
+      "$comment": "CREATE addresses from (EOA, nonce 0/1) \u2014 live MUST match or STOP.",
+      "uniswapFuelSwap": "0xFe001417C1060c908D157baECdA0B6a076e87d8c",
+      "swapBridgeRouter": "0x2EB3435f5F47414fd10655d43199EcdCB0707559"
+    },
+    "routeProbe": "0.01 USDC -> 0.579299621782343481 AZTEC"
+  },
+  "broadcastGroups": {
+    "1-l1-bundle": {
+      "date": "",
+      "status": "LIVE + VERIFIED",
+      "uniswapFuelSwap": {
+        "address": "0xFe001417C1060c908D157baECdA0B6a076e87d8c",
+        "block": 25626113,
+        "gas": 3126581
+      },
+      "swapBridgeRouter": {
+        "address": "0x2EB3435f5F47414fd10655d43199EcdCB0707559",
+        "block": 25626114,
+        "gas": 3196903
+      },
+      "addressesMatchPrediction": true,
+      "etherscanVerified": "2/2",
+      "readbacks": "swapTarget wired, owner == pinned EOA",
+      "ethAfter": "0.008585727007477808"
+    },
+    "2-portal-fj": {
+      "date": "",
+      "status": "LIVE",
+      "tokenPortal": "0x3c32f16f5893c9699b4131a235604d8f5c6dfab6",
+      "portalInitTx": "0xd789ed4628fe335a6e3014e89abbf649acf184c72d7b58c8894bf75b34948148",
+      "boundL2Bridge": "0x25a4113e69c60c4ef3fd62c195436d34fa100e96934b53951bdf6f5cb8198807",
+      "l2Deployer": "0x19ae6b7ccd52c19da48f537b7b189b7bf407db4fcfa1ae7c28d137104a6ad077",
+      "fjDeposit": {
+        "amount": "300e18",
+        "leafIndex": 14766080
+      },
+      "note": "one resume: viem getContract .read multi-arg calls need ARRAY args; crashed pre-spend on a read-only check, journal resumed cleanly"
+    },
+    "3-l2-trio": {
+      "date": "",
+      "status": "LIVE \u2014 all 9 read-backs green, candidate written (9.7m)",
+      "l2Account": "0x19ae6b7ccd52c19da48f537b7b189b7bf407db4fcfa1ae7c28d137104a6ad077 (claim-in-tx bootstrap, 300 FJ claimed)",
+      "proxy": "0x0681a3267a507b4f0edcd1186de3c052becc4ac581e6aa6d17c819c7a7b88784",
+      "token": "0x03bd1289e403c74cc919b2ead9f39e38e5f9ae044e56348bfc218c0a160232b4",
+      "bridge": "0x25a4113e69c60c4ef3fd62c195436d34fa100e96934b53951bdf6f5cb8198807 (== group-2 portal-bound address)",
+      "portalEtherscan": "verified",
+      "lesson": "node.getContract serves instances at a later finalization stage than CHECKPOINTED \u2014 fresh processes must wait out the proving lag before seeing a just-deployed account"
+    },
+    "4a-fpc-canary": {
+      "date": "",
+      "status": "PASSED (3.1m)",
+      "privateFpc": "0x1a6d21ce5fd80137df0e99632a4ca17e58a42dc8f6c08191a96ca8ae907a1bc0 (pinned derivation matched)",
+      "gateRequireDeployed": "green \u2014 live class == pinned artifact class",
+      "dust": {
+        "deposited": "15715250332080000000",
+        "leaf": 14801920,
+        "privateGained": "6286100132832000000",
+        "fee": "9429150199248000000"
+      },
+      "calibratedMinFuelFj": "15715250332080000000",
+      "lessons": [
+        "alpha lb fronts a MIXED 5.0.1/5.1.0 fleet \u2014 compat curation must cover both",
+        "account instances are never node.getContract-served (the later-deployed FPC became visible; the account never did) \u2014 existence guards must use the public FJ balance"
+      ]
+    },
+    "4b-smokes-promote": {
+      "date": "",
+      "status": "PROMOTED",
+      "publicSmoke": "PASSED 2.2m \u2014 3 USDC router deposit leaf 14804992 + claim_public",
+      "privateSmoke": "PASSED 3.5m \u2014 3 USDC router deposit leaf 14807040 + claim_private (recipient-committed)",
+      "promote": "candidate -> mainnet-bridge.json; build:mainnet + verify:build-target mainnet green (chainId 4248422646, digest match); 523/523 tests",
+      "remaining_phase9_owner": [
+        "CF Pages mainnet project (build:mainnet) + app.unleashed.systems domain",
+        "owner UI smoke under CF Access",
+        "DP8 cleanup AFTER owner smoke: renounce router owner + revoke USDC/AZTEC Permit2 approvals + revoke FJ portal allowances"
+      ]
+    },
+    "5-dp8-cleanup": {
+      "date": "",
+      "status": "DONE \u2014 arc closed",
+      "renounceOwnership": {
+        "tx": "0x93cb61bf508266f6",
+        "block": 25627050,
+        "verified": "router.owner == 0x0 (setSwapTarget permanently dead)"
+      },
+      "revokeUsdcPermit2": {
+        "tx": "0xf7ca1a62747c8258",
+        "block": 25627051,
+        "verified": "allowance == 0"
+      },
+      "aztecAllowances": "already 0 (exact approvals, fully consumed)",
+      "swapTargetOwner": "KEPT (sweep-only power \u2014 dust rescue; no protocol reach; plan named only the router)",
+      "finalBalances": {
+        "eoaEth": "0.00835",
+        "l2FeeJuicePublic": "~272 FJ (working capital)"
+      }
+    }
+  }
+}

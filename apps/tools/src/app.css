@@ -1,0 +1,21 @@
+/* base.css leaves the page background and these element defaults to the host app. */
+html,
+body {
+	background: var(--ul-bg);
+	color: var(--ul-ink);
+	min-height: 100vh;
+}
+
+button {
+	background: none;
+	color: inherit;
+	cursor: pointer;
+}
+
+button:disabled {
+	cursor: not-allowed;
+}
+
+input {
+	color: inherit;
+}

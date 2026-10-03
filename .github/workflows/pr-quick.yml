@@ -1,0 +1,166 @@
+name: Quality
+
+on:
+  workflow_dispatch:
+  pull_request:
+    # NO `branches:` filter, deliberately. That key filters on the PR's BASE, so a stacked arc
+    # targeting its parent branch would get no CI at all rather than red CI.
+    # `ready_for_review` so a draft marked ready without a new push still reports the required
+    # `quality-status`; otherwise it waits as "Expected" forever.
+    # No `labeled`/`unlabeled`: nothing here reads labels, so a label event would only cancel the
+    # in-flight run (leaving a cancelled `quality-status` behind) or redo it.
+    # Gap: retargeting a PR fires `edited`, which is not listed because every title or body edit
+    # fires it too (and would cancel the in-flight run). After a retarget with no new push, close
+    # and reopen the PR so a real pull_request run judges it against its new base; a
+    # `workflow_dispatch` run skips the PR-only checks, so it never stands in for one.
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: pr-quick-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      needs-tools-build: ${{ steps.compute.outputs.needs-tools-build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: paths-filter needs the merge-base with the comparison branch; a
+          # shallow clone falls back to a `fetch --deepen` loop that races on long branches.
+          fetch-depth: 0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          # Positive-only, no `!` negations (dorny's `some`-quantifier footgun). The built target
+          # whole; its workspace libraries by src + manifest; the hub artifact bridge-core bundles
+          # from contracts/. Pinned by scripts/ci-cd/behavior-gating.test.ts.
+          filters: |
+            tools:
+              - 'apps/tools/**'
+              - 'packages/bridge-core/src/**'
+              - 'packages/bridge-core/package.json'
+              - 'packages/design/src/**'
+              - 'packages/design/package.json'
+              - 'contracts/bridge/aztec/token_bridge_hub/target/**'
+              - '.github/workflows/_build-tools.yml'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+            root-config:
+              - 'package.json'
+              - 'bun.lock'
+              - 'bunfig.toml'
+              - 'biome.json'
+              - 'tsconfig.json'
+              - 'vitest.base.ts'
+              - '.commitlintrc.json'
+              - '.githooks/**'
+              - 'patches/**'
+      - name: Compute downstream flags
+        id: compute
+        env:
+          DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          TOOLS: ${{ steps.filter.outputs.tools }}
+          WORKFLOWS: ${{ steps.filter.outputs.workflows }}
+          ROOT: ${{ steps.filter.outputs.root-config }}
+        run: |
+          if [ "$DISPATCH" = "true" ] || [ "$TOOLS" = "true" ] || [ "$WORKFLOWS" = "true" ] || [ "$ROOT" = "true" ]; then
+            echo "needs-tools-build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs-tools-build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  commitlint:
+    name: Commitlint
+    needs: changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-bun
+      - name: Lint PR commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bunx commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+  lint-and-typecheck:
+    name: Lint + Typecheck
+    needs: changes
+    uses: ./.github/workflows/_lint-and-typecheck.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.ref }}
+
+  unit-tests:
+    name: Unit tests
+    needs: changes
+    uses: ./.github/workflows/_unit-tests.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.ref }}
+
+  build-tools:
+    name: Build Tools (${{ matrix.target }})
+    needs: changes
+    if: needs.changes.outputs.needs-tools-build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [testnet, mainnet]
+    uses: ./.github/workflows/_build-tools.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.ref }}
+      target: ${{ matrix.target }}
+
+  status:
+    name: quality-status
+    if: always()
+    needs: [changes, commitlint, lint-and-typecheck, unit-tests, build-tools]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Aggregate results
+        env:
+          EVENT: ${{ github.event_name }}
+          NEEDS_TOOLS_BUILD: ${{ needs.changes.outputs.needs-tools-build }}
+          CHANGES: ${{ needs.changes.result }}
+          COMMITLINT: ${{ needs.commitlint.result }}
+          LINT: ${{ needs.lint-and-typecheck.result }}
+          UNIT: ${{ needs.unit-tests.result }}
+          BUILD_TOOLS: ${{ needs.build-tools.result }}
+        run: |
+          # Exact states, not a failure denylist: a job that never ran must not read as green.
+          fail=0
+          expect() {
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1 must be '$3', got '$2'"
+              fail=1
+            fi
+          }
+          expect "Detect changes" "$CHANGES" success
+          expect "Lint + Typecheck" "$LINT" success
+          expect "Unit tests" "$UNIT" success
+          if [ "$EVENT" = "pull_request" ]; then
+            expect Commitlint "$COMMITLINT" success
+          else
+            expect Commitlint "$COMMITLINT" skipped
+          fi
+          case "$NEEDS_TOOLS_BUILD" in
+            true) expect "Build Tools" "$BUILD_TOOLS" success ;;
+            false) expect "Build Tools" "$BUILD_TOOLS" skipped ;;
+            *) echo "::error::needs-tools-build is not true/false: '$NEEDS_TOOLS_BUILD'"; fail=1 ;;
+          esac
+          exit "$fail"

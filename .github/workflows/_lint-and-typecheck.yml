@@ -1,0 +1,52 @@
+name: _Lint and typecheck (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to checkout.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-typecheck:
+    name: Biome + tsc
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: ./.github/actions/setup-bun
+
+      # Biome and the complexity baseline.
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck all packages
+        run: bun run typecheck:all
+
+      # Advisory: the findings go to the step summary and never fail the job. The exit code is
+      # captured so a tool failure (anything but 0 or 1) is told apart from a run with findings.
+      - name: bun audit (advisory)
+        if: always()
+        run: |
+          set +e
+          bun audit --audit-level=moderate > "$RUNNER_TEMP/audit.txt" 2>&1
+          code=$?
+          set -e
+          {
+            echo "## bun audit (advisory, exit=$code)"
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/audit.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then
+            echo "::warning::bun audit exited with unexpected code $code (advisory step; not failing the job)"
+          fi

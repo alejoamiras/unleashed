@@ -1,0 +1,24 @@
+# Lessons
+
+What already bit this repository, one line each, linking to the detail. Read it before starting; keep it under 8 KiB, and retire an entry once a newer one supersedes it.
+
+- `forge install` in a git checkout adds `.gitmodules` and gitlinks to the index, and a commit that stages everything ships them: pass `--no-git`.
+- A native crash of the TXE oracle server (`Napi::Error`) mid-suite turns every later hub test into "Failed calling external resolver"; re-run the contract block alone before suspecting the code.
+- A manifest edit in a workspace re-gates its whole dependency tree against the 7-day release age, including already-locked young packages: install under a local, uncommitted `minimumReleaseAgeExcludes` and prove the lockfile with `bun install --frozen-lockfile --force` without it (see `bunfig.toml`).
+- Tree-mode `git grep` skips symlink blobs; a scan that must see every byte a push sends reads the objects themselves (`git cat-file --batch`), with replacement refs off.
+- Under `set -o pipefail`, `producer | grep -q` can kill the producer with SIGPIPE once grep matches: capture the output first, then grep it.
+- Sixtyfour Convergence is a COLRv1 font with fixed CPAL palettes, so CSS `color` cannot recolour the wordmark ([phase 4](archive/unleashed-reskin/lessons/phase-4.md)).
+- Vite inlines any asset under `assetsInlineLimit` (4096 B) as a `data:` URI. A small font subset crossed that line and would have shipped as `data:font`, so keep the build's guard ([phase 1](archive/unleashed-reskin/lessons/phase-1.md)).
+- Two notch pitfalls ([phase 3](archive/unleashed-reskin/lessons/phase-3.md), [phase 7](archive/unleashed-reskin/lessons/phase-7.md)). `--ul-notch` inherits, so every notch host must declare both `--ul-fill` and `--ul-notch`. The fill is an absolute `::before` on the padding box, so a notch host cannot scroll its content.
+- A universal `prefers-reduced-motion` rule has zero specificity. Any component `animation` beats it unless the rule uses `!important` ([phase 2](archive/unleashed-reskin/lessons/phase-2.md)).
+- `EmbeddedWallet.create` without `ephemeral` persists its store to `./aztec-wallet-data` in the current directory. That store is 15 MB, untracked and not gitignored ([phase 9](archive/unleashed-reskin/lessons/phase-9.md)).
+- A new worktree has no gitignored `contracts/bridge/evm/{lib,out,cache}`, so the e2e sandbox cannot boot. Copy them in, or `forge install --no-git`, first ([phase 4](archive/unleashed-reskin/lessons/phase-4.md)).
+- `gh stack sync` fast-forwards the local trunk. When `main` is checked out in another worktree, deliver with `gh stack push` and `gh stack submit` instead.
+- Vue's whitespace condensing drops a space at the edge of conditional template text, which is how "accountmain" and "FJbefore" shipped: put the space inside the interpolation (``{{ q ? ` ${q}` : "" }}``) ([phase 15](archive/aprime-fidelity/lessons/phase-15.md), [phase 27](archive/aprime-fidelity/lessons/phase-27.md)).
+- A component rendered in a parent's template, slot content included, carries the parent's scope id on its root, so the parent's scoped rules reach it (G03: the wizard's `.strip` styled `MintStrip`). jsdom evaluates no styles or layout, so pin such a claim in a real browser ([phase 4](archive/aprime-fidelity/lessons/phase-4.md), [phase 16](archive/aprime-fidelity/lessons/phase-16.md)).
+- A live region (`aria-live`, `role="log"`) inserted already holding its text is not announced by most screen readers: mount it empty and unconditionally, then fill it ([phase 19](archive/aprime-fidelity/lessons/phase-19.md), [phase 24b](archive/aprime-fidelity/lessons/phase-24b.md)).
+- A lookup keyed by wallet- or user-supplied text is a `Map`, never an object literal, or `constructor` and `toString` resolve through the prototype ([phase 5](archive/aprime-fidelity/lessons/phase-5.md)).
+- A component with a `document`-level key listener (the shared focus trap) needs `attachTo: document.body` in its tests and `enableAutoUnmount(afterEach)`, or earlier cases keep swallowing Tab and Escape ([phase 8](archive/aprime-fidelity/lessons/phase-8.md)).
+- A Bun script whose dependencies carry `signal-exit` (proper-lockfile, via bb.js) can be killed past a `process.once` signal handler: signal-exit re-raises a signal it finds itself alone on, and `bun run` forwards a second SIGTERM. Reap handlers stay on `process.on` with an idempotent stop, or spawned children such as anvil are orphaned ([phase 4](archive/aztec-v6/lessons/phase-4.md)).
+- A per-run wallet store starts empty: register every contract instance a script simulates against, even one an earlier run deployed, or the PXE answers "No artifact registered" ([phase 6](archive/aztec-v6/lessons/phase-6.md)).
+- After a stack push, a PR's aggregator can read FAILURE from the superseded run the push cancelled, until the replacement reports: check that run's conclusion before re-running anything.

@@ -1,0 +1,6 @@
+{
+	"extends": "./tsconfig.json",
+	"include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "vitest.integration.config.ts"],
+	"comment": "*.local.ts is the convention for disposable, git-excluded local scripts (never committed) — they must not gate typecheck.",
+	"exclude": ["scripts/**/*.local.ts"]
+}

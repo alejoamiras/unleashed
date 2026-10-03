@@ -1,0 +1,11 @@
+[package]
+name = "keystone"
+type = "bin"
+compiler_version = ">=1.0.0"
+authors = [""]
+
+[dependencies]
+aztec = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0-rc.1", directory = "aztec" }
+token_portal_content_hash_lib = { path = "../token_portal_content_hash_lib" }
+claim_secret_lib = { path = "../claim_secret" }
+register_hash_lib = { path = "../register_hash" }

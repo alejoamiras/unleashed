@@ -1,0 +1,49 @@
+{
+	"name": "@unleashed/bridge-core",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./artifacts": "./src/artifacts.ts",
+		"./fee-juice": "./src/fee-juice.ts",
+		"./private-fpc-artifact": "./src/private-fpc-artifact.ts",
+		"./sandbox": "./scripts/sandbox/index.ts",
+		"./wallet-store": "./scripts/wallet-store.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit -p tsconfig.scripts.json",
+		"test": "bun --bun vitest run",
+		"test:watch": "vitest",
+		"deploy:sandbox": "bun scripts/deploy-sandbox.ts",
+		"sandbox:up": "bun scripts/sandbox/cli.ts up",
+		"sandbox:smoke": "bun scripts/sandbox/cli.ts run --smoke",
+		"sandbox:bytecode": "bun scripts/sandbox/refresh-canonical-bytecode.ts",
+		"test:integration": "BRIDGE_INTEGRATION=1 bun --bun vitest run --config vitest.integration.config.ts",
+		"deploy:generation": "bun scripts/deploy-generation.ts",
+		"verify:l1": "bun scripts/verify-l1.ts"
+	},
+	"dependencies": {
+		"@alejoamiras/nulo-resolve-asset": "0.2.0",
+		"@alejoamiras/nulo-wallet-crypto": "0.2.0",
+		"zod": "^4.4.3",
+		"@aztec-labs/aztec.js": "6.0.0-rc.1",
+		"@aztec-labs/accounts": "6.0.0-rc.1",
+		"@aztec-labs/constants": "6.0.0-rc.1",
+		"@aztec-labs/ethereum": "6.0.0-rc.1",
+		"@aztec-labs/foundation": "6.0.0-rc.1",
+		"@aztec-foundation/l1-artifacts": "6.0.0-rc.1",
+		"@aztec-labs/noir-contracts.js": "6.0.0-rc.1",
+		"@aztec-labs/protocol-contracts": "6.0.0-rc.1",
+		"@aztec-labs/stdlib": "6.0.0-rc.1",
+		"@aztec-labs/wallets": "6.0.0-rc.1",
+		"@aztec-foundation/aztec-standards": "6.0.0-rc.1",
+		"@alejoamiras/private-fee-juice": "6.0.0-rc.1",
+		"viem": "npm:@aztec/viem@2.38.3"
+	},
+	"devDependencies": {
+		"@types/node": "^24.13.2",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	}
+}

@@ -1,0 +1,55 @@
+{
+	"builtAt": "",
+	"primaryRpc": "https://v5.testnet.rpc.aztec-labs.com",
+	"identity": {
+		"nodeVersion": "5.0.0",
+		"l1ChainId": 11155111,
+		"rollupVersion": 1821665230,
+		"walletChainId": 1816023401
+	},
+	"l1": {
+		"rollup": "0xd73a91bdcf6891c7642f3e460036e1ef2cc23178",
+		"feeJuicePortal": "0xb4a9f8eadc8ca944729d61e59a9f491faff237a3",
+		"feeJuice": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
+		"feeAssetHandler": "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9",
+		"registry": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba"
+	},
+	"l1Corroboration": {
+		"rollupHasCode": true,
+		"portalHasCode": true,
+		"source": "direct eth_getCode via SEPOLIA_RPC_URL"
+	},
+	"secondEndpoint": {
+		"posture": "SINGLE-L2-NODE (documented residual: no second public endpoint; L1-anchored; caps bound exposure)"
+	},
+	"signer": "0xFcc2238319aC360e985f1736aBB3df6251DAF6F5",
+	"caps": {
+		"maxTotalEthSpend": "0.5",
+		"maxWethSeed": "0.25"
+	},
+	"startingBalanceEth": 8.761,
+	"artifacts": {
+		"privateFpc": {
+			"address": "0x257aa8701e8801b2c03a6b03cdf385c4fa9200efda1dc41f94a905980efc86e9",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+			"sha256": "6c0cd8bce0e694c75310a4b2570b766b4f27b09c9e38222f26c00aa0e3b8114d"
+		},
+		"noirTargets": {
+			"token_bridge/target/token_bridge_contract-TokenBridge.json": "d483bf7eeed6a6930fe602ab473e15bdb2c6264c234b8d7d21a1589a0626056f",
+			"token_minter_proxy/target/token_minter_proxy-TokenMinterProxy.json": "012c21d0db8cd6efea0e3404974580259357bbe70c7c4f5abbd9dbfa1b14025b",
+			"keystone/target/keystone.json": "402be9729bf2939dc8e3ec872a700fb1e78a8fda331b65fb0a8dab9040cae536"
+		}
+	},
+	"source": {
+		"commit": "",
+		"treeClean": true,
+		"operationalAllowlist": [
+			"apps/faucet/public/testnet-bridge.candidate.json",
+			"apps/faucet/public/testnet-bridge.json",
+			"apps/faucet/src/contracts/deployments.json",
+			"packages/bridge-core/deploy-journal.jsonl",
+			"implementations-plan/aztec-5.0.0-stable/lessons/"
+		]
+	},
+	"candidateSha256": "55a74fb3f1184339368248385cfc44c15de4b848822170dcf0e387c695d827a1"
+}

@@ -1,0 +1,46 @@
+# Archived plans
+
+Closed plans, still readable by path. Each plan carries an `## Outcome` block, and its `/goal` and `/loop` seeds are retired. Evidence, never instructions.
+
+- [any-erc20-bridge](any-erc20-bridge/plan.md) — archived — any-erc20-bridge — plan
+- [aprime-fidelity](aprime-fidelity/plan.md) — archived — the app brought to the Dead Channel A′ boards: icons, static, token step, chrome, activity, receipt, faucet, amount and review, in-flight, phones
+- [aztec-v6](aztec-v6/plan.md) — archived — Aztec 6.0.0-rc.1 and a new testnet bridge generation after the network reset
+- [aztec-5.0.0-stable](aztec-5.0.0-stable/plan.md) — archived — aztec-5.0.0-stable
+- [aztec-5.0.1-line](aztec-5.0.1-line/plan.md) — archived — aztec-5.0.1-line
+- [bridge-evm-verification](bridge-evm-verification/plan.md) — archived — bridge-evm-verification
+- [bridge-form-stepper](bridge-form-stepper/plan.md) — archived — Bridge form-stepper round (third UX amendment)
+- [bridge-hardening](bridge-hardening/plan.md) — archived — bridge-hardening
+- [bridge-permit2-recipient-commitment](bridge-permit2-recipient-commitment/plan.md) — archived — Plan — bridge-permit2-recipient-commitment
+- [bridge-private](bridge-private/plan.md) — archived — Bridge — private L1↔L2 flows
+- [bridge-scripts-dedup](bridge-scripts-dedup/plan.md) — archived — bridge-scripts-dedup — arc 2 of the complexity-budget burn-down
+- [bridge-seal-backup](bridge-seal-backup/plan.md) — archived — Bridge seal-backup (per-card recovery file + restore)
+- [bridge-security-remediation](bridge-security-remediation/plan.md) — archived — Bridge Security Remediation — Implementation Plan
+- [bridge-ux-feedback](bridge-ux-feedback/plan.md) — archived — Bridge UX feedback round (post-journal amendment)
+- [bridge-ux-trust](bridge-ux-trust/plan.md) — archived — Bridge UX + trust arc
+- [bun-native-tooling](bun-native-tooling/plan.md) — archived — bun-native-tooling — an arc of the Bun 1.4 adoption (`/blueprint light`)
+- [dedup-bridge-conductors](dedup-bridge-conductors/plan.md) — archived — Plan — dedup-bridge-conductors (Arc 4 of the dedup audit)
+- [deposit-decomposition](deposit-decomposition/plan.md) — archived — deposit-decomposition (arc 4, monster 1 of 3)
+- [design-system-faucet-adoption](design-system-faucet-adoption/plan.md) — archived — Faucet `@unleashed/design` adoption (primitives-only resolver + seam-grouped reuse)
+- [faucet](faucet/plan.md) — archived — Aztec Faucet — Consolidated Plan
+- [faucet-bridge](faucet-bridge/plan.md) — archived — Faucet → Bridge: L1↔L2 Portal + Fee Juice Bridge
+- [faucet-cluster](faucet-cluster/plan.md) — archived — faucet-cluster — round-2 plan 6 (blueprint light, BL/E then BL/C)
+- [faucet-journal-bugs](faucet-journal-bugs/plan.md) — archived — faucet-journal-bugs — plan (blueprint mid; round-3 plan 5)
+- [faucet-multi-account](faucet-multi-account/plan.md) — archived — Plan — faucet-multi-account (v4 FINAL, post codex rounds 1–3 — VERDICT: conditional approve, conditions folded)
+- [faucet-receipt-hero](faucet-receipt-hero/plan.md) — archived — Faucet Receipt — hero the bridged tokens (port of a draft PR + Fuel adaptation)
+- [faucet-wallet-picker](faucet-wallet-picker/plan.md) — archived — faucet-wallet-picker
+- [fuel-direct-bridge](fuel-direct-bridge/plan.md) — archived — Fuel — direct L1 fee-asset → L2 Fee Juice bridge
+- [fuel-l1-mint](fuel-l1-mint/plan.md) — archived — Fuel L1 mint — `/blueprint light`
+- [fuel-portal-v5-fix](fuel-portal-v5-fix/plan.md) — archived — Fuel-bridge Fee-Juice portal V5 fix
+- [journal-engine-decomposition](journal-engine-decomposition/plan.md) — archived — journal-engine-decomposition (arc 4, monster 3 of 3)
+- [no-fuel-claim-fee-source](no-fuel-claim-fee-source/plan.md) — archived — No-fuel claim fee source — pay from public OR private Fee Juice
+- [operator-gates](operator-gates/plan.md) — archived — operator-gates — round 3, plan 3 (BL/C, 1–2 PRs)
+- [private-exit-fence](private-exit-fence/plan.md) — archived — private-exit-fence — a private exit never names a public fee payer
+- [private-fuel](private-fuel/plan.md) — archived — private-fuel — private Fee Juice across the bridge
+- [private-fuel-fee-fix](private-fuel-fee-fix/plan.md) — archived — Private-fuel claim fee fix (V5 self-paying budget)
+- [protocol-labels](protocol-labels/plan.md) — archived — protocol-labels — the bridge's protocol labels settled, and the testnet generation they require
+- [send-wizard-ux](send-wizard-ux/plan.md) — archived — Send wizard UX redesign
+- [swap-fuel](swap-fuel/plan.md) — archived — swap-fuel — bridge-and-fuel on the live Sepolia ↔ Aztec testnet bridge
+- [tools-console](tools-console/plan.md) — archived — Tools Console — the shell around the Send wizard
+- [tools-recovery](tools-recovery/plan.md) — archived — tools-recovery — the three stuck-record recoveries, identity-bound
+- [tools-two-network](tools-two-network/plan.md) — archived — Two-network tools deployment (mainnet + testnet) — v3
+- [unleashed-reskin](unleashed-reskin/plan.md) — archived — unleashed-reskin — Dead Channel A′ look, honest wallet voice, SIGNAL/NOISE faucet

@@ -1,0 +1,15 @@
+{
+	"promotedAt": "",
+	"intent": "implementations-plan/archive/protocol-labels/lessons/intent.json",
+	"commitAtPromotion": "",
+	"mode": "bridge-only",
+	"bridge": {
+		"candidateSha256": "1646c55baae9527d4baac350659771d27628e4a2707fa8a50238d193853616c0",
+		"live": "apps/tools/public/testnet-bridge.json"
+	},
+	"faucet": {
+		"unchangedSha256": "dc42af69f6c969e14da17b46980fc8dcaf5a968bfd13d248f33adc7080ea4870",
+		"live": "apps/tools/src/contracts/deployments.json"
+	},
+	"generation": "first promotion: no live manifest, so the generation interlock compared nothing"
+}

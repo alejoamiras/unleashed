@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"lib": ["ESNext", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"strict": true,
+		"noEmit": true,
+		"esModuleInterop": true,
+		"isolatedModules": true,
+		"skipLibCheck": true,
+		"resolveJsonModule": true,
+		"types": ["node", "vite/client"]
+	},
+	"include": ["./**/*.ts", "./**/*.mts", "../../src/lib/local-target-loader.ts", "../../src/lib/network-targets.ts"]
+}

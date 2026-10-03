@@ -1,0 +1,15 @@
+{
+	"promotedAt": "",
+	"intent": "implementations-plan/aztec-v6/lessons/intent.json",
+	"commitAtPromotion": "",
+	"mode": "bridge-only",
+	"bridge": {
+		"candidateSha256": "345f68c0f74bd6feb0b7d0364e67e875b0b6c92b05b6899fd682e2a72ee2c76f",
+		"live": "apps/tools/public/testnet-bridge.json"
+	},
+	"faucet": {
+		"unchangedSha256": "dc42af69f6c969e14da17b46980fc8dcaf5a968bfd13d248f33adc7080ea4870",
+		"live": "apps/tools/src/contracts/deployments.json"
+	},
+	"generation": "network identity and L1 factory carried from the live manifest"
+}

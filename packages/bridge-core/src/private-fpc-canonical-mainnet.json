@@ -1,0 +1,18 @@
+{
+	"$comment": "MAINNET (Alpha) PrivateFPC deployment descriptor \u2014 the per-network sibling of private-fpc-canonical.json (testnet). FROZEN at the 5.0.1 artifact mainnet runs; the testnet descriptor follows the installed package, so the two no longer share an identity. Consumed by check-fpc-version.ts, which selects the descriptor whose network pins match the live node and fails closed while the installed package is not 5.0.1. Machine-asserted as frozen literals by private-fuel.test.ts.",
+	"aztecVersion": "5.0.1",
+	"salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+	"deployer": "0x0000000000000000000000000000000000000000000000000000000000000000",
+	"expectedAddress": "0x1a6d21ce5fd80137df0e99632a4ca17e58a42dc8f6c08191a96ca8ae907a1bc0",
+	"artifactSha256": "d5a2453cda5cc05026cbda68a57afc5951f73fb08649f66cea8c412be6c54acc",
+	"artifactPath": "@alejoamiras/private-fee-juice/target/private_contract-PrivateFPC.json",
+	"network": {
+		"$comment": "Hard identity pins for Aztec MAINNET (Alpha) \u2014 l1ChainId 1, rollupVersion 4248422647 (verified live via node_getNodeInfo; wallet chain id (1 ^ 4248422647) >>> 0 = 4248422646).",
+		"l1ChainId": 1,
+		"rollupVersion": 4248422647
+	},
+	"compatibleNodeVersions": {
+		"$comment": "HUMAN-CURATED, digest-keyed. 5.0.1 = the artifact's own version (exact-match baseline; the Alpha fleet behind lb.drpc.live is MIXED and either version can answer). 5.1.0 = owner ruling (the post-deploy dust canary remains the authoritative on-net proof before any real funding/promotion). A new artifact digest requires fresh curation, never inherited compat.",
+		"d5a2453cda5cc05026cbda68a57afc5951f73fb08649f66cea8c412be6c54acc": ["5.0.1", "5.1.0"]
+	}
+}

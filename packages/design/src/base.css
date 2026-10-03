@@ -1,0 +1,382 @@
+/*
+ * unleashed's global stylesheet: fonts, theme tokens, and the element defaults the components
+ * assume. Import it once at app entry. `--ul-*` is the token set; read the role (`--ul-accent-text`
+ * for accent text, `--ul-signal` for fills), never a colour picked for one theme.
+ *
+ * public/theme-boot.js sets `theme` on <html> before first paint; with no attribute the dark
+ * values apply.
+ */
+
+@font-face {
+	font-family: "Atkinson Hyperlegible Next";
+	font-style: normal;
+	font-weight: 200 800;
+	font-display: swap;
+	src: url("./fonts/AtkinsonHyperlegibleNext.woff2") format("woff2");
+}
+
+@font-face {
+	font-family: "Atkinson Hyperlegible Mono";
+	font-style: normal;
+	font-weight: 200 800;
+	font-display: swap;
+	src: url("./fonts/AtkinsonHyperlegibleMono.woff2") format("woff2");
+}
+
+/* Subset to digits, `.,`, space, U and a-z: the wordmark and arrival amounts only. */
+@font-face {
+	font-family: "Sixtyfour Convergence";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("./fonts/SixtyfourConvergence-subset.woff2") format("woff2");
+}
+
+:root,
+[theme="dark"] {
+	color-scheme: dark;
+
+	--ul-font-body: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+	--ul-font-mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+	--ul-font-pixel: "Sixtyfour Convergence", "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+
+	/* Depth is a fill step: well < bg < panel < raised. Light does not keep that order, so a recess
+	   is read by role: `--ul-field` for inputs and slots, `--ul-track` for segment tracks, `--ul-well`
+	   for page-level placeholders and the rail. */
+	--ul-well: #08080a;
+	--ul-field: #08080a;
+	--ul-track: #08080a;
+	--ul-bg: #0b0b0d;
+	--ul-panel: #141418;
+	--ul-raised: #1d1d23;
+	--ul-line: #3a3a42;
+
+	--ul-ink: #ededea;
+	--ul-ink-2: #b4b4af;
+	--ul-ink-3: #8c8c93;
+	/* Chip captions ("Ethereum", "Aztec · main") and their chevron: tertiary on dark, secondary on light. */
+	--ul-ink-caption: var(--ul-ink-3);
+	--ul-disabled: #5e5e66;
+
+	--ul-signal: #ff3dd2;
+	--ul-signal-tint: #3a1234;
+	--ul-accent-text: var(--ul-signal);
+	--ul-on-signal: var(--ul-bg);
+	/* Text on a token's hue mark. The marks are mid-dark in both themes, so this one is fixed. */
+	--ul-on-mark: #fbf9f3;
+	--ul-focus: var(--ul-signal);
+	/* The keyboard ring: ink, so it shows on a signal fill too. `--ul-focus` stays for field edges. */
+	--ul-ring: var(--ul-ink);
+	/* The dotted rule under a page header: light only. */
+	--ul-perforation: transparent;
+
+	--ul-carrier: #3de8ff;
+	--ul-carrier-bg: #0e2a30;
+	--ul-attention: #ffc247;
+	--ul-attention-bg: #33270c;
+	--ul-lost: #ff6159;
+	--ul-lost-bg: #361513;
+	--ul-other: #b9a6ff;
+	--ul-other-bg: #241e3a;
+}
+
+[theme="light"] {
+	color-scheme: light;
+
+	/* Fields (paper) and tracks (raised) are set into the sheet. The well is the sheet itself: its
+	   placeholders and the rail sit on paper, where a darker recess would vanish. */
+	--ul-well: #fbf9f3;
+	--ul-field: #f4f1e8;
+	--ul-track: #e9e4d6;
+	--ul-bg: #f4f1e8;
+	--ul-panel: #fbf9f3;
+	--ul-raised: #e9e4d6;
+	--ul-line: #cfc9ba;
+
+	--ul-ink: #18171c;
+	--ul-ink-2: #48464f;
+	--ul-ink-3: #65636e;
+	--ul-ink-caption: var(--ul-ink-2);
+	--ul-disabled: #9a97a0;
+
+	/* The fluorescent fill fails as text on paper (2.7:1), so text and focus take the ribbon. */
+	--ul-signal: #ff3dd2;
+	--ul-signal-tint: #f9d6f0;
+	--ul-accent-text: #b3118e;
+	--ul-on-signal: var(--ul-ink);
+	--ul-focus: #b3118e;
+	--ul-perforation: var(--ul-line);
+
+	--ul-carrier: #00707f;
+	--ul-carrier-bg: #d9ecec;
+	--ul-attention: #8a5700;
+	--ul-attention-bg: #f6e7c8;
+	--ul-lost: #c12a22;
+	--ul-lost-bg: #f9e4e1;
+	--ul-other: #5b45c2;
+	--ul-other-bg: #e6e0f8;
+}
+
+/* Theme-independent: shape, texture and motion. */
+:root {
+	/* Stepped corners: 2 on controls, 4 on cards and panels, 6 on dialogs. */
+	--ul-notch-2: polygon(
+		2px 0,
+		calc(100% - 2px) 0,
+		calc(100% - 2px) 1px,
+		calc(100% - 1px) 1px,
+		calc(100% - 1px) 2px,
+		100% 2px,
+		100% calc(100% - 2px),
+		calc(100% - 1px) calc(100% - 2px),
+		calc(100% - 1px) calc(100% - 1px),
+		calc(100% - 2px) calc(100% - 1px),
+		calc(100% - 2px) 100%,
+		2px 100%,
+		2px calc(100% - 1px),
+		1px calc(100% - 1px),
+		1px calc(100% - 2px),
+		0 calc(100% - 2px),
+		0 2px,
+		1px 2px,
+		1px 1px,
+		2px 1px
+	);
+	--ul-notch-4: polygon(
+		4px 0,
+		calc(100% - 4px) 0,
+		calc(100% - 4px) 2px,
+		calc(100% - 2px) 2px,
+		calc(100% - 2px) 4px,
+		100% 4px,
+		100% calc(100% - 4px),
+		calc(100% - 2px) calc(100% - 4px),
+		calc(100% - 2px) calc(100% - 2px),
+		calc(100% - 4px) calc(100% - 2px),
+		calc(100% - 4px) 100%,
+		4px 100%,
+		4px calc(100% - 2px),
+		2px calc(100% - 2px),
+		2px calc(100% - 4px),
+		0 calc(100% - 4px),
+		0 4px,
+		2px 4px,
+		2px 2px,
+		4px 2px
+	);
+	--ul-notch-6: polygon(
+		6px 0,
+		calc(100% - 6px) 0,
+		calc(100% - 6px) 3px,
+		calc(100% - 3px) 3px,
+		calc(100% - 3px) 6px,
+		100% 6px,
+		100% calc(100% - 6px),
+		calc(100% - 3px) calc(100% - 6px),
+		calc(100% - 3px) calc(100% - 3px),
+		calc(100% - 6px) calc(100% - 3px),
+		calc(100% - 6px) 100%,
+		6px 100%,
+		6px calc(100% - 3px),
+		3px calc(100% - 3px),
+		3px calc(100% - 6px),
+		0 calc(100% - 6px),
+		0 6px,
+		3px 6px,
+		3px 3px,
+		6px 3px
+	);
+	/* A band flush with the bottom of a notch-4 card: square on top, the card's steps below. */
+	--ul-notch-4-bottom: polygon(
+		0 0,
+		100% 0,
+		100% calc(100% - 4px),
+		calc(100% - 2px) calc(100% - 4px),
+		calc(100% - 2px) calc(100% - 2px),
+		calc(100% - 4px) calc(100% - 2px),
+		calc(100% - 4px) 100%,
+		4px 100%,
+		4px calc(100% - 2px),
+		2px calc(100% - 2px),
+		2px calc(100% - 4px),
+		0 calc(100% - 4px)
+	);
+	/* Defaults for a `.ul-notch` host; see there. */
+	--ul-fill: var(--ul-panel);
+	--ul-notch: var(--ul-notch-2);
+
+	/* Static means an encrypted value, nothing else: only `.ul-veil` and `.ul-scrim` paint it. No
+	   `;` in the URI, since the token parser in theme-contrast.ts splits declarations on it. The
+	   filter runs in sRGB: the default linearRGB lifts the dark cells into a pale haze. */
+	--ul-static: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='s' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='discrete' tableValues='0.04 0.2 0.55 0.93'/%3E%3CfeFuncG type='discrete' tableValues='0.04 0.2 0.55 0.93'/%3E%3CfeFuncB type='discrete' tableValues='0.05 0.22 0.56 0.92'/%3E%3CfeFuncA type='linear' slope='0' intercept='1'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23s)'/%3E%3C/svg%3E");
+	--ul-scrim-fill: rgb(11 11 13 / 0.85);
+
+	--ul-tracking-heading: -0.015em;
+
+	/* Duration plus stepped timing, for `transition`/`animation` shorthands. Never smooth easing. */
+	--ul-tick: 90ms steps(3);
+	--ul-tune: 180ms steps(4);
+	--ul-converge: 640ms steps(8);
+	--ul-cursor: 1060ms steps(1, end);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+	margin: 0;
+}
+
+/* Scrolling stays; the bars are hidden everywhere, as the layout was designed without them. */
+* {
+	scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+	display: none;
+}
+
+body {
+	font-family: var(--ul-font-body);
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	user-select: none;
+}
+
+a {
+	color: var(--ul-accent-text);
+	text-decoration: none;
+}
+
+/* Drop the UA's rings; the rule below restores one for keyboard focus. */
+a:focus,
+button,
+input {
+	outline: none;
+}
+
+/* Must follow the reset: `a:focus` has the same specificity. */
+a:focus-visible,
+button:focus-visible {
+	outline: 2px solid var(--ul-ring);
+	outline-offset: 3px;
+}
+
+button {
+	font-family: inherit;
+	padding: 0;
+	border: none;
+}
+
+input {
+	font: inherit;
+	border: none;
+	background: transparent;
+}
+
+/* The tools app's <TransitionGroup name="toast">. */
+.toast-enter-active,
+.toast-leave-active {
+	transition:
+		opacity var(--ul-tune),
+		transform var(--ul-tune);
+}
+
+.toast-enter-from,
+.toast-leave-to {
+	opacity: 0;
+	transform: translateY(-12px);
+}
+
+/*
+ * Notched surface. The clip sits on a `::before` fill, so the host's focus outline stays whole. The
+ * host paints no background of its own (it would show at the corners) and sets `--ul-fill` and
+ * `--ul-notch` instead: both inherit, so a host inside another host must declare both. Never notch a
+ * host of absolutely positioned popovers, or an <input>.
+ */
+.ul-notch {
+	position: relative;
+	isolation: isolate;
+}
+
+.ul-notch::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	background: var(--ul-fill);
+	clip-path: var(--ul-notch);
+}
+
+/* Stands in for an amount others cannot read; the host gives it role="img" and an aria-label. */
+.ul-veil {
+	display: inline-block;
+	inline-size: 6ch;
+	block-size: 1em;
+	vertical-align: -0.125em;
+	background: var(--ul-static);
+	opacity: 0.95;
+	animation: ul-sweep var(--ul-tune) both;
+}
+
+/* Read by assistive tech, drawn nowhere. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* Modal backdrop: void, then static over it, under the dialog. */
+.ul-scrim {
+	position: fixed;
+	inset: 0;
+	isolation: isolate;
+	background: var(--ul-scrim-fill);
+	animation: ul-fade-in var(--ul-tune) both;
+}
+
+.ul-scrim::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	background: var(--ul-static);
+	opacity: 0.3;
+}
+
+@keyframes ul-sweep {
+	from {
+		clip-path: inset(0 100% 0 0);
+	}
+}
+
+@keyframes ul-fade-in {
+	from {
+		opacity: 0;
+	}
+}
+
+/* Every animation lands on its end frame at once. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		/* biome-ignore-start lint/complexity/noImportantStyles: a universal selector must outrank every component's own animation rule */
+		animation-duration: 0.01ms !important;
+		animation-delay: 0s !important;
+		animation-iteration-count: 1 !important;
+		animation-fill-mode: both !important;
+		transition-duration: 0.01ms !important;
+		transition-delay: 0s !important;
+		/* biome-ignore-end lint/complexity/noImportantStyles: a universal selector must outrank every component's own animation rule */
+	}
+}

@@ -1,0 +1,85 @@
+name: Bridge contracts
+
+# PR gate for the any-ERC-20 bridge contracts (contracts/bridge/**).
+#
+# NO `branches:` filter, deliberately — see the long note in pr-quick.yml. That key filters
+# on the PR's BASE, so a stacked arc targeting its parent branch would get zero CI.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: bridge-contracts-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      contracts: ${{ steps.override.outputs.full || steps.filter.outputs.contracts }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: paths-filter needs the merge-base with the comparison branch; a
+          # shallow clone falls back to a `fetch --deepen` loop that races on long branches.
+          fetch-depth: 0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          # Positive-only, no `!` negations — the dorny `some`-quantifier footgun. Whole-package for
+          # the contracts and for bridge-core (its scripts ARE the sandbox harness); the deployed
+          # manifests, because the integration suite is the closest local proof that the frontend's
+          # adopted generation still round-trips. The npm packages bridge-core imports move with
+          # bun.lock.
+          # Pinned by scripts/ci-cd/behavior-gating.test.ts.
+          filters: |
+            contracts:
+              - 'contracts/bridge/**'
+              - 'packages/bridge-core/**'
+              - 'apps/tools/public/testnet-bridge.json'
+              - 'apps/tools/public/mainnet-bridge.json'
+              - 'package.json'
+              - 'bun.lock'
+              - 'bunfig.toml'
+              - 'patches/**'
+              - '.github/workflows/bridge-contracts.yml'
+              - '.github/workflows/_bridge-contracts.yml'
+              - '.github/actions/setup-aztec/**'
+              - '.github/actions/setup-bun/**'
+      - name: Override for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        id: override
+        run: echo "full=true" >> "$GITHUB_OUTPUT"
+
+  suites:
+    name: Suites
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    uses: ./.github/workflows/_bridge-contracts.yml
+
+  status:
+    name: bridge-contracts-status
+    if: always()
+    needs: [changes, suites]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci-cd/aggregate-status.sh
+          sparse-checkout-cone-mode: false
+      - name: Aggregate results
+        # The exact state machine lives in a script with its own truth-table test; an empty filter
+        # verdict is an error there, never a skip.
+        run: bash scripts/ci-cd/aggregate-status.sh "${{ needs.changes.result }}" "${{ needs.changes.outputs.contracts }}" "${{ needs.suites.result }}"

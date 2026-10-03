@@ -1,0 +1,115 @@
+name: Lint workflows
+
+# NO `branches:` filter, deliberately: see pr-quick.yml.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: actionlint-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      workflows: ${{ steps.override.outputs.full || steps.filter.outputs.workflows }}
+      shell: ${{ steps.override.outputs.full || steps.filter.outputs.shell }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          filters: |
+            workflows:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+            shell:
+              - 'scripts/**/*.sh'
+              - 'apps/tools/scripts/**/*.sh'
+              - 'contracts/bridge/aztec/scripts/**/*.sh'
+              - '.githooks/**'
+      - name: Override for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        id: override
+        run: echo "full=true" >> "$GITHUB_OUTPUT"
+
+  actionlint:
+    name: Actionlint
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: reviewdog/action-actionlint@8b682e1e7e512151d73a6b9449cbff173846226e # v1.74.0
+        with:
+          fail_on_error: true
+
+  shellcheck:
+    name: Shellcheck
+    needs: changes
+    if: needs.changes.outputs.shell == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The hooks carry no extension, so they are listed by directory rather than by name.
+      - name: Run shellcheck
+        shell: bash
+        run: |
+          mapfile -t FILES < <(find scripts apps/tools/scripts contracts/bridge/aztec/scripts -type f -name '*.sh'; find .githooks -type f)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "::error::no shell files found; the paths above have moved"
+            exit 1
+          fi
+          shellcheck "${FILES[@]}"
+
+  status:
+    name: actionlint-status
+    if: always()
+    needs: [changes, actionlint, shellcheck]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Aggregate results
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          WORKFLOWS: ${{ needs.changes.outputs.workflows }}
+          SHELL_FILES: ${{ needs.changes.outputs.shell }}
+          ACTIONLINT: ${{ needs.actionlint.result }}
+          SHELLCHECK: ${{ needs.shellcheck.result }}
+        run: |
+          # Exact states: each gated job succeeded exactly when its filter tripped, else it skipped.
+          fail=0
+          gate() {
+            case "$2" in
+              true) want=success ;;
+              false) want=skipped ;;
+              *) echo "::error::$1's filter verdict is not true/false: '$2'"; fail=1; return ;;
+            esac
+            if [ "$3" != "$want" ]; then
+              echo "::error::$1 must be '$want', got '$3'"
+              fail=1
+            fi
+          }
+          if [ "$CHANGES" != "success" ]; then
+            echo "::error::Detect changes did not succeed: '$CHANGES'"
+            exit 1
+          fi
+          gate Actionlint "$WORKFLOWS" "$ACTIONLINT"
+          gate Shellcheck "$SHELL_FILES" "$SHELLCHECK"
+          exit "$fail"
