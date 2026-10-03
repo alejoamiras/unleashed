@@ -20,11 +20,14 @@ describe("maskedRuntimeHashes", () => {
 		expect(onChain).toBe(built)
 	})
 
-	it("fails on a single changed byte of code before the trailer", () => {
+	it("fails on a single changed byte of code before the trailer, or any difference in length", () => {
 		const tampered = runtime(DEPLOYED, 0x11)
 		tampered[33] = 0x00 // POP → STOP
 		const { onChain, built } = maskedRuntimeHashes(tampered, runtime(CODE, 0x22), REFS)
 		expect(onChain).not.toBe(built)
+		// Bytes past the build's length would fall inside the masked tail.
+		const extended = Uint8Array.from([...runtime(DEPLOYED, 0x11), 0x00])
+		expect(() => maskedRuntimeHashes(extended, runtime(CODE, 0x22), REFS)).toThrow(/length 90 != build 89/)
 	})
 
 	it("refuses a build whose trailer length is bogus instead of masking code", () => {
