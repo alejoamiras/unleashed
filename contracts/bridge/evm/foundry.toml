@@ -4,8 +4,8 @@
 # the isolated linker, run `bun scripts/gen-remappings.ts` from
 # packages/bridge-core first: it writes remappings.txt (gitignored), which
 # Foundry gives priority over these TOML remappings, with the @aztec/ path
-# resolved through bridge-core's declared dependency. verify-l1.ts does this
-# automatically and asserts the effective mapping via `forge remappings`.
+# resolved through bridge-core's declared dependency. CI and the sandbox's forge
+# step run it; verify-l1.ts does not, so run it before `verify:l1` too.
 [profile.default]
 src = "src"
 out = "out"

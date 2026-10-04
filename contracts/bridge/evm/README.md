@@ -25,8 +25,8 @@ forge install \
 
 The `@aztec/` remap resolves through `packages/bridge-core`'s installed `@aztec-foundation/l1-artifacts`.
 Under the repo's isolated linker that package is NOT at the repo-root `node_modules` the static
-`foundry.toml` remap assumes, so generate the override file first (gitignored; `verify-l1.ts`
-does this automatically):
+`foundry.toml` remap assumes, so generate the override file first (gitignored). CI and the
+sandbox's forge step generate it; `verify-l1.ts` does not, so run this before `verify:l1` too:
 
 ```bash
 # from this directory (contracts/bridge/evm):

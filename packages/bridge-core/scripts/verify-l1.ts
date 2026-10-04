@@ -21,7 +21,8 @@
  * reuses whatever build is on disk and skips when there is none.
  *
  * Needs an L1 RPC in SEPOLIA_RPC_URL or ETH_RPC_URL (bun auto-loads packages/bridge-core/.env), and
- * foundry for the code-hash pass. Exits non-zero if any check FAILs.
+ * foundry plus a `remappings.txt` from `gen-remappings.ts` for the code-hash pass. Exits non-zero if
+ * any check FAILs.
  */
 import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
