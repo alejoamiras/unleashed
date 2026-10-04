@@ -10,8 +10,9 @@
  * file is gitignored). The layout-independent remaps are repeated so the
  * override file is complete — Foundry treats remappings.txt as the full set.
  *
- * Run before any forge invocation in `contracts/bridge/evm` (verify-l1.ts does
- * this automatically): `bun scripts/gen-remappings.ts` from packages/bridge-core.
+ * Run before any forge invocation in `contracts/bridge/evm`, `verify:l1` included:
+ * `bun scripts/gen-remappings.ts` from packages/bridge-core. Only CI and the
+ * sandbox's forge step run it for you.
  */
 import { existsSync, renameSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
