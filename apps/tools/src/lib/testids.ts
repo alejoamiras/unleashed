@@ -79,11 +79,14 @@ export const TESTIDS = {
 	// Toast
 	toast: "tl-toast",
 
-	// Shell: the rail (Send | Faucet | Activity), the section header, the Activity page.
+	// Shell: the rail (Send | Faucet | Activity | Addresses), the section header, the Activity page.
 	brandHome: "tl-brand-home",
 	tabs: "tl-tabs",
 	tabDrip: "tl-tab-drip",
 	tabActivity: "tl-tab-activity",
+	tabAddresses: "tl-tab-addresses",
+	addressesView: "tl-addresses-view",
+	addressRow: "tl-address-row",
 	sectionHeader: "tl-section-header",
 	activityView: "tl-activity-view",
 	activityFirstVisit: "tl-activity-first-visit",

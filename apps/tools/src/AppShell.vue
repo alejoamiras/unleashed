@@ -2,6 +2,7 @@
 /** Components */
 import ActivityDock from "./components/ActivityDock.vue"
 import ActivityView from "./views/ActivityView.vue"
+import AddressesView from "./views/AddressesView.vue"
 import AppToastRegion from "./components/AppToastRegion.vue"
 import AztecWalletPanel from "./components/AztecWalletPanel.vue"
 import BridgeFooter from "./components/BridgeFooter.vue"
@@ -46,6 +47,7 @@ const HEADERS = {
 	send: { title: "Bridge", subline: "Any ERC-20 · Ethereum ↔ Aztec · public or private · arrive with gas" },
 	drip: { title: "Faucet", subline: "Alpha-testnet only · fixed amounts · permissionless dripper · no rate limit" },
 	activity: { title: "Activity", subline: "Every bridge this browser started or restored, with its next step" },
+	addresses: { title: "Addresses", subline: "Every contract this build talks to" },
 } as const
 const header = computed(() => HEADERS[section.value])
 
@@ -90,10 +92,11 @@ const MARK_INK =
 				<ConnectionErrorStrip class="strip-slot" :exclude="stripExclude" />
 
 				<!-- v-show (not v-if): Send and Faucet keep their local state across switches; both read
-				     the ONE wallet session singleton. Activity has no local state of its own. -->
+				     the ONE wallet session singleton. Activity and Addresses have no local state of their own. -->
 				<DripView v-show="section === 'drip'" />
 				<SendView v-show="section === 'send'" />
 				<ActivityView v-if="section === 'activity'" />
+				<AddressesView v-if="section === 'addresses'" />
 			</div>
 
 			<div class="foot">
