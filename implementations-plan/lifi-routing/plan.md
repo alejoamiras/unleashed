@@ -6,7 +6,7 @@ eli5_mode: artifact
 code_review: off
 claude_model: opus
 codex_model: sol
-status: approved; arc 1 in progress (G-UX-1 and G-UX-2 pending, needed before Phases 7 and 8)
+status: approved; arc 1 in progress; G-UX-1 and G-UX-2 signed
 base: main
 budget: "research: lead 4 subagents + the fable and codex drafts' own; code-review: off; foreign reviewer at high"
 ---
@@ -809,6 +809,39 @@ this one cannot.
    and 390 px, light and dark, attached to the PR. A fresh reviewer compares each pair and lists deviations; the
    PR merges with that list empty or each item signed by the owner.
 
+### Signed board set (G-UX-1 and G-UX-2)
+
+The owner: *"hybrid board looks good"*. This signs the hybrid set below as drawn: the canvas version that holds
+it is `1791227887-4f8a`. The sign-off includes every choice the drawing left to the owner: the inline picker, the
+"Use 59.00 USDC" action, the private send's signature shown only in the Review and the stepper log, the
+gas-unavailable notice on the Ethereum-origin Review, and "Finalizing" for a provisional outcome. Addresses,
+hashes and amounts on the boards are illustrative data, not the specification. A10's label is the notice on
+`H-Review-Testnet`.
+
+| Board | SHA-256 |
+|---|---|
+| `H-Token.dc.html` | `45f97de5cfa14fa784f103c3abc143412d43689184093c16cdf9e513daaf5475` |
+| `H-Amount.dc.html` | `d30c5d19392c36da7cfdba4f6a280192cb2fa72ec98c8781b0a3ec147b4d2615` |
+| `H-Review.dc.html` | `b9abacf65a336e95c85628da00f9ebdf637d68eddb7fccf22c340d10c12e632f` |
+| `H-Stepper.dc.html` | `b8ab778921bd427fba84d5c799c4ce3a17cc6eb2998668dded2c378f8fc86d19` |
+| `H-Phone-Token.dc.html` | `788836452dd5259d3eaae0483df0783658452539f5ee8ef034211f10eb6cae41` |
+| `H-Phone-Review.dc.html` | `e330e18abb7650a66e015b2c5811544166f5cd26b2698d7fdfe54beedc5f582b` |
+| `H-Review-Testnet.dc.html` | `3423c7dfc70d8fa880c1cff350093893111dc8a397a987be294b01456a270132` |
+| `H-States.dc.html` | `8a513a5af7d428b39a4415d192d0fb6153ae5b7e04ada068827071a3578d4a1b` |
+| `H-Activity.dc.html` | `f3254d9baeea48e2ff74e8c502e50542d45e10b4d0358c2436161223310b660d` |
+| `H-EthOrigin.dc.html` | `411f292a7cf84ecf999e1335d0bb3bb16dbabe6ed8d0238b9007bb22d1527157` |
+| `S-Delivered.dc.html` | `c606c80bebc22ec5ee2f0151159f4a1eb29eb2a329982324b693e513a39a37e6` |
+| `S-Refunded.dc.html` | `0416b78c7c8c3f4ddc467aafc44d6a62991ea64931673712f34dc7c7e3f01752` |
+| `S-Stalled.dc.html` | `775127b701bb6a7bd00f4a2dfe88284831e0c5652c7b0a813091c1a709754cc0` |
+| `S-Reverted.dc.html` | `33e7fbbebf148212e6e9275e776cc7e0b0668a66cc7402f59e123663f329bb30` |
+
+**G-UX-1** (S-12…S-14, drawn on `H-EthOrigin`), verbatim:
+- Route row: "USDC → AZTEC through LI.FI (1inch), then the gas leg is bridged." The token pair and the venue in
+  parentheses come from the route; the venue is the quote's tool name.
+- No gas route: "No route can buy Aztec gas on this network right now, so this send can't include gas."
+- Signature step, unchanged: "Sign the bridge intent in your Ethereum wallet — one signature covers the swap and the
+  deposit."
+
 ## Phases
 
 **G0, the common gate** (repository root unless noted; a fresh worktree first installs `contracts/bridge/evm/lib`
@@ -1244,7 +1277,7 @@ implements a random UX/UI instead of our definitions."* Design binding (under UI
 set, pinned by digest, the implementation spec, turns every undrawn surface into an owner gate, and makes a
 design deviation a loop finding.
 
-**Still open (owner or evidence):** G-UX-1 strings; G-UX-2 hybrid board set; I3 (a deadline-free AZTEC venue survives the warp test); I6 (the LI.FI
+**Still open (owner or evidence):** I3 (a deadline-free AZTEC venue survives the warp test); I6 (the LI.FI
 lib compiles in the time-box); I2 (Across testnet relayers fill message-bearing deposits).
 
 ## Audit verdicts
