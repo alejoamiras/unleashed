@@ -377,9 +377,31 @@ describe("useTokenSelection", () => {
 		expect(selection.balances.value.l2Public).toBe(99n)
 	})
 
-	it("a refresh for the token being replaced never lands on its replacement", async () => {
-		const resolving = deferred()
-		const pub = makePub({ registrations, gates: new Map([[USDT.erc20.toLowerCase(), resolving.promise]]) })
+	it("a refresh for a token the selection moved off never lands, even when the move failed", async () => {
+		let fail: (e: Error) => void = () => undefined
+		const resolving = new Promise<void>((_, reject) => {
+			fail = reject
+		})
+		const pub = makePub({ registrations, gates: new Map([[USDT.erc20.toLowerCase(), resolving]]) })
+		const { selection } = harness(pub)
+		await selection.select(selectable(USDC), "l1-to-l2")
+		const slowRead = deferred()
+		;(pub.multicall as unknown as Mock).mockImplementationOnce(async () => {
+			await slowRead.promise
+			return [{ status: "success", result: 100n }]
+		})
+		const next = selection.select(selectable(USDT), "l1-to-l2")
+		const late = selection.refreshBalances()
+		fail(new Error("registry unreachable"))
+		await next
+		slowRead.release()
+		await late
+		expect(selection.selected.value).toBeNull()
+		expect(selection.balances.value).toEqual({})
+	})
+
+	it("only the latest balance read lands, whatever order the answers come back in", async () => {
+		const pub = makePub({ registrations })
 		const { selection } = harness(pub)
 		await selection.select(selectable(USDC), "l1-to-l2")
 		const slowRead = deferred()
@@ -388,14 +410,11 @@ describe("useTokenSelection", () => {
 			await slowRead.promise
 			return [{ status: "success", result: 100n }]
 		})
-		const next = selection.select(selectable(USDT), "l1-to-l2")
 		const late = selection.refreshBalances()
 		multicall.mockImplementation(async () => [{ status: "success", result: 200n }])
-		resolving.release()
-		await next
+		await selection.refreshBalances()
 		slowRead.release()
 		await late
-		expect(selection.selected.value?.address).toBe(USDT.erc20.toLowerCase())
 		expect(selection.balances.value.l1).toBe(200n)
 	})
 
