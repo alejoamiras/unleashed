@@ -11,7 +11,7 @@
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { ERC20_ABI, type Registration } from "@unleashed/bridge-core"
 import { type Address, encodeFunctionData, type Hex, numberToHex, pad, type PublicClient, stringToHex } from "viem"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
 import rawManifest from "../../../../packages/bridge-core/fixtures/sandbox-manifest.json"
 import type { SelectableToken } from "@/lib/send-model"
 import { useTokenSelection } from "./useTokenSelection"
@@ -375,6 +375,28 @@ describe("useTokenSelection", () => {
 		publicBalance = 99n
 		await selection.refreshBalances()
 		expect(selection.balances.value.l2Public).toBe(99n)
+	})
+
+	it("a refresh for the token being replaced never lands on its replacement", async () => {
+		const resolving = deferred()
+		const pub = makePub({ registrations, gates: new Map([[USDT.erc20.toLowerCase(), resolving.promise]]) })
+		const { selection } = harness(pub)
+		await selection.select(selectable(USDC), "l1-to-l2")
+		const slowRead = deferred()
+		const multicall = pub.multicall as unknown as Mock
+		multicall.mockImplementationOnce(async () => {
+			await slowRead.promise
+			return [{ status: "success", result: 100n }]
+		})
+		const next = selection.select(selectable(USDT), "l1-to-l2")
+		const late = selection.refreshBalances()
+		multicall.mockImplementation(async () => [{ status: "success", result: 200n }])
+		resolving.release()
+		await next
+		slowRead.release()
+		await late
+		expect(selection.selected.value?.address).toBe(USDT.erc20.toLowerCase())
+		expect(selection.balances.value.l1).toBe(200n)
 	})
 
 	it("dispose drops an in-flight selection and stops refreshing", async () => {

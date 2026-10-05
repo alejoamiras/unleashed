@@ -193,6 +193,8 @@ const receiptL2Token = ref<string | null>(null)
 /** The add-token CTA waits for the wallet to say it lacks the receipt's token, so a token it already
  *  lists is never offered; a wallet that cannot answer says "lacks" (fail open). */
 const receiptTokenMissing = ref(false)
+/** Bumped by every receipt check and every add: only the latest question may answer. */
+let receiptCheck = 0
 /** The record RUN IN BACKGROUND handed to the journal; the wizard keeps a line on it until it completes. */
 const backgroundedId = ref<string | null>(null)
 /** What the review promised for it — the strip's subject, whatever the record's own units are. */
@@ -1082,7 +1084,6 @@ watch(
 		if (!done || stage.value !== "stepper" || !rec || !isSendRecord(rec)) return
 		receiptSnapshot.value = snapshotOf(rec)
 		receiptL2Token.value = rec.direction === "deposit" ? (rec.token?.l2Token ?? null) : null
-		if (receiptL2Token.value) void checkReceiptToken(receiptL2Token.value)
 		stage.value = "receipt"
 		// Release the takeover so the finished record surfaces in the journal list; the receipt renders
 		// from the snapshot, so it survives the release.
@@ -1132,7 +1133,6 @@ function onGoto(index: number): void {
 function onNewSend(): void {
 	receiptSnapshot.value = null
 	receiptL2Token.value = null
-	receiptTokenMissing.value = false
 	reviewSaid.value = null
 	receiptReview.value = null
 	resetAmount()
@@ -1196,17 +1196,23 @@ function showActivity(): void {
 	shell.openActivity(backgroundedCanonical.value ?? backgroundedId.value ?? undefined)
 }
 
-async function checkReceiptToken(l2Token: string): Promise<void> {
+async function checkReceiptToken(): Promise<void> {
+	const mine = ++receiptCheck
+	receiptTokenMissing.value = false
 	const wallet = bridge.wallet.value
-	if (!wallet) return
+	const l2Token = receiptL2Token.value
+	if (!wallet || !l2Token) return
 	let held = false
 	try {
 		held = await addToken.isRegistered(wallet, AztecAddress.fromStringUnsafe(l2Token))
 	} catch {
 		// A record's token address is user-writable storage; one that does not parse fails open too.
 	}
-	if (receiptL2Token.value === l2Token) receiptTokenMissing.value = !held
+	if (mine === receiptCheck) receiptTokenMissing.value = !held
 }
+
+// The answer is the connected wallet's own: another wallet or account asks again.
+watch([receiptL2Token, () => bridge.wallet.value, () => bridge.selectedAccount.value], () => void checkReceiptToken())
 
 async function onAddToken(): Promise<void> {
 	const wallet = bridge.wallet.value
@@ -1215,7 +1221,10 @@ async function onAddToken(): Promise<void> {
 	if (!wallet || !account || !l2Token) return
 	await addToken.addToken(wallet, account, AztecAddress.fromStringUnsafe(l2Token))
 	const final = addToken.status.value
-	if (final.kind === "ok" && receiptL2Token.value === l2Token) receiptTokenMissing.value = false
+	if (final.kind === "ok" && receiptL2Token.value === l2Token) {
+		receiptCheck++
+		receiptTokenMissing.value = false
+	}
 	if (final.kind === "ok") pushToast({ kind: "ok", text: "Token added to your Aztec wallet." })
 	else if (final.kind === "error") pushToast({ kind: "error", text: final.error.message })
 	else if (final.kind === "unsupported")

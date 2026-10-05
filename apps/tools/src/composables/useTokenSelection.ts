@@ -188,7 +188,9 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 		// The L2 side exists only once the hub has registered the token, and only an exit needs it up
 		// front — a deposit's L2 balance is whatever its own claim will create.
 		if (token.state.kind === "registered" && direction === "l2-to-l1") Object.assign(next, await readL2Balances(token))
-		if (stale(mine)) return
+		// A refresh shares the epoch of a selection still resolving, so the token and owner it read for
+		// are checked too: a late answer for either is another token's or account's balance.
+		if (stale(mine) || selected.value !== token || deps.l1Account() !== owner) return
 		balances.value = next
 	}
 

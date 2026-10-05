@@ -138,9 +138,11 @@ onBeforeUnmount(() => {
 	color: var(--ul-ink);
 }
 
+/* The page body is unselectable; an address must stay selectable when the clipboard is denied. */
 .addr {
 	min-width: 0;
 	overflow-wrap: anywhere;
+	user-select: text;
 	font: 400 13px/1.5 var(--ul-font-mono);
 	color: var(--ul-ink-2);
 }

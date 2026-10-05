@@ -109,6 +109,7 @@ const isRegisteredFn = vi.fn(async () => false)
 const aztecWallet = ref<object | null>(null)
 const l1WrongChain = ref(false)
 let rowOwner: () => string | undefined = () => undefined
+let selectionOwner: () => string | undefined = () => undefined
 const addTokenStatus = ref<{ kind: string; error?: { message: string } }>({ kind: "idle" })
 const toasts: { kind: string; text: string }[] = []
 
@@ -182,16 +183,19 @@ vi.mock("@/composables/useRowBalances", () => ({
 	},
 }))
 vi.mock("@/composables/useTokenSelection", () => ({
-	useTokenSelection: () => ({
-		selected,
-		balances,
-		loading: selectLoading,
-		error: selectionError,
-		epoch: () => epoch,
-		select: selectFn,
-		refreshBalances,
-		dispose: selectDispose,
-	}),
+	useTokenSelection: (deps: { l1Account: () => string | undefined }) => {
+		selectionOwner = deps.l1Account
+		return {
+			selected,
+			balances,
+			loading: selectLoading,
+			error: selectionError,
+			epoch: () => epoch,
+			select: selectFn,
+			refreshBalances,
+			dispose: selectDispose,
+		}
+	},
 }))
 vi.mock("@/composables/useTokenGrant", () => ({
 	useTokenGrant: () => ({
@@ -1563,11 +1567,11 @@ describe("SendWizard", () => {
 		expect(rowOwner()).toBe(L1_ADDRESS)
 		l1WrongChain.value = true
 		await flushPromises()
-		expect(rowOwner()).toBeUndefined()
+		expect([rowOwner(), selectionOwner()]).toEqual([undefined, undefined])
 		refreshBalances.mockClear()
 		l1WrongChain.value = false
 		await flushPromises()
-		expect(rowOwner()).toBe(L1_ADDRESS)
+		expect([rowOwner(), selectionOwner()]).toEqual([L1_ADDRESS, L1_ADDRESS])
 		expect(refreshBalances).toHaveBeenCalledOnce()
 	})
 
@@ -1627,6 +1631,28 @@ describe("SendWizard", () => {
 		const receipt = w.findComponent({ name: "BridgeReceipt" })
 		expect(receipt.exists()).toBe(true)
 		expect(receipt.props("snapshot").addTokenLabel).toBeUndefined()
+	})
+
+	it("a replaced wallet's late answer does not decide the add-token offer", async () => {
+		let answerOld: (held: boolean) => void = () => undefined
+		isRegisteredFn.mockImplementationOnce(() => new Promise<boolean>((resolve) => (answerOld = resolve)))
+		isRegisteredFn.mockResolvedValue(true)
+		sendFn.mockImplementation(async () => {
+			records.value = [...records.value, sendRecord("rec-2")]
+			return "rec-2"
+		})
+		const w = await wizard()
+		const review = await atReview(w)
+		review.vm.$emit("confirm")
+		await flushPromises()
+		records.value = [{ ...records.value[0], completedAt: 9_000 }]
+		await flushPromises()
+		aztecWallet.value = {}
+		await flushPromises()
+		answerOld(false)
+		await flushPromises()
+		expect(isRegisteredFn).toHaveBeenCalledTimes(2)
+		expect(w.findComponent({ name: "BridgeReceipt" }).props("snapshot").addTokenLabel).toBeUndefined()
 	})
 
 	it("a record whose decimals change before it completes cannot rescale what the review said", async () => {
