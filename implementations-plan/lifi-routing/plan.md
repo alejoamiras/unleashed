@@ -436,14 +436,14 @@ does it in brackets.
   `src/interfaces/IFeeAssetHandler.sol`, `src/interfaces/ILiFiSwap.sol` (the two selectors' ABI only),
   `src/mocks/TestSpokePool.sol`, `src/mocks/SourceAcrossStub.sol` [1]; tests per the table, `test/mocks/LiFiMocks.sol`
   (fallback twins only) [1]; M `script/DeployGeneration.s.sol` (router-only path, swapper) [2], `foundry.toml`
-  (`lifi` profile; `fs_permissions` read on `test/fixtures`) [1], `.gas-snapshot` [1], `README.md` (threat model:
+  (`lifi` profile [1]; `fs_permissions` read-write on `test/fixtures/lifi`, where the recorder's runs write receipts
+  [1]), `test/fixtures/lifi/testnet-rail.json` and its two receipt files [1], `.gas-snapshot` [1], `README.md` (threat model:
   the caller path, the immutable swap policy; INFO: the swapper never targets mainnet; "12 halmos proofs" → 23 [1]
   → 15 [5]) [1, 5]; `foundry.toml` and `packages/bridge-core/scripts/gen-remappings.ts` drop `@uniswap/v4-core/` [5];
   D the old router, every V4 contract, mock and pool script, and their suites, per `research/uniswap-removal.md`
   [5]. The research fork proofs move in only after their imports, blocks and RPC names are reconciled (recon risk 9).
-- **Core** (`packages/bridge-core/src`): A `across-v4.ts` (the Phase 0 vector), `deposit-router-abi.ts` (pinned
-  against the forge artifact), `lifi-gas.ts` (the measured `toContractGasLimit` and venue set) [1]; A `lifi-addresses.ts`, `lifi-abi.ts` (hand-written, pinned against the
-  fixtures), `lifi-api.ts`, `lifi-decode.ts`, `stargate.ts` (decoder), `fuel-quote.ts`,
+- **Core** (`packages/bridge-core/src`): A `across-v4.ts` (the Phase 0 vector), `lifi-abi.ts` (the shared struct ABIs, Phase 0), `deposit-router-abi.ts` (pinned
+  against the forge artifact), `lifi-gas.ts` (the measured `toContractGasLimit` and venue set) [1]; A `lifi-addresses.ts`, `lifi-api.ts`, `lifi-decode.ts`, `stargate.ts` (decoder), `fuel-quote.ts`,
   `source-chains.ts`, `crosschain-discovery.ts` (its `Deposited` parser is the only one; arc 4's
   `send-flow.ts` `readSendReceiptLeaves` switches to it), `capped-fetch.ts`
   (extracted from `token-list.ts`, which switches to it) [2]; M `manifest-v2.ts`, `journal.ts`, `backup.ts`,
@@ -452,7 +452,7 @@ does it in brackets.
   `router-abi.ts` → `legacy-router-abi.ts` [4, 5]; D `route.ts`, `route-discovery.ts`, `quote.ts` and their tests,
   `route-conformance.test.ts`, `swap.test.ts`, `quoter-abi.test.ts` [5]. Reused as-is: `gas-share.ts`,
   `claim-secret.ts`, `seal-trust.ts`, `private-fuel.ts`, `hub-l2.ts`, `fee-juice.ts`.
-- **Core scripts**: A `lifi-fixtures.ts` (encodes through `deposit-router-abi.ts`, records raw li.quest responses
+- **Core scripts**: A `lifi-fixtures.ts` (`testnet-rail` since Phase 0; encodes through `deposit-router-abi.ts`, records raw li.quest responses
   with a plain timed `fetch`; the decoder validates them in Phase 4) [1]; A `lifi-canary-testnet.ts`
   (reads `CANARY_PRIVATE_KEY`, public Sepolia and Base Sepolia RPCs by default), `sandbox/relayer.ts` [2]; M `sandbox/forge.ts` builds the `lifi` profile [2];
   A `fill-testnet.ts` (self-fills one named Base Sepolia source transaction on Sepolia from the canary key) [2];
@@ -830,7 +830,7 @@ every meaningful step. Every phase logs to `implementations-plan/lifi-routing/le
 
 ### Arc 1: contracts and rail proofs (old router untouched)
 
-#### Phase 0: Testnet rail feasibility with LI.FI's real contracts, no new contract
+#### Phase 0: Testnet rail feasibility with LI.FI's real contracts, no new contract ✓
 
 (F1) On a Base Sepolia fork, our `across-v4.ts` builder's byte vector for `startBridgeTokensViaAcrossV4` (user
 USDC, Sepolia ReceiverAcrossV4 as recipient, refund = user, message `(txId, SwapData[], receiver)`) is accepted by
@@ -1176,6 +1176,8 @@ per-network router logic.
 **D21 Feasibility phase.** lead: F1–F3 with a probe sink. fable: no new contract, the Executor step deposits into a
 real clone. codex: ten evidence items. **Verdict:** lead's F1–F3 with fable's real-clone step (it proves Executor →
 portal); codex's mainnet-grammar, bounded-acquisition and gas items go to Phase 2 with the mainnet fixtures.
+**Outcome (Phase 0): path A, all LI.FI.** F1–F3 pass on Base Sepolia and Sepolia forks against the deployed
+Diamond, SpokePools, ReceiverAcrossV4 and Executor; the event facts discovery needs are in `lessons/phase-0.md`.
 
 **D22 LI.FI code in tests.** lead: commit unmodified LGPL bytecode with provenance. fable: pinned gitignored lib,
 own profile; twins + parity fork as fallback. codex: pinned source closure as third-party fixtures. **Verdict:
@@ -1242,7 +1244,7 @@ implements a random UX/UI instead of our definitions."* Design binding (under UI
 set, pinned by digest, the implementation spec, turns every undrawn surface into an owner gate, and makes a
 design deviation a loop finding.
 
-**Still open (owner or evidence):** G-UX-1 strings; G-UX-2 hybrid board set; Phase 0's testnet path (A/B/C); I3 (a deadline-free AZTEC venue survives the warp test); I6 (the LI.FI
+**Still open (owner or evidence):** G-UX-1 strings; G-UX-2 hybrid board set; I3 (a deadline-free AZTEC venue survives the warp test); I6 (the LI.FI
 lib compiles in the time-box); I2 (Across testnet relayers fill message-bearing deposits).
 
 ## Audit verdicts
