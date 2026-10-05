@@ -25,6 +25,7 @@ import {
 	type DiscoveryLog,
 	discoverCrossChain,
 	discoveryPatch,
+	readRouterDeposit,
 } from "./crosschain-discovery"
 import { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
 import { TOKEN_PORTAL_ABI } from "./factory-abi"
@@ -655,5 +656,28 @@ describe("discoverCrossChain", () => {
 		const r = () => reads([sourceTx(ROUTED)], [fillTx(checkpointed)])
 		expect(await discover(record(), r(), checkpointCtx)).toMatchObject({ verdict: "deposited", deposit: FACTS })
 		expect(verdictOf(await discover(record(), r()))).toBe("incomplete: the Inbox inserted no token leaf")
+	})
+})
+
+describe("readRouterDeposit", () => {
+	const intent = PUBLIC.intent
+	const expected = {
+		l1ChainId: ETH,
+		isPrivate: false,
+		recipient: intent.aztecRecipient as Hex,
+		token: { erc20: RAIL.destination.usdc as Address, secretHash: intent.tokenSecretHash as Hex },
+		fuel: { secretHash: intent.fuelSecretHash as Hex },
+	}
+	const logs = ROUTED.destination.logs
+	const eth = ACROSS_CTX.ethereum
+
+	it("authenticates a transaction's own router deposit exactly as discovery does, and nothing else", async () => {
+		expect(await readRouterDeposit(logs, FILL_TX, eth, expected)).toEqual(FACTS)
+		const other = { ...expected, token: { ...expected.token, secretHash: label("other") } }
+		await expect(readRouterDeposit(logs, FILL_TX, eth, other)).rejects.toThrow("carries 0 router Deposited events")
+		const twice = [...logs, ...logs.filter((l) => eq(l.address, eth.router))]
+		await expect(readRouterDeposit(twice, FILL_TX, eth, expected)).rejects.toThrow("carries 2 router Deposited events")
+		const otherRollup = { ...eth, inbox: { ...eth.inbox, rollupVersion: 1n } }
+		await expect(readRouterDeposit(logs, FILL_TX, otherRollup, expected)).rejects.toThrow("leaf does not recompute")
 	})
 })

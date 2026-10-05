@@ -1,5 +1,20 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { assertL1Pins, assertNoSourceDrift, type NodeIdentity } from "./live-intent"
+import { type ManifestToken, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import type { DeployStep } from "./deploy-manifest"
+import {
+	assertL1Pins,
+	assertNoSourceDrift,
+	assertRouterOnlyJournal,
+	assertRouterOnlyScope,
+	isAllowlistedPath,
+	type NodeIdentity,
+	PLAN_PINNED_CANARY_SIGNERS,
+	PLAN_PINNED_L1_SIGNERS,
+	requirePinnedCanarySigner,
+	routerOnlyScopeOf,
+} from "./live-intent"
 
 const pinned = {
 	rollup: "0x8c2fb2a68a3d362ab1de99e06f83f8903160bbd9",
@@ -38,5 +53,68 @@ describe("assertNoSourceDrift", () => {
 		expect(() => assertNoSourceDrift(source(""))).toThrow(/source\.commit is empty/)
 		expect(() => assertNoSourceDrift({} as never)).toThrow(/source\.commit is empty/)
 		expect(() => assertNoSourceDrift(source("HEAD"))).toThrow(/not a 40-hex commit/)
+	})
+
+	it("lets the lifi-routing arc's lessons change mid-arc, but never the reset baseline", () => {
+		expect(isAllowlistedPath("implementations-plan/lifi-routing/lessons/phase-6.md")).toBe(true)
+		expect(isAllowlistedPath("implementations-plan/lifi-routing/plan.md")).toBe(false)
+		expect(isAllowlistedPath("implementations-plan/archive/aztec-v6/lessons/intent.json")).toBe(false)
+	})
+})
+
+describe("router-only intent", () => {
+	const live = parseManifestV2(
+		JSON.parse(readFileSync(join(import.meta.dirname, "../../../apps/tools/public/testnet-bridge.json"), "utf8")),
+	)
+	const bridge = live.bridge
+	if (!bridge) throw new Error("the live testnet manifest carries no bridge")
+	const WETH = "0xfff9976782d46cc05630d1f6ebab18b2324d6b14"
+	const scope = routerOnlyScopeOf(live, [WETH.toUpperCase().replace("0X", "0x")], 12)
+	const routerOnly = { depositRouter: `0x${"d1".repeat(20)}`, fuelSwapper: `0x${"f5".repeat(20)}` }
+	const weth: ManifestToken = { ...(bridge.tokens[0] as ManifestToken), erc20: WETH }
+	const candidate = (l1: object = {}, tokens = [...bridge.tokens, weth]): ManifestV2 => ({
+		...live,
+		bridge: { ...bridge, l1: { ...bridge.l1, ...routerOnly, ...l1 }, tokens },
+	})
+
+	it("accepts a candidate that only adds the two contracts and the named tokens", () => {
+		expect(() => assertRouterOnlyScope(scope, candidate())).not.toThrow()
+	})
+
+	it("refuses a moved factory or legacy router, a dropped or re-derived live token, an unnamed token, or no new router", () => {
+		expect(() => assertRouterOnlyScope(scope, candidate({ factory: routerOnly.depositRouter }))).toThrow(/candidate factory/)
+		expect(() => assertRouterOnlyScope(scope, candidate({ router: routerOnly.depositRouter }))).toThrow(/candidate router/)
+		expect(() => assertRouterOnlyScope(scope, candidate({}, bridge.tokens.slice(1)))).toThrow(/live token .* missing/)
+		const rederived: ManifestToken = { ...(bridge.tokens[0] as ManifestToken), l2Token: `0x${"ab".repeat(32)}` }
+		expect(() => assertRouterOnlyScope(scope, candidate({}, [rederived, ...bridge.tokens.slice(1)]))).toThrow(/derives elsewhere/)
+		const stranger = { ...weth, erc20: `0x${"5a".repeat(20)}` }
+		expect(() => assertRouterOnlyScope(scope, candidate({}, [...bridge.tokens, stranger]))).toThrow(/did not name/)
+		expect(() => assertRouterOnlyScope(scope, candidate({ depositRouter: undefined }))).toThrow(/no depositRouter/)
+	})
+
+	it("allows only the arc's own journal steps after build, and refuses a rewritten journal", () => {
+		const before = Array.from({ length: 12 }, (): DeployStep => ({ kind: "candidate-written", path: "x" }))
+		const tx = `0x${"ab".repeat(32)}`
+		const deployed = (kind: "fuel-swapper-deployed" | "deposit-router-deployed"): DeployStep => ({
+			kind,
+			address: routerOnly.depositRouter,
+			txHash: tx,
+			creationCodeHash: tx,
+			constructorArgs: [WETH],
+		})
+		const precreated = (erc20: string): DeployStep => ({ kind: "token-precreated", erc20, portal: WETH })
+		const ok = [...before, deployed("fuel-swapper-deployed"), deployed("deposit-router-deployed"), precreated(WETH)]
+		expect(() => assertRouterOnlyJournal(scope, ok)).not.toThrow()
+		expect(() => assertRouterOnlyJournal(scope, [...ok, { kind: "router-deployed", router: WETH, txHash: tx }])).toThrow(/outside/)
+		expect(() => assertRouterOnlyJournal(scope, [...ok, precreated(`0x${"5a".repeat(20)}`)])).toThrow(/does not name/)
+		expect(() => assertRouterOnlyJournal(scope, before.slice(1))).toThrow(/rewritten/)
+	})
+
+	it("refuses every canary-signed run while the canary key is unpinned, and never pins it to a deploy signer", () => {
+		expect(PLAN_PINNED_CANARY_SIGNERS.testnet).toBeNull()
+		expect(() => requirePinnedCanarySigner("testnet")).toThrow(/no pinned canary signer/)
+		const deploySigners = Object.values(PLAN_PINNED_L1_SIGNERS).map((s) => s?.toLowerCase())
+		for (const canary of Object.values(PLAN_PINNED_CANARY_SIGNERS))
+			if (canary) expect(deploySigners).not.toContain(canary.toLowerCase())
 	})
 })

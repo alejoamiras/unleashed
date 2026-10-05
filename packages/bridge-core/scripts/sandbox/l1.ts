@@ -100,6 +100,9 @@ export interface L1Deployment {
 	/** MockV4Quoter — answers discovery for the routable tokens with quotes the swap target settles exactly. */
 	quoter: Address
 	tokens: Record<SpecKey, Address>
+	/** The `DepositRouter` beside the old router, and its `SWAP_TARGET`; set once the generation exists. */
+	depositRouter?: Address
+	fuelSwapper?: Address
 }
 
 /** Lets discovery find a route for `token` through the facade (NORT is deliberately never listed). */

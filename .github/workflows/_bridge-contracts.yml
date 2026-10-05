@@ -346,10 +346,27 @@ jobs:
             OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
             Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
 
+      # The sandbox deploys LI.FI's Executor, ERC20Proxy and ReceiverAcrossV4 from the `lifi`
+      # profile's artifacts: same commit and same clean-up as the forge job.
+      - name: Install LI.FI contracts
+        working-directory: contracts/bridge/evm
+        run: forge install --no-git lifi-contracts=lifinance/contracts@rev=65bae143b249a5fba3dd27d506e9e1d6d8538899
+
+      - name: Remove agent files and .env files from lib/
+        working-directory: contracts/bridge/evm
+        run: |
+          find lib \( -name .claude -o -name .agents -o -name .cursor \) -prune -exec rm -rf {} +
+          find lib \( -name .env -o -name '.env.*' -o -name CLAUDE.md -o -name AGENTS.md -o -name .mcp.json \
+            -o -name '.cursorrules*' -o -path '*/.github/copilot-instructions.md' \) -exec rm -f {} +
+
       - name: Generate remappings + forge build
         run: |
           bun packages/bridge-core/scripts/gen-remappings.ts
           forge build --root contracts/bridge/evm
+
+      - name: forge build (lifi profile)
+        working-directory: contracts/bridge/evm
+        run: FOUNDRY_PROFILE=lifi forge build
 
       - name: Integration suite
         run: bun run --cwd packages/bridge-core test:integration

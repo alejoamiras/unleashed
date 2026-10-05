@@ -593,7 +593,7 @@ const PAUSED_ERRORS = {
 	withdraws: { name: "WithdrawsPaused", selector: toFunctionSelector("WithdrawsPaused()") },
 }
 /** The owner's switch is not part of the app-facing factory ABI (the app only reads the flags). */
-const SET_PAUSED_ABI = parseAbi(["function setPaused(bool deposits, bool withdraws)"])
+export const SET_PAUSED_ABI = parseAbi(["function setPaused(bool deposits, bool withdraws)"])
 
 /** Whether a portal call reverts with the named pause error — by name where the ABI decodes it,
  *  by selector otherwise. */

@@ -3,11 +3,13 @@
  * the operator-only factory/router constants the app's ABIs omit, and the portal/router preflights
  * every gate runs before it trusts a generation.
  */
-import { type Address, type Chain, defineChain } from "viem"
+import { type Abi, type Address, type Chain, defineChain, type Hex } from "viem"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
+import type { L1Ctx } from "../src/flows"
 import { ensurePermit2Allowance } from "../src/l1"
 import { predictPortal } from "../src/portal-address"
 import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
+import { sourceChain } from "../src/source-chains"
 
 /** Minimal ERC20 surface the scripts touch. A superset per consumer is harmless — viem only
  *  encodes the functions actually called. */
@@ -57,6 +59,82 @@ export const PORTAL_IMPL_CONSTANTS_ABI = [
 	{ type: "function", name: "ROLLUP_VERSION", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 	{ type: "function", name: "L2_HUB", stateMutability: "view", inputs: [], outputs: [{ type: "bytes32" }] },
 ] as const
+
+/** `TestnetFuelSwapper`'s operator surface. */
+export const FUEL_SWAPPER_ABI = [
+	{ type: "function", name: "FEE_ASSET", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "FEE_ASSET_HANDLER", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "rate", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+	{
+		type: "function",
+		name: "setRate",
+		stateMutability: "nonpayable",
+		inputs: [{ type: "address" }, { type: "uint256" }],
+		outputs: [],
+	},
+] as const
+
+/** Aztec's testnet fee-asset faucet: permissionless, `mintAmount()` per call. */
+export const FEE_ASSET_HANDLER_ABI = [
+	{ type: "function", name: "mint", stateMutability: "nonpayable", inputs: [{ type: "address" }], outputs: [] },
+	{ type: "function", name: "mintAmount", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+] as const
+
+/** How many floor-sized fueled sends the swapper's inventory should cover before `verify-l1` warns. Below it a swap
+ *  still settles: the swapper mints from the faucet itself when short. */
+export const SWAPPER_INVENTORY_SENDS = 10n
+
+/** The stated inventory floor for a manifest's `fuel.minFuelFj`. */
+export const swapperInventoryFloor = (minFuelFj: string | bigint): bigint => BigInt(minFuelFj) * SWAPPER_INVENTORY_SENDS
+
+/** The env var that overrides each source chain's read RPC; without it the source catalogue's first keyless
+ *  provider is used, and a chain with neither has no RPC. */
+const SOURCE_RPC_ENV: Readonly<Record<number, string>> = {
+	84532: "BASE_SEPOLIA_RPC_URL",
+	8453: "BASE_RPC_URL",
+	42161: "ARBITRUM_RPC_URL",
+	10: "OPTIMISM_RPC_URL",
+}
+
+export function sourceRpcUrl(chainId: number, env: Readonly<Record<string, string | undefined>> = process.env): string | undefined {
+	const name = SOURCE_RPC_ENV[chainId]
+	return (name ? env[name] : undefined) || sourceChain(chainId)?.rpcUrls[0]
+}
+
+/** One write, waited for: a reverted receipt throws, so no later step runs on a transaction that did nothing. */
+export async function sendL1(
+	l1: L1Ctx,
+	call: { address: Address; abi: Abi; functionName: string; args: readonly unknown[] },
+): Promise<Hex> {
+	const hash = await l1.wallet.writeContract({ ...call, account: l1.account, chain: l1.wallet.chain } as never)
+	const receipt = await l1.pub.waitForTransactionReceipt({ hash })
+	if (receipt.status !== "success") throw new Error(`${call.functionName} on ${call.address} REVERTED (${hash}) — STOP`)
+	return hash
+}
+
+/**
+ * Leaves `spender`'s allowance over `owner`'s `token` at exactly `amount`, never above: a standing max approval is
+ * what an exploited spender drains. A token that refuses to move a non-zero allowance (USDT) is reset to zero
+ * first. Returns the transactions sent, none when the allowance already equals `amount`.
+ */
+export async function approveExact(l1: L1Ctx, token: Address, spender: Address, amount: bigint): Promise<Hex[]> {
+	const read = async () =>
+		(await l1.pub.readContract({
+			address: token,
+			abi: ERC20_MIN_ABI,
+			functionName: "allowance",
+			args: [l1.account.address, spender],
+		})) as bigint
+	const current = await read()
+	if (current === amount) return []
+	const approve = (value: bigint) => sendL1(l1, { address: token, abi: ERC20_MIN_ABI, functionName: "approve", args: [spender, value] })
+	const sent = current > 0n && amount > 0n ? [await approve(0n)] : []
+	sent.push(await approve(amount))
+	const after = await read()
+	if (after !== amount) throw new Error(`allowance of ${spender} over ${token} is ${after} after approving exactly ${amount} — STOP`)
+	return sent
+}
 
 export const lc = (v: unknown) => String(v).toLowerCase()
 

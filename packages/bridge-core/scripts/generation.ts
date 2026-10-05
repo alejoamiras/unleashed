@@ -24,8 +24,9 @@ import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { getContractClassFromArtifact } from "@aztec-labs/stdlib/contract"
 import { resolvePackageAsset } from "@alejoamiras/nulo-resolve-asset"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
-import { type Address, getContractAddress, type Hex } from "viem"
+import { type Address, getContractAddress, type Hex, keccak256 } from "viem"
 import { tokenBridgeHubArtifact } from "../src/artifacts"
+import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import { type Registration, readRegistration } from "../src/factory-registry"
 import type { L1Ctx } from "../src/flows"
@@ -38,7 +39,7 @@ import { fromWord } from "../src/register-hash"
 import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
 import type { DeployJournal, DeployStep, DeployStepKind } from "./deploy-manifest"
 import { evmArtifact } from "./script-artifacts"
-import { ROUTER_CONSTANTS_ABI } from "./script-l1"
+import { FUEL_SWAPPER_ABI, ROUTER_CONSTANTS_ABI } from "./script-l1"
 import { deriveInstance, registerHub, registerHubToken } from "./script-l2"
 
 export type AztecNode = ReturnType<typeof createAztecNodeClient>
@@ -322,14 +323,19 @@ async function deployHub(
 
 // ─── Read-backs ──────────────────────────────────────────────────────────────
 
-type RouterBindings = Pick<GenerationRecord["l1"], "permit2" | "swapTarget" | "feeJuicePortal">
+type LegacyRouterBindings = Pick<GenerationRecord["l1"], "permit2" | "swapTarget" | "feeJuicePortal">
 
 /**
  * The router's immutables, read back rather than copied from the inputs: a resumed generation keeps
  * the router it deployed, and that router's swap target is the one every witness is bound to — a
  * candidate naming a fresher input would sign sends the router rejects.
  */
-async function readRouterBindings(l1: L1Ctx, inputs: GenerationInputs, router: Address, factory: Address): Promise<RouterBindings> {
+async function readLegacyRouterBindings(
+	l1: L1Ctx,
+	inputs: GenerationInputs,
+	router: Address,
+	factory: Address,
+): Promise<LegacyRouterBindings> {
 	const read = (functionName: "FACTORY" | "FEE_ASSET" | "permit2" | "feeJuicePortal" | "swapTarget") =>
 		l1.pub.readContract({ address: router, abi: [...SWAP_BRIDGE_ROUTER_ABI, ...ROUTER_CONSTANTS_ABI], functionName, args: [] })
 	assertSame(String(await read("FACTORY")), factory, "router.FACTORY")
@@ -365,7 +371,7 @@ export async function deployGeneration(l1: L1Ctx, l2: L2Ctx, inputs: GenerationI
 	const { factory, implementation } = await deployFactory(l1, inputs, predicted, hubInstance.address.toString(), journal)
 	const router = await deployRouter(l1, inputs, factory, journal)
 	await deployHub(l2, hubInstance, args, factory, journal)
-	const bindings = await readRouterBindings(l1, inputs, router, factory)
+	const bindings = await readLegacyRouterBindings(l1, inputs, router, factory)
 
 	const record: GenerationRecord = {
 		l1: {
@@ -521,4 +527,147 @@ export async function preCreateToken(
 	}
 	console.log(`  ${token.displaySymbol} ${erc20} → portal ${token.portal}${registerTxHash ? " (registered)" : ""}`)
 	return token
+}
+
+// ─── DepositRouter + TestnetFuelSwapper ──────────────────────────────────────
+
+const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000"
+
+export type AdoptableKind = "fuel-swapper-deployed" | "deposit-router-deployed"
+type AdoptableStep = Extract<DeployStep, { kind: AdoptableKind }>
+
+/** A contract the router-only arc deployed or adopted. */
+export interface AdoptableDeploy {
+	address: Address
+	/** No transaction was sent: an identical journalled contract with code on chain was reused. */
+	adopted: boolean
+}
+
+/** What a journalled step must equal to be adopted, as this run would deploy it. */
+export interface AdoptionKey {
+	creationCodeHash: Hex
+	constructorArgs: Address[]
+}
+
+export function adoptionKey(contract: string, args: readonly string[]): AdoptionKey {
+	return { creationCodeHash: keccak256(evmArtifact(contract).bytecode), constructorArgs: args.map(lc) }
+}
+
+const sameKey = (step: AdoptableStep, key: AdoptionKey): boolean =>
+	step.creationCodeHash.toLowerCase() === key.creationCodeHash &&
+	step.constructorArgs.length === key.constructorArgs.length &&
+	step.constructorArgs.every((a, i) => a.toLowerCase() === key.constructorArgs[i])
+
+/**
+ * The newest journalled `kind` whose creation code and constructor arguments both equal `key` and whose address
+ * carries code on this chain; `undefined` means the run must deploy. Read-only, so a dry run can report it.
+ */
+export async function findAdoptable(
+	l1: L1Ctx,
+	journal: Pick<DeployJournal, "steps">,
+	kind: AdoptableKind,
+	key: AdoptionKey,
+): Promise<Address | undefined> {
+	const matches = journal.steps.filter((s): s is AdoptableStep => s.kind === kind && sameKey(s, key)).reverse()
+	for (const step of matches) {
+		const code = await l1.pub.getCode({ address: step.address as Address })
+		if (code && code !== "0x") return lc(step.address)
+		console.log(`  ${kind} ${step.address} matches but has no code on this chain — not adopted`)
+	}
+	return undefined
+}
+
+/**
+ * Adopts an identical journalled contract, or deploys at a pinned nonce and appends a new step. Only an exact
+ * match is adopted: a contract whose code or arguments changed is a new contract, and the step that named its
+ * predecessor stays as written. The step is appended after the receipt, so a crash between landing and the
+ * append leaves an orphan that the re-run replaces with a fresh deploy.
+ */
+async function deployOrAdopt(
+	l1: L1Ctx,
+	journal: DeployJournal,
+	kind: AdoptableKind,
+	contract: string,
+	args: Address[],
+): Promise<AdoptableDeploy> {
+	const key = adoptionKey(contract, args)
+	const adopted = await findAdoptable(l1, journal, kind, key)
+	if (adopted) {
+		console.log(`  ${contract}: ${adopted} (adopted — identical code and constructor arguments)`)
+		return { address: adopted, adopted: true }
+	}
+	const nonce = await nonceOf(l1)
+	const predicted = lc(getContractAddress({ from: l1.account.address, nonce }))
+	const { address, txHash } = await deployEvm(l1, contract, key.constructorArgs, nonce)
+	assertSame(address, predicted, `${contract} address`)
+	journal.append({ kind, address, txHash, ...key })
+	return { address, adopted: false }
+}
+
+export interface FuelSwapperArgs {
+	feeAsset: Address
+	/** The permissionless testnet faucet the swapper tops itself up from; absent means inventory only. */
+	feeAssetHandler?: Address
+	owner: Address
+}
+
+export function fuelSwapperArgs(a: FuelSwapperArgs): Address[] {
+	return [a.feeAsset, a.feeAssetHandler ?? ZERO_ADDRESS, a.owner]
+}
+
+/** `TestnetFuelSwapper`: the DepositRouter's swap target off mainnet, where its constructor refuses chain 1. */
+export function deployFuelSwapper(l1: L1Ctx, journal: DeployJournal, a: FuelSwapperArgs): Promise<AdoptableDeploy> {
+	return deployOrAdopt(l1, journal, "fuel-swapper-deployed", "TestnetFuelSwapper", fuelSwapperArgs(a))
+}
+
+export interface DepositRouterArgs {
+	permit2: Address
+	feeJuicePortal: Address
+	factory: Address
+	swapTarget: Address
+	owner: Address
+}
+
+/** The constructor's own order; its fee asset is not an argument but the portal's `UNDERLYING()`. */
+export function depositRouterArgs(a: DepositRouterArgs): Address[] {
+	return [a.permit2, a.feeJuicePortal, a.factory, a.swapTarget, a.owner]
+}
+
+export function deployDepositRouter(l1: L1Ctx, journal: DeployJournal, a: DepositRouterArgs): Promise<AdoptableDeploy> {
+	return deployOrAdopt(l1, journal, "deposit-router-deployed", "DepositRouter", depositRouterArgs(a))
+}
+
+export interface RouterBindings extends DepositRouterArgs {
+	feeAsset: Address
+}
+
+/**
+ * The DepositRouter's immutables and owner as the chain holds them. A router is bound to these for its whole life,
+ * so the candidate names a router only after its readback equals what the generation expects.
+ */
+export async function readRouterBindings(l1: L1Ctx, router: Address): Promise<RouterBindings> {
+	const read = async (functionName: "PERMIT2" | "FEE_JUICE_PORTAL" | "FACTORY" | "FEE_ASSET" | "SWAP_TARGET") =>
+		lc(String(await l1.pub.readContract({ address: router, abi: DEPOSIT_ROUTER_ABI, functionName, args: [] })))
+	const owner = await l1.pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "owner", args: [] })
+	return {
+		permit2: await read("PERMIT2"),
+		feeJuicePortal: await read("FEE_JUICE_PORTAL"),
+		factory: await read("FACTORY"),
+		feeAsset: await read("FEE_ASSET"),
+		swapTarget: await read("SWAP_TARGET"),
+		owner: lc(String(owner)),
+	}
+}
+
+/** Every field of `expected` against the chain's readback, naming the first that differs. */
+export function assertBindings(label: string, actual: object, expected: object): void {
+	const got = actual as Record<string, unknown>
+	for (const [field, want] of Object.entries(expected)) assertSame(String(got[field]), String(want), `${label}.${field}`)
+}
+
+/** The swapper's constructor bindings as the chain holds them. */
+export async function readFuelSwapperBindings(l1: L1Ctx, swapper: Address): Promise<Required<FuelSwapperArgs>> {
+	const read = async (functionName: "FEE_ASSET" | "FEE_ASSET_HANDLER" | "owner") =>
+		lc(String(await l1.pub.readContract({ address: swapper, abi: FUEL_SWAPPER_ABI, functionName, args: [] })))
+	return { feeAsset: await read("FEE_ASSET"), feeAssetHandler: await read("FEE_ASSET_HANDLER"), owner: await read("owner") }
 }

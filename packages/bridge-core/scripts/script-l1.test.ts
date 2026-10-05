@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest"
+import type { L1Ctx } from "../src/flows"
 import { predictPortal } from "../src/portal-address"
 import {
+	approveExact,
 	assertFactoryPortal,
 	assertRouterWitnessShape,
 	assertSame,
 	type FactoryReader,
 	retryOnRevert,
 	type RouterReader,
+	sourceRpcUrl,
 } from "./script-l1"
 
 const ROUTER = `0x${"1a".repeat(20)}` as const
@@ -66,6 +69,38 @@ describe("script-l1", () => {
 		await expect(assertFactoryPortal(factory(`0x${"88".repeat(20)}`), FACTORY, IMPLEMENTATION, ERC20, portal)).rejects.toThrow(
 			/factory\.predictPortal/,
 		)
+	})
+
+	it("approveExact leaves exactly the amount, resetting a non-zero allowance first, and sends nothing when it already is", async () => {
+		let allowance = 5n
+		const approvals: bigint[] = []
+		const l1 = {
+			account: { address: ROUTER },
+			wallet: {
+				chain: undefined,
+				writeContract: vi.fn(async ({ args }: { args: [string, bigint] }) => {
+					approvals.push(args[1])
+					allowance = args[1]
+					return "0xa1"
+				}),
+			},
+			pub: {
+				readContract: vi.fn(async () => allowance),
+				waitForTransactionReceipt: vi.fn(async () => ({ status: approvals.at(-1) === 13n ? "reverted" : "success" })),
+			},
+		} as unknown as L1Ctx
+		expect(await approveExact(l1, ERC20, SWAP_TARGET, 7n)).toHaveLength(2)
+		expect(approvals).toEqual([0n, 7n])
+		expect(await approveExact(l1, ERC20, SWAP_TARGET, 7n)).toEqual([])
+		// A reverted approval stops the run rather than leaving an allowance nobody checked.
+		await expect(approveExact(l1, ERC20, SWAP_TARGET, 13n)).rejects.toThrow(/REVERTED/)
+	})
+
+	it("sourceRpcUrl takes the chain's override, else the catalogue's keyless provider, else none", () => {
+		expect(sourceRpcUrl(84532, {})).toBe("https://base-sepolia-rpc.publicnode.com")
+		expect(sourceRpcUrl(84532, { BASE_SEPOLIA_RPC_URL: "http://127.0.0.1:1" })).toBe("http://127.0.0.1:1")
+		expect(sourceRpcUrl(8453, {})).toBeUndefined()
+		expect(sourceRpcUrl(31338, {})).toBeUndefined()
 	})
 
 	it("retryOnRevert retries ONLY the transient REVERTED case, rethrows everything else", async () => {

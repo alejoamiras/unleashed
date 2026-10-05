@@ -1,6 +1,6 @@
 ---
 name: bridge-generation
-description: Runbook for the bridge's on-chain side across an Aztec-line bump — classifying the bump, the Noir surface and drift detectors, and deploying a new bridge generation (PortalFactory + SwapBridgeRouter + UniswapFuelSwap + TokenBridgeHub) when the network resets or a class id moves. Use when bumping Aztec, when a drift detector goes red, when pre-creating a token, calibrating fjPerTx, promoting a candidate manifest, or running the live canaries.
+description: Runbook for the bridge's on-chain side across an Aztec-line bump — classifying the bump, the Noir surface and drift detectors, and deploying a new bridge generation (PortalFactory + SwapBridgeRouter + UniswapFuelSwap + TokenBridgeHub) when the network resets or a class id moves, or a router-only deploy (DepositRouter + TestnetFuelSwapper) on the current generation. Use when bumping Aztec, when a drift detector goes red, when pre-creating a token, calibrating fjPerTx, deploying a new router or refilling and re-pricing the testnet fuel swapper, promoting a candidate manifest, or running the live canaries.
 ---
 
 # Bridge generation
@@ -385,6 +385,100 @@ a pool seed. **After a crash, read the journal's last line against the chain bef
 the journal. The live `testnet-bridge.json` is untouched until step 8's smokes are green: **never
 promote a candidate built over a partial landing**, and `live-intent verify` refuses a candidate
 whose digest changed after it was recorded.
+
+## Router-only deploy (a new router on the current generation)
+
+When the router changes and the network does not (the `DepositRouter` arc, or a later router
+redeploy): promotion locks the identity, factory and hub only, so a router moves without a new
+generation. The `DepositRouter` and its `TestnetFuelSwapper` land **beside** the legacy router, which
+stays in `router` until the app switches. Run from the repository root, under the deployment-intent
+tooling, after the owner authorized exactly this scope (both contracts, the swapper's rates and
+inventory, the named token pre-creations, the smokes and promotion).
+
+1. **Canary key.** A live canary signs with a disposable key, never the deployer. Pin its public
+   address in `PLAN_PINNED_CANARY_SIGNERS` (`live-intent.ts`) and commit it before `build`: while it
+   is `null`, `verify` refuses any run with `CANARY_PRIVATE_KEY` set. The intent built after the pin
+   records the canary's balance per chain, and every `verify` reconciles its spend against
+   `CANARY_CAPS` (Base Sepolia 0.05 ETH, Sepolia 0.2 ETH).
+2. **Rates file**, written outside the repository like `fees.json`:
+   `{ "<erc20>": "<fee-asset base units per whole token>" }`, one entry for every live token and for
+   every token the arc will pre-create. The conductor refuses a live token without one, and
+   `verify:l1` fails a manifest token the swapper cannot price. Price like the legacy route users
+   know: the 6.0.0-rc.1 testnet quoted about 32 FJ per USD (0.25 USDC ≈ 8 FJ), so
+   `32000000000000000000` for a USD-pegged token and that times the ETH price for WETH. Record the
+   rates in the arc's lessons.
+3. **Intent.** `bun packages/bridge-core/scripts/live-intent.ts build <intent> --router-only --pre-create <erc20> …`
+   (one `--pre-create` per token the arc adds), then commit it. It pins the **committed** live
+   manifest's factory, implementation, registry, guardian, legacy router and swap target, Permit2,
+   FeeJuicePortal and hub, each live token's portal and L2 address, and the conductor journal's
+   committed length. Every later `verify` refuses a journal step other than the two contracts, the
+   named pre-creations, calibration and the candidate; `verify --candidate` refuses a candidate that
+   moves a pinned field, drops or re-derives a live token, adds an unnamed one, or names no
+   `depositRouter`.
+4. **Dry run, then deploy.** L1 only (no L2 account, no proofs), so the keyed run is
+   `testnet-l1.env.example`, with `live-intent.ts verify <intent>` chained ahead of it:
+   ```bash
+   bun run --cwd packages/bridge-core deploy:generation deploy --router-only --rates <abs path>/rates.json --dry-run
+   bun run --cwd packages/bridge-core deploy:generation deploy --router-only --rates <abs path>/rates.json
+   ```
+   The conductor authenticates the node like `deploy`, then refuses a signer that is not the
+   generation's guardian (it owns both contracts and sets the rates), a base manifest (`--config`,
+   default the live one) whose registry, FeeJuicePortal, fee asset, faucet or Permit2 differs from
+   the node's, and a factory not bound to the base's hub on chain. Order:
+   `TestnetFuelSwapper(feeAsset, faucet, guardian)` → a rate for each token whose on-chain rate
+   differs → inventory minted from the permissionless `FeeAssetHandler` up to `10 × fuel.minFuelFj`
+   → `DepositRouter(Permit2, FeeJuicePortal, factory, swapper, guardian)` → readback of both → the
+   candidate: the base plus `depositRouter`, `fuelSwapper` and `fuel` (the legacy `swap` block's
+   budgets, `crossChainSlippageBps` 300), with `router` unchanged.
+   - **Journalled and resumable.** Both deploys append to `deploy-journal/testnet-generation.jsonl`
+     (same identity stamp) with their creation-code hash and constructor arguments, sent at a pinned
+     nonce. A re-run adopts a journalled contract only when both match exactly and its address has
+     code; anything else deploys a new one and appends a step, so a changed router never inherits its
+     predecessor's line. Rates and inventory are read before they are written, so an identical re-run
+     sends nothing. A step is appended after its receipt: a crash between landing and the append
+     leaves an orphan the re-run replaces, so read the journal's last line against the chain first.
+5. **Pre-create** each named token into the candidate (`testnet-generation.env.example`: it
+   registers on the hub): `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20>`.
+6. **Routing.** Re-run the conductor on the candidate with the routing file. Nothing changed, so it
+   adopts both, sends nothing, and writes `routing`; every `destToken` must already be a candidate
+   token:
+   ```bash
+   bun run --cwd packages/bridge-core deploy:generation deploy --router-only --config ../../apps/tools/public/testnet-bridge.candidate.json \
+     --rates <abs path>/rates.json --routing <abs path>/routing.json
+   ```
+   Testnet: `{"provider":"lifi","sources":[{"chainId":84532,"rail":"acrossV4","tokens":[{"address":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","symbol":"USDC","decimals":6,"destToken":"0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"}]}]}`
+   (Circle USDC, Base Sepolia → Sepolia).
+7. **Verify, smoke, promote.** `bun run --cwd packages/bridge-core verify:l1 --config ../../apps/tools/public/testnet-bridge.candidate.json --strict`
+   (`testnet-rpc.env.example`). Beyond the generation it checks the router's immutables
+   (`SWAP_TARGET` = the swapper, `FACTORY`, `PERMIT2`, `FEE_JUICE_PORTAL`, `FEE_ASSET`, the guardian
+   as owner, the app's witness type string), the swapper (fee asset, faucet, guardian as owner, a rate
+   for every token; inventory under the floor is a warning), both runtimes against the forge build,
+   and LI.FI's address book on Sepolia and every routing source: code at each entry and the pinned
+   runtime code hashes of the Executor, receivers and fee forwarder, while a facet moved behind the
+   Diamond is a warning to review. `BASE_SEPOLIA_RPC_URL` defaults to PublicNode. Then step 8 of
+   Branch B: smokes, calibration (it writes `fuel` beside `swap`), `live-intent.ts verify <intent> --candidate`,
+   commit the intent, `promote --bridge-only`.
+
+Once deployed, `DepositRouter.sol` and `TestnetFuelSwapper.sol` are frozen: strict verification
+rebuilds from source, so an edit blocks every later promotion. A change is another router-only
+deploy under a new authorization.
+
+### The testnet fuel swapper
+
+The `DepositRouter`'s swap target off mainnet (its constructor refuses chain 1, and the manifest
+refuses a `fuelSwapper` there). It answers LI.FI's `swapTokensSingleV3ERC20ToERC20` and pays the fee
+asset from inventory at a fixed rate. The guardian owns it: `setRate` and `sweep` (collected input,
+surplus inventory) are its only powers.
+
+- **Rates.** `rate(token)` is fee-asset base units per whole token; zero means a fueled send of the
+  token reverts. Change one by re-running `deploy --router-only` with the edited rates file (it sends
+  `setRate` only where the chain differs). A token added later needs its rate before `verify:l1`
+  passes.
+- **Refill.** A swap short of inventory mints from the `FeeAssetHandler` itself (up to three calls,
+  then it reverts), so a low balance costs gas, not a failed send. `verify:l1` warns below
+  `10 × fuel.minFuelFj`; refill with a re-run of the conductor (it mints up to that floor) or
+  `FeeAssetHandler.mint(<swapper>)` from any key. A network with no faucet gets an inventory-only
+  swapper, funded by transfer.
 
 ## Gotchas
 

@@ -183,6 +183,21 @@ export interface DepositedFacts {
 	fuel?: { consumed: string; received: string; leafIndex: string; messageHash: Hex }
 }
 
+/** What one router `Deposited` must carry for an intent, however the funds reached Ethereum. */
+export interface DepositExpectation {
+	l1ChainId: number
+	isPrivate: boolean
+	/** The public recipient; for private fuel the leg pays `fuel.fpc` instead. */
+	recipient: Hex
+	/** Absent for a gas-only intent. */
+	token?: { erc20: Address; secretHash: Hex }
+	/** Absent when the intent bridges no gas. `fpc` defaults to the pinned PrivateFPC. */
+	fuel?: { secretHash: Hex; fpc?: Hex }
+}
+
+/** The Ethereum addresses that authenticate a deposit's logs. */
+export type DepositLogContext = Pick<CrossChainDiscoveryContext["ethereum"], "router" | "feeJuicePortal" | "tokenPortal" | "inbox">
+
 /** Facts a run established, whatever its verdict. */
 export interface DiscoveryFacts {
 	/** The source transaction, confirmed from the record or found by the `Transfer` scan. */
@@ -604,20 +619,24 @@ function assertLeaf(logs: readonly RawLog[], inbox: InboxContext, leaf: string, 
 	}
 }
 
-async function tokenLeg(logs: readonly RawLog[], d: DepositedArgs, c: Ctx): Promise<DepositedFacts["token"]> {
-	const { rec, ctx } = c
-	const portal = ctx.ethereum.tokenPortal as Address
-	const event = rec.isPrivate ? PORTAL_PRIVATE : PORTAL_PUBLIC
+async function tokenLeg(
+	logs: readonly RawLog[],
+	d: DepositedArgs,
+	x: DepositExpectation,
+	eth: DepositLogContext,
+): Promise<DepositedFacts["token"]> {
+	const portal = eth.tokenPortal as Address
+	const event = x.isPrivate ? PORTAL_PRIVATE : PORTAL_PUBLIC
 	const own = logs.map((l) => eventFrom(portal, event, l)).find((a) => hexEq(a?.key, d.tokenKey))
-	const to = rec.isPrivate ? undefined : rec.recipient
+	const to = x.isPrivate ? undefined : x.recipient
 	if (!own || own.amount !== d.tokenAmount || own.index !== d.tokenIndex || (to !== undefined && !hexEq(own.to, to))) {
 		throw new ScanIncomplete("the token portal did not log this deposit")
 	}
 	const content = to === undefined ? await mintToPrivateContentHash(d.tokenAmount) : await mintToPublicContentHash(to, d.tokenAmount)
-	const inbox = ctx.ethereum.inbox
+	const inbox = eth.inbox
 	const leaf = await inboxLeaf({
 		sender: portal,
-		l1ChainId: rec.chainId,
+		l1ChainId: x.l1ChainId,
 		recipient: inbox.l2Hub,
 		version: inbox.rollupVersion,
 		content,
@@ -637,17 +656,21 @@ function feeJuiceDeposit(log: RawLog, portal: Address) {
 	}
 }
 
-async function fuelLeg(logs: readonly RawLog[], d: DepositedArgs, c: Ctx): Promise<DepositedFacts["fuel"]> {
-	const { rec, ctx } = c
-	const own = logs.map((l) => feeJuiceDeposit(l, ctx.ethereum.feeJuicePortal)).find((e) => hexEq(e?.key, d.fuelKey))
-	const to = rec.isPrivate ? (rec.fuel?.fpc ?? PRIVATE_FPC_ADDRESS) : rec.recipient
+async function fuelLeg(
+	logs: readonly RawLog[],
+	d: DepositedArgs,
+	x: DepositExpectation,
+	eth: DepositLogContext,
+): Promise<DepositedFacts["fuel"]> {
+	const own = logs.map((l) => feeJuiceDeposit(l, eth.feeJuicePortal)).find((e) => hexEq(e?.key, d.fuelKey))
+	const to = x.isPrivate ? (x.fuel?.fpc ?? PRIVATE_FPC_ADDRESS) : x.recipient
 	if (!own || own.amount !== d.fuelOut || own.leafIndex !== d.fuelIndex || !hexEq(own.to, to)) {
 		throw new ScanIncomplete("the FeeJuicePortal did not log this deposit")
 	}
-	const inbox = ctx.ethereum.inbox
+	const inbox = eth.inbox
 	const leaf = await inboxLeaf({
 		sender: inbox.feeJuice.l1Sender,
-		l1ChainId: rec.chainId,
+		l1ChainId: x.l1ChainId,
 		recipient: inbox.feeJuice.l2,
 		version: inbox.rollupVersion,
 		content: await sha256ToField(bytesFromHex(CLAIM_SELECTOR.slice(2) + word(to) + word(toHex(d.fuelOut)))),
@@ -658,14 +681,60 @@ async function fuelLeg(logs: readonly RawLog[], d: DepositedArgs, c: Ctx): Promi
 	return { consumed: d.fuelIn.toString(), received: d.fuelOut.toString(), leafIndex: d.fuelIndex.toString(), messageHash: d.fuelKey }
 }
 
-function isRecordIntent(d: DepositedArgs, rec: CrossChainDepositRecord): boolean {
-	const tokenHash = rec.intent === "gas" ? zeroHash : rec.secretHashHex
+function expectationOf(rec: CrossChainDepositRecord): DepositExpectation {
+	return {
+		l1ChainId: rec.chainId,
+		isPrivate: rec.isPrivate,
+		recipient: rec.recipient as Hex,
+		...(rec.intent === "gas" ? {} : { token: { erc20: rec.token.erc20 as Address, secretHash: rec.secretHashHex as Hex } }),
+		...(rec.fuel ? { fuel: { secretHash: rec.fuel.secretHashHex as Hex, fpc: rec.fuel.fpc as Hex | undefined } } : {}),
+	}
+}
+
+function isIntent(d: DepositedArgs, x: DepositExpectation): boolean {
 	return (
-		hexEq(d.tokenSecretHash, tokenHash) &&
-		hexEq(d.fuelSecretHash, rec.fuel?.secretHashHex ?? zeroHash) &&
-		d.isPrivate === rec.isPrivate &&
-		(rec.intent === "gas" || hexEq(d.token, rec.token.erc20))
+		hexEq(d.tokenSecretHash, x.token?.secretHash ?? zeroHash) &&
+		hexEq(d.fuelSecretHash, x.fuel?.secretHash ?? zeroHash) &&
+		d.isPrivate === x.isPrivate &&
+		(!x.token || hexEq(d.token, x.token.erc20))
 	)
+}
+
+async function depositFacts(
+	logs: readonly RawLog[],
+	d: DepositedArgs,
+	x: DepositExpectation,
+	eth: DepositLogContext,
+	txHash: Hex,
+): Promise<DepositedFacts> {
+	return {
+		depositTxHash: txHash,
+		received: d.received.toString(),
+		...(x.token ? { token: await tokenLeg(logs, d, x, eth) } : {}),
+		...(x.fuel ? { fuel: await fuelLeg(logs, d, x, eth) } : {}),
+	}
+}
+
+/**
+ * The one router `Deposited` in a transaction's logs that matches `expected`, each leg authenticated by
+ * its portal's own event and the Inbox leaf recomputed from `expected`. For a transaction whose deposit is
+ * the caller's own (an Ethereum-origin send); a LI.FI delivery goes through {@link discoverCrossChain},
+ * which also binds the deposit to its transport. Throws {@link ScanIncomplete} when no event or more than
+ * one matches, or a leg does not authenticate.
+ */
+export async function readRouterDeposit(
+	logs: readonly RawLog[],
+	txHash: Hex,
+	eth: DepositLogContext,
+	expected: DepositExpectation,
+): Promise<DepositedFacts> {
+	const at = logs.flatMap((l, i) => {
+		const d = eventFrom(eth.router, DEPOSITED, l) as DepositedArgs | undefined
+		return d && isIntent(d, expected) ? [i] : []
+	})
+	if (at.length !== 1) throw new ScanIncomplete(`the transaction carries ${at.length} router Deposited events for this intent, not one`)
+	const d = eventFrom(eth.router, DEPOSITED, logs[at[0]]) as unknown as DepositedArgs
+	return depositFacts(logs.slice(0, at[0]), d, expected, eth, txHash)
 }
 
 /** The router and the Executor are non-reentrant, so the last router `Deposited` before a completion
@@ -676,14 +745,9 @@ async function intendedDeposit(logs: readonly RawLog[], span: Span, markerIndex:
 	while (at > span.start && !eventFrom(router, DEPOSITED, logs[at])) at--
 	if (at <= span.start) throw new ScanIncomplete("a completed transfer without the router's Deposited")
 	const d = eventFrom(router, DEPOSITED, logs[at]) as unknown as DepositedArgs
-	if (!isRecordIntent(d, c.rec)) throw new ScanIncomplete("the router's Deposited is not this record's intent")
-	const legLogs = logs.slice(span.start + 1, at)
-	return {
-		depositTxHash: txHash,
-		received: d.received.toString(),
-		...(c.rec.intent === "gas" ? {} : { token: await tokenLeg(legLogs, d, c) }),
-		...(c.rec.fuel ? { fuel: await fuelLeg(legLogs, d, c) } : {}),
-	}
+	const x = expectationOf(c.rec)
+	if (!isIntent(d, x)) throw new ScanIncomplete("the router's Deposited is not this record's intent")
+	return depositFacts(logs.slice(span.start + 1, at), d, x, c.ctx.ethereum, txHash)
 }
 
 async function executionIn(receipt: DiscoveryReceipt, c: Ctx, transport: SourceTransport): Promise<Execution | undefined> {

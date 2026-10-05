@@ -3,12 +3,15 @@
  * the manifest's tokens pre-created and pools seeded, written as a CANDIDATE — never the live file.
  *
  *   bun scripts/deploy-generation.ts deploy   [--dry-run]
+ *   bun scripts/deploy-generation.ts deploy --router-only --rates <rates.json> [--config <base>] [--routing <routing.json>] [--dry-run]
  *   bun scripts/deploy-generation.ts pre-create --config <candidate> --token <erc20> [--no-register]
  *   bun scripts/deploy-generation.ts calibrate  --config <candidate> --samples <fees.json>
  *
  * `deploy` needs PRIVATE_KEY (the pinned testnet signer) + SEPOLIA_RPC_URL; AZTEC_NODE_URL defaults
  * to the public testnet RPC. Every step is journalled, so a crashed run resumes with the recorded
- * identities. Real proofs: budget ~15 minutes.
+ * identities. Real proofs: budget ~15 minutes. `--router-only` is L1-only (no L2 account, no proofs):
+ * a DepositRouter and TestnetFuelSwapper beside the current generation's router, `--config` (default:
+ * the live manifest) as the base of the candidate it writes.
  */
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -21,10 +24,11 @@ import type { L1Ctx } from "../src/flows"
 import { type BridgeBlock, type ManifestToken, type ManifestV2, manifestToken, parseManifestV2 } from "../src/manifest-v2"
 import { PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
 import { walletChainIdOf } from "../src/wallet-chain-id"
-import { type CalibrationSample, calibrateFuelBudgets } from "./calibration"
+import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 import { openDeployJournal, readCandidate, writeCandidateAtomically } from "./deploy-manifest"
 import { deployGeneration, type GenerationRecord, type L2Ctx, preCreateToken } from "./generation"
-import { authenticatedNode, PLAN_PINNED_L1_SIGNERS } from "./live-intent"
+import { deployRouterOnly, parseRates, parseRouting, planRouterOnly, type RouterOnlyNetwork } from "./generation-router"
+import { authenticatedNode, type NodeIdentity, PLAN_PINNED_L1_SIGNERS } from "./live-intent"
 import { run } from "./run"
 import { evmArtifact } from "./script-artifacts"
 import {
@@ -293,6 +297,56 @@ async function commandDeploy(): Promise<void> {
 	console.log("   next: bun scripts/smoke-existing-testnet.ts --config <candidate>, then calibrate, then live-intent promote.")
 }
 
+/** The network constants the router-only arc binds, from the node `authenticatedNode` already pinned against the
+ *  committed baseline, and Sepolia's canonical Permit2. */
+function routerOnlyNetwork(info: NodeIdentity): RouterOnlyNetwork {
+	const a = info.l1ContractAddresses
+	const handler = a.feeAssetHandlerAddress
+	return {
+		l1ChainId: info.l1ChainId,
+		rollupVersion: info.rollupVersion,
+		registry: lc(String(a.registryAddress)),
+		feeJuicePortal: lc(String(a.feeJuicePortalAddress)),
+		feeJuice: lc(String(a.feeJuiceAddress)),
+		permit2: SEPOLIA.permit2,
+		...(handler ? { feeAssetHandler: lc(String(handler)) } : {}),
+	}
+}
+
+const readJson = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"))
+
+/** A DepositRouter + TestnetFuelSwapper beside the current generation's router. L1 only: no L2 account, no proofs. */
+async function commandRouterOnly(): Promise<void> {
+	const mins = stopwatch()
+	const ratesPath = argValue("--rates")
+	if (!ratesPath) throw new Error('--router-only needs --rates <rates.json> ({ "<erc20>": "<fee-asset units per whole token>" })')
+	const routingPath = argValue("--routing")
+	const account = requireSigner()
+	const info = await authenticatedNode(NODE_URL)
+	const l1: L1Ctx = { ...createL1Clients({ chain: sepoliaChain(SEPOLIA_RPC), rpcUrl: SEPOLIA_RPC, account }), account }
+	const options = {
+		l1,
+		network: routerOnlyNetwork(info),
+		journalPath: JOURNAL_PATH,
+		base: loadManifestV2FromConfigArg(process.argv, { mode: "fallback", fallbackPath: LIVE_PATH }),
+		rates: parseRates(readJson(ratesPath)),
+		...(routingPath ? { routing: parseRouting(readJson(routingPath)) } : {}),
+		candidatePath: CANDIDATE_PATH,
+	}
+	if (process.argv.includes("--dry-run")) {
+		for (const line of await planRouterOnly(options)) console.log(`dry run: ${line}`)
+		return
+	}
+	const { fuelSwapper, depositRouter } = await deployRouterOnly(options)
+	const how = (d: { adopted: boolean }) => (d.adopted ? "adopted" : "deployed")
+	console.log(
+		`\n✅ swapper ${fuelSwapper.address} (${how(fuelSwapper)}), router ${depositRouter.address} (${how(depositRouter)}) (${mins()})`,
+	)
+	console.log(
+		"   candidate written to apps/tools/public/testnet-bridge.candidate.json; next: pre-create, verify:l1 --strict, the smokes.",
+	)
+}
+
 /** Adds one token to an existing generation's candidate: portal clone, hub registration, pool. */
 async function commandPreCreate(): Promise<void> {
 	const mins = stopwatch()
@@ -319,26 +373,21 @@ async function commandPreCreate(): Promise<void> {
 	console.log(`✅ ${token.displaySymbol} added to ${configPath} (${mins()})`)
 }
 
-/** Writes measured `fjPerTx`/`fjRegister` into the candidate from a samples file the smoke printed. */
+/** Writes measured `fjPerTx`/`fjRegister` into the candidate's `fuel` and `swap` blocks from a samples file the smoke printed. */
 function commandCalibrate(): void {
 	const configPath = argValue("--config") ?? CANDIDATE_PATH
 	const samplesPath = argValue("--samples")
 	if (!samplesPath) throw new Error("calibrate needs --samples <fees.json> (an array of {shape, feeMode, transactionFee})")
 	const manifest = loadManifestV2FromConfigArg(["", "", "--config", configPath], { mode: "required" })
-	const bridge = requireBridge(manifest)
-	if (!bridge.l1.swap) throw new Error("the candidate has no swap block to calibrate — STOP")
-	const raw = JSON.parse(readFileSync(samplesPath, "utf8")) as Array<
-		Omit<CalibrationSample, "transactionFee"> & { transactionFee: string }
-	>
+	const raw = readJson(samplesPath) as Array<Omit<CalibrationSample, "transactionFee"> & { transactionFee: string }>
 	const budgets = calibrateFuelBudgets(raw.map((s) => ({ ...s, transactionFee: BigInt(s.transactionFee) })))
-	const swap = { ...bridge.l1.swap, fjPerTx: budgets.fjPerTx.toString(), fjRegister: budgets.fjRegister.toString() }
-	const next: ManifestV2 = { ...manifest, bridge: { ...bridge, l1: { ...bridge.l1, swap } } }
-	writeCandidateAtomically(configPath, next)
-	console.log(`✅ fjPerTx=${swap.fjPerTx} fjRegister=${swap.fjRegister} written to ${configPath}`)
+	writeCandidateAtomically(configPath, applyFuelBudgets(manifest, budgets))
+	console.log(`✅ fjPerTx=${budgets.fjPerTx} fjRegister=${budgets.fjRegister} written to ${configPath}`)
 }
 
 async function main(): Promise<void> {
 	const command = process.argv[2]
+	if (command === "deploy" && process.argv.includes("--router-only")) return commandRouterOnly()
 	if (command === "deploy") return commandDeploy()
 	if (command === "pre-create") return commandPreCreate()
 	if (command === "calibrate") return commandCalibrate()

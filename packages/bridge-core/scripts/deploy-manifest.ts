@@ -23,6 +23,22 @@ const txHash = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected a 32-byte 0x he
 const decimalString = z.string().regex(/^\d+$/, "expected a base-10 integer string")
 
 /**
+ * A contract a re-run may adopt only when both its creation code (`keccak256` of the artifact's bytecode,
+ * constructor arguments excluded) and its constructor arguments, in constructor order, equal the run's own.
+ * A changed contract is a new step beside the old one, never a rewrite of it.
+ */
+const adoptableDeployStep = <K extends string>(kind: K) =>
+	z
+		.object({
+			kind: z.literal(kind),
+			address: evmAddressV2,
+			txHash,
+			creationCodeHash: bytes32,
+			constructorArgs: z.array(evmAddressV2).min(1),
+		})
+		.strict()
+
+/**
  * One generation step. The two-line factory bracket is the write-ahead pair: the CREATE2 address is
  * journalled BEFORE the deploy tx, so a crash between broadcast and receipt still names the contract
  * the re-run must adopt rather than deploy a second one.
@@ -62,6 +78,8 @@ export const deployStepSchema = z.discriminatedUnion("kind", [
 	z.object({ kind: z.literal("pool-seeded"), erc20: evmAddressV2, txHash: txHash.optional() }).strict(),
 	z.object({ kind: z.literal("calibrated"), fjPerTx: decimalString, fjRegister: decimalString }).strict(),
 	z.object({ kind: z.literal("candidate-written"), path: z.string().min(1) }).strict(),
+	adoptableDeployStep("fuel-swapper-deployed"),
+	adoptableDeployStep("deposit-router-deployed"),
 ])
 
 export type DeployStep = z.infer<typeof deployStepSchema>
