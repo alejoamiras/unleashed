@@ -945,7 +945,7 @@ both ends of `[minReceived − fuelSlice, maxPull]` (near-zero consumption inclu
 `upsertRecord`/`patchRecord` writing `JOURNAL_KEY` beside stored cross-chain records leaves them intact (the old-tab
 sequence); an outcome before finalization stays provisional; a record with an unclaimed extra is never pruned. Layers: unit.
 
-#### Phase 4: LI.FI client, builders, decoder, fuel quotes, discovery
+#### Phase 4: LI.FI client, builders, decoder, fuel quotes, discovery ✓
 
 `capped-fetch.ts` (extracted; `token-list.ts` migrated), `lifi-api.ts` + schemas, `lifi-addresses.ts`,
 `across-v4.ts` (final), `stargate.ts`, `lifi-decode.ts` (`verifyRoute`), `fuel-quote.ts` (LI.FI provider with the
