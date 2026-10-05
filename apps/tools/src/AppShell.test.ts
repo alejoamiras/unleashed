@@ -43,6 +43,7 @@ vi.mock("./components/BridgeFooter.vue", () => marker("footer-bridge"))
 vi.mock("./views/DripView.vue", () => marker("tl-drip-view"))
 vi.mock("./views/SendView.vue", () => marker("tl-send-view"))
 vi.mock("./views/ActivityView.vue", () => marker("tl-activity-view"))
+vi.mock("./views/AddressesView.vue", () => marker("tl-addresses-view"))
 vi.mock("./components/AppToastRegion.vue", () => marker("toasts"))
 vi.mock("./components/WalletPickerModal.vue", () => marker("picker"))
 vi.mock("./components/ChooseAccountModal.vue", () => marker("chooser"))
@@ -120,6 +121,17 @@ describe("AppShell", () => {
 		expect(w.get(sel(TESTIDS.sectionHeader)).find(sel("l1-panel")).exists()).toBe(true)
 		// The page is the dock: on Activity the dock is not in the tree at all.
 		expect(w.find(sel(TESTIDS.dock)).exists()).toBe(false)
+	})
+
+	it("Addresses is its own section: mounted only while open, with no footer", async () => {
+		const w = shell()
+		useShell().bridgeForm.value = true
+		expect(w.find(sel(TESTIDS.addressesView)).exists()).toBe(false)
+		useShell().goTo("addresses")
+		await nextTick()
+		expect(w.get(sel(TESTIDS.sectionHeader)).text()).toContain("Addresses")
+		expect(w.find(sel(TESTIDS.addressesView)).exists()).toBe(true)
+		expect(w.find(sel("footer-bridge")).exists()).toBe(false)
 	})
 
 	it("ONE strip; the no-wallet CTA is the faucet chip's own, so only there is it excluded", async () => {

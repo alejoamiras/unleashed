@@ -5,7 +5,7 @@ import { ref } from "vue"
  * module-level state, like every other cross-component state in this app, so the wizard's
  * background strip can open Activity without a prop chain.
  */
-export type Section = "send" | "drip" | "activity"
+export type Section = "send" | "drip" | "activity" | "addresses"
 
 /** A `bridge.*` host lands on Send; everywhere else the faucet is the front door. */
 const section = ref<Section>("send")

@@ -11,7 +11,7 @@
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { ERC20_ABI, type Registration } from "@unleashed/bridge-core"
 import { type Address, encodeFunctionData, type Hex, numberToHex, pad, type PublicClient, stringToHex } from "viem"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
 import rawManifest from "../../../../packages/bridge-core/fixtures/sandbox-manifest.json"
 import type { SelectableToken } from "@/lib/send-model"
 import { useTokenSelection } from "./useTokenSelection"
@@ -375,6 +375,47 @@ describe("useTokenSelection", () => {
 		publicBalance = 99n
 		await selection.refreshBalances()
 		expect(selection.balances.value.l2Public).toBe(99n)
+	})
+
+	it("a refresh for a token the selection moved off never lands, even when the move failed", async () => {
+		let fail: (e: Error) => void = () => undefined
+		const resolving = new Promise<void>((_, reject) => {
+			fail = reject
+		})
+		const pub = makePub({ registrations, gates: new Map([[USDT.erc20.toLowerCase(), resolving]]) })
+		const { selection } = harness(pub)
+		await selection.select(selectable(USDC), "l1-to-l2")
+		const slowRead = deferred()
+		;(pub.multicall as unknown as Mock).mockImplementationOnce(async () => {
+			await slowRead.promise
+			return [{ status: "success", result: 100n }]
+		})
+		const next = selection.select(selectable(USDT), "l1-to-l2")
+		const late = selection.refreshBalances()
+		fail(new Error("registry unreachable"))
+		await next
+		slowRead.release()
+		await late
+		expect(selection.selected.value).toBeNull()
+		expect(selection.balances.value).toEqual({})
+	})
+
+	it("only the latest balance read lands, whatever order the answers come back in", async () => {
+		const pub = makePub({ registrations })
+		const { selection } = harness(pub)
+		await selection.select(selectable(USDC), "l1-to-l2")
+		const slowRead = deferred()
+		const multicall = pub.multicall as unknown as Mock
+		multicall.mockImplementationOnce(async () => {
+			await slowRead.promise
+			return [{ status: "success", result: 100n }]
+		})
+		const late = selection.refreshBalances()
+		multicall.mockImplementation(async () => [{ status: "success", result: 200n }])
+		await selection.refreshBalances()
+		slowRead.release()
+		await late
+		expect(selection.balances.value.l1).toBe(200n)
 	})
 
 	it("dispose drops an in-flight selection and stops refreshing", async () => {

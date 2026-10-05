@@ -9,7 +9,7 @@ import { Icon, type IconName } from "@unleashed/design"
 import { useTemplateRef } from "vue"
 import { TESTIDS } from "@/lib/testids"
 
-/** The left rail: three sections as one roving tablist (one Tab stop; ↑/↓ and ←/→ move between them). */
+/** The left rail: four sections as one roving tablist (one Tab stop; ↑/↓ and ←/→ move between them). */
 const props = defineProps<{ activityCount: number }>()
 
 const shell = useShell()
@@ -20,6 +20,7 @@ const ENTRIES: ReadonlyArray<{ key: Section; label: string; icon: IconName; test
 	{ key: "send", label: "Bridge", icon: "arrows-horizontal", testid: TESTIDS.tabSend },
 	{ key: "drip", label: "Faucet", icon: "coins", testid: TESTIDS.tabDrip },
 	{ key: "activity", label: "Activity", icon: "audio-waveform", testid: TESTIDS.tabActivity },
+	{ key: "addresses", label: "Addresses", icon: "info-box", testid: TESTIDS.tabAddresses },
 ]
 
 function move(from: number, delta: number): void {

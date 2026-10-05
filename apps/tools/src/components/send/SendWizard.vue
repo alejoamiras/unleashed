@@ -127,14 +127,17 @@ const lookup = useAddressLookup({
 	known: () => catalog.tokens.value,
 	chainId: () => catalog.chainId,
 })
+/** No owner while the Ethereum wallet sits on another chain: a balance read there is another
+ *  chain's, and the switch back reads afresh. */
+const l1Reader = computed(() => (l1.wrongChain.value ? undefined : (l1.address.value ?? undefined)))
 const rowBalances = useRowBalances({
 	pub: () => l1.publicClient as unknown as PublicClient,
-	owner: () => l1.address.value ?? undefined,
+	owner: () => l1Reader.value,
 	tokens: () => catalog.filtered.value,
 })
 const selection = useTokenSelection({
 	pub: () => l1.publicClient as unknown as PublicClient,
-	l1Account: () => l1.address.value ?? undefined,
+	l1Account: () => l1Reader.value,
 	readBinding: readHubBinding,
 	l2Account: () => bridge.selectedAccount.value ?? undefined,
 	tokenContract: async (l2Token) => {
@@ -187,6 +190,11 @@ const activeId = journal.activeFlowId
 const ownedId = ref<string | null>(null)
 const receiptSnapshot = ref<ReceiptSnapshot | null>(null)
 const receiptL2Token = ref<string | null>(null)
+/** The add-token CTA waits for the wallet to say it lacks the receipt's token, so a token it already
+ *  lists is never offered; a wallet that cannot answer says "lacks" (fail open). */
+const receiptTokenMissing = ref(false)
+/** Bumped by every receipt check and every add: only the latest question may answer. */
+let receiptCheck = 0
 /** The record RUN IN BACKGROUND handed to the journal; the wizard keeps a line on it until it completes. */
 const backgroundedId = ref<string | null>(null)
 /** What the review promised for it — the strip's subject, whatever the record's own units are. */
@@ -238,7 +246,10 @@ const activeRecord = computed(() => (activeId.value ? journal.records.value.find
 const view = computed(() => {
 	if (stage.value === "permit" && permitRecord.value) return { kind: "permit", record: permitRecord.value } as const
 	if (stage.value === "stepper" && ownedRecord.value) return { kind: "stepper", record: ownedRecord.value } as const
-	if (stage.value === "receipt" && receiptSnapshot.value) return { kind: "receipt", snapshot: receiptSnapshot.value } as const
+	if (stage.value === "receipt" && receiptSnapshot.value) {
+		const snapshot = receiptTokenMissing.value ? receiptSnapshot.value : { ...receiptSnapshot.value, addTokenLabel: undefined }
+		return { kind: "receipt", snapshot } as const
+	}
 	return { kind: "form" } as const
 })
 // The page footer belongs to the form steps only; the shell reads this flag.
@@ -678,6 +689,9 @@ function onMinted(): void {
 	void selection.refreshBalances()
 	void rowBalances.refresh()
 }
+
+// The row balances re-read themselves when the reader changes; the selected token's are read here.
+watch(l1Reader, () => void selection.refreshBalances())
 
 function onDirection(next: Direction): void {
 	direction.value = next
@@ -1182,6 +1196,24 @@ function showActivity(): void {
 	shell.openActivity(backgroundedCanonical.value ?? backgroundedId.value ?? undefined)
 }
 
+async function checkReceiptToken(): Promise<void> {
+	const mine = ++receiptCheck
+	receiptTokenMissing.value = false
+	const wallet = bridge.wallet.value
+	const l2Token = receiptL2Token.value
+	if (!wallet || !l2Token) return
+	let held = false
+	try {
+		held = await addToken.isRegistered(wallet, AztecAddress.fromStringUnsafe(l2Token))
+	} catch {
+		// A record's token address is user-writable storage; one that does not parse fails open too.
+	}
+	if (mine === receiptCheck) receiptTokenMissing.value = !held
+}
+
+// The answer is the connected wallet's own: another wallet or account asks again.
+watch([receiptL2Token, () => bridge.wallet.value, () => bridge.selectedAccount.value], () => void checkReceiptToken())
+
 async function onAddToken(): Promise<void> {
 	const wallet = bridge.wallet.value
 	const account = bridge.selectedAccount.value
@@ -1189,6 +1221,10 @@ async function onAddToken(): Promise<void> {
 	if (!wallet || !account || !l2Token) return
 	await addToken.addToken(wallet, account, AztecAddress.fromStringUnsafe(l2Token))
 	const final = addToken.status.value
+	if (final.kind === "ok" && receiptL2Token.value === l2Token) {
+		receiptCheck++
+		receiptTokenMissing.value = false
+	}
 	if (final.kind === "ok") pushToast({ kind: "ok", text: "Token added to your Aztec wallet." })
 	else if (final.kind === "error") pushToast({ kind: "error", text: final.error.message })
 	else if (final.kind === "unsupported")

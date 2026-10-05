@@ -15,7 +15,7 @@ const { FACTORY, IMPLEMENTATION, ERC20, L1_ADDRESS, AZTEC_ACCOUNT, L2_TOKEN, WOR
 	ERC20: "0x3333333333333333333333333333333333333333",
 	L1_ADDRESS: "0x4444444444444444444444444444444444444444",
 	AZTEC_ACCOUNT: `0x${"10".repeat(32)}`,
-	L2_TOKEN: `0x${"aa".repeat(32)}`,
+	L2_TOKEN: `0x${"0a".repeat(32)}`,
 	WORD: `0x${"bb".repeat(32)}`,
 }))
 const ROUTE = { path: [{ currency0: ERC20, currency1: ERC20, fee: 500, tickSpacing: 10, hooks: ERC20 }], zeroForOnes: [true] }
@@ -105,6 +105,11 @@ const exitDispose = vi.fn()
 
 const readContract = vi.fn(async () => "0x0000000000000000000000000000000000000000")
 const addTokenFn = vi.fn(async () => {})
+const isRegisteredFn = vi.fn(async () => false)
+const aztecWallet = ref<object | null>(null)
+const l1WrongChain = ref(false)
+let rowOwner: () => string | undefined = () => undefined
+let selectionOwner: () => string | undefined = () => undefined
 const addTokenStatus = ref<{ kind: string; error?: { message: string } }>({ kind: "idle" })
 const toasts: { kind: string; text: string }[] = []
 
@@ -116,11 +121,11 @@ vi.mock("@/contracts/bridge-generation", () => ({
 	MANIFEST_TOKENS: [],
 }))
 vi.mock("@/composables/useL1Wallet", () => ({
-	useL1Wallet: () => ({ address: ref(L1_ADDRESS), chainId: ref(31337), publicClient: { readContract } }),
+	useL1Wallet: () => ({ address: ref(L1_ADDRESS), chainId: ref(31337), wrongChain: l1WrongChain, publicClient: { readContract } }),
 }))
 vi.mock("@/composables/useBridgeWallet", () => ({
 	useBridgeWallet: () => ({
-		wallet: ref(null),
+		wallet: aztecWallet,
 		selectedAccount,
 		accounts: ref([{ address: AZTEC_ACCOUNT, alias: "main" }]),
 		status: ref("connected"),
@@ -140,7 +145,7 @@ vi.mock("@/composables/useBridgeJournal", () => ({
 }))
 vi.mock("@/composables/useBridgeBackup", () => ({ useBridgeBackup: () => ({ exportBridgeWithToast: vi.fn() }) }))
 vi.mock("@/composables/useAddDripToken", () => ({
-	useAddDripToken: () => ({ status: addTokenStatus, addToken: addTokenFn, isRegistered: vi.fn(), reset: vi.fn() }),
+	useAddDripToken: () => ({ status: addTokenStatus, addToken: addTokenFn, isRegistered: isRegisteredFn, reset: vi.fn() }),
 }))
 vi.mock("@/composables/useToast", () => ({
 	useToast: () => ({ push: (t: { kind: string; text: string }) => toasts.push(t) }),
@@ -172,19 +177,25 @@ vi.mock("@/composables/useAddressLookup", () => ({
 	useAddressLookup: () => ({ state: ref(null), dispose: vi.fn() }),
 }))
 vi.mock("@/composables/useRowBalances", () => ({
-	useRowBalances: () => ({ balances: ref({}), refresh: vi.fn(async () => {}), dispose: vi.fn() }),
+	useRowBalances: (deps: { owner: () => string | undefined }) => {
+		rowOwner = deps.owner
+		return { balances: ref({}), refresh: vi.fn(async () => {}), dispose: vi.fn() }
+	},
 }))
 vi.mock("@/composables/useTokenSelection", () => ({
-	useTokenSelection: () => ({
-		selected,
-		balances,
-		loading: selectLoading,
-		error: selectionError,
-		epoch: () => epoch,
-		select: selectFn,
-		refreshBalances,
-		dispose: selectDispose,
-	}),
+	useTokenSelection: (deps: { l1Account: () => string | undefined }) => {
+		selectionOwner = deps.l1Account
+		return {
+			selected,
+			balances,
+			loading: selectLoading,
+			error: selectionError,
+			epoch: () => epoch,
+			select: selectFn,
+			refreshBalances,
+			dispose: selectDispose,
+		}
+	},
 }))
 vi.mock("@/composables/useTokenGrant", () => ({
 	useTokenGrant: () => ({
@@ -390,6 +401,9 @@ describe("SendWizard", () => {
 		sendBusy.value = false
 		exitError.value = null
 		addTokenStatus.value = { kind: "idle" }
+		isRegisteredFn.mockResolvedValue(false)
+		aztecWallet.value = {}
+		l1WrongChain.value = false
 		toasts.length = 0
 		readContract.mockResolvedValue("0x0000000000000000000000000000000000000000")
 		sendFn.mockResolvedValue("")
@@ -1546,6 +1560,21 @@ describe("SendWizard", () => {
 		expect(w.findComponent({ name: "AmountStep" }).props("blockedReason")).toBe(EXIT_TOKEN_NOT_REGISTERED)
 	})
 
+	it("reads no Ethereum balance on the wrong chain, and re-reads both kinds on the switch back", async () => {
+		const w = await wizard()
+		w.findComponent({ name: "TokenStep" }).vm.$emit("select", candidate())
+		await flushPromises()
+		expect(rowOwner()).toBe(L1_ADDRESS)
+		l1WrongChain.value = true
+		await flushPromises()
+		expect([rowOwner(), selectionOwner()]).toEqual([undefined, undefined])
+		refreshBalances.mockClear()
+		l1WrongChain.value = false
+		await flushPromises()
+		expect([rowOwner(), selectionOwner()]).toEqual([L1_ADDRESS, L1_ADDRESS])
+		expect(refreshBalances).toHaveBeenCalledOnce()
+	})
+
 	it("switching direction returns to the token step and re-resolves the same token", async () => {
 		const w = await wizard()
 		w.findComponent({ name: "TokenStep" }).vm.$emit("select", candidate())
@@ -1583,7 +1612,47 @@ describe("SendWizard", () => {
 		expect(snapshot.recipient).toBe(AZTEC_ACCOUNT)
 		expect(snapshot.recipientAlias).toBe("main")
 		expect(snapshot.addTokenLabel).toBe("Add WBTC to wallet")
+		expect(isRegisteredFn).toHaveBeenCalledOnce()
 		expect(releaseForeground).toHaveBeenCalledWith("rec-2")
+	})
+
+	it("a receipt never offers to add a token the wallet already lists", async () => {
+		isRegisteredFn.mockResolvedValue(true)
+		sendFn.mockImplementation(async () => {
+			records.value = [...records.value, sendRecord("rec-2")]
+			return "rec-2"
+		})
+		const w = await wizard()
+		const review = await atReview(w)
+		review.vm.$emit("confirm")
+		await flushPromises()
+		records.value = [{ ...records.value[0], completedAt: 9_000 }]
+		await flushPromises()
+		const receipt = w.findComponent({ name: "BridgeReceipt" })
+		expect(receipt.exists()).toBe(true)
+		expect(receipt.props("snapshot").addTokenLabel).toBeUndefined()
+	})
+
+	it("a replaced wallet's late answer does not decide the add-token offer", async () => {
+		let answerOld: (held: boolean) => void = () => undefined
+		isRegisteredFn.mockImplementationOnce(() => new Promise<boolean>((resolve) => (answerOld = resolve)))
+		isRegisteredFn.mockResolvedValue(true)
+		sendFn.mockImplementation(async () => {
+			records.value = [...records.value, sendRecord("rec-2")]
+			return "rec-2"
+		})
+		const w = await wizard()
+		const review = await atReview(w)
+		review.vm.$emit("confirm")
+		await flushPromises()
+		records.value = [{ ...records.value[0], completedAt: 9_000 }]
+		await flushPromises()
+		aztecWallet.value = {}
+		await flushPromises()
+		answerOld(false)
+		await flushPromises()
+		expect(isRegisteredFn).toHaveBeenCalledTimes(2)
+		expect(w.findComponent({ name: "BridgeReceipt" }).props("snapshot").addTokenLabel).toBeUndefined()
 	})
 
 	it("a record whose decimals change before it completes cannot rescale what the review said", async () => {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computed } from "vue"
-import Footer from "@/components/Footer.vue"
 import TokenCard from "@/components/TokenCard.vue"
 import { useWalletConnection } from "@/composables/useWalletConnection"
 import { IS_MAINNET } from "@/lib/network"
@@ -52,7 +51,6 @@ const accountAddress = computed(() => (selectedAccount.value ? AztecAddress.from
 				:wallet-name="preferredWalletName"
 			/>
 		</section>
-		<Footer />
 	</Flex>
 </template>
 

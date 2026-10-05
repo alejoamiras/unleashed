@@ -152,6 +152,9 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 	const loading = ref(false)
 	const error = ref<string | null>(null)
 	let epochValue = 0
+	/** Every balance read, refreshes included: only the latest may land. Separate from the epoch, which
+	 *  the send flows hold and a refresh must not move. */
+	let balanceRead = 0
 	let disposed = false
 	let lastDirection: Direction = "l1-to-l2"
 
@@ -182,13 +185,16 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 	}
 
 	async function loadBalances(pub: PublicClient, token: ResolvedToken, direction: Direction, mine: number): Promise<void> {
+		const read = ++balanceRead
 		const next: TokenBalances = {}
 		const owner = deps.l1Account()
 		if (owner) next.l1 = (await readErc20Balances(pub, owner, [token.address])).get(token.address) ?? 0n
 		// The L2 side exists only once the hub has registered the token, and only an exit needs it up
 		// front — a deposit's L2 balance is whatever its own claim will create.
 		if (token.state.kind === "registered" && direction === "l2-to-l1") Object.assign(next, await readL2Balances(token))
-		if (stale(mine)) return
+		// A refresh shares the epoch of a selection still resolving, so the token and owner it read for
+		// are checked too: a late answer for either is another token's or account's balance.
+		if (stale(mine) || read !== balanceRead || selected.value !== token || deps.l1Account() !== owner) return
 		balances.value = next
 	}
 

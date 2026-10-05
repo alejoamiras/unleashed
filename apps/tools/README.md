@@ -1,6 +1,6 @@
 # @unleashed/tools — the Unleashed app
 
-A standard Aztec dApp (it speaks `@aztec-labs/wallet-sdk`; it touches no wallet code) with three
+A standard Aztec dApp (it speaks `@aztec-labs/wallet-sdk`; it touches no wallet code) with four
 sections on a left rail:
 
 - **Bridge** (the landing section) — move **any ERC-20** between Ethereum and Aztec through the generation the bundled
@@ -16,6 +16,10 @@ sections on a left rail:
   needs you), which opens itself once per record that starts needing you and never for a blocked
   one. The wallet chips live in each section's header; one Aztec panel serves both the faucet
   and the bridge.
+- **Addresses** — every contract the build talks to, grouped Ethereum / Aztec, each with its
+  full address, a copy button and an explorer link. The bridge's rows appear once a generation
+  is promoted. No section has a footer of contract links; the bridge form's footer is only the
+  mainnet real-funds line.
 
 Two build targets (`testnet.app.unleashed.systems`, `app.unleashed.systems`), selected at BUILD time by which vite
 config runs — never at runtime and never from a dashboard variable. A manifest with no `bridge`

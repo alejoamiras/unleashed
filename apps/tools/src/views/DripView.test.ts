@@ -91,12 +91,6 @@ describe("DripView — account-keyed token cards", () => {
 		expect(captured.slice(cardCount * 2).every((a) => a === ADDR_B)).toBe(true)
 	})
 
-	it("mounts its own footer right after the cards", () => {
-		const footer = mountView().get(".cards").element.nextElementSibling
-		expect(footer?.tagName).toBe("FOOTER")
-		expect(footer?.textContent).toContain("Contracts:")
-	})
-
 	it("disconnecting re-mounts cards without an account", async () => {
 		const c = useWalletConnection()
 		c.status.value = "connected"
