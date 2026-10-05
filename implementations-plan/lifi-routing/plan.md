@@ -905,7 +905,7 @@ README's proof count becomes 23. `SwapBridgeRouter` and its suites are untouched
 a guard-stripped mock; the invariant suite at the repository's configured depth with zero failures; `git diff
 --stat main -- contracts/bridge/evm/src/SwapBridgeRouter.sol` empty. Layers: unit, fuzz, invariant, symbolic, gas.
 
-#### Phase 2: Mainnet forks and the dual-fork replay
+#### Phase 2: Mainnet forks and the dual-fork replay ✓
 
 `lifi-fixtures.ts` (opt-in `LIFI_LIVE=1`, ≤ 5 li.quest calls): a Base → Ethereum USDC and an Arbitrum →
 Ethereum WETH `contractCalls` quote with `toContractAddress` = the fixture router address; two same-chain
@@ -1279,8 +1279,26 @@ implements a random UX/UI instead of our definitions."* Design binding (under UI
 set, pinned by digest, the implementation spec, turns every undrawn surface into an owner gate, and makes a
 design deviation a loop finding.
 
-**Still open (owner or evidence):** I3 (a deadline-free AZTEC venue survives the warp test); I6 (the LI.FI
-lib compiles in the time-box); I2 (Across testnet relayers fill message-bearing deposits).
+**D41 Mainnet cross-chain sources are USDC-only (agent, Phase 2 evidence).** LI.FI quotes no contract call for
+Arbitrum WETH → Ethereum WETH: Stargate delivers native ETH and the destination wrap "required a signature on the
+destination chain" (the recorded refusal sits in `test/fixtures/lifi/mainnet.json`). The plan's two options were
+USDC-only sources or a decoder admitting one pinned `WETH.deposit` step; with no quote to decode, only the first
+exists. The router stays non-payable, the decoder admits no wrap step, and `routing.sources` lists USDC on mainnet.
+Ethereum-origin WETH is unaffected (Permit2 path). Revisit if LI.FI starts quoting a WETH contract call.
+
+**D42 `maxPull` slack on Stargate is 1.5 % (agent, Phase 2 evidence).** For `toAmount` 100 USDC LI.FI sent
+`amountSentLD` 101.09, and Stargate's expected delivery `amountLD` is 101.01 (`minAmountLD` 100.50). At 0.5 % the
+router would take 100.50 and the Executor would forward about 0.51 USDC to the user's Ethereum address; at 1.5 % the
+whole delivery joins the deposit (the compose fork asserts `amountLD ≤ maxPull`). The v3 envelope's upper bound and
+the decoder's `maxPull` rule follow the same figure (`fuel.crossChainSlippageBps`).
+
+**Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern,
+the venue LI.FI picks without bitget, survives a warp of 3 × the 125 s ETA; bitget's signed order expires 648 s after
+its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above
+`minAmountLD` ≥ T); I5 (Across fills are indexed by origin chain and deposit id; EndpointV2's `ComposeDelivered`
+carries the guid in its data, unindexed, so discovery filters by emitter and topic and decodes it); I7 (the worst
+shape measures 673,561 cold; the constant is 1,000,000). **Still open:** I2 (Across testnet relayers fill
+message-bearing deposits).
 
 ## Audit verdicts
 

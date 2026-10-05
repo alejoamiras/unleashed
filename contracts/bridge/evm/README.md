@@ -46,6 +46,8 @@ forge build
 FOUNDRY_PROFILE=lifi forge build                                     # LI.FI's destination half → out-lifi/ (CI)
 forge test --no-match-contract Fork                                  # hermetic (CI)
 SEPOLIA_RPC_URL=… AZTEC_REGISTRY=… forge test --match-contract Fork   # live Sepolia (opt-in; two suites skip without the registry)
+LIFI_LIVE=1 bun ../../../packages/bridge-core/scripts/lifi-fixtures.ts --run   # LI.FI: fresh fixtures, then every Lifi*Fork at their blocks (opt-in)
+ETH_RPC_URL=… BASE_RPC_URL=… forge test --match-contract '^Lifi(Destination|StargateCompose|Replay)Fork$'   # replay the committed mainnet fixtures (archive RPCs)
 forge build --ast --force && halmos --match-contract '^Formal'       # symbolic proofs (CI)
 forge snapshot --match-test test_gas_ --no-match-contract Fork --check --tolerance 2   # .gas-snapshot (CI)
 ```
@@ -100,6 +102,7 @@ first-time vs known `bridge()`, `bridgeWithPermit()` and `bridgeFromCaller()` ca
 | symbolic | `FormalFactory`, `FormalClone`, `FormalRouter`, `FormalDepositRouter` — see the header of each for what halmos can and cannot model (it has no sha256, so `createPortal` itself is forge-only) |
 | adversarial | `BlackhatFactory` (F-1…F-9), `BlackhatAudit` (F-A…F-M), `DepositRouterBlackhat`, `BlackhatV4Fork` |
 | fork | `FactoryFork`, `SwapBridgeRouterPermit2Fork`, `DepositRouterPermit2Fork` (real Permit2 on a mainnet fork, `ETH_RPC_URL`), `DeployFuelLive.fork`, `MainnetFuel.fork`, `BlackhatV4Fork` |
+| LI.FI fork | `LifiTestnetRailFork` (Base Sepolia → Across → Sepolia through LI.FI's deployed Diamond, receiver and Executor, into a portal or the router and swapper), `LifiDestinationFork` (Ethereum's receiver and Executor into the router: venue set, RFQ expiry, gas pin, recovery), `LifiStargateComposeFork` (compose gas floor and recovery), `LifiReplayFork` (a Base source transaction replayed into Ethereum's `lzCompose`) |
 
 ## Threat model — the factory-bound portal
 
