@@ -1,6 +1,10 @@
 import type { EncryptionKey } from "@alejoamiras/nulo-wallet-crypto"
 import type {
+	AnyJournalRecord,
 	BridgeJournalRecord,
+	CrossChainDepositRecord,
+	CrossChainExtraDeposit,
+	CrossChainRoute,
 	DepositFuelBlock,
 	DepositJournalRecord,
 	JournalTokenBlock,
@@ -278,21 +282,118 @@ function validateSendRecord(rec: unknown): SendJournalRecord {
 	return { ...(shared as object), schema: 3, intent, token, registerTxHash, ...registers } as SendJournalRecord
 }
 
-/** Any record shape the journal can hold; schema 3 dispatches to its own validator. */
+/** Any Ethereum-origin record shape (schemas 1–3) — what `JOURNAL_KEY` may hold; schema 3 dispatches
+ *  to its own validator. A schema-4 record is refused here. */
 export function validateAnyBackupRecord(rec: unknown): BridgeJournalRecord {
 	const schema = (rec as { schema?: unknown } | null)?.schema
 	return schema === 3 ? validateSendRecord(rec) : validateBackupRecord(rec)
 }
 
+const isPositiveInteger = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0
+const isNonNegativeInteger = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0
+const isOptionalHexWord = (v: unknown): v is string | undefined => v === undefined || isHexWord(v)
+
+/** The transport must belong to the record's rail: an Across relay hash on a Stargate record (or the
+ *  reverse) would authenticate another transfer. */
+function assertTransport(t: unknown, rail: CrossChainRoute["rail"]): void {
+	if (t === undefined) return
+	const x = t as Partial<{ kind: string; originChainId: unknown; depositId: unknown; relayHash: unknown; guid: unknown; pool: unknown }>
+	const across = x?.kind === "across" && isPositiveInteger(x.originChainId) && isDecimalString(x.depositId) && isHexWord(x.relayHash)
+	const stargate = x?.kind === "stargate" && isHexWord(x.guid) && isEvmAddress(x.pool)
+	if (!(rail === "acrossV4" ? across : stargate)) throw new Error(INVALID)
+}
+
+function assertExtraDeposits(extras: unknown): void {
+	if (extras === undefined) return
+	if (!Array.isArray(extras)) throw new Error(INVALID)
+	for (const e of extras as Partial<CrossChainExtraDeposit>[]) {
+		if (!e || typeof e !== "object" || !isHexWord(e.txHash) || !isDecimalString(e.leafIndex) || !isDecimalString(e.amount)) {
+			throw new Error(INVALID)
+		}
+	}
+}
+
+/** The outcome union, and its two facts only beside an outcome. */
+function assertOutcome(r: Partial<CrossChainRoute>): void {
+	if (r.outcome === undefined) {
+		if (r.outcomeTxHash !== undefined || r.outcomeAmount !== undefined) throw new Error(INVALID)
+		return
+	}
+	if (r.outcome !== "not-sent" && r.outcome !== "delivered-to-wallet" && r.outcome !== "expired-on-source") throw new Error(INVALID)
+	if (!isOptionalHexWord(r.outcomeTxHash) || !isOptionalDecimalString(r.outcomeAmount)) throw new Error(INVALID)
+}
+
+function assertRouteSource(r: Partial<CrossChainRoute>): void {
+	if (
+		r.provider !== "lifi" ||
+		(r.rail !== "acrossV4" && r.rail !== "stargateV2") ||
+		!isPositiveInteger(r.srcChainId) ||
+		!isEvmAddress(r.srcToken) ||
+		!isDecimalString(r.srcAmount) ||
+		!isEvmAddress(r.srcSender) ||
+		!isDecimalString(r.srcScanFromBlock) ||
+		(r.srcBatchId !== undefined && (typeof r.srcBatchId !== "string" || r.srcBatchId.length === 0)) ||
+		!isOptionalHexWord(r.srcTxHash) ||
+		!isHexWord(r.lifiTxId)
+	) {
+		throw new Error(INVALID)
+	}
+}
+
+/** `minReceived ≤ maxPull` is what gives the sealed amount window a non-empty range. */
+function assertRouteDestination(r: Partial<CrossChainRoute>): void {
+	if (
+		!isEvmAddress(r.router) ||
+		!isDecimalString(r.minReceived) ||
+		!isDecimalString(r.maxPull) ||
+		BigInt(r.minReceived) > BigInt(r.maxPull) ||
+		!isDecimalString(r.scanFromBlock) ||
+		!isNonNegativeInteger(r.etaSeconds) ||
+		(r.fillDeadline !== undefined && (r.rail !== "acrossV4" || !isNonNegativeInteger(r.fillDeadline)))
+	) {
+		throw new Error(INVALID)
+	}
+}
+
+function validateRoute(route: unknown): CrossChainRoute {
+	const r = route as Partial<CrossChainRoute> | null
+	if (!r || typeof r !== "object") throw new Error(INVALID)
+	assertRouteSource(r)
+	assertRouteDestination(r)
+	assertTransport(r.transport, r.rail as CrossChainRoute["rail"])
+	assertOutcome(r)
+	assertExtraDeposits(r.extraDeposits)
+	return r as CrossChainRoute
+}
+
+/**
+ * Schema 4 (a cross-chain deposit): every shared fact gets the schema-3 deposit validation, and the
+ * `route` block is checked field by field, unions included. The only shape `CROSSCHAIN_JOURNAL_KEY`
+ * holds; refused by `validateAnyBackupRecord`.
+ */
+export function validateCrossChainRecord(rec: unknown): CrossChainDepositRecord {
+	const r = rec as { schema?: unknown; direction?: unknown; route?: unknown } | null
+	if (!r || typeof r !== "object" || r.schema !== 4 || r.direction !== "deposit") throw new Error(INVALID)
+	const route = validateRoute(r.route)
+	const shared = validateSendRecord({ ...r, schema: 3, route: undefined })
+	return { ...shared, schema: 4, route } as CrossChainDepositRecord
+}
+
+/** Every record shape either journal key holds. */
+export function validateJournalRecord(rec: unknown): AnyJournalRecord {
+	const schema = (rec as { schema?: unknown } | null)?.schema
+	return schema === 4 ? validateCrossChainRecord(rec) : validateAnyBackupRecord(rec)
+}
+
 interface BackupPayload {
 	bk: 1
-	record: BridgeJournalRecord
+	record: AnyJournalRecord
 }
 
 /** Seal ONE record into a recovery file. Refuses records with nothing restorable in them:
  *  provisional records on either lane, and private deposits whose envelope hasn't been sealed yet -
  *  a file without the recovery material would toast success today and strand the claim later. */
-export async function sealBridgeBackup(key: EncryptionKey, record: BridgeJournalRecord, sealerL1: string): Promise<BridgeBackupFile> {
+export async function sealBridgeBackup(key: EncryptionKey, record: AnyJournalRecord, sealerL1: string): Promise<BridgeBackupFile> {
 	if (isProvisionalRecordId(record.id)) {
 		throw new Error("This transfer has not reached its own transaction yet — there is nothing restorable to save.")
 	}
@@ -313,8 +414,23 @@ export async function sealBridgeBackup(key: EncryptionKey, record: BridgeJournal
 	}
 }
 
-/** Unseal + deep-validate + header-cross-check. GCM failure throws the attribution-honest copy. */
-export async function openBridgeBackup(key: EncryptionKey, file: BridgeBackupFile): Promise<BridgeJournalRecord> {
+/** Unseal + deep-validate + header-cross-check an Ethereum-origin record (schemas 1–3). A cross-chain
+ *  file is refused as invalid, as a pre-schema-4 bundle refuses it; `openAnyBridgeBackup` opens both. */
+export function openBridgeBackup(key: EncryptionKey, file: BridgeBackupFile): Promise<BridgeJournalRecord> {
+	return openBackupWith(key, file, validateAnyBackupRecord)
+}
+
+/** `openBridgeBackup` for every record shape either journal key holds, schema 4 included. */
+export function openAnyBridgeBackup(key: EncryptionKey, file: BridgeBackupFile): Promise<AnyJournalRecord> {
+	return openBackupWith(key, file, validateJournalRecord)
+}
+
+/** GCM failure throws the attribution-honest copy. */
+async function openBackupWith<R extends AnyJournalRecord>(
+	key: EncryptionKey,
+	file: BridgeBackupFile,
+	validate: (rec: unknown) => R,
+): Promise<R> {
 	let plaintext: string
 	try {
 		plaintext = await openSecret(key, file.blob)
@@ -331,7 +447,7 @@ export async function openBridgeBackup(key: EncryptionKey, file: BridgeBackupFil
 	if (payload?.bk !== 1 || !payload.record) {
 		throw new Error("The sealed contents are not a valid bridge record.")
 	}
-	const record = validateAnyBackupRecord(payload.record)
+	const record = validate(payload.record)
 	// The header is unauthenticated routing data - the SEALED copies are authoritative. Every
 	// header field with a sealed counterpart is re-checked (sealerL1 only exists inside private
 	// deposit records); refuse on any edit rather than trust either side.

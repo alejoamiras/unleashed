@@ -1,9 +1,11 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { computeSecretHash } from "@aztec-labs/stdlib/hash"
+import { encodeAbiParameters, encodeEventTopics, type Hex, type Log } from "viem"
 import { describe, expect, it } from "vitest"
 import {
 	assertFuelClearsFloor,
+	FeeJuicePortalAbi,
 	buildCarrierlessFuelClaimPayload,
 	feeJuiceDepositArgs,
 	parseFeeJuiceDeposit,
@@ -42,8 +44,32 @@ describe("fuel — deposit planning", () => {
 })
 
 describe("fuel — event parse", () => {
+	const PORTAL = "0x00000000000000000000000000000000000f1e1d"
+	const depositLog = (address: Hex, amount: bigint, index: bigint) =>
+		({
+			address,
+			topics: encodeEventTopics({ abi: FeeJuicePortalAbi, eventName: "DepositToAztecPublic", args: { to: `0x${"12".repeat(32)}` } }),
+			data: encodeAbiParameters(
+				[{ type: "uint256" }, { type: "bytes32" }, { type: "bytes32" }, { type: "uint256" }],
+				[amount, `0x${"ab".repeat(32)}`, `0x${"cd".repeat(32)}`, index],
+			),
+			blockNumber: 1n,
+			blockHash: `0x${"0".repeat(64)}`,
+			logIndex: 0,
+			transactionHash: `0x${"0".repeat(64)}`,
+			transactionIndex: 0,
+			removed: false,
+		}) as unknown as Log
+
 	it("throws when no DepositToAztecPublic event is present", () => {
-		expect(() => parseFeeJuiceDeposit([])).toThrow(/DepositToAztecPublic/)
+		expect(() => parseFeeJuiceDeposit([], PORTAL)).toThrow(/DepositToAztecPublic/)
+	})
+
+	it("reads only the named portal's event, never a look-alike from another emitter", () => {
+		const forged = depositLog("0x00000000000000000000000000000000000bad00", 10n ** 24n, 999n)
+		const real = depositLog(PORTAL, 5n, 7n)
+		expect(parseFeeJuiceDeposit([forged, real], PORTAL)).toMatchObject({ amount: 5n, leafIndex: 7n })
+		expect(() => parseFeeJuiceDeposit([forged], PORTAL)).toThrow(/DepositToAztecPublic/)
 	})
 })
 

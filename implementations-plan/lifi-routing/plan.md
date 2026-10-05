@@ -931,7 +931,7 @@ inner venue minimum reverts into recovery. Layers: fork (single and dual).
 
 ### Arc 2: core library, operator tooling and sandbox (app unchanged)
 
-#### Phase 3: Encodings, schemas, journal, envelope
+#### Phase 3: Encodings, schemas, journal, envelope ✓
 
 the `DepositWitness` types, hash and typed data in `l1.ts` beside today's `BridgeWitness` builders (`l1.ts:105`,
 `:121`; arc 5 removes the old ones); `manifest-v2.ts` additive
