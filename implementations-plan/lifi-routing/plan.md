@@ -433,15 +433,17 @@ Cross-checked with `recon.md` and `research/uniswap-removal.md`. A = add, M = mo
 does it in brackets.
 
 - **Contracts** (`contracts/bridge/evm`): A `src/DepositRouter.sol`, `src/TestnetFuelSwapper.sol`,
-  `src/interfaces/IFeeAssetHandler.sol`, `src/interfaces/ILiFiSwap.sol` (the two selectors' ABI only),
-  `src/mocks/TestSpokePool.sol`, `src/mocks/SourceAcrossStub.sol` [1]; tests per the table, `test/mocks/LiFiMocks.sol`
-  (fallback twins only) [1]; M `script/DeployGeneration.s.sol` (router-only path, swapper) [2], `foundry.toml`
+  `src/interfaces/IFeeAssetHandler.sol`, `src/interfaces/ILiFiSwap.sol` (the two selectors' ABI only) [1];
+  `src/mocks/TestSpokePool.sol`, `src/mocks/SourceAcrossStub.sol` (sandbox only) [2]; tests per the table, their
+  `test/mocks/DepositRouter{Fixture,Mocks,Mutants}.sol`, `test/lifi/` fork bases, `lifi-build/LifiArtifacts.sol` (the
+  `lifi` profile's only source) [1]; M `script/DeployGeneration.s.sol` (router-only path, swapper) [2], `foundry.toml`
   (`lifi` profile [1]; `fs_permissions` read-write on `test/fixtures/lifi`, where the recorder's runs write receipts
   [1]), `test/fixtures/lifi/testnet-rail.json` and its two receipt files [1], `.gas-snapshot` [1], `README.md` (threat model:
   the caller path, the immutable swap policy; INFO: the swapper never targets mainnet; "12 halmos proofs" → 23 [1]
   → 15 [5]) [1, 5]; `foundry.toml` and `packages/bridge-core/scripts/gen-remappings.ts` drop `@uniswap/v4-core/` [5];
   D the old router, every V4 contract, mock and pool script, and their suites, per `research/uniswap-removal.md`
-  [5]. The research fork proofs move in only after their imports, blocks and RPC names are reconciled (recon risk 9).
+  [5], after moving the Uniswap-free fakes the new suites import (`MockPermit2`, `MockFeeJuicePortal`,
+  `MockTokenPortal`, `FakePortalFactory`) out of `test/mocks/RouterMocks.sol`, which imports the old router [5]. The research fork proofs move in only after their imports, blocks and RPC names are reconciled (recon risk 9).
 - **Core** (`packages/bridge-core/src`): A `across-v4.ts` (the Phase 0 vector), `lifi-abi.ts` (the shared struct ABIs, Phase 0), `deposit-router-abi.ts` (pinned
   against the forge artifact), `lifi-gas.ts` (the measured `toContractGasLimit` and venue set) [1]; A `lifi-addresses.ts`, `lifi-api.ts`, `lifi-decode.ts`, `stargate.ts` (decoder), `fuel-quote.ts`,
   `source-chains.ts`, `crosschain-discovery.ts` (its `Deposited` parser is the only one; arc 4's
@@ -889,7 +891,7 @@ twins. The router is unaffected by either.
 across-v4` green; the ledger names the chosen testnet path (A: all LI.FI, B: direct SpokePool source, C: own
 LI.FI instances). Layers: unit, fork (two chains).
 
-#### Phase 1: `DepositRouter` + `TestnetFuelSwapper`, hermetic and symbolic
+#### Phase 1: `DepositRouter` + `TestnetFuelSwapper`, hermetic and symbolic ✓
 
 The contracts per *Key interfaces*; the pinned `lifinance/contracts` lib under the `lifi` profile (time-boxed;
 else twins + the parity fork, D22); every suite in the testing table's forge rows; `FormalDepositRouter.t.sol`;
