@@ -103,3 +103,7 @@ USDC-only, and D42 sets `maxPull` slack at 1.5 %. Three agents wrote the suites 
   The dust fix also changed one fuzz property and one halmos proof, which had modelled a whole-balance refund.
   - A Phase 4 agent found that the recorder never sent the integrator, so the mainnet fixtures were re-recorded
     with it (attempt 5).
+- **Round 2** (resumed): no fund-risk defect. Two stale comments counted as material and were fixed: the
+  inner-minimum helper's old NatSpec, and the recorder's claim that LI.FI never quotes Arbitrum WETH. Codex judged
+  the venue-agnostic inner-minimum test a valid model of the boundary (`floor ≤ delivered < venue minimum`), and
+  confirmed that the mutated word is sushiswap's minimum-output argument.

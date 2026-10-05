@@ -512,8 +512,6 @@ contract LifiDestinationFork is MainnetLifiFork {
         assertEq(hits, 1, "the RFQ venue call does not carry exactly one expiry-shaped word");
     }
 
-    /// The recorded swap with the venue's own minimum (a big-endian uint128 in its call, between the quote's minimum
-    /// and its amount) and LI.FI's `_minAmountOut` both lowered to `floor`.
     /// The quote's swap with the facet's `_minAmountOut` set to `facetMin` and the venue's own minimum (the one
     /// 16-byte value in its call between `toAmountMin` and `toAmount`) set to `venueMin`; `innerMin` is the quoted one.
     function _withInnerMinimum(SameChainQuote memory q, uint256 facetMin, uint256 venueMin)

@@ -257,7 +257,7 @@ export async function recordMainnetQuotes(heads: SourceHeads): Promise<{ fixture
 	const baseUsdc = await contractCallsQuote(baseReq, baseCall)
 	const arbReq = { fromChain: 42161, fromToken: MAINNET.arbitrum.weth, toToken: weth, toAmount: CROSS_WETH, swap: wethSwap }
 	const arbCall = routerCall(arbReq)
-	// Stargate delivers ETH natively; LI.FI then needs a destination wrap it will not quote for a contract call.
+	// LI.FI has both refused this route and quoted it with a destination swap ahead of our call; either is evidence.
 	const arbitrumWeth = await contractCallsQuote(arbReq, arbCall).catch(refusal)
 
 	const fixture = {

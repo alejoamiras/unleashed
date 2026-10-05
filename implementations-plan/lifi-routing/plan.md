@@ -1306,7 +1306,8 @@ Accepted:
 
 Rejected: none. In the same round, a Phase 4 agent found the recorder never sent `integrator`. The mainnet
 fixtures were re-recorded with `LIFI_INTEGRATOR` (now in `lifi-gas.ts`). LI.FI had moved the deadline-free venue
-from nordstern to sushiswap, so the inner-minimum fork test no longer hard-codes a V4 pool and works for any venue. The v3 envelope's upper bound and
+from nordstern to sushiswap, so the inner-minimum fork test no longer hard-codes a V4 pool and works for any venue.
+Round 2 found no fund-risk defect and two stale comments, both accepted and fixed. The v3 envelope's upper bound and
 the decoder's `maxPull` rule follow the same figure (`fuel.crossChainSlippageBps`).
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
