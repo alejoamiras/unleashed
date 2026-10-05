@@ -7,7 +7,7 @@
 
 import { type Address, encodeFunctionData, getAddress, type Hex, keccak256, slice, toHex } from "viem"
 import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { LIFI_DENY_EXCHANGES, LIFI_TO_CONTRACT_GAS_LIMIT } from "../src/lifi-gas"
+import { LIFI_DENY_EXCHANGES, LIFI_INTEGRATOR, LIFI_TO_CONTRACT_GAS_LIMIT } from "../src/lifi-gas"
 import privateFpcMainnet from "../src/private-fpc-canonical-mainnet.json" with { type: "json" }
 
 const LI_QUEST = "https://li.quest/v1"
@@ -118,6 +118,7 @@ async function sameChainQuote(r: SameChainRequest): Promise<Json> {
 		fromAddress: FIXTURE_ROUTER,
 		toAddress: FIXTURE_ROUTER,
 		slippage: String(SAME_CHAIN_SLIPPAGE),
+		integrator: LIFI_INTEGRATOR,
 	})
 	if ("deny" in r.exchanges) q.set("denyExchanges", r.exchanges.deny.join(","))
 	else q.set("allowExchanges", r.exchanges.allow.join(","))
@@ -172,6 +173,7 @@ async function contractCallsQuote(req: CrossChainRequest, call: ReturnType<typeo
 			toToken: req.toToken,
 			toAmount: req.toAmount.toString(),
 			toFallbackAddress: FIXTURE_USER,
+			integrator: LIFI_INTEGRATOR,
 			contractCalls: [
 				{
 					fromAmount: req.toAmount.toString(),

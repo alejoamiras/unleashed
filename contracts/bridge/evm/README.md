@@ -88,7 +88,7 @@ nonce-pinned factory prediction, journalled, candidate-first; runbook in
 
 ## Tests
 
-**242 hermetic forge tests** (`forge test --no-match-contract Fork`), **23 halmos proofs**
+**243 hermetic forge tests** (`forge test --no-match-contract Fork`), **23 halmos proofs**
 (`FormalDepositRouterTest 11 · FormalRouterTest 8 · FormalFactoryTest 2 · FormalCloneTest 2`; the guard-shaped ones carry a
 forge canary proving the property fails without the guard), **live Sepolia fork suites** (real registry/Inbox/FeeJuicePortal, real
 Permit2, real V4 pools, live token metadata), and a committed `.gas-snapshot` for the metered

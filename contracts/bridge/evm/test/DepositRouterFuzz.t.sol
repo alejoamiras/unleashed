@@ -37,7 +37,7 @@ contract DepositRouterFuzzTest is DepositRouterFixture {
     }
 
     /// The venue pulls `pull` of the slice (zero: a skipped deposit step), spends `spend` of it, pays `fjOut`, and
-    /// forwards its whole input balance, `stray` included.
+    /// forwards its whole input balance, `stray` included, once it exceeds one unit.
     function _venue(address token, uint256 slice, uint256 pull, uint256 spend, uint256 fjOut, uint256 stray)
         internal
         returns (bytes memory)
@@ -46,6 +46,19 @@ contract DepositRouterFuzzTest is DepositRouterFixture {
         swap.setHostile(address(0), pull == slice ? 0 : pull, true);
         if (stray > 0) _mint(token, address(swap), stray);
         return pull == 0 ? _swapDataMultiple(token, slice, 0, false) : _swapData(token, slice, 0);
+    }
+
+    /// What the router reads after `_venue`: a one-unit balance stays at the venue as dust and counts as consumed.
+    function _measured(uint256 pull, uint256 spend, uint256 stray)
+        internal
+        pure
+        returns (uint256 consumed, uint256 strayBack, uint256 dust)
+    {
+        uint256 held = stray + pull - spend;
+        uint256 returned = held > 1 ? held : 0;
+        strayBack = Math.min(returned, stray);
+        consumed = pull - (returned - strayBack);
+        dust = held - returned;
     }
 
     function _assertNoStandingApproval(address token) internal view {
@@ -102,16 +115,16 @@ contract DepositRouterFuzzTest is DepositRouterFixture {
         (uint256 tokenAmount, uint256 fuelOut) = router.bridgeFromCaller(i, sd, minReceived, maxPull);
         if (pulled < minReceived || (withFuel && fjOut < floor)) return;
 
-        uint256 consumed = withFuel ? spend : 0;
+        (uint256 consumed, uint256 strayBack, uint256 dust) = _measured(pull, spend, stray);
         assertEq(tokenAmount, pulled - consumed, "token leg = pulled - consumed");
         assertEq(IERC20(token).balanceOf(portalFor(token)), pulled - consumed, "clone");
-        assertEq(IERC20(token).balanceOf(swap.SINK()), consumed, "venue spend");
+        assertEq(IERC20(token).balanceOf(swap.SINK()), spend, "venue spend");
         assertEq(IERC20(token).balanceOf(CALLER), balance - pulled, "only the pull left the caller");
         uint256 allowanceLeft =
             token == address(usdc) && allowance == type(uint256).max ? type(uint256).max : allowance - pulled;
         assertEq(IERC20(token).allowance(CALLER, address(router)), allowanceLeft, "caller allowance");
-        assertEq(IERC20(token).balanceOf(address(router)), DONATION + stray, "residue = pre-call + stray");
-        assertEq(IERC20(token).balanceOf(address(swap)), 0, "the venue forwards its whole balance");
+        assertEq(IERC20(token).balanceOf(address(router)), DONATION + strayBack, "residue = pre-call + stray");
+        assertEq(IERC20(token).balanceOf(address(swap)), dust, "the venue keeps only dust");
         assertEq(fj.balanceOf(address(router)), FJ_DONATION, "fee-asset residue untouched");
         assertEq(fuelOut, withFuel ? fjOut : 0);
         assertEq(fj.balanceOf(address(feePortal)), withFuel ? fjOut : 0, "fuel = the router's own delta");
@@ -146,8 +159,8 @@ contract DepositRouterFuzzTest is DepositRouterFixture {
         IERC20(token).approve(address(permit2), type(uint256).max);
         IERC20(token).approve(address(router), type(uint256).max);
 
-        // spend ≤ pull ≤ slice, so a full spend implies a full pull.
-        bool exact = spend == slice;
+        (uint256 consumed, uint256 strayBack, uint256 dust) = _measured(pull, spend, stray);
+        bool exact = consumed == slice;
         if (!exact) vm.expectRevert(DepositRouter.InexactFuelConsumption.selector);
         if (viaPermit) router.bridgeWithPermit(i, sd, amount, _permit(1));
         else router.bridgeFromCaller(i, sd, amount, amount);
@@ -155,9 +168,10 @@ contract DepositRouterFuzzTest is DepositRouterFixture {
         if (!exact) return;
 
         assertEq(IERC20(token).balanceOf(portalFor(token)), amount - slice, "clone");
-        assertEq(IERC20(token).balanceOf(swap.SINK()), slice, "venue spend");
+        assertEq(IERC20(token).balanceOf(swap.SINK()), spend, "venue spend");
         assertEq(IERC20(token).balanceOf(CALLER), 0, "exactly amount left the payer");
-        assertEq(IERC20(token).balanceOf(address(router)), DONATION + stray, "residue = pre-call + stray");
+        assertEq(IERC20(token).balanceOf(address(router)), DONATION + strayBack, "residue = pre-call + stray");
+        assertEq(IERC20(token).balanceOf(address(swap)), dust, "the venue keeps only dust");
         assertEq(fj.balanceOf(address(router)), FJ_DONATION);
         assertEq(fj.balanceOf(address(feePortal)), 2 ether);
         if (fuelOnly) assertEq(factory.portalOf(token), address(0), "fuel-only creates no clone");

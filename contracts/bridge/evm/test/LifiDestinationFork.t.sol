@@ -10,59 +10,6 @@ import {ILiFiSwap} from "../src/interfaces/ILiFiSwap.sol";
 import {RelayData} from "./lifi/LifiForkBase.sol";
 import {MainnetLifiFork, SameChainQuote} from "./lifi/MainnetLifiFork.sol";
 
-/// Uniswap V4's pool key and swap parameters, declared locally so the suite does not depend on a Uniswap lib.
-struct V4PoolKey {
-    address currency0;
-    address currency1;
-    uint24 fee;
-    int24 tickSpacing;
-    address hooks;
-}
-
-struct V4SwapParams {
-    bool zeroForOne;
-    int256 amountSpecified;
-    uint160 sqrtPriceLimitX96;
-}
-
-interface IV4PoolManager {
-    function unlock(bytes calldata data) external returns (bytes memory);
-    function swap(V4PoolKey memory key, V4SwapParams memory params, bytes calldata hookData)
-        external
-        returns (int256 delta);
-    function settle() external payable returns (uint256);
-    function take(address currency, address to, uint256 amount) external;
-}
-
-/// A front-runner that buys `currency1` with native ETH in one V4 pool, as any searcher could.
-contract V4Buyer {
-    /// `TickMath.MIN_SQRT_PRICE + 1`: no price limit on a zero-for-one swap.
-    uint160 internal constant MIN_SQRT_PRICE_LIMIT = 4295128739 + 1;
-    IV4PoolManager internal immutable PM;
-
-    constructor(address pm) {
-        PM = IV4PoolManager(pm);
-    }
-
-    function buy(V4PoolKey calldata key, uint256 ethIn) external returns (uint256) {
-        return abi.decode(PM.unlock(abi.encode(key, ethIn)), (uint256));
-    }
-
-    function unlockCallback(bytes calldata data) external returns (bytes memory) {
-        require(msg.sender == address(PM), "not the PoolManager");
-        (V4PoolKey memory key, uint256 ethIn) = abi.decode(data, (V4PoolKey, uint256));
-        int256 delta = PM.swap(key, V4SwapParams(true, -int256(ethIn), MIN_SQRT_PRICE_LIMIT), "");
-        // BalanceDelta packs amount0 in the high 128 bits and amount1 in the low 128.
-        uint256 paid = uint256(uint128(-int128(delta >> 128)));
-        uint256 out = uint256(uint128(int128(delta)));
-        PM.settle{value: paid}();
-        PM.take(key.currency1, address(this), out);
-        return abi.encode(out);
-    }
-
-    receive() external payable {}
-}
-
 /// LI.FI's real Ethereum destination stack delivering into `DepositRouter`: a relayer's Across fill runs SpokePool →
 /// ReceiverAcrossV4 → Executor → router → LI.FI Diamond (the recorded USDC → AZTEC calldata) → FeeJuicePortal and the
 /// USDC clone, at the block `lifi-fixtures.ts mainnet` recorded. Needs an archive `ETH_RPC_URL`; skips without one.
@@ -81,12 +28,6 @@ contract LifiDestinationFork is MainnetLifiFork {
     /// The deployed Inbox's event, older than the artifacts' `IInbox`: checkpoint (topic 1), index, message hash
     /// (topic 2, the key a portal returns), rolling hash.
     bytes32 internal constant INBOX_MESSAGE_SENT = keccak256("MessageSent(uint256,uint256,bytes32,bytes16)");
-    bytes32 internal constant V4_SWAP = keccak256("Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)");
-    address internal constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
-    /// The ETH/AZTEC pool the recorded deadline-free route sells into, as its calldata encodes it.
-    address internal constant AZTEC_POOL_HOOKS = 0xd53006d1e3110fD319a79AEEc4c527a0d265E080;
-    uint24 internal constant AZTEC_POOL_FEE = 500;
-    int24 internal constant AZTEC_POOL_SPACING = 10;
 
     struct Deposited {
         bytes32 tokenSecretHash;
@@ -279,30 +220,26 @@ contract LifiDestinationFork is MainnetLifiFork {
         assertApproxEqRel(d.fuelOut, q.toAmount, 0.02e18, "more than 2 % from the quote");
     }
 
-    /// With LI.FI's `_minAmountOut` and the router floor lowered to F, a searcher's buy in the route's AZTEC pool
-    /// moves the output between F and the venue's own inner minimum: the venue reverts and the fill recovers.
+    /// A price move between quote and fill leaves the venue's own minimum above what it delivers while the delivery
+    /// still clears the router floor F (LI.FI's `_minAmountOut` lowered to F too): the venue reverts first and the
+    /// fill recovers whole. The move is modelled by raising the venue's minimum one unit above its measured delivery,
+    /// which holds for any venue LI.FI picks.
     function test_innerVenueMinimum_aboveTheRouterFloor_recovers() public {
         SameChainQuote memory q = _sameChain("deadlineFree");
         uint256 floor = q.toAmount / 2;
         DepositRouter.DepositIntent memory intent = _crossChainIntent("baseUsdc");
         intent.minFuelOutput = floor;
-        bytes memory swapData = bytes.concat(q.data);
-        assertEq(_word(swapData, MIN_AMOUNT_OUT_OFFSET), q.toAmountMin, "offset 132 is not the facet's minimum");
-        _setWord(swapData, MIN_AMOUNT_OUT_OFFSET, floor);
-        (bytes memory unguarded, uint256 innerMin) = _withoutInnerMinimum(q, floor);
-        assertGt(innerMin, floor, "the venue's inner minimum is not above the floor");
+        assertEq(_word(q.data, MIN_AMOUNT_OUT_OFFSET), q.toAmountMin, "offset 132 is not the facet's minimum");
 
-        V4PoolKey memory pool = V4PoolKey(address(0), aztec, AZTEC_POOL_FEE, AZTEC_POOL_SPACING, AZTEC_POOL_HOOKS);
-        _assertRouteTouches(intent, swapData, keccak256(abi.encode(pool)));
-        V4Buyer buyer = new V4Buyer(POOL_MANAGER);
-        uint256 ethIn = _priceMoveBetween(buyer, pool, intent, unguarded, innerMin);
+        (bytes memory unguarded,) = _withInnerMinimum(q, floor, floor);
+        uint256 delivered = _fuelOut(intent, unguarded);
+        assertGe(delivered, floor, "the venue delivers below the router floor");
+        (bytes memory strict, uint256 quotedMin) = _withInnerMinimum(q, floor, delivered + 1);
+        assertGt(quotedMin, floor, "the quoted inner minimum is not above the floor");
 
-        vm.deal(address(buyer), ethIn);
-        buyer.buy(pool, ethIn);
-        bytes memory call = _routerCall(intent, swapData, t, t);
+        bytes memory call = _routerCall(intent, strict, t, t);
         bytes memory reason = _directRevert(t, call);
-        console2.log("front-run ETH", ethIn);
-        console2.log("venue revert");
+        console2.log("venue", q.tool, "delivers", delivered);
         console2.logBytes(reason);
         assertTrue(bytes4(reason) != DepositRouter.InsufficientFuel.selector, "the router floor caused the revert");
         assertTrue(bytes4(reason) != CUMULATIVE_SLIPPAGE, "the facet's minimum caused the revert");
@@ -577,7 +514,9 @@ contract LifiDestinationFork is MainnetLifiFork {
 
     /// The recorded swap with the venue's own minimum (a big-endian uint128 in its call, between the quote's minimum
     /// and its amount) and LI.FI's `_minAmountOut` both lowered to `floor`.
-    function _withoutInnerMinimum(SameChainQuote memory q, uint256 floor)
+    /// The quote's swap with the facet's `_minAmountOut` set to `facetMin` and the venue's own minimum (the one
+    /// 16-byte value in its call between `toAmountMin` and `toAmount`) set to `venueMin`; `innerMin` is the quoted one.
+    function _withInnerMinimum(SameChainQuote memory q, uint256 facetMin, uint256 venueMin)
         internal
         view
         returns (bytes memory data, uint256 innerMin)
@@ -594,9 +533,9 @@ contract LifiDestinationFork is MainnetLifiFork {
         assertEq(hits, 1, "the venue call does not carry exactly one inner minimum");
         console2.log("venue inner minimum", innerMin, "at venue byte", at);
         for (uint256 k; k < 16; k++) {
-            venue[at + k] = bytes1(uint8(floor >> (8 * (15 - k))));
+            venue[at + k] = bytes1(uint8(venueMin >> (8 * (15 - k))));
         }
-        data = abi.encodeWithSelector(bytes4(q.data), id, integrator, referrer, router, floor, swaps);
+        data = abi.encodeWithSelector(bytes4(q.data), id, integrator, referrer, router, facetMin, swaps);
     }
 
     function _word(bytes memory b, uint256 at) internal pure returns (uint256 w) {
@@ -605,56 +544,12 @@ contract LifiDestinationFork is MainnetLifiFork {
         }
     }
 
-    function _setWord(bytes memory b, uint256 at, uint256 w) internal pure {
-        assembly ("memory-safe") {
-            mstore(add(add(b, 32), at), w)
-        }
-    }
-
-    // ---- price move ----
-
-    /// The recorded route swaps through the given V4 pool (the router call runs on a reverted snapshot).
-    function _assertRouteTouches(DepositRouter.DepositIntent memory intent, bytes memory swapData, bytes32 poolId)
-        internal
-    {
+    /// The fuel the router reports for `swapData`, measured on a reverted snapshot.
+    function _fuelOut(DepositRouter.DepositIntent memory intent, bytes memory swapData) internal returns (uint256 out) {
         uint256 snap = vm.snapshotState();
         _fundExecutor(t);
-        vm.recordLogs();
         vm.prank(executor);
-        depositRouter.bridgeFromCaller(intent, swapData, t, t);
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        for (uint256 i; i < logs.length; i++) {
-            if (logs[i].emitter == POOL_MANAGER && logs[i].topics[0] == V4_SWAP) {
-                console2.log("route swaps in V4 pool", vm.toString(logs[i].topics[1]));
-            }
-        }
-        assertTrue(_find(logs, POOL_MANAGER, V4_SWAP, poolId) != NOT_FOUND, "the route does not use the AZTEC pool");
+        (, out) = depositRouter.bridgeFromCaller(intent, swapData, t, t);
         assertTrue(vm.revertToState(snap));
-    }
-
-    /// The smallest power-of-two ETH buy of AZTEC after which the unguarded route delivers less than the venue's inner
-    /// minimum, while still at least the router floor; each probe runs on a reverted snapshot.
-    function _priceMoveBetween(
-        V4Buyer buyer,
-        V4PoolKey memory pool,
-        DepositRouter.DepositIntent memory intent,
-        bytes memory unguarded,
-        uint256 innerMin
-    ) internal returns (uint256 ethIn) {
-        for (ethIn = 1 ether; ethIn <= 4096 ether; ethIn *= 2) {
-            uint256 snap = vm.snapshotState();
-            vm.deal(address(buyer), ethIn);
-            buyer.buy(pool, ethIn);
-            _fundExecutor(t);
-            vm.prank(executor);
-            (, uint256 fuelOut) = depositRouter.bridgeFromCaller(intent, unguarded, t, t);
-            assertTrue(vm.revertToState(snap));
-            if (fuelOut < innerMin) {
-                console2.log("moved fuel out", fuelOut, "inner minimum", innerMin);
-                assertGe(fuelOut, intent.minFuelOutput, "the move overshot the router floor");
-                return ethIn;
-            }
-        }
-        revert("no buy up to 4096 ETH moved the price below the venue's minimum");
     }
 }

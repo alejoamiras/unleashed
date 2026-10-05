@@ -155,7 +155,8 @@ token leg to absorb leftovers. On the Permit2 path that revert costs a retry. On
 becomes a LI.FI recovery: the bridge fee is spent and a retry needs ETH on Ethereum, so Phase 2 proves the allowed
 venues consume the slice exactly.
 
-Stray input at the target: `GenericSwapFacetV3` returns the Diamond's **whole** input-token balance, not a delta,
+Stray input at the target: `GenericSwapFacetV3` returns the Diamond's **whole** input-token balance (once above one
+unit; a one-unit balance stays as dust, so one unspent unit counts as consumed), not a delta,
 so anyone can put 2 wei there first, and `swapTokensMultiple…` lets each step skip its pull (`requiresDeposit`), so
 the facet may also swap a balance it already held. The router therefore measures, rather than assumes, the gross
 pull: `pull = fuelSlice − the allowance left after the swap` (read before it is zeroed; the rail and manifest
@@ -1284,20 +1285,36 @@ Arbitrum WETH → Ethereum WETH: Stargate delivers native ETH and the destinatio
 destination chain" (the recorded refusal sits in `test/fixtures/lifi/mainnet.json`). The plan's two options were
 USDC-only sources or a decoder admitting one pinned `WETH.deposit` step; with no quote to decode, only the first
 exists. The router stays non-payable, the decoder admits no wrap step, and `routing.sources` lists USDC on mainnet.
-Ethereum-origin WETH is unaffected (Permit2 path). Revisit if LI.FI starts quoting a WETH contract call.
+Ethereum-origin WETH is unaffected (Permit2 path). A later recording did return a quote, an okx swap to USDC on
+Arbitrum, Stargate, then a nordstern swap back to WETH on Ethereum before our call; the decoder refuses it (one
+destination step), so USDC-only stands. Revisit if LI.FI quotes a WETH contract call with our step alone.
 
 **D42 `maxPull` slack on Stargate is 1.5 % (agent, Phase 2 evidence).** For `toAmount` 100 USDC LI.FI sent
 `amountSentLD` 101.09, and Stargate's expected delivery `amountLD` is 101.01 (`minAmountLD` 100.50). At 0.5 % the
 router would take 100.50 and the Executor would forward about 0.51 USDC to the user's Ethereum address; at 1.5 % the
-whole delivery joins the deposit (the compose fork asserts `amountLD ≤ maxPull`). The v3 envelope's upper bound and
+whole delivery joins the deposit (the compose fork asserts `amountLD ≤ maxPull`).
+
+**D43 Arc 1 Codex loop, round 1 (`gpt-6.1-sol` at `high`).** Verdict: no critical or high fund-redirection defect.
+Accepted:
+1. The fork's "TS constant" pin compared the fixture with a Solidity literal, so a `lifi-gas.ts` change could go
+   unproven. `lifi-gas.test.ts` now holds the gas limits and the deny list equal to the fork-proven fixtures.
+2. The router mock refunded a one-unit balance that the pinned facet keeps as dust (`GenericSwapFacetV3`, `> 1`).
+   The mock now mirrors the threshold, a test pins the boundary (one unspent unit is consumed dust on either path),
+   and the natspec says so. Accepted residue: one unit per swap at the Diamond. The fuzz and halmos properties
+   that modelled a whole-balance refund now model the threshold.
+3. One narrating comment was deleted.
+
+Rejected: none. In the same round, a Phase 4 agent found the recorder never sent `integrator`. The mainnet
+fixtures were re-recorded with `LIFI_INTEGRATOR` (now in `lifi-gas.ts`). LI.FI had moved the deadline-free venue
+from nordstern to sushiswap, so the inner-minimum fork test no longer hard-codes a V4 pool and works for any venue. The v3 envelope's upper bound and
 the decoder's `maxPull` rule follow the same figure (`fuel.crossChainSlippageBps`).
 
-**Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern,
-the venue LI.FI picks without bitget, survives a warp of 3 × the 125 s ETA; bitget's signed order expires 648 s after
-its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above
+**Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
+and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
+signed order expires about 645 s after its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above
 `minAmountLD` ≥ T); I5 (Across fills are indexed by origin chain and deposit id; EndpointV2's `ComposeDelivered`
 carries the guid in its data, unindexed, so discovery filters by emitter and topic and decodes it); I7 (the worst
-shape measures 673,561 cold; the constant is 1,000,000). **Still open:** I2 (Across testnet relayers fill
+shape measures 717,544 cold through sushiswap and 673,561 through nordstern; the constant is 1,000,000). **Still open:** I2 (Across testnet relayers fill
 message-bearing deposits).
 
 ## Audit verdicts

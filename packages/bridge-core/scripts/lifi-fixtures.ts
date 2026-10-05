@@ -32,6 +32,7 @@ import {
 import { buildAcrossV4Deposit, encodeLifiReceiverMessage } from "../src/across-v4"
 import { type DEPOSIT_INTENT_COMPONENTS, DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { LIFI_SWAP_DATA_COMPONENTS, type LifiSwapData } from "../src/lifi-abi"
+import { LIFI_INTEGRATOR } from "../src/lifi-gas"
 import { MAINNET, recordMainnetQuotes } from "./lifi-fixtures-mainnet"
 import { resolveBin, run } from "./run"
 
@@ -75,7 +76,6 @@ const AZTEC_RECIPIENT: Hex = "0x000000000000000000000000000000000000000000000000
 const SECRET_HASH: Hex = "0x000000000000000000000000000000000000000000000000000000000005ec7e"
 /** Distinct from `SECRET_HASH`, so a crossed leg shows in the forks. */
 const FUEL_SECRET_HASH: Hex = "0x00000000000000000000000000000000000000000000000000000000000f5ec7"
-const INTEGRATOR = "unleashed"
 
 /** The router variants' fuel slice out of the delivered 4.5 USDC (fuel-only swaps all of it). */
 const FUEL_SLICE = 1_000_000n
@@ -194,7 +194,7 @@ function railDeposit(rail: Rail, transactionId: Hex, step: LifiSwapData): { mess
 	const tx = buildAcrossV4Deposit({
 		diamond: TESTNET_RAIL.source.diamond,
 		transactionId,
-		integrator: INTEGRATOR,
+		integrator: LIFI_INTEGRATOR,
 		user: rail.user,
 		inputToken: TESTNET_RAIL.source.usdc,
 		inputAmount: INPUT_AMOUNT,
@@ -249,7 +249,7 @@ function routerStep(at: RouterAddresses, transactionId: Hex, intent: DepositInte
 		functionName: "swapTokensSingleV3ERC20ToERC20",
 		args: [
 			transactionId,
-			INTEGRATOR,
+			LIFI_INTEGRATOR,
 			"",
 			at.router,
 			intent.minFuelOutput,
@@ -350,7 +350,7 @@ async function recordTestnetRail(): Promise<string> {
 		destination: { ...TESTNET_RAIL.destination, block: Number(dstBlock.number), factory: gen.factory, portal: dst.portal },
 		inputs: {
 			transactionId,
-			integrator: INTEGRATOR,
+			integrator: LIFI_INTEGRATOR,
 			user: rail.user,
 			inputAmount: INPUT_AMOUNT,
 			outputAmount: OUTPUT_AMOUNT,

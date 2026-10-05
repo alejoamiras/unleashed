@@ -23,7 +23,8 @@ contract MockLifiSwap {
     address public fjTo;
     /// Zero pulls `fromAmount`; otherwise pulls this much (beyond the approval reverts in the token).
     uint256 public pullOverride;
-    /// The real facet returns its whole balance; false returns only `pull − spent`.
+    /// The real facet returns its whole balance once it exceeds one unit (it keeps 1 wei as dust); false returns
+    /// only `pull − spent`.
     bool public returnWholeBalance = true;
     address public reenterTarget;
     bytes public reenterCall;
@@ -90,7 +91,8 @@ contract MockLifiSwap {
         }
         uint256 spent = spend == type(uint256).max ? pulled : spend;
         if (spent > 0) input.safeTransfer(SINK, spent);
-        uint256 back = returnWholeBalance ? input.balanceOf(address(this)) : pulled - spent;
+        uint256 whole = input.balanceOf(address(this));
+        uint256 back = returnWholeBalance ? (whole > 1 ? whole : 0) : pulled - spent;
         if (back > 0) input.safeTransfer(receiver, back);
         require(fjOut >= minOut, "MockLifiSwap: below minimum");
         if (fjOut > 0) fj.safeTransfer(fjTo == address(0) ? receiver : fjTo, fjOut);

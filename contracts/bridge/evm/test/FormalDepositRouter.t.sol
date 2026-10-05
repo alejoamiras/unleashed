@@ -32,7 +32,7 @@ import {
 ///
 /// Threat model: Permit2 is a success-always mock (signature validity is Permit2's own domain, pinned by the fork
 /// suites); the swap target is `MockLifiSwap` with the real facet's semantics (pulls `fromAmount`, returns its WHOLE
-/// input balance to `_receiver`), made hostile only where a proof says so; the factory is an honest model binding
+/// input balance to `_receiver` once above one unit), made hostile only where a proof says so; the factory is an honest model binding
 /// each token to a non-hashing portal stand-in, because halmos 0.3.3 cannot model sha256 and has no `deployCode`
 /// (forge covers the real factory, clones and LI.FI facet). The properties are the router's OWN accounting and
 /// gating guarantees under those semantics.
@@ -336,7 +336,7 @@ contract FormalDepositRouterTest is Test {
 
     /// For ANY split, ANY venue spend up to the slice and ANY input balance the venue held beforehand (a donation the
     /// real facet forwards whole): the unspent slice joins the token leg, the donation stays router residue, and
-    /// received == token leg + spend exactly.
+    /// received == token leg + consumed exactly, where a one-unit balance the facet keeps counts as consumed.
     function check_fromCaller_conservesReceived(
         uint128 amountRaw,
         uint128 sliceRaw,
@@ -368,12 +368,16 @@ contract FormalDepositRouterTest is Test {
 
         (uint256 tokenAmount, uint256 fuelOut) = _send(r, false, i, sd, amount);
 
+        uint256 held = stray + slice - spend;
+        uint256 returned = held > 1 ? held : 0;
+        uint256 strayBack = returned < stray ? returned : stray;
+        uint256 consumed = slice - (returned - strayBack);
         assertEq(b.payer - usdc.balanceOf(CALLER), amount, "payer delta != received");
-        assertEq(tokenAmount, amount - spend, "token leg != received - spend");
-        assertEq(usdc.balanceOf(address(usdcPortal)) - b.clone, amount - spend, "clone delta != received - spend");
-        assertEq(usdc.balanceOf(swap.SINK()) - b.sink, spend, "venue spend != consumed");
-        assertEq(usdc.balanceOf(address(r)), b.router + stray, "router residue != prior residue + stray");
-        assertEq(b.target - usdc.balanceOf(address(swap)), stray, "venue kept part of the stray");
+        assertEq(tokenAmount, amount - consumed, "token leg != received - consumed");
+        assertEq(usdc.balanceOf(address(usdcPortal)) - b.clone, amount - consumed, "clone delta != received - consumed");
+        assertEq(usdc.balanceOf(swap.SINK()) - b.sink, spend, "venue spend");
+        assertEq(usdc.balanceOf(address(r)), b.router + strayBack, "router residue != prior residue + stray");
+        assertEq(usdc.balanceOf(address(swap)), held - returned, "venue kept more than dust");
         assertEq(fuelOut, FUEL_OUT, "reported fuel != delivered fuel");
         assertEq(fj.balanceOf(address(feePortal)) - b.feePortal, FUEL_OUT, "FeeJuicePortal delta != fuel");
     }

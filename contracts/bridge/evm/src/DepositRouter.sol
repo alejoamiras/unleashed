@@ -128,7 +128,8 @@ contract DepositRouter is Ownable2Step, ReentrancyGuardTransient {
      * @dev Fuel-only requires `fuelSlice == amount`; otherwise `fuelSlice < amount`. "Unspent" is measured by
      * `_swapFuel`'s stray split, which attributes returned input to the target's prior balance first: a venue that
      * returned only its own leftover while holding a prior balance would see that leftover kept as residue, not
-     * reverted. LI.FI's facet returns its whole balance and the testnet swapper returns nothing, so neither can.
+     * reverted. LI.FI's facet returns its whole balance (above one unit) and the testnet swapper returns nothing, so
+     * neither can.
      */
     function bridgeWithPermit(
         DepositIntent calldata intent,
@@ -320,7 +321,8 @@ contract DepositRouter is Ownable2Step, ReentrancyGuardTransient {
     /**
      * @dev Runs the swap against an exact `slice` approval and measures what it really took. `GenericSwapFacetV3`
      * returns its whole input-token balance to `_receiver`, so a balance the target held beforehand (`stray`) can
-     * come back too: it is residue, never part of the deposit. `pull` comes from the allowance the target left,
+     * come back too: it is residue, never part of the deposit. A balance of one unit it keeps as dust, so one unspent
+     * unit of the slice counts as consumed. `pull` comes from the allowance the target left,
      * read before it is zeroed.
      * @return consumed The slice input actually spent; the rest of the slice joins the token leg.
      * @return fuelOut The router's own Fee Juice delta.
@@ -353,7 +355,6 @@ contract DepositRouter is Ownable2Step, ReentrancyGuardTransient {
         fuelOut = feeAsset.balanceOf(address(this)) - feeBefore;
     }
 
-    /// @dev Exact approval for one portal call, zeroed after it.
     function _approveAndCall(IERC20 token, address portal, uint256 amount, bytes memory call)
         internal
         returns (bytes32 key, uint256 index)

@@ -4,11 +4,15 @@
  * `scripts/lifi-fixtures.ts mainnet` records. Re-measure after any router, venue or LI.FI contract change.
  */
 
+/** `BridgeData.integrator` on every route we build or request. Keyless and fee-free: it names us, it collects
+ *  nothing. */
+export const LIFI_INTEGRATOR = "unleashed"
+
 /**
  * `toContractGasLimit` for the router call in a contract-call quote. The worst shape (private token leg, fuel to
- * the PrivateFPC, a deadline-free venue, known portal) measured 673,561 with every slot cold (LI.FI Diamond via
- * nordstern over two Uniswap V4 pools, Ethereum block 26,128,734); the fork asserts that figure × 1.3 ≤ this.
- * Through Stargate the whole compose completes from 902,526 gas, under `LIFI_MIN_COMPOSE_GAS`.
+ * the PrivateFPC, a deadline-free venue, known portal) measured 717,544 with every slot cold (LI.FI Diamond via
+ * sushiswap, Ethereum block 26,128,931; via nordstern it was 673,561); the fork asserts that figure × 1.3 ≤ this.
+ * Through Stargate the whole compose completes from 947,690 gas, under `LIFI_MIN_COMPOSE_GAS`.
  */
 export const LIFI_TO_CONTRACT_GAS_LIMIT = 1_000_000n
 

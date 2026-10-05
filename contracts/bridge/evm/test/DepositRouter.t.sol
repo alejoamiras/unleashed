@@ -375,6 +375,27 @@ contract DepositRouterTest is DepositRouterFixture {
         vm.stopPrank();
     }
 
+    /// The facet keeps a one-unit balance as dust, so one unspent unit of the slice counts as consumed on either path
+    /// and stays at the target.
+    function test_oneUnspentUnit_isConsumedDustAtTheTarget() public {
+        DepositRouter.DepositIntent memory i = _fuelIntent(address(usdc), SLICE, FLOOR, false);
+        bytes memory sd = _swapData(address(usdc), SLICE, FLOOR);
+        swap.set(SLICE - 1, FJ_OUT);
+        uint256 snapshot = vm.snapshotState();
+
+        vm.prank(user);
+        (uint256 tokenAmount,) = router.bridgeFromCaller(i, sd, AMOUNT, AMOUNT);
+        assertEq(tokenAmount, AMOUNT - SLICE, "the caller path credited the dust unit to the token leg");
+        assertEq(usdc.balanceOf(address(swap)), 1, "dust at the target");
+
+        vm.revertToState(snapshot);
+        vm.prank(user);
+        router.bridgeWithPermit(i, sd, AMOUNT, _permit(1));
+        assertEq(portalBalance(address(usdc)), AMOUNT - SLICE, "the exact path refused one unit of dust");
+        assertEq(usdc.balanceOf(address(swap)), 1, "dust at the target");
+        _assertRouterEmpty();
+    }
+
     // ── Donations stay residue ──────────────────────────────────────────────────────────────
 
     function test_donations_toRouterAndSwapTarget_stayResidue() public {
