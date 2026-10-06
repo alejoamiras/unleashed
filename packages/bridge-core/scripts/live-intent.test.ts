@@ -111,8 +111,9 @@ describe("router-only intent", () => {
 	})
 
 	it("refuses every canary-signed run while the canary key is unpinned, and never pins it to a deploy signer", () => {
-		expect(PLAN_PINNED_CANARY_SIGNERS.testnet).toBeNull()
-		expect(() => requirePinnedCanarySigner("testnet")).toThrow(/no pinned canary signer/)
+		expect(PLAN_PINNED_CANARY_SIGNERS.mainnet).toBeNull()
+		expect(() => requirePinnedCanarySigner("mainnet")).toThrow(/no pinned canary signer/)
+		expect(requirePinnedCanarySigner("testnet")).toMatch(/^0x[0-9a-fA-F]{40}$/)
 		const deploySigners = Object.values(PLAN_PINNED_L1_SIGNERS).map((s) => s?.toLowerCase())
 		for (const canary of Object.values(PLAN_PINNED_CANARY_SIGNERS))
 			if (canary) expect(deploySigners).not.toContain(canary.toLowerCase())
