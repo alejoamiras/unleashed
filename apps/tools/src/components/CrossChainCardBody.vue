@@ -10,12 +10,13 @@ import { useEthHeld } from "@/composables/useEthHeld"
 import { useShell } from "@/composables/useShell"
 
 /** Utils */
-import { lifiScanUrl } from "@/lib/chains"
-import { type CrossChainPhase, ethereumPrefillOf, phaseGuide } from "@/lib/crosschain-activity"
+import { chainLabel, lifiScanUrl } from "@/lib/chains"
+import { assetText, type CrossChainPhase, ethereumPrefillOf, phaseGuide, shortAddress } from "@/lib/crosschain-activity"
 import { TESTIDS } from "@/lib/testids"
 
 /** Components */
 import LeftoverApproval from "./LeftoverApproval.vue"
+import StateNotice from "./send/StateNotice.vue"
 
 /**
  * A cross-chain card's guide and actions while it is not a plain deposit. Only an ended send can be
@@ -33,6 +34,12 @@ const ethHeld = useEthHeld(() => (delivered.value ? props.record.route.srcSender
 const guide = computed(() => phaseGuide(props.record, props.phase, { ethHeld: ethHeld.value }))
 
 const final = computed(() => props.phase.kind === "not-sent" || props.phase.kind === "delivered" || props.phase.kind === "expired")
+/** A send that never left the wallet reads as the refusal it is, with its own Dismiss. */
+const notSent = computed(() => {
+	if (props.phase.kind !== "not-sent") return null
+	const route = props.record.route
+	return { source: chainLabel(route.srcChainId), sent: assetText(props.record, route.srcAmount), who: shortAddress(route.srcSender) }
+})
 const prefill = computed(() => (delivered.value ? ethereumPrefillOf(props.record) : null))
 const trackUrl = computed(() => (props.phase.kind === "bridging" ? lifiScanUrl(props.record.route.srcTxHash ?? "") : ""))
 
@@ -43,14 +50,28 @@ function onContinue(): void {
 
 <template>
 	<div class="xc" :data-testid="TESTIDS.journalXcOutcome" :data-phase="phase.kind">
-		<p class="guide-line" :data-testid="TESTIDS.journalXcGuide">{{ guide }}</p>
-		<LeftoverApproval v-if="phase.kind === 'not-sent'" :record="record" />
+		<StateNotice
+			v-if="notSent"
+			tone="lost"
+			icon="square-alert"
+			title="Not sent"
+			action="Dismiss"
+			:action-testid="TESTIDS.journalXcDismiss"
+			@act="journal.discard(record.id)"
+		>
+			<span :data-testid="TESTIDS.journalXcGuide"
+				>The send reverted on {{ notSent.source }}, so nothing moved. Your <span class="mono">{{ notSent.sent }}</span> is still in
+				<span class="mono">{{ notSent.who }}</span>.</span
+			>
+		</StateNotice>
+		<p v-else class="guide-line" :data-testid="TESTIDS.journalXcGuide">{{ guide }}</p>
+		<LeftoverApproval v-if="notSent" :record="record" />
 		<div class="actions">
 			<Button v-if="prefill" size="small" class="card-btn" :data-testid="TESTIDS.journalXcContinue" @click="onContinue">
 				Continue from Ethereum
 			</Button>
 			<Button
-				v-if="final"
+				v-if="final && !notSent"
 				size="small"
 				variant="secondary"
 				class="card-btn"
@@ -88,6 +109,10 @@ function onContinue(): void {
 	margin: 0;
 	font: 400 14px/1.5 var(--ul-font-body);
 	color: var(--ul-ink);
+}
+
+.mono {
+	font-family: var(--ul-font-mono);
 }
 
 .actions {
