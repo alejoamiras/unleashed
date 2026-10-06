@@ -159,19 +159,22 @@ const validityText = computed(() => {
 	padding: 4px 14px 14px;
 }
 
+/* A value with no room beside its label drops under it, as on a phone. */
 .row {
-	display: grid;
-	grid-template-columns: 104px minmax(0, 1fr);
-	column-gap: 16px;
+	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
+	gap: 2px 16px;
 }
 
 dt {
+	flex: 0 0 104px;
 	font: 400 13px/1.45 var(--ul-font-body);
 	color: var(--ul-ink-3);
 }
 
 dd {
+	flex: 1 1 260px;
 	margin: 0;
 	min-width: 0;
 	font: 400 13px/1.45 var(--ul-font-mono);
@@ -199,11 +202,5 @@ dd {
 
 .row[data-portal="mismatch"] dd {
 	color: var(--ul-attention);
-}
-
-@media (max-width: 760px) {
-	.hint {
-		display: none;
-	}
 }
 </style>

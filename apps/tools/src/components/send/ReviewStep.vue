@@ -117,7 +117,7 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 			</div>
 			<div class="line" :data-testid="TESTIDS.sendReviewNetworkFee">
 				<dt>Fee</dt>
-				<dd class="fee"><span v-if="estimate.networkFee">{{ estimate.networkFee }}</span> <span class="fee-note">{{ estimate.networkFeeNote }}</span></dd>
+				<dd class="fee"><span v-if="estimate.networkFee" class="fee-figure">{{ estimate.networkFee }}</span> <span class="fee-note">{{ estimate.networkFeeNote }}</span></dd>
 			</div>
 			<div class="line" :data-testid="TESTIDS.sendReviewTakes">
 				<dt>Takes</dt>
@@ -210,11 +210,12 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 	margin: 0;
 }
 
+/* A value with no room beside its label drops under it, as on a phone. */
 .line {
-	display: grid;
-	grid-template-columns: 104px minmax(0, 1fr);
-	gap: 16px;
+	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
+	gap: 4px 16px;
 	padding: 11px 16px;
 }
 
@@ -226,16 +227,19 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 
 .send dd {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
-	gap: 12px;
+	gap: 6px 12px;
 }
 
 dt {
+	flex: 0 0 104px;
 	font: 400 14px/1.4 var(--ul-font-body);
 	color: var(--ul-ink-3);
 }
 
 dd {
+	flex: 1 1 260px;
 	margin: 0;
 	min-width: 0;
 	font: 400 15px/1.4 var(--ul-font-mono);
@@ -281,6 +285,15 @@ dd {
 .word {
 	font-family: var(--ul-font-body);
 	font-weight: 700;
+}
+
+/* Body face, so the space before the note is a body space; only the figure is mono. */
+.fee {
+	font-family: var(--ul-font-body);
+}
+
+.fee-figure {
+	font-family: var(--ul-font-mono);
 }
 
 .fee-note {
