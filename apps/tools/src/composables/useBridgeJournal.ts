@@ -990,6 +990,11 @@ export function flagRecordError(id: string, note: string): void {
 	setRuntime(id, { attention: "error", note })
 }
 
+/** Lifts `flagRecordError`'s flag once the record is seen in flight again; any other attention stays. */
+export function clearRecordError(id: string): void {
+	if (runtime.value[id]?.attention === "error") setRuntime(id, { attention: undefined, note: undefined })
+}
+
 /**
  * Foreground ownership: UI-owned, compare-and-swap. While a record is foreground, the
  * journal list suppresses its card - the stepper/receipt is its only surface. In-memory only:
