@@ -90,3 +90,24 @@ integration cells, the operator tooling, and the canary. The parent unified the 
      `--strict` run passes on a `sandbox:up` candidate.
    - Operator suites (`verify-l1 live-intent deploy-manifest generation calibration`): 6 files, 39 passed.
    - No anvil or aztec process from these runs remains, and none of their rows is left in `~/.agents/ports.md`.
+
+## Arc 2 Codex loop
+
+Codex `gpt-6.1-sol` at `high`, one session resumed across rounds, over the arc 2 diff (Phases 3 to 5). The accepted
+findings and the one deviation are in the plan's ledger (D44).
+
+- **Round 1:** "Request changes: one high and five medium MATERIAL findings". The high one: a replaced source
+  bridge facet only warned under `verify:l1`, although it holds the user's input before the router is reached. The
+  others covered reorged deposit facts, unauthenticated extras, journal-only adoption, gas ceilings that were only
+  estimates, and a filler that signed with any key. All verified and fixed in one commit, with one regression each.
+- **Round 2:** "Original fixes verified; request changes for three remaining MATERIAL defects". A reverted receipt
+  was bound only to its sender. viem throws on a missing receipt, so the scan fallback never ran. An approval could
+  spend its own revoke's budget. Fixed.
+- **Round 3:** "Two MATERIAL gaps remain". A calldata substring is not proof that a reverted call is the
+  transfer, and the approval's confirmation sat outside the cleanup guard. Fixed (the batch shape deviates from
+  Codex's fix; see D44). On the fix commit: unit 689 passed, `test:integration` 8 files and 47/47, no `/dev/shm`
+  segment left behind.
+- **The loop hit the plan's hard stop after three rounds without converging.** Surfaced to the owner, who chose
+  to run round 4 in the same session. Pattern: each round's fix to a reverted-receipt rule opened a narrower hole one layer down. Sender,
+  then a substring, then a decoded target. The lesson: authenticate a negative outcome (`not-sent`) as strictly as
+  a positive one, by decoded call target and id from the start, never by a weaker proxy.

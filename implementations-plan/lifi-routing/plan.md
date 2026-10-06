@@ -1311,6 +1311,44 @@ Round 2 found no fund-risk defect and two stale comments, both accepted and fixe
 findings." Arc 1 converged. The v3 envelope's upper bound and
 the decoder's `maxPull` rule follow the same figure (`fuel.crossChainSlippageBps`).
 
+**D44 Arc 2 Codex loop (`gpt-6.1-sol` at `high`, over the arc 2 diff).** Every finding was verified against the
+code and accepted. Round 3 still raised two material findings, so the loop reached the plan's hard stop and went to
+the owner, who chose "Run round 4" in the same session.
+- Round 1 (one high, five medium, one low):
+  1. (high) A replaced source bridge facet only warned, although it holds the user's approved input before any
+     check of ours runs. `verify:l1` now fails on bridge-facet drift; D4's warning stays for fuel-swap selectors,
+     which the router's floor bounds.
+  2. A reorged deposit left its leaf, message hash and delivery facts on a non-final record. They are cleared when
+     canonical discovery returns `pending` or an outcome.
+  3. Extra deposits matched only the secret hash, token and amount floor. One is kept only when the leaf
+     recomputed for the record's recipient, privacy and portal equals the key the router logged.
+  4. Adoption trusted the journal's fingerprint. It now proves the creation transaction's input (bytecode plus
+     constructor arguments) and its receipt's contract address on chain.
+  5. Canary gas ceilings were estimates. Every send carries gas and fee bounds within its chain's remaining cap,
+     and reconciliation runs after every row, the last included.
+  6. The fill CLI signed with any `CANARY_PRIVATE_KEY`. It now requires the pinned canary address first.
+  7. (low) Three comments cited plan artifacts; removed.
+- Round 2 (three medium):
+  1. A reverted receipt was bound only to its sender. It must now carry `lifiTxId`, and a transfer that landed
+     under another hash outranks a recorded revert.
+  2. viem throws `TransactionReceiptNotFoundError` rather than returning `null`, so a stale recorded hash read as
+     `incomplete`. It now falls back to the Transfer scan; any other read error stays `incomplete`.
+  3. An approval could spend the budget its revoke needed. A non-zero approve reserves its revoke, and a cleanup
+     that fails anyway throws `AllowanceStillLive` with the original cause, which the lost-race fallback rethrows.
+- Round 3 (two medium):
+  1. A calldata substring did not authenticate a reverted call. A call to the source Diamond must decode under the
+     rail's facet ABI to `BridgeData.transactionId == lifiTxId`; a call to any other target falls back to the scan.
+     **Deviation from Codex's smallest fix:** a transaction the sender addresses to itself (an EIP-7702 batch) still
+     counts when it carries the id as one 32-byte word. Its inner calls are not decoded, only the sender's own key
+     can produce one, and refusing it would leave a reverted batched transfer `pending` with no path to `not-sent`.
+  2. The approval's confirmation sat outside the cleanup guard. Submit and confirm are split; everything after a
+     submitted approval either revokes or raises `AllowanceStillLive`.
+
+Rejected: none. Accepted residue:
+- An OP-stack L1 data fee falls outside `gas × maxFeePerGas`; Codex agreed it "remains separate".
+- A submit that errors after the node already broadcast propagates without a revoke.
+- An unused revocation reserve tightens the current row's budget.
+
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
 signed order expires about 645 s after its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above
