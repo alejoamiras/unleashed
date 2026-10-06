@@ -99,7 +99,7 @@ describe("ActivityRow", () => {
 		const w = mountRow(row({ group: "running", status: "running", action: null, foreground: true, phase: "Crossing" }))
 		expect(w.attributes("aria-current")).toBe("true")
 		expect(w.get(".meta .route").text()).toBe("Ethereum → Aztec")
-		expect(w.get(".meta .tail").text()).toBe("· this send")
+		expect(w.get(".meta .last").text()).toBe("· this send")
 		expect(w.get(".side").text()).toBe("Crossing")
 		const ended = { text: "Expired", tone: "ended" as const }
 		const expired = mountRow(

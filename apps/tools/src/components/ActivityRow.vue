@@ -37,14 +37,14 @@ const title = computed(() => (action.value === "switch" && props.switchLocked ? 
  *  secondary, so one screen never shows two filled calls. */
 const filled = computed(() => props.row.group === "needs-you" && action.value !== "retry")
 
-/** The second line as route and tail: the route truncates first, since the tail ("this send", the
- *  age) is what tells two rows of one route apart. Beside a button the line has only its own column,
- *  so it drops the visibility. */
-const meta = computed<{ route: string; tail: string }>(() => {
+/** The second line in three parts that give way in turn: the route first, then a middle (visibility,
+ *  an outcome's detail), never the last ("this send", the age), which tells two rows of one route
+ *  apart. Beside a button the line has only its own column, so it drops the visibility. */
+const meta = computed<{ route: string; middle?: string; last?: string }>(() => {
 	const r = props.row
-	if (r.foreground) return { route: r.route, tail: r.detail ?? "this send" }
-	if (r.detail) return { route: r.route, tail: r.detail }
-	return { route: r.route, tail: action.value ? r.age : `${r.visibility} · ${r.age}` }
+	if (r.foreground) return r.detail ? { route: r.route, middle: r.detail } : { route: r.route, last: "this send" }
+	if (r.detail) return { route: r.route, middle: r.detail }
+	return action.value ? { route: r.route, last: r.age } : { route: r.route, middle: r.visibility, last: r.age }
 })
 
 /** The qualifier and the note share the third line. */
@@ -96,7 +96,8 @@ function onAct(): void {
 			{{ row.amount }} {{ row.symbol }}
 		</button>
 		<span class="meta second"
-			><span class="route">{{ meta.route }}</span><span class="tail">{{ " · " }}{{ meta.tail }}</span></span
+			><span class="route">{{ meta.route }}</span><span v-if="meta.middle" class="middle">{{ " · " }}{{ meta.middle }}</span
+			><span v-if="meta.last" class="last">{{ " · " }}{{ meta.last }}</span></span
 		>
 		<span v-if="extra" class="meta qualifier" :class="{ note: !row.qualifier }">{{ extra }}</span>
 		<button
@@ -233,19 +234,26 @@ function onAct(): void {
 	display: flex;
 }
 
-/* The route gives way first, down to a few letters; only then does a long tail ("in your Ethereum wallet") truncate. */
+/* The route's weight dwarfs the middle's, so the middle's share of the shrink stays under a layout unit (any
+   share at all would clip it) until the route stops at its minimum. Factors under one would instead leave
+   the middle overflowing there. */
 .route {
-	flex: 0 1 auto;
-	min-width: 7ch;
+	flex: 0 1000000 auto;
+	min-width: 4ch;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-.tail {
-	flex: 0 0.001 auto;
+.middle {
+	flex: 0 1 auto;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
+	white-space: pre;
+}
+
+.last {
+	flex: none;
 	white-space: pre;
 }
 
