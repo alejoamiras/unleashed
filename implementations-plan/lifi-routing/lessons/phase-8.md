@@ -83,9 +83,7 @@ pre-fills an Ethereum-origin send. Every state a board does not draw is a propos
   - The Ethereum-origin review's wrong-chain notice is wired but unreachable: a chain change closes that review.
   - Whether `scan.li.fi` tracks a testnet transfer ("Track on LI.FI") is a manual check.
   - A testnet send is filled only if someone runs `fill-testnet.ts` with the canary key within 2 h, and nothing
-    tells the operator one is waiting. No amount bound applies beyond the filler's Sepolia balance.
-  - The testnet notice and S-Refunded still name "Across's test relayer"; the pinned filler is the only one
-    who can fill. Rewording either is the owner's call.
+    tells the operator one is waiting. Each carries at most 8.00 USDC (`SELF_BUILT_MAX_WHOLE_TOKENS`).
   - The review's quoted-limits line can no longer render on testnet, since nothing quotes there.
 
 ## Attempts
@@ -128,13 +126,50 @@ row classed `fix` was fixed, or is listed in the report with the reason it was n
 - **D46 leaves signed copy false.** Five strings still name "Across's test relayer". Replacement copy is
   proposed in the report and is not applied.
 
+## Fix round 2
+
+Two fresh reviewers compared the round's shots, now rendered in the real fonts, with the boards. Their 29
+`fix` rows were the spec.
+- **A fix built on bad evidence regresses.** Round 1 moved S-Delivered's aside under its buttons from a
+  fallback-font render; with the real fonts the board puts it beside them, and at 390 the "fix" clipped it.
+  When the evidence changes, re-check the previous round's fixes against it before building on them.
+- **The send on screen is a dock row like any other, marked.** It keeps its own group (Needs you, Ended), its
+  action and its place in the badge; only the dock's self-opening skips it, since the stepper is already on
+  screen. An outcome replaces "this send" with what happened, and a delivered send's Continue stays a word
+  beside the panel's button. A receipt reopened from Activity marks its row too: `receiptFromActivity` now
+  carries the record id. A tone rule that zeroes the fill, or colours the word, must not outrank the current
+  row's own rules (`Slow` turned pink, an ended current row went flat).
+- **A row shows what left the wallet until the send arrives.** A cross-chain record reads as its deposit once
+  that lands, so its amount dropped to the token part mid-flight; an Ethereum-origin token + gas send headed
+  its stepper with the token claim alone. `sentAmountOf` adds the gas slice back.
+- **A preview reads the bridge's L1, not the wallet's chain.** The delivered panel's "Lands as" resolves the
+  Ethereum token and probes its gas venue through `readClientFor(l1)`: after a send from a source chain the
+  wallet usually sits there, and a read through its client fails the chain check. The slice comes from the
+  amount step's own gas plan (`gasPlanFor`).
+- **The git index is shared, so commit by pathspec.** A plain `git commit` took files a worker had just
+  staged. `git reset --soft HEAD~1`, then `git commit -F <msg> -- <own paths>`, which commits only those
+  paths and leaves the rest staged.
+- **Flex truncation in priority order needs weights, not small factors.** The dock's second line is route,
+  middle and last. With shrink factors under one, the middle stopped short once the route hit its minimum
+  (the spec scales the free space by their sum) and overflowed; with the route merely heavier, the middle's
+  sliver of the shrink still clipped it with an ellipsis. The route's factor is a million, so the middle's
+  share stays under a layout unit until the route is spent.
+- **Phone captures overlap.** The review's fixed action bar hid a band of every scrolled 390 capture; the
+  shooter now steps 160px less than the viewport.
+- **The owner approved the manual-fill copy.** The review notice, its Takes row, S-Refunded's account, the
+  expired card and `expiryLead` now say a testnet send waits for a manual fill and is refunded after the
+  window; mainnet keeps the relayer wording.
+- **Not fixed:** "which is enough" beside the ETH held (the app has no gas estimate for an Ethereum-origin
+  send, so the claim could be false), "Show receipt" on the another-deposit card and the "Testnet build only"
+  caption (owner keeps or drops).
+
 ## Gate
 
-On the fix round's final code, one gate at a time:
+On fix round 2's final code, one gate at a time:
 - `contracts/` is untouched by this phase; forge was not run.
 - `bun run lint && bun run typecheck:all && bun run test:all`: Biome clean, complexity baseline OK; design 242
-  passed; bridge-core 73 files, 688 passed and 11 skipped; tools 126 files, 1739 passed. The tools count fell
-  from 1753 when the dead gas-hint helpers and their tests left `send-model`.
-- `bun run audit:tools`: 1739 passed, complexity baseline OK, every committed address matches its rebuilt
+  passed; bridge-core 73 files, 688 passed and 11 skipped; tools 126 files, 1742 passed.
+- `bun run audit:tools`: 1742 passed, complexity baseline OK, every committed address matches its rebuilt
   instance, the build succeeds.
-- `bun run e2e:tools`: 70 passed. No page object needed a change: no spec drives a cross-chain send.
+- `bun run e2e:tools`: 70 passed. No page object needed a change: no spec reads the dock rows or drives a
+  cross-chain send.
