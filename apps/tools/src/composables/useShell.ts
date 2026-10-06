@@ -25,8 +25,10 @@ export interface EthereumPrefill {
 /** A `bridge.*` host lands on Send; everywhere else the faucet is the front door. */
 const section = ref<Section>("send")
 const highlightedId = ref<string | null>(null)
-/** The send wizard is on one of its form steps (token, amount, review): the only place the bridge footer shows. */
+/** The send wizard is on one of its form steps (token, amount, review), whose footer is the real-funds line alone. */
 const bridgeForm = ref(false)
+/** The send wizard shows a receipt reopened from Activity, whose footer lists the contracts as Activity's does. */
+const receiptFromActivity = ref(false)
 /** Requests the wizard consumes once: a pre-filled send, or the receipt of one record. */
 const prefill = ref<EthereumPrefill | null>(null)
 const receiptRequest = ref<string | null>(null)
@@ -70,6 +72,7 @@ export function useShell() {
 		section,
 		highlightedId,
 		bridgeForm,
+		receiptFromActivity,
 		prefill,
 		receiptRequest,
 		goTo,
@@ -86,6 +89,7 @@ export function __resetShellForTests(): void {
 	section.value = "send"
 	highlightedId.value = null
 	bridgeForm.value = false
+	receiptFromActivity.value = false
 	prefill.value = null
 	receiptRequest.value = null
 }

@@ -53,6 +53,8 @@ export interface ReceiptSnapshot {
 	/** A cross-chain deposit's source leg: the chain it was sent from and, once known, its transaction.
 	 *  `sender` is then the account on that chain. */
 	source?: { chainId: number; txHash?: string }
+	/** Opened again from Activity, where the record already is: no note says it stays there. */
+	reopened?: boolean
 }
 
 const props = withDefaults(defineProps<{ snapshot: ReceiptSnapshot; ctaLabel?: string; addTokenBusy?: boolean }>(), {
@@ -178,12 +180,14 @@ const links = computed(() => {
 	return out.filter((l) => l.href !== "")
 })
 
-/** "Both transactions" only when both links render: a leg another account finished has only one. */
-const note = computed(() =>
-	links.value.length === 2
+/** "Both transactions" only for an Ethereum-origin send whose two links render: a leg another account
+ *  finished has only one, and a cross-chain send has three legs. */
+const note = computed(() => {
+	if (props.snapshot.reopened) return null
+	return links.value.length === 2 && !props.snapshot.source
 		? "This bridge is finished. Its record stays in Activity with both transactions."
-		: "This bridge is finished. Its record stays in Activity.",
-)
+		: "This bridge is finished. Its record stays in Activity."
+})
 </script>
 
 <template>
@@ -252,7 +256,7 @@ const note = computed(() =>
 				</Button>
 			</div>
 		</section>
-		<p class="note ul-notch"><Icon class="note-icon" name="info-box" :size="24" /><span>{{ note }}</span></p>
+		<p v-if="note" class="note ul-notch"><Icon class="note-icon" name="info-box" :size="24" /><span>{{ note }}</span></p>
 	</div>
 </template>
 

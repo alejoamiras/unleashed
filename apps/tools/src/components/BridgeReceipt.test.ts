@@ -80,6 +80,14 @@ describe("BridgeReceipt", () => {
 		expect(w.find(".note").text()).toBe("This bridge is finished. Its record stays in Activity.")
 	})
 
+	it("a receipt reopened from Activity has no note: its record is already there", () => {
+		expect(
+			render(exit({ reopened: true }))
+				.find(".note")
+				.exists(),
+		).toBe(false)
+	})
+
 	it("withdraw: Aztec → Ethereum, token only, the Ethereum account line checksummed with the whole address in title", () => {
 		const w = render(exit())
 		expect(w.text()).toContain("Aztec → Ethereum")

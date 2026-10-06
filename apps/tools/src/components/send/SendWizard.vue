@@ -315,7 +315,7 @@ const view = computed(() => {
 	}
 	return { kind: "form" } as const
 })
-// The page footer belongs to the form steps only; the shell reads this flag.
+// The shell picks the page footer from these two flags: the form keeps the real-funds line alone.
 watch(
 	() => view.value.kind === "form",
 	(form) => {
@@ -323,8 +323,16 @@ watch(
 	},
 	{ immediate: true },
 )
+watch(
+	() => view.value.kind === "receipt" && view.value.snapshot.reopened === true,
+	(reopened) => {
+		shell.receiptFromActivity.value = reopened
+	},
+	{ immediate: true },
+)
 onScopeDispose(() => {
 	shell.bridgeForm.value = false
+	shell.receiptFromActivity.value = false
 })
 
 const busy = computed(() => preflighting.value || submitting.value || sendFlow.busy.value || exitFlow.busy.value)
@@ -1313,10 +1321,10 @@ function exitSnapshotOf(rec: SendWithdrawRecord, base: SnapshotBase): ReceiptSna
 
 /** Puts `rec`'s receipt up; false for a record that has none. A cross-chain one names its source leg and the
  *  account that sent it there. */
-function openReceipt(rec: AnyJournalRecord): boolean {
+function openReceipt(rec: AnyJournalRecord, reopened = false): boolean {
 	const view = sendView(rec)
 	if (!isSendRecord(view)) return false
-	const base = snapshotOf(view)
+	const base = { ...snapshotOf(view), ...(reopened ? { reopened } : {}) }
 	receiptSnapshot.value = isCrossChainRecord(rec)
 		? { ...base, source: { chainId: rec.route.srcChainId, txHash: rec.route.srcTxHash }, sender: rec.route.srcSender }
 		: base
@@ -1541,7 +1549,7 @@ function takeRequests(): void {
 	const rec = receiptId ? findRecord(journal.canonicalRecordId(receiptId)) : undefined
 	if (!rec?.completedAt) return
 	clearForRequest()
-	openReceipt(rec)
+	openReceipt(rec, true)
 }
 
 void catalog.refresh()

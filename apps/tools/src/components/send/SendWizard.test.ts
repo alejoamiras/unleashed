@@ -1150,6 +1150,7 @@ describe("SendWizard", () => {
 		await flushPromises()
 		expect(w.findComponent({ name: "BridgeReceipt" }).exists()).toBe(true)
 		expect(form.value).toBe(false)
+		expect(useShell().receiptFromActivity.value).toBe(false)
 		w.findComponent({ name: "BridgeReceipt" }).vm.$emit("new-bridge")
 		await flushPromises()
 		expect(form.value).toBe(true)
@@ -1955,7 +1956,9 @@ describe("SendWizard", () => {
 			direction: "deposit",
 			source: { chainId: XC_SOURCE, txHash: XC_SRC_TX },
 			sender: XC_SENDER,
+			reopened: true,
 		})
+		expect(useShell().receiptFromActivity.value).toBe(true)
 	})
 
 	it("disposes every composable on unmount", async () => {
