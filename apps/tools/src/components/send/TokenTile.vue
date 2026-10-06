@@ -2,7 +2,7 @@
 /** Utils */
 import { computed } from "vue"
 import { chainBadge } from "@/lib/chains"
-import { formatBigInt, trimAddress } from "@/lib/format"
+import { formatBigInt, formatNativeBalance, trimAddress } from "@/lib/format"
 import type { SelectableToken } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { checksumAddress, safeDisplay } from "@/lib/token-display"
@@ -34,11 +34,11 @@ const checksummed = computed(() => (props.look?.native ? "" : checksumAddress(pr
 const address = computed(() => trimAddress(checksummed.value, 8, 6))
 
 // A pasted token carries `decimals: -1` until the selection step reads them; formatting against that
-// sentinel would render a nonsense balance, so the row simply shows none.
+// sentinel would render a nonsense balance, so the row reads as unread until then.
 const balanceText = computed(() => {
 	const decimals = props.decimals ?? props.token.decimals
-	if (props.balance === undefined || decimals < 0) return null
-	return formatBigInt(props.balance, decimals, props.look?.places)
+	if (props.balance === undefined || decimals < 0) return "—"
+	return props.look?.native ? formatNativeBalance(props.balance, decimals) : formatBigInt(props.balance, decimals)
 })
 
 function pick(): void {
@@ -73,7 +73,7 @@ function pick(): void {
 				</span>
 			</span>
 		</span>
-		<span v-if="balanceText !== null" class="balance" :data-testid="TESTIDS.sendTokenBalance">{{ balanceText }}</span>
+		<span class="balance" :data-testid="TESTIDS.sendTokenBalance">{{ balanceText }}</span>
 	</button>
 </template>
 

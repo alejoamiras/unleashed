@@ -12,8 +12,6 @@ export interface RowLook {
 	disabled?: boolean
 	/** A chain's native coin, which has no contract address to show. */
 	native?: boolean
-	/** Decimal places of the balance; a fee coin's useful amounts sit past the second. */
-	places?: number
 }
 
 /** "all", or the one chain whose rows are shown. */
@@ -59,7 +57,7 @@ export function depositRows(i: StepRowsInput): StepRows {
 			t.source === "manifest" ? { sub: `${L1_CHAIN_LABEL} · no bridge step`, withAddress: false } : { sub: L1_CHAIN_LABEL }
 	}
 	for (const t of natives) {
-		looks[t.logoKey] = { sub: `pays your ${chainLabel(t.chainId)} fees`, withAddress: false, disabled: true, native: true, places: 4 }
+		looks[t.logoKey] = { sub: `pays your ${chainLabel(t.chainId)} fees`, withAddress: false, disabled: true, native: true }
 	}
 	return { rows: [...open, ...catalog, ...shut, ...natives], looks }
 }

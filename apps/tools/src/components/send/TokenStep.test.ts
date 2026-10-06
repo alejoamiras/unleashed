@@ -195,7 +195,7 @@ describe("TokenStep — the chains a deposit can start on", () => {
 	const crossChain = (over: Partial<Props> = {}) => step({ tokens: [ETH_USDC, LISTED], sources: SOURCES, natives: NATIVES, ...over })
 
 	it("lists the sources first, then Ethereum's catalog, then each chain's native coin, which only pays fees", async () => {
-		const w = crossChain({ rowBalances: { "native:84532": 8_000_000_000_000_000n } })
+		const w = crossChain({ rowBalances: { "native:84532": 8_000_000_000_000_000n, [`native:${L1}`]: 400_000_000_000_000_000n } })
 		expect(w.text()).toContain("Send from")
 		expect(w.get(sel(TESTIDS.sendTokenSearch)).attributes("placeholder")).toBe("Search tokens on every network")
 		expect(keys(w)).toEqual([...SOURCES, ETH_USDC, LISTED, ...NATIVES].map((t) => t.logoKey))
@@ -207,6 +207,8 @@ describe("TokenStep — the chains a deposit can start on", () => {
 		const native = tile(w, "native:84532")
 		expect(native.attributes("aria-disabled")).toBe("true")
 		expect(native.get(sel(TESTIDS.sendTokenBalance)).text()).toBe("0.0080")
+		expect(tile(w, `native:${L1}`).get(sel(TESTIDS.sendTokenBalance)).text()).toBe("0.40")
+		expect(tile(w, `native:${ARB}`).get(sel(TESTIDS.sendTokenBalance)).text()).toBe("—")
 		await native.trigger("click")
 		await tile(w, `${BASE}:${LINK}`).trigger("click")
 		expect(w.emitted("select")).toEqual([[SOURCES[0]]])

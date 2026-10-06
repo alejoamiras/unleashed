@@ -27,6 +27,12 @@ export function formatAmount(value: bigint, decimals: number, displayPlaces = 2)
 	return formatCompact(value, decimals, displayPlaces)
 }
 
+/** A fee coin's balance: two places, or four when two would read as nothing ("0.40", "0.0080"). */
+export function formatNativeBalance(value: bigint, decimals: number): string {
+	const small = value > 0n && value < 10n ** BigInt(Math.max(decimals - 2, 0))
+	return formatBigInt(value, decimals, small ? 4 : 2)
+}
+
 /**
  * Format a fixed-decimal bigint amount into a human-readable string.
  *
