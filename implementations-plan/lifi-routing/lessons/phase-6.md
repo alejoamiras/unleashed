@@ -22,6 +22,31 @@
   (`0x1c7D4B19…`) on `acrossV4`.
 - **Keyed runs pin HEAD.** `env-exec` refuses a dirty tree or a HEAD that is not a pushed branch tip. Each run that
   writes a tracked file (intent, journal, candidate) is committed and pushed before the next request.
+- **Funding as received:** Sepolia 0.3 ETH + 40 USDC, Base Sepolia 0.08 ETH + 20 USDC. The Base Sepolia faucet
+  has a two-hour cooldown. Moving canary USDC across with CCTP was refused by the agent's auto-mode guard (a
+  real-world transaction), and the owner chose to skip it ("Let's skip it then, if you don't need it."). 20 USDC
+  covers one pass of the three cross-chain rows (3 × 6 USDC) with no retry margin.
+- **Deployed beside the old router** (Sepolia, rollup version 2914217885):
+  - `TestnetFuelSwapper` `0x2b2c5690e8c442c6a7e9cba2938d453585aa9f85`: six rates set, inventory 1,000 FJ against a
+    297.7 FJ floor (one faucet call).
+  - `DepositRouter` `0x6698c147c6596b8dd6352f1e429703c638ffb49b`.
+  - Pre-created and hub-registered: Circle USDC (portal `0x0b56c297c320c3c6cdfc4f3a6122aa1b251c4319`) and WETH
+    (portal `0x75988b1cd1ff2d014acc8589f6fbda2621a34d64`).
+  - The routing re-run adopted both contracts and sent nothing.
+- **Strict verify on the candidate** passed. It checked the router's immutables (swap target = the swapper,
+  factory, Permit2, FeeJuicePortal, fee asset), the guardian as owner of both contracts, the witness type string,
+  the swapper's six rates and inventory, LI.FI's address book and pinned runtime hashes on both chains, and both
+  new runtimes against the forge build.
+- **No calibration.** The network did not change, so the candidate's `fuel` block carries the legacy `swap`
+  budgets calibrated for this generation (`fjPerTx`, `fjRegister`, `minFuelFj`), with `crossChainSlippageBps` 300.
+- **Each keyed step is one `bash -c` chain behind `live-intent.ts verify`**, so a red verify stops the step before it
+  signs. Read-only checks use the signer-free RPC template.
 - **Pushing the stack branches runs no CI.** No workflow triggers on `push`; every PR gate is `pull_request`.
 
 ## Attempts
+
+1. **The fuel smoke's default slice fell under the floor.** `smoke-swap-existing-testnet.ts` sizes a one-token
+   slice: 1 USDC quoted 29.548 FJ against the 29.773 FJ floor, and the old router reverted with
+   `UniswapFuelSwap: insufficient output` before anything moved. Re-run with `FUEL_SLICE_UNITS=1500000`: 44.29 FJ
+   against a 42.96 FJ floor, and the self-paying claim landed. The candidate smoke (two tokens, public and
+   private) passed on the first run.
