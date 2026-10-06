@@ -1,10 +1,11 @@
 import {
+	type AnyJournalRecord,
 	type BridgeBackupFile,
-	type BridgeJournalRecord,
 	feeJuiceAddress,
+	isCrossChainRecord,
 	isSealTrusted,
 	markSealTrusted,
-	openBridgeBackup,
+	openAnyBridgeBackup,
 	parseBackupFile,
 	recoveryKeyFromSignature,
 	recoveryKeyMessage,
@@ -12,7 +13,11 @@ import {
 } from "@unleashed/bridge-core"
 import { NETWORK } from "@/lib/network"
 import { FUEL_PORTAL } from "@/contracts/bridge-generation"
+import { sendView } from "@/lib/crosschain-activity"
+import { appWatchDeps, crossChainSealKey } from "./crosschain-deposit-flow"
+import { needsWatch, watchCrossChain } from "./crosschain-watch"
 import {
+	addCrossChainRecordVerified,
 	addRecordVerified,
 	deploymentMatches,
 	runOnLane,
@@ -28,7 +33,7 @@ import { useToast } from "./useToast"
 // Ids, directions, and copy only - blobs, signatures, and keys never reach this log.
 const log = (...args: unknown[]) => console.log("[bridge:backup]", ...args)
 
-function backupFileName(rec: BridgeJournalRecord): string {
+function backupFileName(rec: AnyJournalRecord): string {
 	return `unleashed-bridge-${rec.direction}-${rec.id.slice(0, 12)}.json`
 }
 
@@ -51,16 +56,27 @@ function triggerDownload(file: BridgeBackupFile, name: string): void {
  */
 const exportsInFlight = new Set<string>()
 
-/** A schema-3 file is only tracked once its own binding AND its token block still agree with the
- *  chain: an imported record is attacker-supplied, and the block is what every later claim or exit
- *  is built from. */
-async function assertSendRecordImportable(record: BridgeJournalRecord): Promise<void> {
-	if (record.schema !== 3) return
-	if (!deploymentMatches(record)) {
+/** A send file (schema 3, or the schema-4 record that extends one) is only tracked once its own
+ *  binding AND its token block still agree with the chain: an imported record is attacker-supplied,
+ *  and the block is what every later claim or exit is built from. */
+async function assertSendRecordImportable(record: AnyJournalRecord): Promise<void> {
+	if (record.schema !== 3 && record.schema !== 4) return
+	const send = sendView(record)
+	if (!deploymentMatches(send)) {
 		throw new Error("This file belongs to a different bridge deployment — it cannot be restored here.")
 	}
-	const blocked = await validateSendRecordBlock(record)
+	const blocked = await validateSendRecordBlock(send)
 	if (blocked) throw new Error(blocked)
+}
+
+/** Each record family goes back under its own key; a cross-chain one still on its way is watched at once. */
+function track(record: AnyJournalRecord): void {
+	if (!isCrossChainRecord(record)) {
+		addRecordVerified(record)
+		return
+	}
+	addCrossChainRecordVerified(record)
+	if (needsWatch(record)) void watchCrossChain(record.id, appWatchDeps())
 }
 
 export function useBridgeBackup() {
@@ -78,8 +94,8 @@ export function useBridgeBackup() {
 		}
 	}
 
-	async function deriveKey(rec: Pick<BridgeJournalRecord, "id" | "chainId" | "portal" | "bridge">, mode: "export" | "restore") {
-		const retained = getRetainedSealKey(rec.id)
+	async function deriveKey(rec: Pick<AnyJournalRecord, "id" | "chainId" | "portal" | "bridge">, mode: "export" | "restore") {
+		const retained = getRetainedSealKey(rec.id) ?? crossChainSealKey(rec.id)
 		if (retained) return retained
 		const { sign, from } = signer()
 		const message = recoveryKeyMessage({
@@ -104,7 +120,7 @@ export function useBridgeBackup() {
 	}
 
 	/** Seal + download ONE bridge. Refusals (provisional, unsealed-private) come from the module. */
-	async function exportBridge(rec: BridgeJournalRecord): Promise<void> {
+	async function exportBridge(rec: AnyJournalRecord): Promise<void> {
 		if (exportsInFlight.has(rec.id)) return // a double-click must not queue a second prompt.
 		exportsInFlight.add(rec.id)
 		try {
@@ -120,7 +136,7 @@ export function useBridgeBackup() {
 	}
 
 	/** The shared surface handler: both the card and the stepper export with the same toasts. */
-	async function exportBridgeWithToast(rec: BridgeJournalRecord): Promise<void> {
+	async function exportBridgeWithToast(rec: AnyJournalRecord): Promise<void> {
 		try {
 			await exportBridge(rec)
 			toast.push({ kind: "saved", text: "Recovery file downloaded. Keep it with your wallet." })
@@ -130,7 +146,7 @@ export function useBridgeBackup() {
 	}
 
 	/** The restore ladder. Returns the restored record; throws user-facing copy per step. */
-	async function restoreFile(raw: string): Promise<BridgeJournalRecord> {
+	async function restoreFile(raw: string): Promise<AnyJournalRecord> {
 		const file = parseBackupFile(raw)
 		const portal = file.portal.toLowerCase()
 		const bridge = file.bridge.toLowerCase()
@@ -142,15 +158,15 @@ export function useBridgeBackup() {
 		if (file.chainId !== NETWORK.l1ChainId || (!matchesFuel && !matchesSend)) {
 			throw new Error("This file belongs to a different bridge deployment — it cannot be restored here.")
 		}
-		if (journal.records.value.some((r) => r.id === file.id)) {
+		if (journal.listedRecords.value.some((r) => r.id === file.id)) {
 			throw new Error("This bridge is already tracked here — nothing to restore.")
 		}
-		const record = await openBridgeBackup(await deriveKey(file, "restore"), file)
-		if (journal.records.value.some((r) => r.id === record.id)) {
+		const record = await openAnyBridgeBackup(await deriveKey(file, "restore"), file)
+		if (journal.listedRecords.value.some((r) => r.id === record.id)) {
 			throw new Error("This bridge is already tracked here — nothing to restore.")
 		}
 		await assertSendRecordImportable(record)
-		addRecordVerified(record)
+		track(record)
 		log("restored", { id: record.id, direction: record.direction })
 		return record
 	}

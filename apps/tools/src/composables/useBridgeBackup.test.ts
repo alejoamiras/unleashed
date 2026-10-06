@@ -1,4 +1,4 @@
-import type { DepositJournalRecord } from "@unleashed/bridge-core"
+import type { DepositJournalRecord, JournalTokenBlock } from "@unleashed/bridge-core"
 import { feeJuiceAddress, predictPortal, recoveryKeyFromSignature, recoveryKeyMessage, sealBridgeBackup } from "@unleashed/bridge-core"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
@@ -15,8 +15,15 @@ vi.mock("./useL1Wallet", () => ({
 }))
 vi.mock("./useSend", () => ({ getRetainedSealKey: (id: string) => retainedKey(id) }))
 vi.mock("./deposit-flow", () => ({ providerFingerprint: () => "rabby" }))
+const watchCrossChain = vi.fn(async (_id: string, _deps: unknown) => {})
+vi.mock("./crosschain-deposit-flow", () => ({ appWatchDeps: () => ({}), crossChainSealKey: () => undefined }))
+vi.mock("./crosschain-watch", () => ({
+	needsWatch: (rec: { leafIndex?: string; completedAt?: number }) => rec.leafIndex === undefined && rec.completedAt === undefined,
+	watchCrossChain: (id: string, deps: unknown) => watchCrossChain(id, deps),
+}))
 
 import { __resetJournalForTests, addRecord, connectJournalDeps, useBridgeJournal } from "./useBridgeJournal"
+import { xcRecord } from "@/test/crosschain-record"
 import { useBridgeBackup } from "./useBridgeBackup"
 
 // A direct Fee Juice bridge: the one pre-generation shape whose recovery file still restores here.
@@ -188,6 +195,29 @@ describe("useBridgeBackup", () => {
 			const file = await fileFor(sendRecord())
 			await expect(useBridgeBackup().restoreFile(JSON.stringify(file))).rejects.toThrow(/no longer matches/)
 			expect(useBridgeJournal().records.value).toHaveLength(0)
+		})
+
+		it("a cross-chain record exports and restores under its own key, and a send still on its way is watched", async () => {
+			wireSend(async () => null)
+			const rec = xcRecord(
+				{ portal: CLONE, bridge: HUB, token: (sendRecord() as unknown as { token: JournalTokenBlock }).token },
+				{ srcTxHash: `0x${"57".repeat(32)}` },
+			)
+			let file: Blob | undefined
+			URL.createObjectURL = vi.fn((blob: Blob) => {
+				file = blob
+				return "blob:fake"
+			})
+			vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+			await useBridgeBackup().exportBridge(rec)
+			const restored = await useBridgeBackup().restoreFile(await (file as Blob).text())
+			const { records, crossChainRecords } = useBridgeJournal()
+			expect(restored.schema).toBe(4)
+			expect(records.value).toHaveLength(0)
+			const { updatedAt: _stamped, ...stored } = crossChainRecords.value[0] as typeof rec
+			const { updatedAt: _orig, ...original } = rec
+			expect(stored).toEqual(original)
+			expect(watchCrossChain).toHaveBeenCalledWith(rec.id, expect.anything())
 		})
 
 		it("a file naming another hub never reaches the unseal", async () => {
