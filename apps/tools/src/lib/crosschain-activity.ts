@@ -11,10 +11,11 @@ import {
 	outcomeDecidingChain,
 	outcomeFinality,
 } from "@unleashed/bridge-core"
+import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import type { EthereumPrefill } from "@/composables/useShell"
 import { MANIFEST } from "@/contracts/bridge-generation"
 import { chainLabel, railLabel } from "@/lib/chains"
-import { etaRange } from "@/lib/crosschain-steps"
+import { crossChainPhases, crossChainUnconfirmed, etaRange } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
 import { IS_MAINNET, sourcesOf } from "@/lib/network"
 import { safeAddressText, safeDisplay } from "@/lib/token-display"
@@ -45,7 +46,8 @@ export function crossChainPhase(rec: AnyJournalRecord): CrossChainPhase | null {
 			: { kind: FINAL_KIND[outcome] }
 	}
 	if (rec.leafIndex !== undefined || rec.completedAt !== undefined) return null
-	return rec.route.srcTxHash || rec.route.srcBatchId ? { kind: "bridging" } : { kind: "sending" }
+	// A hash only says the wallet broadcast the send; the rail has it once the source receipt named its transport.
+	return rec.route.transport ? { kind: "bridging" } : { kind: "sending" }
 }
 
 /** The schema-3 deposit a cross-chain record extends, for every reading written before schema 4. */
@@ -164,9 +166,18 @@ function finalizingGuide(rec: CrossChainDepositRecord, outcome: CrossChainOutcom
 	return outcome === "expired-on-source" ? `Expired on ${src}, ${waiting}` : `Reverted on ${src}, ${waiting}`
 }
 
-/** "you hold 0.40 ETH" joins the delivered guide only when the balance was read. */
+/** "you hold 0.40 ETH" joins the delivered guide only when the balance was read; `runtime` words a send still
+ *  being sent the way its stepper does. */
 export interface GuideFacts {
 	ethHeld?: string
+	runtime?: RecordRuntime
+}
+
+function sendingGuide(rec: CrossChainDepositRecord, rt: RecordRuntime): string {
+	const src = chainLabel(rec.route.srcChainId)
+	if (crossChainUnconfirmed(rec, rt))
+		return `We haven’t found your send on ${src} yet. Your wallet didn’t confirm it, so we keep looking.`
+	return crossChainPhases(rec, rt).find((p) => p.state === "active")?.detail ?? `Waiting for ${src} to confirm the send…`
 }
 
 /** The card's one guide line for `phase`, worded from the record's own facts. */
@@ -176,7 +187,7 @@ export function phaseGuide(rec: CrossChainDepositRecord, phase: CrossChainPhase,
 	const symbol = crossChainAsset(rec).symbol
 	switch (phase.kind) {
 		case "sending":
-			return `We haven’t found your send on ${src} yet. Your wallet didn’t confirm it, so we keep looking.`
+			return sendingGuide(rec, facts.runtime ?? {})
 		case "bridging":
 			return `${railLabel(rec.route.rail)} is moving your ${symbol} to ${chainLabel(rec.chainId)}. Nothing for you to do; usually ${etaRange(rec.route.etaSeconds)}.`
 		case "finalizing":

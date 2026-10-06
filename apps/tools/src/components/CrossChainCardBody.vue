@@ -31,7 +31,9 @@ const shell = useShell()
 
 const delivered = computed(() => props.phase.kind === "delivered")
 const ethHeld = useEthHeld(() => (delivered.value ? props.record.route.srcSender : undefined))
-const guide = computed(() => phaseGuide(props.record, props.phase, { ethHeld: ethHeld.value }))
+const guide = computed(() =>
+	phaseGuide(props.record, props.phase, { ethHeld: ethHeld.value, runtime: journal.runtime.value[props.record.id] }),
+)
 
 const final = computed(() => props.phase.kind === "not-sent" || props.phase.kind === "delivered" || props.phase.kind === "expired")
 /** A send that never left the wallet reads as the refusal it is, with its own Dismiss. */

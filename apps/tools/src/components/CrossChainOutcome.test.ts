@@ -2,7 +2,7 @@ import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
 import { mount } from "@vue/test-utils"
 import { describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
-import { XC_CREATED, XC_SRC_TX, xcRecord } from "@/test/crosschain-record"
+import { XC_CREATED, XC_SRC_TX, XC_TRANSPORT, xcRecord } from "@/test/crosschain-record"
 
 const now = ref(XC_CREATED + 9 * 60_000)
 vi.mock("@/lib/clock", () => ({ useNow: () => now }))
@@ -63,7 +63,7 @@ describe("CrossChainOutcome", () => {
 
 	it("stalled: a bridging send past twice its usual time, with its clock, LI.FI's trail and the last read", () => {
 		now.value = XC_CREATED + 24 * 60_000 + 10_000
-		const w = panel(xcRecord(), { checkedAt: now.value - 5_000 })
+		const w = panel(xcRecord({}, { transport: XC_TRANSPORT }), { checkedAt: now.value - 5_000 })
 		expect(w.get("h2").text()).toBe("Bridging is taking longer than usual")
 		expect(w.get(".sub").text()).toBe("Base Sepolia → Aztec · 5.00 USDC · public · 24:10 in the bridge, usually 2–4 min")
 		expect(cards(w)[0]).toBe("Your USDC left Base Sepolia 24 minutes ago. Across hasn’t delivered it to Ethereum · Sepolia yet.")

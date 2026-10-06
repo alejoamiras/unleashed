@@ -7,6 +7,8 @@ export const XC_SOURCE = 84532
 export const XC_SENDER = `0x3fa8${"0".repeat(32)}c41d` as `0x${string}`
 export const XC_SRC_TX = word("57")
 export const XC_CREATED = 1_760_000_000_000
+/** What the source receipt names once the rail has the send. */
+export const XC_TRANSPORT = { kind: "across", originChainId: XC_SOURCE, depositId: "7", relayHash: word("7e") } as const
 
 /** A public 5.00 USDC token+gas send from Base Sepolia on the Across rail, sent and bridging; each
  *  test sets the facts its state is about. */

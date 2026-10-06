@@ -20,7 +20,7 @@ vi.mock("@/composables/useBridgeWallet", () => ({
 const now = ref(60 * 60_000)
 vi.mock("@/lib/clock", () => ({ useNow: () => now }))
 
-import { XC_CREATED, xcRecord } from "@/test/crosschain-record"
+import { XC_CREATED, XC_TRANSPORT, xcRecord } from "@/test/crosschain-record"
 import { useActivityFeed } from "./useActivityFeed"
 
 const DEPLOY = { chainId: 11155111, portal: "0xportal", bridge: "0xbridge" }
@@ -117,7 +117,7 @@ describe("useActivityFeed", () => {
 			xcRecord({ id, secretHashHex: id as `0x${string}`, ...over }, route) as unknown as BridgeJournalRecord
 		const extra = { txHash: `0x${"ee".repeat(32)}` as `0x${string}`, leafIndex: "8", amount: "1" }
 		records.value = [
-			xc("bridging", {}),
+			xc("bridging", {}, { transport: XC_TRANSPORT }),
 			xc("finalizing", {}, { outcome: "expired-on-source" }),
 			xc("delivered", done, { outcome: "delivered-to-wallet", outcomeAmount: "4900000" }),
 			xc("not-sent", done, { outcome: "not-sent" }),

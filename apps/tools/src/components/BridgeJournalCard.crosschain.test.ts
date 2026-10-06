@@ -3,7 +3,7 @@ import { mount } from "@vue/test-utils"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
 import type { RecordRuntime } from "@/composables/useBridgeJournal"
-import { XC_CREATED, XC_SRC_TX, xcRecord } from "@/test/crosschain-record"
+import { XC_CREATED, XC_SRC_TX, XC_TRANSPORT, xcRecord } from "@/test/crosschain-record"
 
 const runtime = ref<Record<string, RecordRuntime>>({})
 const discard = vi.fn()
@@ -40,8 +40,15 @@ describe("BridgeJournalCard — a cross-chain send", () => {
 
 	it.each([
 		{
-			name: "bridging",
+			name: "broadcast, not yet on the rail",
 			rec: xcRecord(),
+			chip: "Sending",
+			guide: "Waiting for Base Sepolia to confirm the send…",
+			actions: [],
+		},
+		{
+			name: "bridging",
+			rec: xcRecord({}, { transport: XC_TRANSPORT }),
 			chip: "Bridging",
 			guide: "Across is moving your USDC to Ethereum · Sepolia. Nothing for you to do; usually 2–4 min.",
 			actions: [TESTIDS.journalXcTrack],
@@ -87,7 +94,11 @@ describe("BridgeJournalCard — a cross-chain send", () => {
 	})
 
 	it("tracks a bridging send on LI.FI by its source transaction", () => {
-		expect(card(xcRecord()).get(sel(TESTIDS.journalXcTrack)).attributes("href")).toBe(`https://scan.li.fi/tx/${XC_SRC_TX}`)
+		expect(
+			card(xcRecord({}, { transport: XC_TRANSPORT }))
+				.get(sel(TESTIDS.journalXcTrack))
+				.attributes("href"),
+		).toBe(`https://scan.li.fi/tx/${XC_SRC_TX}`)
 	})
 
 	it("Continue from Ethereum hands the wizard the delivered token and amount; Dismiss discards", async () => {
