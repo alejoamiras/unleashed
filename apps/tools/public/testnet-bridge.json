@@ -121,9 +121,7 @@
 				"decimals": 6,
 				"displayName": "USDC",
 				"displaySymbol": "USDC",
-				"source": "permissionless-mint",
-				"sourceContract": "MintableERC20",
-				"maxWholePerTx": 1000000
+				"source": "canonical"
 			},
 			{
 				"erc20": "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
@@ -134,9 +132,7 @@
 				"decimals": 18,
 				"displayName": "Wrapped Ether",
 				"displaySymbol": "WETH",
-				"source": "permissionless-mint",
-				"sourceContract": "MintableERC20",
-				"maxWholePerTx": 1000000
+				"source": "canonical"
 			}
 		],
 		"routing": {
