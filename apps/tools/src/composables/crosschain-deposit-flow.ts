@@ -36,7 +36,7 @@ import { type CrossChainAsk, type CrossChainRoute, ROUTE_TTL_MS, routeRecordId }
 const log = (...args: unknown[]) => console.log("[bridge:crosschain]", ...args)
 
 export const ROUTE_EXPIRED = "This route's price is more than a minute old — review it again. Nothing was sent."
-export const ROUTE_REFUSED = "This route failed its safety check, so it was not sent. Nothing left your wallet."
+export const ROUTE_REFUSED = "This route failed its safety check, so the deposit was not sent."
 
 export interface CrossChainSend {
 	ask: CrossChainAsk
@@ -268,7 +268,7 @@ async function sendOnSource(
 	}
 	for (const call of approvals) {
 		const receipt = await reads.source.waitForTransactionReceipt({ hash: await wallet.sendTransaction(call) })
-		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain — nothing was sent.")
+		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain, so the deposit was not sent.")
 	}
 	assertVerified(s.route)
 	onRequested()
