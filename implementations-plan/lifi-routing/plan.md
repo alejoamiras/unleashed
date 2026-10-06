@@ -995,7 +995,7 @@ Layers: unit, sandbox integration, contract.
 
 ### Arc 3: testnet live (requires A2 and A3)
 
-#### Phase 6: Router-only deploy, promotion, canary
+#### Phase 6: Router-only deploy, promotion, canary ✓
 
 Order, so nothing voids the intent: G-A3 is quoted in this plan before `build`; `lessons/phase-6.md` is
 allowlisted (Phase 5); SKILL.md, `UPDATE.md` and the plan's ✓ marks land after the last `verify`. Under the runbook
@@ -1441,6 +1441,10 @@ code or the chain.
   approval was revoked; the deposit stays exclusive and refundable). The preflight is gone: the pinned cap
   simulation is the pre-send check, and its error carries the simulated revert reason. Round 3 is the plan's hard
   stop; the owner chose *"Run round 4 (Recommended)"*, for this loop only.
+- Round 4 (resumed): "No new material findings." Arc 3 converged in four rounds.
+
+Rejected: none; two sub-suggestions declined with reasons (round 1, item 2). Accepted residue: `fillGas` is a
+simulation check, and the block a fill lands in can differ from the one it simulated.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
