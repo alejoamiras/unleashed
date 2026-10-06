@@ -89,6 +89,7 @@ function onArrow(delta: number): void {
 	padding: 0 12px;
 	color: var(--ul-ink-2);
 	font: 600 14px/1.2 var(--ul-font-body);
+	text-align: left;
 	cursor: pointer;
 }
 

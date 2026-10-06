@@ -5,6 +5,7 @@ import { useL1Wallet } from "@/composables/useL1Wallet"
 import { appSources, sourceChainIds } from "@/composables/useSourceChain"
 import { NETWORK } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
+import { checksumAddress } from "@/lib/token-display"
 
 const { address, chainId, isConnected, isConnecting, connect, disconnect, switchL1Network } = useL1Wallet()
 
@@ -20,7 +21,7 @@ const offChain = computed(() => isConnected.value && chainId.value !== null && !
 			<span class="dot" aria-hidden="true" />
 			<span class="identity">
 				<span class="label">Ethereum wallet<span v-if="chains.size > 1" class="networks" :data-testid="TESTIDS.l1Networks"> · {{ chains.size }} networks</span></span>
-				<AddressDisplay :address="address ?? ''" :data-testid="TESTIDS.l1Account" />
+				<AddressDisplay :address="checksumAddress(address ?? '')" :data-testid="TESTIDS.l1Account" />
 			</span>
 			<button v-if="offChain" class="wrong-chain ul-notch" type="button" :data-testid="TESTIDS.l1SwitchChain" @click="switchL1Network">
 				<Icon name="warning-diamond" :size="12" />
