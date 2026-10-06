@@ -123,7 +123,7 @@ const box = computed<Box>(() => {
 		<template v-else-if="state.kind === 'account'">
 			This route was priced for <span class="mono">{{ state.priced }}</span>. Nothing was signed and nothing moved.
 		</template>
-		<template v-else-if="state.kind === 'contract'">Connect a regular wallet account to send from those networks.</template>
+		<template v-else-if="state.kind === 'contract'">Connect a regular wallet account to send from that network.</template>
 		<template v-else>Nothing was signed and nothing moved.</template>
 	</StateNotice>
 </template>

@@ -245,6 +245,9 @@ describe("TokenStep — the chains a deposit can start on", () => {
 		await w.get(sel(TESTIDS.sendChangeWallet)).trigger("click")
 		expect(w.emitted("change-wallet")).toHaveLength(1)
 		w.unmount()
+		const one = crossChain({ contractChains: [BASE] })
+		expect(one.get(sel(TESTIDS.sendContractWallet)).text()).toContain("to send from that network.")
+		one.unmount()
 	})
 
 	it("an Ethereum-only build shows no chips, no native rows and the search it always had", () => {

@@ -166,7 +166,7 @@ const lookupShort = computed(() => (props.lookup ? trimAddress(lookupAddress.val
 				:data-testid="TESTIDS.sendContractWallet"
 				@act="emit('change-wallet')"
 			>
-				Connect a regular wallet account to send from those networks.
+				Connect a regular wallet account to send from {{ refused.length === 1 ? "that network" : "those networks" }}.
 			</StateNotice>
 
 			<TokenList
