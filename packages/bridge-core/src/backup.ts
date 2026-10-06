@@ -355,11 +355,17 @@ function assertRouteDestination(r: Partial<CrossChainRoute>): void {
 	}
 }
 
+/** Fixed terms carry a fill deadline, so they exist only on Across. */
+function assertTerms(r: Partial<CrossChainRoute>): void {
+	if (r.terms !== undefined && (r.terms !== "fixed" || r.rail !== "acrossV4" || r.fillDeadline === undefined)) throw new Error(INVALID)
+}
+
 function validateRoute(route: unknown): CrossChainRoute {
 	const r = route as Partial<CrossChainRoute> | null
 	if (!r || typeof r !== "object") throw new Error(INVALID)
 	assertRouteSource(r)
 	assertRouteDestination(r)
+	assertTerms(r)
 	assertTransport(r.transport, r.rail as CrossChainRoute["rail"])
 	assertOutcome(r)
 	assertExtraDeposits(r.extraDeposits)

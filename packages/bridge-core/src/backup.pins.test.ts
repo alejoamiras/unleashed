@@ -181,7 +181,7 @@ const across = xc.route.transport as object
 
 describe("validateCrossChainRecord — schema 4", () => {
 	it("accepts both rails fully populated, unchanged; the Ethereum-origin validator refuses them", () => {
-		for (const rec of [xc, sg]) {
+		for (const rec of [xc, sg, mutateRoute({ terms: "fixed" })]) {
 			expect(validateCrossChainRecord(rec)).toEqual(rec)
 			expect(validateJournalRecord(rec)).toEqual(rec)
 			expect(() => validateAnyBackupRecord(rec)).toThrow(REJECT)
@@ -213,6 +213,8 @@ describe("validateCrossChainRecord — schema 4", () => {
 		["etaSeconds negative", mutateRoute({ etaSeconds: -1 })],
 		["fillDeadline string", mutateRoute({ fillDeadline: "1" })],
 		["fillDeadline on Stargate", mutateRoute({ fillDeadline: 1 }, sg)],
+		["terms unknown", mutateRoute({ terms: "quoted" })],
+		["fixed terms on Stargate", mutateRoute({ terms: "fixed" }, sg)],
 		["transport kind unknown", mutateRoute({ transport: { ...across, kind: "cctp" } })],
 		["Across relayHash short", mutateRoute({ transport: { ...across, relayHash: "0x4e" } })],
 		["Across depositId hex", mutateRoute({ transport: { ...across, depositId: "0x10" } })],
