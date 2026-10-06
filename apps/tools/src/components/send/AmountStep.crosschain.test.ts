@@ -98,6 +98,7 @@ describe("AmountStep, cross-chain", () => {
 			{ figures: { ...FIGURES, srcAmount: 2_000_000n, delivered: 50_000n, relayFee: 1_950_000n, tokenArrives: null } },
 			"gas",
 		)
+		expect(gasOnly.find(sel(TESTIDS.sendXcArrives)).text()).toBe("Arrives on Aztec ≈ 1.49 FJ as gas")
 		expect(gasOnly.find(sel(TESTIDS.sendXcGasOverFee)).text()).toBe("Fees ≈ 1.95 USDC, more than the gas itself.")
 		expect(gasOnly.find(sel(TESTIDS.sendXcCeiling)).exists()).toBe(false)
 		gasOnly.unmount()

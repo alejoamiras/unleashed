@@ -328,7 +328,7 @@ function onUseAll(): void {
 			</button>
 			<p v-if="crossChain" class="arrives" :data-testid="TESTIDS.sendXcArrives">
 				Arrives on Aztec <span class="arrives-figure">{{ crossChainArrives.text }}</span>
-				<template v-if="crossChainArrives.sub"> {{ crossChainArrives.sub }}</template>
+				<template v-if="crossChainArrives.sub">{{ " " }}{{ crossChainArrives.sub }}</template>
 			</p>
 			<p v-if="shownError" :id="AMOUNT_ERROR_ID" class="err" aria-live="polite" :data-testid="TESTIDS.sendAmountError">
 				<Icon name="square-alert" :size="12" />{{ shownError }}

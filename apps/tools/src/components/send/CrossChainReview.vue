@@ -401,6 +401,11 @@ dd {
 	font-family: var(--ul-font-mono);
 }
 
+/* A short address is one token: it never breaks at its ellipsis. */
+.note .mono {
+	white-space: nowrap;
+}
+
 .ink {
 	color: var(--ul-ink);
 }

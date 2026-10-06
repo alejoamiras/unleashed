@@ -283,15 +283,9 @@ dd {
 	font-weight: 700;
 }
 
-.fee {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-}
-
 .fee-note {
 	font: 400 13px/1.4 var(--ul-font-body);
-	color: var(--ul-ink-3);
+	color: var(--ul-ink-2);
 }
 
 .prose {

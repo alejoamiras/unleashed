@@ -101,8 +101,7 @@ const validityText = computed(() => {
 				<dd class="full">
 					<a :href="etherscanAddressUrl(portalAddress)" target="_blank" rel="noopener noreferrer" :data-testid="TESTIDS.sendReviewPortalLink">
 						{{ portalAddress }}
-					</a>
-					<span class="state">· {{ portalState }}</span>
+					</a>{{ " " }}<span class="state">· {{ portalState }}</span>
 				</dd>
 			</div>
 			<div class="row" :data-testid="TESTIDS.sendReviewAccount">
