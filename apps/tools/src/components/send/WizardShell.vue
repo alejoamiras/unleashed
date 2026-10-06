@@ -23,13 +23,13 @@ const props = defineProps<{
 const emit = defineEmits<{ "update:direction": [Direction]; goto: [number] }>()
 
 const CAPTION = {
-	token: "what are you sending?",
+	token: "which network, which token?",
 	amount: "how much, and what should arrive?",
 	review: "check it, then sign.",
 } as const
 
 const HINT = {
-	token: "what are you sending?",
+	token: "which network, which token?",
 	amount: "how much, what arrives",
 	review: "check it, then sign",
 } as const

@@ -16,8 +16,8 @@ const props = defineProps<{
 const emit = defineEmits<{ "update:direction": [Direction] }>()
 
 const DIRECTIONS = [
-	{ value: "l1-to-l2", label: "Ethereum → Aztec", key: "deposit" },
-	{ value: "l2-to-l1", label: "Aztec → Ethereum", key: "exit" },
+	{ value: "l1-to-l2", label: "Into Aztec", key: "deposit" },
+	{ value: "l2-to-l1", label: "Out to Ethereum", key: "exit" },
 ] as const
 
 const SEND_TESTIDS = { root: TESTIDS.sendDirection, deposit: TESTIDS.sendDirectionDeposit, exit: TESTIDS.sendDirectionExit }

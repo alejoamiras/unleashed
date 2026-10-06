@@ -166,8 +166,8 @@ describe("BridgeStepper", () => {
 			exitTxHash: "0xw",
 			...DEPLOY,
 		}
-		expect(selected(dep())).toBe("Ethereum → Aztec")
-		expect(selected(exit)).toBe("Aztec → Ethereum")
+		expect(selected(dep())).toBe("Into Aztec")
+		expect(selected(exit)).toBe("Out to Ethereum")
 	})
 
 	it("the session log shows its latest 8 rows as m:ss from the run's start, as text only; the permission prompt has none", () => {
