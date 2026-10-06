@@ -50,3 +50,31 @@
    `UniswapFuelSwap: insufficient output` before anything moved. Re-run with `FUEL_SLICE_UNITS=1500000`: 44.29 FJ
    against a 42.96 FJ floor, and the self-paying claim landed. The candidate smoke (two tokens, public and
    private) passed on the first run.
+2. **The first canary row was recovered to the wallet, and discovery was right.** `crosschain-public` (6 USDC in,
+   4.5 USDC out on self-built terms; source `0x40019ab5727af78c284c3cc5c00d5dfd835155374294305398e494cf4d703a23`)
+   was filled within the organic window by Across's testnet relayer
+   (`0xc2fa1630ea40230e7e22e54a1b968f22b6fa6154fa540fd51f70d6625a04b116`). The receipt holds six logs:
+   `FilledRelay`, then ReceiverAcrossV4's `LiFiTransferRecovered` paying the 4.5 USDC to the canary. Discovery said
+   `delivered-to-wallet`; the row expected `deposited`, and the canary stopped before any other row.
+   - **The misleading replay:** `cast run --quick` (and `cast run` without it) replays under cast 1.4.1's
+     pre-Amsterdam schedule and shows a clean deposit using 543,733 gas. That trace is not the chain's. Sepolia
+     runs Amsterdam (`blockAccessListHash`, `slotNumber` in its headers), and cast 1.4.1 has no `amsterdam` EVM
+     version. Read the real receipt's logs before trusting a replay.
+   - **What does reproduce it:** `eth_simulateV1` on a public Sepolia node at the parent block, varying only the
+     call's gas. At 1,237,723 the fill recovers (884,619 used, as on chain); from about 1,395,000 it deposits
+     (1,061,186 used). The node's `eth_estimateGas` answers 1,076,281, and the relayer sent exactly 1.15 times
+     that. The receiver's try/catch makes an underfunded fill succeed as a recovery, so the estimate settles there.
+     On an anvil fork under Prague the estimate (704,879) equals the threshold, and an underfunded fill reverts
+     whole.
+   - **No public Sepolia RPC tried serves `debug_traceTransaction`** (publicnode, 1rpc, drpc's free tier).
+     `eth_simulateV1` with explicit per-call gas is the probe that works.
+   - **Fix (D46):** testnet terms name the canary as Across's exclusive relayer until `fillDeadline`. The canary
+     self-fills at once. `sendFill` sends with the smallest doubling of the estimate whose simulated logs equal
+     those at the EIP-7825 cap; anvil answers `eth_simulateV1` too.
+   - **Outcome of the row:** the canary's Sepolia wallet holds the recovered 4.5 USDC, and the 6 USDC left Base
+     Sepolia. No deposit exists to claim. The owner topped Base Sepolia up for the re-run.
+3. **Promoting the manifest broke two unit tests.** `generation-router.test.ts` and `live-intent.test.ts`, plus the
+   canary fixture, built candidates from the live `testnet-bridge.json` and assumed its pre-promotion shape.
+   `apps/tools/public/` changes with every promotion, so they now read a frozen copy:
+   `packages/bridge-core/test/fixtures/testnet-bridge.pre-lifi.json`. Run the unit suite after any commit that
+   rewrites a public manifest.
