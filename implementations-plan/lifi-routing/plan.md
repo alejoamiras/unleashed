@@ -1358,6 +1358,7 @@ the owner, who chose "Run round 4" in the same session. Round 4 raised two more,
      canary is an EOA), and a confirmed self-fill must be that transaction. The filler's output no longer claims
      whose fill it found.
   2. (low) `FillResult.fillTxHash`'s comment still said "nothing was sent". Reworded.
+- Round 6 (resumed): "No new material findings." Arc 2 converged in six rounds.
 
 Rejected: none. Accepted residue:
 - An OP-stack L1 data fee falls outside `gas × maxFeePerGas`; Codex agreed it "remains separate".

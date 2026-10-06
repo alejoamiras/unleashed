@@ -116,6 +116,9 @@ findings and the one deviation are in the plan's ledger (D44).
   test. Surfaced to the owner again, who answered "Keep going, set the limit at 8."
 - **Round 5:** "Batch decoding is fixed; one medium attribution bug and one remaining low comment defect remain".
   `alreadyFilled` cannot tell a relayer's fill from the canary's own whose receipt wait failed, so the canary now
-  attributes the fill by its signer. Pattern: each round's fix to a reverted-receipt rule opened a narrower hole one layer down. Sender,
+  attributes the fill by its signer.
+- **Round 6** (resumed): "No new material findings." The loop converged in six rounds. Gates after the last code
+  fix: lint, `typecheck:all`, unit 690, complexity; `test:integration` 47/47 after the round-4 discovery fix (the round-5
+  fix touches only the canary and the filler, which the integration suite does not drive). Pattern: each round's fix to a reverted-receipt rule opened a narrower hole one layer down. Sender,
   then a substring, then a decoded target. The lesson: authenticate a negative outcome (`not-sent`) as strictly as
   a positive one, by decoded call target and id from the start, never by a weaker proxy.
