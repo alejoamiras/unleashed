@@ -223,14 +223,16 @@ const cellText = (phase: BridgePhase): string => {
 	gap: 2px;
 }
 
+/* A second line (a link, a note, a detail) stacks under the label; the glyph and the time stay on the
+   label's line. */
 .phase {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: 12px;
 	min-height: 34px;
+	padding: 7px 0;
 }
 
-/* Rows with a detail stack it under the label; the glyph and the time stay on the label's line. */
 .phase.active,
 .phase.failed {
 	align-items: flex-start;
@@ -515,11 +517,8 @@ const cellText = (phase: BridgePhase): string => {
 }
 
 .seg-label {
-	overflow: hidden;
 	font: 400 12px/1.2 var(--ul-font-body);
 	color: var(--ul-ink-3);
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 /* A failed segment is within 1.1:1 of the live one's luminance, so the mark, not the hue, tells
@@ -548,16 +547,5 @@ const cellText = (phase: BridgePhase): string => {
 .cell.ended .seg-label {
 	font-weight: 700;
 	color: var(--ul-ink);
-}
-
-/* Six labels do not fit a phone card: only the live one keeps its words, and room to show them. */
-@media (max-width: 760px) {
-	.cell.live {
-		flex-grow: 4;
-	}
-
-	.cell:not(.live) .seg-label {
-		visibility: hidden;
-	}
 }
 </style>
