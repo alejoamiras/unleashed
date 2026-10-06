@@ -129,33 +129,6 @@ export const GAS_BLOCK_REASON: Record<GasBlock, string> = {
 	unavailable: "Gas options can't be checked right now.",
 }
 
-export interface ChoiceHintState {
-	exit: boolean
-	/** Transactions the token + gas slice is sized for. */
-	txTarget: number
-	gasBlock: GasBlock | null
-	/** The token alone cannot be claimed: the account holds no gas. */
-	tokenBlocked: boolean
-}
-
-/** A phone row's short hint; `count`, when present, sits between `lead` and `tail` as a figure. */
-export interface ChoiceHint {
-	lead: string
-	count?: number
-	tail?: string
-}
-
-/** The one-line hint a phone row shows in place of its caption: what arrives, or why it cannot. */
-export function hintOf(choice: SendIntent, s: ChoiceHintState): ChoiceHint {
-	if (choice === "token") {
-		if (s.exit) return { lead: "back to Ethereum" }
-		return { lead: s.tokenBlocked ? "needs gas first" : "only the token" }
-	}
-	if (s.gasBlock) return { lead: s.gasBlock === "no-route" ? "not for this token" : "can't check right now" }
-	if (choice === "gas") return { lead: "all of it as gas" }
-	return { lead: "gas for ", count: s.txTarget, tail: s.txTarget === 1 ? " transaction" : " transactions" }
-}
-
 /** Everything "Sign and send" acts on. */
 export interface SendPlan {
 	direction: "l1-to-l2"

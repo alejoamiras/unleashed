@@ -218,7 +218,6 @@ export const TESTIDS = {
 	sendChoiceTokenGas: "tl-send-choice-token-gas",
 	sendChoiceGas: "tl-send-choice-gas",
 	sendGasBreakdown: "tl-send-gas-breakdown",
-	sendGasDisclosure: "tl-send-gas-disclosure",
 	sendGasBreakdownToken: "tl-send-gas-breakdown-token",
 	sendGasBreakdownFuel: "tl-send-gas-breakdown-fuel",
 	sendPrivateToggle: "tl-send-private-toggle",
