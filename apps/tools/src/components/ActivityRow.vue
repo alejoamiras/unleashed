@@ -233,14 +233,19 @@ function onAct(): void {
 	display: flex;
 }
 
+/* The route gives way first, down to a few letters; only then does a long tail ("in your Ethereum wallet") truncate. */
 .route {
-	min-width: 0;
+	flex: 0 1 auto;
+	min-width: 7ch;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
 .tail {
-	flex: none;
+	flex: 0 0.001 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	white-space: pre;
 }
 
