@@ -40,8 +40,9 @@ const sameAddress = (a: string, b: string): boolean => a.toLowerCase() === b.toL
 const isRevert = (e: unknown): boolean => e instanceof BaseError && e.walk((x) => x instanceof ContractFunctionRevertedError) !== null
 
 /** The provider reads through `pub`, remembering whether the last failure was the contract refusing (a token
- *  without a rate) rather than the transport failing: the first is an answer, the second is not. */
-function fuelProviderOn(pub: PublicClient) {
+ *  without a rate) rather than the transport failing: the first is an answer, the second is not. A cross-chain
+ *  route passes its `lifiTxId`, which the swap's event carries. */
+export function fuelProviderOn(pub: Pick<PublicClient, "readContract">, transactionId?: Hex) {
 	let reverted = false
 	const reads: FuelQuoteReads = {
 		readContract: (args) =>
@@ -50,7 +51,8 @@ function fuelProviderOn(pub: PublicClient) {
 				throw e
 			}),
 	}
-	return { provider: SEND_GENERATION ? manifestFuelProvider(MANIFEST, reads) : undefined, reverted: () => reverted }
+	const provider = SEND_GENERATION ? manifestFuelProvider(MANIFEST, reads, transactionId ? { transactionId } : {}) : undefined
+	return { provider, reverted: () => reverted }
 }
 
 async function probeFuel(pub: PublicClient | undefined, token: Address, probeAmount: bigint) {
