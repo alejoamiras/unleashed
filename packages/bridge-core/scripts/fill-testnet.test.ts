@@ -6,6 +6,7 @@ import { privateKeyToAccount } from "viem/accounts"
 import { describe, expect, it, vi } from "vitest"
 import { type AcrossRelayData, acrossRelayHash } from "../src/crosschain-discovery"
 import { BASE_SEPOLIA_RPC_DEFAULT, FILL_ROUTE, fillCli, fillConfigFromEnv, fillSourceDeposit, SEPOLIA_RPC_DEFAULT } from "./fill-testnet"
+import { fillWay } from "./lifi-canary-run"
 import { AllowanceStillLive, type Destination, FILL_STATUS } from "./sandbox/relayer"
 import { createL1Clients, createL1PublicClient } from "./script-bootstrap"
 
@@ -72,51 +73,68 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..",
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8"))
 
 describe("fillSourceDeposit", () => {
-	it("revokes an approval that landed but could not be confirmed, so another relayer's fill is no cover for a live allowance", async () => {
-		// The recorded Base Sepolia deposit, filled while our approval's receipt read times out.
-		const rail = fixture("testnet-rail.json")
-		const receipt = { status: "success", logs: fixture("testnet-rail.router.receipts.json").source.logs }
-		const run = async (revokeConfirms: boolean) => {
-			const approvals = new Map<Hex, bigint>()
-			const pub = {
-				getChainId: async () => FILL_ROUTE.destination,
-				getBlock: async () => ({ timestamp: BigInt(rail.source.timestamp) }),
-				readContract: async (r: { functionName: string; args: readonly unknown[] }) => {
-					if (r.functionName === "getV3RelayHash") return acrossRelayHash(r.args[0] as AcrossRelayData, FILL_ROUTE.destination)
-					if (r.functionName === "fillStatuses") return approvals.size ? FILL_STATUS.filled : FILL_STATUS.unfilled
-					return 10n ** 12n
-				},
-				waitForTransactionReceipt: async ({ hash }: { hash: Hex }) => {
-					if (approvals.get(hash) === 0n && revokeConfirms) return { status: "success" }
-					throw new Error(`timed out waiting for ${hash}`)
-				},
-			}
-			const writeContract = async (w: { args: readonly [Address, bigint] }) => {
-				const hash = pad(toHex(approvals.size + 1))
-				approvals.set(hash, w.args[1])
-				return hash
-			}
-			const deps = {
-				source: {
-					getChainId: async () => FILL_ROUTE.source,
-					getTransactionReceipt: async () => receipt,
-				} as unknown as PublicClient,
-				destination: { public: pub, wallet: { account: { address: PINNED }, writeContract } } as unknown as Destination,
-				sourceSpokePool: rail.source.spokePool as Address,
-				destinationSpokePool: `0x${"5b".repeat(20)}` as Address,
-			}
-			const result = await fillSourceDeposit(deps, HASH as Hex).catch((e: unknown) => e)
-			return { result, approvals: [...approvals.values()] }
+	// The recorded Base Sepolia deposit, filled on a destination whose receipt reads time out where `o` says.
+	const rail = fixture("testnet-rail.json")
+	const receipt = { status: "success", logs: fixture("testnet-rail.router.receipts.json").source.logs }
+	const RELAYER = `0x${"4e".repeat(20)}` as Address
+	const fillWith = async (o: { revokeConfirms: boolean; ourFillLands: boolean }) => {
+		const approvals = new Map<Hex, bigint>()
+		const fills: Hex[] = []
+		const confirms = (hash: Hex) => (o.ourFillLands ? approvals.has(hash) : approvals.get(hash) === 0n && o.revokeConfirms)
+		const pub = {
+			getChainId: async () => FILL_ROUTE.destination,
+			getBlock: async () => ({ timestamp: BigInt(rail.source.timestamp) }),
+			readContract: async (r: { functionName: string; args: readonly unknown[] }) => {
+				if (r.functionName === "getV3RelayHash") return acrossRelayHash(r.args[0] as AcrossRelayData, FILL_ROUTE.destination)
+				// Another relayer fills once our approval is out, or our own fill lands.
+				const filled = o.ourFillLands ? fills.length > 0 : approvals.size > 0
+				if (r.functionName === "fillStatuses") return filled ? FILL_STATUS.filled : FILL_STATUS.unfilled
+				return 10n ** 12n
+			},
+			simulateContract: async () => ({}),
+			waitForTransactionReceipt: async ({ hash }: { hash: Hex }) => {
+				if (confirms(hash)) return { status: "success" }
+				throw new Error(`timed out waiting for ${hash}`)
+			},
+			getTransaction: async ({ hash }: { hash: Hex }) => ({ from: fills.includes(hash) ? PINNED : RELAYER }),
 		}
+		const writeContract = async (w: { functionName: string; args: readonly unknown[] }) => {
+			const hash = pad(toHex(approvals.size + fills.length + 1))
+			if (w.functionName === "fillRelay") fills.push(hash)
+			else approvals.set(hash, w.args[1] as bigint)
+			return hash
+		}
+		const deps = {
+			source: {
+				getChainId: async () => FILL_ROUTE.source,
+				getTransactionReceipt: async () => receipt,
+			} as unknown as PublicClient,
+			destination: { public: pub, wallet: { account: { address: PINNED }, writeContract } } as unknown as Destination,
+			sourceSpokePool: rail.source.spokePool as Address,
+			destinationSpokePool: `0x${"5b".repeat(20)}` as Address,
+		}
+		const result = await fillSourceDeposit(deps, HASH as Hex).catch((e: unknown) => e)
+		return { result, approvals: [...approvals.values()], fills, pub }
+	}
 
-		const live = await run(false)
+	it("revokes an approval that landed but could not be confirmed, so another relayer's fill is no cover for a live allowance", async () => {
+		const live = await fillWith({ revokeConfirms: false, ourFillLands: false })
 		expect(live.approvals).toEqual([BigInt(rail.inputs.outputAmount), 0n])
 		expect(live.result).toBeInstanceOf(AllowanceStillLive)
 		expect(live.result).toMatchObject({ cause: { message: expect.stringMatching(/^timed out waiting for 0x0+1$/) } })
 
 		// A confirmed revoke leaves nothing live, so the relay filled by another is the success it reports.
-		const cleared = await run(true)
+		const cleared = await fillWith({ revokeConfirms: true, ourFillLands: false })
 		expect(cleared.approvals).toEqual([BigInt(rail.inputs.outputAmount), 0n])
 		expect(cleared.result).toMatchObject({ alreadyFilled: true, fillTxHash: null })
+	})
+
+	it("reads a fill of ours whose receipt wait failed as already filled, which the canary attributes by its signer", async () => {
+		const ours = await fillWith({ revokeConfirms: true, ourFillLands: true })
+		expect(ours.result).toMatchObject({ alreadyFilled: true, fillTxHash: null })
+		expect(ours.fills).toHaveLength(1)
+		const [fill] = ours.fills as [Hex]
+		expect(await fillWay(ours.pub, fill, PINNED)).toBe("self")
+		expect(await fillWay(ours.pub, pad("0x77"), PINNED)).toBe("organic")
 	})
 })

@@ -414,6 +414,19 @@ async function discoverWithin(ctx: LiveCtx, rec: CrossChainDepositRecord, window
 	}
 }
 
+/**
+ * Whether the canary or a relayer sent the fill `txHash`, by its signer: the canary is an EOA. `SelfFill.alreadyFilled`
+ * cannot say, since a fill of the canary's whose receipt wait failed reads as already filled.
+ */
+export async function fillWay(
+	ethereum: { getTransaction(args: { hash: Hex }): Promise<{ from: Address }> },
+	txHash: Hex,
+	canary: Address,
+): Promise<FillWay> {
+	const { from } = await ethereum.getTransaction({ hash: txHash })
+	return from.toLowerCase() === canary.toLowerCase() ? "self" : "organic"
+}
+
 /** The fill transaction discovery authenticated, and whether a relayer or the canary sent it. */
 async function settleFill(
 	ctx: LiveCtx,
@@ -421,22 +434,20 @@ async function settleFill(
 	rec: CrossChainDepositRecord,
 ): Promise<{ d: Settled; sourceTx: Hex; fill: Fill }> {
 	let d = await discoverWithin(ctx, rec, ctx.cfg.windows.organicFillMs)
-	let way: FillWay = "organic"
 	let selfTx: Hex | null = null
 	if (!decided(d)) {
 		ctx.deps.log(`${c.row.kind}: no relayer filled within the window; self-filling`)
-		const r = await ctx.live.selfFill(rec.route.srcTxHash as Hex, ctx.fillGas)
-		way = r.alreadyFilled ? "organic" : "self"
-		selfTx = r.fillTxHash
+		selfTx = (await ctx.live.selfFill(rec.route.srcTxHash as Hex, ctx.fillGas)).fillTxHash
 		d = await discoverWithin(ctx, rec, ctx.cfg.windows.settleMs)
 	}
 	if (!decided(d) || d.verdict !== c.row.expect)
 		throw new CanaryRefusal(`${c.row.kind}: discovery says ${d.verdict}, the row expects ${c.row.expect}`)
 	const txHash = "deposit" in d ? d.deposit.depositTxHash : d.observation.txHash
 	if (!txHash) throw new CanaryRefusal(`${c.row.kind}: discovery decided without naming the fill transaction`)
-	if (way === "self" && selfTx && txHash.toLowerCase() !== selfTx.toLowerCase()) {
+	if (selfTx && txHash.toLowerCase() !== selfTx.toLowerCase()) {
 		throw new CanaryRefusal(`${c.row.kind}: discovery found the delivery in ${txHash}, the self-fill sent ${selfTx}`)
 	}
+	const way = await fillWay(ctx.live.ethereum.pub, txHash, ctx.cfg.canary)
 	return { d, sourceTx: d.srcTxHash ?? (rec.route.srcTxHash as Hex), fill: { txHash, way } }
 }
 
