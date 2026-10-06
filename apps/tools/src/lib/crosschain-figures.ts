@@ -32,7 +32,10 @@ export interface CrossChainFigures {
 	etaSeconds: number
 	/** Seconds from the quote to the fill deadline: how long an undelivered send waits before its refund. */
 	refundAfterSeconds: number | null
-	limits: { min: bigint; max: bigint }
+	/** Across's bounds on the amount; null on fixed terms. */
+	limits: { min: bigint; max: bigint } | null
+	/** Built on fixed testnet terms because Across quoted none: the relay fee is a fixed share and the fill is manual. */
+	fixed: boolean
 }
 
 export function figuresOf(ask: Pick<CrossChainAsk, "srcAmount" | "intent">, route: CrossChainRoute): CrossChainFigures {
@@ -52,7 +55,8 @@ export function figuresOf(ask: Pick<CrossChainAsk, "srcAmount" | "intent">, rout
 		gasFloor: route.gas?.minFuelOutput ?? null,
 		etaSeconds: route.etaSeconds,
 		refundAfterSeconds: rail.kind === "acrossV4" ? Math.max(0, route.fillDeadline - rail.quoteTimestamp) : null,
-		limits: { min: route.limits.minDeposit, max: route.limits.maxDeposit },
+		limits: route.limits && { min: route.limits.minDeposit, max: route.limits.maxDeposit },
+		fixed: route.terms === "fixed",
 	}
 }
 
@@ -83,7 +87,8 @@ function roundUp(value: bigint, decimals: number): bigint {
 export function feeCeilingOf(f: CrossChainFigures, decimals: number, o: { intent: CrossChainAsk["intent"]; mainnet: boolean }): FeeCeiling {
 	const over = f.relayFee * 10_000n > f.srcAmount * BigInt(FEE_CEILING_BPS)
 	const target = ceilDiv(f.relayFee * 10_000n * MINIMUM_MARGIN_PERCENT, BigInt(FEE_CEILING_BPS) * 100n)
-	const minimum = roundUp(target > f.limits.min ? target : f.limits.min, decimals)
+	const floor = f.limits?.min ?? 0n
+	const minimum = roundUp(target > floor ? target : floor, decimals)
 	return { over, blocks: over && o.mainnet && o.intent !== "gas", minimum }
 }
 
@@ -115,6 +120,11 @@ export function feeLineLabels(srcChainId: number, rail: Rail): { relay: string; 
 		relay: `${railLabel(rail)} relay fee, taken from the amount`,
 		network: `Paid in ${IS_MAINNET ? "" : "test "}${native} on ${chainLabel(srcChainId)}`,
 	}
+}
+
+/** How the countdowns name what they count down: Across's quote is refreshed, fixed terms are rebuilt. */
+export function quoteWord(f: Pick<CrossChainFigures, "fixed">): { valid: string; renewed: string } {
+	return f.fixed ? { valid: "Terms", renewed: "rebuilt" } : { valid: "Quote", renewed: "refreshed" }
 }
 
 /** "0:42": a quote's remaining life, never negative. */

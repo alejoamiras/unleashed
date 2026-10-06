@@ -4,7 +4,16 @@ import { Button, Icon } from "@unleashed/design"
 import { computed, ref } from "vue"
 import type { CrossChainAsk } from "@/composables/useCrossChainRoute"
 import { chainBadge, chainLabel, chainTokenUrl, railLabel } from "@/lib/chains"
-import { approxText, type CrossChainFigures, countdownText, feeLineLabels, feeTotalText, waitText } from "@/lib/crosschain-figures"
+import {
+	approxText,
+	type CrossChainFigures,
+	countdownText,
+	feeLineLabels,
+	feeShareText,
+	feeTotalText,
+	quoteWord,
+	waitText,
+} from "@/lib/crosschain-figures"
 import { formatAmount, formatCompact, formatDisplayAmount, trimAddress } from "@/lib/format"
 import { IS_MAINNET, NETWORK } from "@/lib/network"
 import { type SendPlan, venueText } from "@/lib/send-model"
@@ -56,9 +65,14 @@ const user = computed(() => trimAddress(checksumAddress(props.ask.user)))
 const refundWait = computed(() => (props.figures.refundAfterSeconds === null ? null : waitText(props.figures.refundAfterSeconds)))
 
 const limits = computed(() => {
-	const { min, max } = props.figures.limits
-	return { min: `≈ ${formatAmount(min, decimals.value)}`, max: `≈ ${formatAmount(max, decimals.value)}` }
+	const l = props.figures.limits
+	return l && { min: `≈ ${formatAmount(l.min, decimals.value)}`, max: `≈ ${formatAmount(l.max, decimals.value)}` }
 })
+
+const fixedTerms = computed(
+	() =>
+		`Fixed testnet terms, not a quote: ${rail.value} quotes nothing for this send, so the relay fee is a fixed ${feeShareText(props.figures.feeBps)} and the send waits for a manual fill on ${l1}.`,
+)
 
 const gasLine = computed(() => {
 	const f = props.figures
@@ -73,6 +87,8 @@ const gasLine = computed(() => {
 })
 
 const takes = computed(() => {
+	if (props.figures.fixed && refundWait.value)
+		return `Up to ${refundWait.value} for a manual fill on ${l1}, a few minutes for Aztec to pick it up, then your claim.`
 	if (!IS_MAINNET)
 		return `As long as ${rail.value}'s test relayer takes to reach ${l1}, a few minutes for Aztec to pick it up, then your claim.`
 	const minutes = Math.max(1, Math.ceil(props.figures.etaSeconds / 60))
@@ -116,7 +132,8 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 					<span class="amount">{{ sendAmount }}</span>
 					<span class="symbol">{{ symbol }}</span>
 					<span class="from">from <span class="chip">{{ chainBadge(src) }}</span> {{ chainLabel(src) }}</span>
-					<span v-if="!IS_MAINNET" class="limits" :data-testid="TESTIDS.sendXcLimits"
+					<span v-if="figures.fixed" class="limits" :data-testid="TESTIDS.sendXcFixedTerms">{{ fixedTerms }}</span>
+					<span v-else-if="!IS_MAINNET && limits" class="limits" :data-testid="TESTIDS.sendXcLimits"
 						>{{ rail }}'s testnet limits: at least <span class="mono">{{ limits.min }}</span>, at most
 						<span class="mono">{{ limits.max }}</span> {{ symbol }} per send</span
 					>
@@ -224,7 +241,7 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 				</div>
 				<div class="row">
 					<dt>Quote</dt>
-					<dd>Refreshes every 60 s</dd>
+					<dd>{{ figures.fixed ? "Fixed testnet terms, rebuilt every 60 s" : "Refreshes every 60 s" }}</dd>
 				</div>
 			</dl>
 		</div>
@@ -236,7 +253,10 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 		</p>
 
 		<div class="nav">
-			<span class="quote-line">Quote valid for <span class="clock">{{ quoteLine }}</span> · refreshed before you sign</span>
+			<span class="quote-line"
+				>{{ quoteWord(figures).valid }} valid for <span class="clock">{{ quoteLine }}</span> · {{ quoteWord(figures).renewed }} before you
+				sign</span
+			>
 			<div class="buttons">
 				<Button variant="secondary" size="large" :disabled="busy" :data-testid="TESTIDS.sendReviewBack" @click="emit('back')">Back</Button>
 				<Button

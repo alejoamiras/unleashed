@@ -19,6 +19,7 @@ const FIGURES: CrossChainFigures = {
 	etaSeconds: 10,
 	refundAfterSeconds: 7_200,
 	limits: { min: 1_950_000n, max: 8_000_000n },
+	fixed: false,
 }
 const GAS: GasLegPlan = {
 	fuelAmount: 1_490_000n,

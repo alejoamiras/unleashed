@@ -303,6 +303,7 @@ export const TESTIDS = {
 	sendXcReview: "tl-send-xc-review",
 	sendXcTestnetNotice: "tl-send-xc-testnet-notice",
 	sendXcLimits: "tl-send-xc-limits",
+	sendXcFixedTerms: "tl-send-xc-fixed-terms",
 	sendXcRouteLine: "tl-send-xc-route-line",
 	sendXcLifi: "tl-send-xc-lifi",
 	sendXcYouSign: "tl-send-xc-you-sign",

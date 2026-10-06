@@ -161,6 +161,7 @@ export function crossChainRecordOf(s: CrossChainSend, heads: { source: bigint; e
 			scanFromBlock: heads.ethereum.toString(),
 			etaSeconds: route.etaSeconds,
 			fillDeadline: route.fillDeadline,
+			...(route.terms === "fixed" ? { terms: "fixed" } : {}),
 		},
 	} as CrossChainDepositRecord
 }

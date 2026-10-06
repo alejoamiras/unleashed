@@ -63,7 +63,7 @@ import { stepperPhases } from "@/lib/bridge-steps"
 import { chainLabel } from "@/lib/chains"
 import { useNow } from "@/lib/clock"
 import { sendView } from "@/lib/crosschain-activity"
-import { type CrossChainFigures, countdownText } from "@/lib/crosschain-figures"
+import { type CrossChainFigures, countdownText, quoteWord } from "@/lib/crosschain-figures"
 import { outcomeVariant } from "@/lib/crosschain-outcome"
 import { formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString, trimAddress } from "@/lib/format"
 import { NETWORK } from "@/lib/network"
@@ -1717,7 +1717,8 @@ onBeforeUnmount(() => {
 		</template>
 		<template v-if="step === 2 && xcReview" #band>
 			<p class="quote-band" :data-testid="TESTIDS.sendXcQuoteBand">
-				Quote valid for <span class="clock">{{ countdownText(xcExpiresIn) }}</span> · refreshed before you sign
+				{{ quoteWord(xcReview.figures).valid }} valid for <span class="clock">{{ countdownText(xcExpiresIn) }}</span> ·
+				{{ quoteWord(xcReview.figures).renewed }} before you sign
 			</p>
 		</template>
 	</WizardShell>

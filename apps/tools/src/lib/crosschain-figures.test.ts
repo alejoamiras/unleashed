@@ -32,6 +32,7 @@ describe("feeCeilingOf", () => {
 		etaSeconds: 10,
 		refundAfterSeconds: 7200,
 		limits: { min: 1_950_000n, max: 8_000_000n },
+		fixed: false,
 	}
 
 	it("refuses a token send over the ceiling on mainnet only, and never a gas-only one", () => {

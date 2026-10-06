@@ -20,6 +20,7 @@ const FIGURES: CrossChainFigures = {
 	etaSeconds: 10,
 	refundAfterSeconds: 7_200,
 	limits: { min: 1_950_000n, max: 8_000_000n },
+	fixed: false,
 }
 const PLAN: SendPlan = { direction: "l1-to-l2", intent: "token", token: DEST_TOKEN, amount: 4_510_000n, isPrivate: false }
 const GAS_FIGURES: CrossChainFigures = { ...FIGURES, slice: 1_000_000n, tokenArrives: 3_510_000n, gasExpected: 230n * 10n ** 18n }
@@ -77,6 +78,32 @@ describe("CrossChainReview", () => {
 		expect(w.find(sel(TESTIDS.sendXcRefund)).text()).toBe("Refund0x51Cd…0f44 on Base Sepolia, after 2 hours undelivered")
 		await w.find(sel(TESTIDS.sendReviewConfirm)).trigger("click")
 		expect(w.emitted("confirm")).toHaveLength(1)
+		w.unmount()
+	})
+
+	it("states fixed terms in the limits' place, keeps the testnet notice, and times the wait by the manual fill", async () => {
+		const fixed: CrossChainFigures = {
+			...FIGURES,
+			delivered: 3_750_000n,
+			relayFee: 1_250_000n,
+			feeBps: 2500,
+			tokenArrives: 3_750_000n,
+			etaSeconds: 7_200,
+			limits: null,
+			fixed: true,
+		}
+		const w = review({ figures: fixed })
+		expect(w.find(sel(TESTIDS.sendXcTestnetNotice)).exists()).toBe(true)
+		expect(w.find(sel(TESTIDS.sendXcLimits)).exists()).toBe(false)
+		expect(w.find(sel(TESTIDS.sendXcFixedTerms)).text()).toBe(
+			"Fixed testnet terms, not a quote: Across quotes nothing for this send, so the relay fee is a fixed 25.0 % and the send waits for a manual fill on Ethereum · Sepolia.",
+		)
+		expect(w.find(sel(TESTIDS.sendReviewTakes)).text()).toBe(
+			"TakesUp to 2 hours for a manual fill on Ethereum · Sepolia, a few minutes for Aztec to pick it up, then your claim.",
+		)
+		expect(w.text()).toContain("Terms valid for 0:42 · rebuilt before you sign")
+		await w.find(sel(TESTIDS.sendReviewDetailsToggle)).trigger("click")
+		expect(w.find(sel(TESTIDS.sendReviewDetails)).text()).toContain("QuoteFixed testnet terms, rebuilt every 60 s")
 		w.unmount()
 	})
 

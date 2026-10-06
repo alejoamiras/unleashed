@@ -302,7 +302,8 @@ export function useCrossChainSend(deps: CrossChainSendDeps): UseCrossChainSendHa
 	const ceiling = computed(() => {
 		const f = figures.value
 		const a = quoted.value?.ask
-		return f && a ? feeCeilingOf(f, a.srcToken.decimals, { intent: a.intent, mainnet: IS_MAINNET }) : null
+		// Fixed terms keep the same share at every amount: no amount clears a ceiling, so none is shown.
+		return f && a && !f.fixed ? feeCeilingOf(f, a.srcToken.decimals, { intent: a.intent, mainnet: IS_MAINNET }) : null
 	})
 	const notice = computed(() => noticeOf(quoted.value, core.error.value, destToken.selection.error.value))
 	const gasError = computed(() => gasErrorOf(route.value, quoted.value?.ask, dest.value?.state, deps.gasShare))

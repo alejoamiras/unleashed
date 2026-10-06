@@ -2,7 +2,7 @@
 import { acrossMessageOf, lifiBook } from "@unleashed/bridge-core"
 import { describe, expect, it } from "vitest"
 import { NO_GAS_ROUTE } from "@/lib/send-model"
-import { acrossApi, ask, BASE_SEPOLIA, OUT, routeDeps } from "@/test/crosschain"
+import { acrossApi, ask, BASE_SEPOLIA, NOW_S, OUT, routeDeps } from "@/test/crosschain"
 import { type CrossChainAsk, quoteCrossChainRoute, ROUTE_TTL_MS, type RouteDeps, useCrossChainRoute } from "./useCrossChainRoute"
 
 describe("quoteCrossChainRoute", () => {
@@ -39,6 +39,15 @@ describe("quoteCrossChainRoute", () => {
 		// A token-only send never asks the venue.
 		const tokenOnly = await outcome(ask({ intent: "token" }), routeDeps({ venue: "down" }))
 		expect(tokenOnly.kind === "route" && tokenOnly.route.gas).toBeUndefined()
+	})
+
+	it("builds a deposit Across will not quote on fixed terms timed from the source head, only where the deps can time them", async () => {
+		const { answer } = await quoteCrossChainRoute(ask(), routeDeps({ across: acrossApi("error"), sourceHead: NOW_S }))
+		if (answer.kind !== "route") throw new Error(`expected a route, got ${JSON.stringify(answer)}`)
+		const { route } = answer
+		expect([route.terms, route.limits, route.minReceived, route.fillDeadline]).toEqual(["fixed", null, 3_750_000n, NOW_S + 7_200])
+		expect(route.x.rail).toMatchObject({ outputAmount: 3_750_000n, quoteTimestamp: NOW_S })
+		expect(route.gas?.fuelAmount).toBe(375_000n)
 	})
 })
 

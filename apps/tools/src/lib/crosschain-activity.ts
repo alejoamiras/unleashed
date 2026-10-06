@@ -15,7 +15,7 @@ import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import type { EthereumPrefill } from "@/composables/useShell"
 import { sourceTokenOf } from "@/composables/useSourceChain"
 import { chainLabel, railLabel } from "@/lib/chains"
-import { crossChainPhases, crossChainUnconfirmed, etaRange } from "@/lib/crosschain-steps"
+import { bridgingPrompt, crossChainPhases, crossChainUnconfirmed } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
 import { IS_MAINNET } from "@/lib/network"
 import { safeAddressText, safeDisplay } from "@/lib/token-display"
@@ -176,7 +176,7 @@ export function phaseGuide(rec: CrossChainDepositRecord, phase: CrossChainPhase,
 		case "sending":
 			return sendingGuide(rec, facts.runtime ?? {})
 		case "bridging":
-			return `${railLabel(rec.route.rail)} is moving your ${symbol} to ${chainLabel(rec.chainId)}. Nothing for you to do; usually ${etaRange(rec.route.etaSeconds)}.`
+			return bridgingPrompt(rec, symbol)
 		case "finalizing":
 			return finalizingGuide(rec, phase.outcome, phase.chainId)
 		case "not-sent":

@@ -27,7 +27,8 @@ const relay = computed(() => (props.figures ? approxText(props.figures.relayFee,
 	<div class="fees ul-notch" :data-testid="TESTIDS.sendXcFees">
 		<div class="head">
 			<span class="title">Fees <span class="total" :data-testid="TESTIDS.sendXcFeeTotal">{{ total }}</span></span>
-			<span v-if="figures && expiresIn !== null" class="age" :data-testid="TESTIDS.sendXcQuoteAge">
+			<span v-if="figures?.fixed" class="age" :data-testid="TESTIDS.sendXcQuoteAge">Fixed testnet terms</span>
+			<span v-else-if="figures && expiresIn !== null" class="age" :data-testid="TESTIDS.sendXcQuoteAge">
 				Quote refreshes in <span class="clock">{{ countdownText(expiresIn) }}</span>
 			</span>
 		</div>

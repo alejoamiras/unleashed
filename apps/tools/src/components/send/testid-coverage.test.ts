@@ -115,6 +115,7 @@ const XC_FIGURES: CrossChainFigures = {
 	etaSeconds: 10,
 	refundAfterSeconds: 7_200,
 	limits: { min: 1n, max: 9_000_000n },
+	fixed: false,
 }
 const XC_REVIEW = {
 	plan: { ...PLAN, intent: "token", gas: undefined },
