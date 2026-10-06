@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { deriveCrossChainDepositStage, ERC20_ABI, openDepositEnvelopeV3 } from "@unleashed/bridge-core"
+import { type CrossChainDiscovery, deriveCrossChainDepositStage, ERC20_ABI, openDepositEnvelopeV3 } from "@unleashed/bridge-core"
 import { decodeFunctionData, type Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { stepperPhases } from "@/lib/bridge-steps"
 import { crossChainUnconfirmed } from "@/lib/crosschain-steps"
 import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, signatureOf, USER } from "@/test/crosschain"
 import {
@@ -14,6 +15,7 @@ import {
 	type SourceCall,
 	sendCrossChain,
 } from "./crosschain-deposit-flow"
+import type { CrossChainWatchDeps } from "./crosschain-watch"
 import { __resetJournalForTests, currentCrossChainRecord, storedCrossChainRecords, useBridgeJournal } from "./useBridgeJournal"
 import { type CrossChainRoute, ROUTE_TTL_MS, routeRecordId } from "./useCrossChainRoute"
 
@@ -146,7 +148,7 @@ describe("sendCrossChain", () => {
 		expect(rt?.approveOutcome).toBe("done")
 	})
 
-	it("keeps a send the wallet took without answering as one still to be found", async () => {
+	it("keeps looking for a send the wallet took without answering, and reads it as in flight once found", async () => {
 		const a = ask()
 		const route = await quotedRoute(a)
 		const { wallet } = fakeWallet(route)
@@ -157,8 +159,36 @@ describe("sendCrossChain", () => {
 				return hashOf(1)
 			},
 		}
-		await expect(sendCrossChain(sendOf(a, route), silent, fakeReads(0n), { watch: false })).rejects.toThrow(/timed out/)
+		let find = () => {}
+		const searched = new Promise<void>((resolve) => {
+			find = resolve
+		})
+		const found: CrossChainDiscovery = {
+			verdict: "pending",
+			extraDeposits: [],
+			srcTxHash: hashOf(2),
+			transport: { kind: "across", originChainId: BASE_SEPOLIA, depositId: "1", relayHash: hashOf(3) },
+		}
+		const discover = vi.fn(async () => searched.then(() => found))
+		const watch: CrossChainWatchDeps = {
+			context: async () => ({}) as never,
+			reads: () => ({}) as never,
+			discover: discover as unknown as CrossChainWatchDeps["discover"],
+			claim: vi.fn(),
+			now: Date.now,
+			// One round is all this test needs.
+			wait: () => new Promise(() => {}),
+		}
+		await expect(sendCrossChain(sendOf(a, route), silent, fakeReads(0n), { watch })).rejects.toThrow(/timed out/)
 		const [rec] = storedCrossChainRecords()
-		expect(crossChainUnconfirmed(rec, useBridgeJournal().runtime.value[rec.id])).toBe(true)
+		const runtime = useBridgeJournal().runtime
+		expect(runtime.value[rec.id]?.attention).toBe("error")
+		expect(crossChainUnconfirmed(rec, runtime.value[rec.id])).toBe(true)
+		await vi.waitFor(() => expect(discover).toHaveBeenCalledWith(expect.objectContaining({ id: rec.id }), {}, {}, expect.anything()))
+		find()
+		await vi.waitFor(() => expect(runtime.value[rec.id]?.attention).toBeUndefined())
+		const sent = currentCrossChainRecord(rec.id)
+		expect(sent?.route.srcTxHash).toBe(hashOf(2))
+		expect(sent && stepperPhases(sent, runtime.value[rec.id]).find((p) => p.key === "bridge")?.state).toBe("active")
 	})
 })

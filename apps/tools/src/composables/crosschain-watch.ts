@@ -29,6 +29,7 @@ import {
 	setRecordStep,
 	storedCrossChainRecords,
 	updateCrossChainRecord,
+	useBridgeJournal,
 } from "./useBridgeJournal"
 import { readClientFor } from "./useEthereumReader"
 
@@ -102,12 +103,25 @@ export async function watchRound(id: string, deps: CrossChainWatchDeps): Promise
 	}
 	// Computed from the copy the write merges into: the claim lanes may have written since this run read.
 	const written = updateCrossChainRecord(id, (current) => discoveryPatch(current, d, deps.now()) ?? {})
+	if (written && !handedOver(rec) && handedOver(written)) clearSendFlag(id)
 	if (written) narrateRail(written, d, deps.now())
 	if (d.verdict === "deposited") {
 		await afterDeposit(id, deps)
 		return "done"
 	}
 	return written && needsWatch(written) ? "again" : "done"
+}
+
+/** Anything that shows the send left the wallet: its hash or batch id, its deposit, or an outcome. */
+const handedOver = (r: CrossChainDepositRecord): boolean =>
+	r.route.srcTxHash !== undefined || r.route.srcBatchId !== undefined || r.leafIndex !== undefined || r.route.outcome !== undefined
+
+/** The flow flags a send the wallet took without answering; once discovery finds it, it is in flight again. */
+function clearSendFlag(id: string): void {
+	const { runtime } = useBridgeJournal()
+	const rt = runtime.value[id]
+	if (rt?.attention === undefined) return
+	runtime.value = { ...runtime.value, [id]: { ...rt, attention: undefined, note: undefined } }
 }
 
 /** A proven source send is on its rail, late past its usual time, until a deposit or an outcome answers. */

@@ -308,8 +308,8 @@ async function sendOnSource(
 }
 
 /** Nothing bridged when the deposit never reached the wallet, or the wallet refused it: the record goes. Any
- *  other failure keeps it, since the transfer may be on its way, and discovery decides. */
-function settleFailedSend(id: string, requested: boolean, e: unknown): void {
+ *  other failure keeps it, since the transfer may be on its way, and watches it at once so discovery decides. */
+function settleFailedSend(id: string, requested: boolean, e: unknown, watcher: CrossChainWatchDeps | undefined): void {
 	try {
 		if (!requested || isUserRejection(e)) {
 			sealKeys.delete(id)
@@ -317,6 +317,7 @@ function settleFailedSend(id: string, requested: boolean, e: unknown): void {
 			return
 		}
 		flagRecordError(id, humanizeWalletError(e instanceof Error ? e.message : String(e)))
+		if (watcher) void watchCrossChain(id, watcher)
 	} catch (cleanup) {
 		log("failed-send bookkeeping threw", cleanup instanceof Error ? cleanup.message : String(cleanup))
 	}
@@ -345,6 +346,7 @@ export async function sendCrossChain(
 	// From here until the wallet returns the send, a step is always set: a record without one reads as a send
 	// the wallet may have taken without answering.
 	setRecordStep(rec.id, "preparing-source")
+	const watcher = o.watch === false ? undefined : (o.watch ?? appWatchDeps())
 	let requested = false
 	try {
 		if (s.ask.isPrivate) await sealCrossChain(rec, s, wallet)
@@ -353,10 +355,10 @@ export async function sendCrossChain(
 		await sendOnSource(rec.id, s, wallet, reads, o, () => {
 			requested = true
 		})
-		if (o.watch !== false) void watchCrossChain(rec.id, o.watch ?? appWatchDeps())
+		if (watcher) void watchCrossChain(rec.id, watcher)
 		return rec.id
 	} catch (e) {
-		settleFailedSend(rec.id, requested, e)
+		settleFailedSend(rec.id, requested, e, watcher)
 		throw e
 	}
 }
