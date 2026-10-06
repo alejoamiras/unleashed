@@ -51,7 +51,7 @@ const reads: CrossChainReads = {
 /** A send this session made, journaled and on its way. */
 async function sent(over: Parameters<typeof ask>[0] = {}): Promise<string> {
 	const a = ask(over)
-	return sendCrossChain({ ask: a, route: await quotedRoute(a), token: DEST_TOKEN, quotedAt: Date.now() }, wallet, reads)
+	return sendCrossChain({ ask: a, route: await quotedRoute(a), token: DEST_TOKEN, quotedAt: Date.now() }, wallet, reads, { watch: false })
 }
 
 const pending: CrossChainDiscovery = { verdict: "pending", extraDeposits: [] }

@@ -20,17 +20,15 @@ import {
 } from "@unleashed/bridge-core"
 import type { Address } from "viem"
 import { SEND_GENERATION } from "@/contracts/bridge-generation"
-import { crossChainSealKey } from "./crosschain-deposit-flow"
 import {
 	cacheSecret,
 	currentCrossChainRecord,
 	flagRecordError,
 	isSessionLive,
-	runDepositClaim,
 	storedCrossChainRecords,
 	updateCrossChainRecord,
 } from "./useBridgeJournal"
-import { discoveryReadsFor, readClientFor } from "./useEthereumReader"
+import { readClientFor } from "./useEthereumReader"
 
 const log = (...args: unknown[]) => console.log("[bridge:crosschain]", ...args)
 
@@ -174,16 +172,5 @@ export async function appDiscoveryContext(rec: CrossChainDepositRecord): Promise
 			destinationSpokePool: dst.acrossSpokePool,
 			receiver: dst.receiverAcrossV4,
 		},
-	}
-}
-
-export function appWatchDeps(): CrossChainWatchDeps {
-	return {
-		context: appDiscoveryContext,
-		reads: (rec) => discoveryReadsFor(rec.route.srcChainId),
-		sealKey: crossChainSealKey,
-		claim: (id) => void runDepositClaim(id),
-		now: Date.now,
-		wait: (ms) => new Promise((r) => setTimeout(r, ms)),
 	}
 }

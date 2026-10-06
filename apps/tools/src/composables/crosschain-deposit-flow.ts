@@ -20,6 +20,7 @@ import { NETWORK } from "@/lib/network"
 import type { ResolvedToken, SendPlan } from "@/lib/send-model"
 import { buildSendRecord, sealBindingOf } from "@/lib/send-record"
 import { humanizeWalletError, isUserRejection } from "@/lib/wallet-errors"
+import { appDiscoveryContext, type CrossChainWatchDeps, watchCrossChain } from "./crosschain-watch"
 import { providerFingerprint } from "./deposit-flow"
 import {
 	addCrossChainRecordVerified,
@@ -27,11 +28,13 @@ import {
 	discard,
 	flagRecordError,
 	markSessionLive,
+	runDepositClaim,
 	runOnLane,
 	setRecordStep,
 	updateCrossChainRecord,
 } from "./useBridgeJournal"
 import { type CrossChainAsk, type CrossChainRoute, ROUTE_TTL_MS, routeRecordId } from "./useCrossChainRoute"
+import { discoveryReadsFor } from "./useEthereumReader"
 
 const log = (...args: unknown[]) => console.log("[bridge:crosschain]", ...args)
 
@@ -79,6 +82,8 @@ export interface CrossChainSendOptions {
 	wait?: (ms: number) => Promise<void>
 	/** Polls of a batch's receipts before discovery is left to find its transaction. */
 	batchPolls?: number
+	/** Who watches the sent record; `false` leaves it unwatched until the next resume. */
+	watch?: CrossChainWatchDeps | false
 }
 
 /** Seal keys of this session's private sends: a deposit found while the key is still here is re-sealed exact
@@ -87,6 +92,18 @@ const sealKeys = new Map<string, EncryptionKey>()
 
 export function crossChainSealKey(id: string): EncryptionKey | undefined {
 	return sealKeys.get(id)
+}
+
+/** The watcher this build runs: its own pins and read clients, and the claim of what this session sent. */
+export function appWatchDeps(): CrossChainWatchDeps {
+	return {
+		context: appDiscoveryContext,
+		reads: (rec) => discoveryReadsFor(rec.route.srcChainId),
+		sealKey: crossChainSealKey,
+		claim: (id) => void runDepositClaim(id),
+		now: Date.now,
+		wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+	}
 }
 
 /** The schema-4 record: the schema-3 deposit facts at the floor the route guarantees, and the source leg. */
@@ -319,6 +336,7 @@ export async function sendCrossChain(
 		await sendOnSource(rec.id, s, wallet, reads, o, () => {
 			requested = true
 		})
+		if (o.watch !== false) void watchCrossChain(rec.id, o.watch ?? appWatchDeps())
 		return rec.id
 	} catch (e) {
 		settleFailedSend(rec.id, requested, e)

@@ -86,7 +86,7 @@ describe("sendCrossChain", () => {
 		const a = ask({ isPrivate: true })
 		const route = await quotedRoute(a)
 		const { wallet, sent, journaledAtSend } = fakeWallet(route)
-		const id = await sendCrossChain(sendOf(a, route), wallet, fakeReads(MAX))
+		const id = await sendCrossChain(sendOf(a, route), wallet, fakeReads(MAX), { watch: false })
 		expect(journaledAtSend).toEqual([true, true])
 		expect(approvedAmount(sent[0])).toBe(5_000_000n)
 		expect(sent[1].to).toBe(route.tx.to)
@@ -119,12 +119,14 @@ describe("sendCrossChain", () => {
 		expect(storedCrossChainRecords()).toEqual([])
 	})
 
-	it("sends one atomic batch through a zero allowance first, journaling its id and then its hash", async () => {
+	it("sends one atomic batch through a zero allowance first, journals its id then its hash, and starts the watch", async () => {
 		const a = ask({ intent: "token" })
 		const route = await quotedRoute(a)
 		const { wallet, sent } = fakeWallet(route, { batch: true })
-		const id = await sendCrossChain(sendOf(a, route), wallet, fakeReads(5n, { directApprove: false }), { wait: async () => {} })
+		const watch = { context: vi.fn(), reads: vi.fn(() => undefined), claim: vi.fn(), now: Date.now, wait: async () => {} }
+		const id = await sendCrossChain(sendOf(a, route), wallet, fakeReads(5n, { directApprove: false }), { wait: async () => {}, watch })
 		expect(sent.map((c) => (c.to === route.tx.to ? "deposit" : approvedAmount(c)))).toEqual([0n, 5_000_000n, "deposit"])
 		expect(currentCrossChainRecord(id)?.route).toMatchObject({ srcBatchId: "batch-1", srcTxHash: hashOf(42) })
+		await vi.waitFor(() => expect(watch.reads).toHaveBeenCalledWith(expect.objectContaining({ id })))
 	})
 })
