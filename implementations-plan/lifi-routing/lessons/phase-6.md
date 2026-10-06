@@ -88,6 +88,18 @@
    `UniswapFuelSwap: insufficient output` and nothing was sent but a test-USDC faucet mint. The run had built a
    fresh router-only intent (`intent-gates.json`): this arc's source edits since the deploy intent make that one's
    tree gate refuse, as designed. Re-run with `FUEL_SLICE_UNITS=1500000`.
+6. **The promoted manifest offered mints of real tokens.** Codex's arc 3 round 1 found Circle USDC and WETH labelled
+   `permissionless-mint` / `MintableERC20` with a mint cap: `pre-create` labelled every token so, and the Send
+   screen's "+100" button would call `mint` on Circle's USDC (reverts, `caller is not a minter`) and on WETH (its
+   fallback accepts and mints nothing). `pre-create --canonical` now writes a real token without either field
+   (D47). The corrected candidate's first keyed run chained `verify-l1 --strict`, `live-intent verify` and
+   `promote`: verify passed and recorded the candidate's digest in `intent-gates.json`, and `promote` then refused
+   the now-uncommitted intent. The digest was committed, and a promote-only keyed run landed with its receipt.
+   Never chain `verify --candidate` and `promote` in one run; the runbook already says to commit between them.
+7. **Run 4's stranded allowance had a structural cause.** Any failure after the source approval, the stale read
+   included, left the Diamond's allowance live: nothing guarded it. The deposit now runs under an exact approval
+   whose failure sends `approve(0)` and reads it back at its own block; `approveExact(_, 0)` would not do, since its
+   first read is `latest`, and the backend that missed the approval reports nothing to revoke.
 
 ## The canary matrix (live, exclusive self-fills)
 

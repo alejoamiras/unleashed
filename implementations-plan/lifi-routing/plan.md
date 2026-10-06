@@ -506,7 +506,7 @@ does it in brackets.
 - **Delta-only accounting.** A donation never reverts a deposit and never joins one; `sweep` reaches it. That
   includes a donation to the Diamond, which the facet forwards to us whole (the stray split above).
 - **Receiver differences.** ReceiverAcrossV4 reserves no recovery gas. Under a pre-Amsterdam schedule an
-  out-of-gas destination makes the whole fill revert, the relayer does not fill and the deposit refunds at expiry.
+  out-of-gas destination makes the whole fill revert, the relayer does not fill and the deposit is refundable at expiry.
   Under Amsterdam's (Sepolia today) an underfunded fill is recovered to the user instead, and a node's gas estimate
   settles on that recovery (D46). ReceiverStargateV2 reserves
   `recoverGas = 100000`, so a starved compose recovers to Ethereum, and anyone can trigger that compose.
@@ -530,7 +530,7 @@ does it in brackets.
 | Compromised Executor or receiver | holds bridged funds before our call | pinned code hashes in `verify-l1`; accepted residual of the owner's choice of LI.FI |
 | Anyone calling `bridgeFromCaller` | permissionless entrypoint (the Executor is permissionless too) | spends only `msg.sender`'s funds (halmos); decoys are gifts filtered by floor and transport correlation |
 | Stargate compose griefer | `lzCompose` is permissionless; ReceiverStargateV2 hands the Executor `gasleft − recoverGas`, so any gas below the router's need forces recovery | forced delivery to the user's wallet; first-class outcome; accepted residual of LI.FI's receiver |
-| Across relayer | refuses or delays the fill; under Amsterdam's schedule, underfunds it | expiry refund on the source chain; a late fill is still bounded by the floors; an underfunded fill is recovered to the user's wallet (D46) |
+| Across relayer | refuses or delays the fill; under Amsterdam's schedule, underfunds it | refundable at expiry, returned by Across's settlement; a late fill is still bounded by the floors; an underfunded fill is recovered to the user's wallet (D46) |
 | MEV searcher | sandwiches the destination swap | signed floor `quote·(1 − s)` on our own delta; loss bounded by the slippage the user accepted |
 | Decoy depositor | reuses the public secret hash | transport correlation picks the intended deposit; decoys are extra claimables, never ambiguity |
 | Hostile token | hooks, lying `balanceOf`, fee-on-transfer | transient lock, delta checks, exact portal pulls; cross-chain limited to manifest rail assets |
@@ -1395,8 +1395,9 @@ Asked how testnet sends should work, the owner chose *"Exclusive to our filler (
 - Every testnet send's Across terms, quoted or fixed, name the pinned canary signer as `exclusiveRelayer`, passed
   as an absolute exclusivity deadline equal to `fillDeadline`. `verifyRoute` polices both fields.
 - The canary self-fills without the organic window.
-- `sendFill` sends with the smallest doubling of the estimate whose simulated logs equal those at the EIP-7825 gas
-  cap.
+- `sendFill` sends with the smallest doubling of the estimate whose outcome, simulated on one block, equals the one at
+  the EIP-7825 gas cap: status, then every log's emitter, topics and data. A fill that fails even at the cap is
+  refused, and its approval cleared.
 
 The option I offered named a manifest field for the filler. The pinned canary signer already is that address
 (`fill-testnet.ts` signs with it alone), so no manifest field was added.
@@ -1404,6 +1405,31 @@ The option I offered named a manifest field for the filler. The pinned canary si
 Mainnet is unchanged and does not run Amsterdam yet. Once it does, an organic fill at a relayer's estimate times its
 markup can recover in the same way. That is a mainnet launch gate (follow-up): measure the deposit path on an
 Amsterdam-rules mainnet fork before mainnet cross-chain opens.
+
+Exclusivity does not lock funds past an ordinary unfilled deposit: one the canary leaves unfilled becomes refundable
+after `fillDeadline`, and Across's settlement, not the deadline, returns the funds. No expired testnet deposit's
+refund has been observed yet (follow-up: observe one before relying on the lock's bound).
+
+**D47 Arc 3 Codex loop (`gpt-6.1-sol` at `high`, over the arc 3 diff).** Every finding was verified against the
+code or the chain.
+- Round 1 (three medium, one low):
+  1. The promoted manifest labelled Circle USDC and WETH `permissionless-mint` / `MintableERC20`, so Send offered a
+     "+100" mint that USDC reverts (`FiatToken: caller is not a minter`) and WETH's fallback accepts without
+     minting. `pre-create` labelled every token so. It now takes `--canonical` for a real token, which carries no
+     mint contract or cap. The corrected manifest was re-verified (`verify-l1 --strict`, the gate intent) and
+     re-promoted. The two buttons it removes were a defect, never a drawn surface.
+  2. `fillGas` compared probes simulated on separate `latest` states, kept only each log's emitter and first topic,
+     and accepted a cap simulation that failed. The estimate and every probe now read one block, the outcome
+     compares status and each log's emitter, topics and data, and a fill failing at the cap is refused. Declined:
+     re-checking against a fresh cap baseline before signing only moves the snapshot one call later, never to the
+     fill's block; and a delivery classification belongs to the caller, since the recovery row expects a recovery
+     at the cap, and the canary's discovery already refuses an outcome its row did not expect.
+  3. A failure after the source approval, its block-pinned read-back included, left the Diamond's allowance live.
+     The deposit now runs under an exact approval: anything short of a landed deposit sends `approve(0)` and reads
+     it back at its own block, never trusting a `latest` read a lagging backend answers without the approval; a
+     revoke that fails raises `AllowanceStillLive` with the original cause. The route is verified before the
+     approval.
+  4. (low) Docs called expiry a refund; reworded in `across-v4.ts` and above.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's

@@ -244,7 +244,9 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      `transactions[].rpc` is the keyed `SEPOLIA_RPC_URL`. The directory is gitignored, so nothing
      else will notice it; the conductor's journal, not forge `--resume`, is the recovery.
    - Adding a token to a landed generation later:
-     `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> [--no-register] [--seed-pool]`.
+     `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> [--no-register] [--seed-pool] [--canonical]`.
+     A real token (Circle USDC, WETH) takes `--canonical`; without it the manifest labels the token a mintable
+     `MintableERC20`, and the app offers a mint that reverts or mints nothing.
    - `SEED_TOKENS` are the committed test-token addresses recorded in the arc's lessons
      (`MintableERC20` deployments on Sepolia via `scripts/deploy-seed-tokens.ts`, which redeploys a spec
      whose address sorts above WETH), never chosen ad hoc; `--dry-run` validates only their shape.
@@ -438,7 +440,8 @@ inventory, the named token pre-creations, the smokes and promotion).
      sends nothing. A step is appended after its receipt: a crash between landing and the append
      leaves an orphan the re-run replaces, so read the journal's last line against the chain first.
 5. **Pre-create** each named token into the candidate (`testnet-generation.env.example`: it
-   registers on the hub): `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20>`.
+   registers on the hub): `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> --canonical`
+   for a real token, the flag left off only for a test token with a public mint.
 6. **Routing.** Re-run the conductor on the candidate with the routing file. Nothing changed, so it
    adopts both, sends nothing, and writes `routing`; every `destToken` must already be a candidate
    token:
