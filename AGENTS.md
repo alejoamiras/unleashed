@@ -136,6 +136,11 @@ templates), or in local `.env` files that git ignores; an agent never creates on
 CI. Security
 reports go through GitHub's private advisories ([`SECURITY.md`](SECURITY.md)).
 
+LI.FI's contracts and API are a routing dependency, never a trusted party: `verifyRoute`
+([`packages/bridge-core/src/lifi-decode.ts`](packages/bridge-core/src/lifi-decode.ts)) is the trust
+boundary, and no cross-chain transaction reaches a signature, ours included, until it accepts the
+exact bytes.
+
 ## Code comments
 
 Say what the code cannot: invariants, constraints, non-obvious reasons, external quirks. Never
