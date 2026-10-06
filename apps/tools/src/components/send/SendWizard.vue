@@ -1448,7 +1448,9 @@ const backgroundLine = computed<{ text: string; failed: boolean } | null>(() => 
 	if (!active) return { text: `${subject} is on its way.`, failed: false }
 	if (active.state === "failed") return { text: `${subject} needs your attention — see Activity.`, failed: true }
 	const eta = active.eta ? ` · ${active.eta}` : ""
-	return { text: `${subject} is on its way — ${active.label.toLowerCase()}${eta}`, failed: false }
+	// Only the leading verb drops its capital: the rest of the label names chains.
+	const phase = `${active.label.charAt(0).toLowerCase()}${active.label.slice(1)}`
+	return { text: `${subject} is on its way — ${phase}${eta}`, failed: false }
 })
 
 /** A provisional record can be rekeyed before Activity opens: hand over the canonical id. */
