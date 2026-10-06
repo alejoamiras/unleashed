@@ -9,7 +9,8 @@ const props = withDefaults(
 		value?: number
 		/** CSS pixels. */
 		height?: number
-		tone?: "signal" | "lost" | "carrier"
+		/** The fill's colour; `ended` is a run that stopped short, in secondary ink. */
+		tone?: "signal" | "lost" | "carrier" | "ended"
 	}>(),
 	{ value: undefined, height: 14, tone: "signal" },
 )
@@ -29,7 +30,7 @@ const percent = computed(() => (props.value === undefined ? null : Math.round(Ma
 		:style="{ height: `${height}px` }"
 	>
 		<span v-if="percent === null" :class="[$style.fill, $style.travel]" />
-		<span v-else-if="percent > 0" :class="$style.fill" :style="{ width: `${percent}%` }" />
+		<span v-else :class="$style.fill" :style="{ width: `${percent}%` }" />
 	</div>
 </template>
 
@@ -44,6 +45,7 @@ const percent = computed(() => (props.value === undefined ? null : Math.round(Ma
 	clip-path: var(--ul-notch);
 }
 
+/* Border-box: at 0 % only the ink edge shows, marking where the run starts. */
 .fill {
 	position: absolute;
 	inset: 0 auto 0 0;
@@ -58,6 +60,10 @@ const percent = computed(() => (props.value === undefined ? null : Math.round(Ma
 
 .bar[data-tone="carrier"] .fill {
 	background: var(--ul-carrier);
+}
+
+.bar[data-tone="ended"] .fill {
+	background: var(--ul-ink-2);
 }
 
 /* Reduced motion holds the block mid-track, detached from both ends, so it never reads as a fill level. */
