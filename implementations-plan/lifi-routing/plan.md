@@ -847,6 +847,14 @@ hashes and amounts on the boards are illustrative data, not the specification. A
 - Signature step, unchanged: "Sign the bridge intent in your Ethereum wallet — one signature covers the swap and the
   deposit."
 
+**Phase 7 sign-offs** (strings Phase 7 built that no board draws). The owner, *"Approve both as written"*:
+- Testnet Route row: "USDC → AZTEC through the testnet fuel swapper, then the gas leg is bridged." The swapper has
+  no tool name for G-UX-1's parentheses.
+- `GAS_QUOTE_MOVED`: "The gas price moved since you reviewed this send — go back and review it again. Nothing was
+  sent."
+
+And for the Addresses tab's Router row, *"Only the deposit router (Recommended)"*.
+
 ## Phases
 
 **G0, the common gate** (repository root unless noted; a fresh worktree first installs `contracts/bridge/evm/lib`
@@ -1032,7 +1040,7 @@ committed; the live app (old router) still green on `verify:deployments`. Layer:
 
 ### Arc 4: the app switches routers and goes multi-chain
 
-#### Phase 7: Plumbing and the Ethereum-origin switch (after G-UX-1)
+#### Phase 7: Plumbing and the Ethereum-origin switch (after G-UX-1) ✓
 
 Source registry; `useEthereumReader` and per-chain read clients; CSP per target (A5); `useCrossChainRoute`
 (debounce, latest wins, TTL); `crosschain-deposit-flow.ts` (journal first, seal, verify, sign, persist);
@@ -1445,6 +1453,26 @@ code or the chain.
 
 Rejected: none; two sub-suggestions declined with reasons (round 1, item 2). Accepted residue: `fillGas` is a
 simulation check, and the block a fill lands in can differ from the one it simulated.
+
+**D48 Phase 8 sign-offs, first batch (owner).** Two fresh reviewers compared the build with the signed boards;
+these answers settle the questions that do not need a screenshot:
+- **USD.** *"Token units in v1, USD later (Recommended)"*. S-7's and A6's USD figures are a plan change: every fee,
+  minimum and gas figure shows token units, as `H-Review-Testnet` draws them. LI.FI's mainnet quotes carry USD
+  amounts for the mainnet plan; the below-minimum token row and the "ETH needed for fees" row wait for a price.
+- **Copy D46 made false.** *"Approve as proposed (Recommended)"*:
+  - Review notice: "Testnet: this send waits for a manual fill on Ethereum · Sepolia. If it isn't filled within
+    2 hours, it is refunded to you on Base Sepolia."
+  - Takes row: "Up to 2 hours for a manual fill on Ethereum · Sepolia, a few minutes for Aztec to pick it up,
+    then your claim."
+  - S-Refunded: "This transfer waited 2 hours for a manual fill on Ethereum · Sepolia and wasn't filled, so it
+    expired."
+  - Activity expired card: "It wasn't filled on Ethereum · Sepolia within 2 hours. Refund pending …"
+  - Expiry guide: "{What} wasn't filled on {l1} within {window}".
+- **Existing features no board draws stay**, all four checked: *"Addresses tab and header chrome"*, *"Testnet mint
+  strip"*, *"Backup and Restore"*, *"Add-to-wallet, Clear, footer"*.
+- **Testnet fills.** *"Manual for now, follow-up (Recommended)"*: a fixed-terms send is capped at 8 whole tokens,
+  the figure `H-Review-Testnet` draws, so the filler can always cover it; an operator alert or an auto-filler is a
+  follow-up.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's

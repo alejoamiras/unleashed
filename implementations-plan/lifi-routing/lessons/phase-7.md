@@ -104,3 +104,15 @@ watchers and outcomes) is built and unit-tested, and no screen reads it yet.
 - `bun test scripts/ci-cd/`: 31 pass.
 - `bun run e2e:tools`: 68 passed, 2 failed (the WETH cells, attempt 4). After the fix,
   `bun run e2e:tools -- specs/deposit-gas-only.spec.ts`: 8 passed.
+
+## Integration onto arc 3
+
+- The branch was built on an early arc 3 commit. Its 18 commits were cherry-picked onto the converged arc 3 tip
+  without a conflict; four files overlap (`lifi-canary-build.ts`, `lifi-canary-fixture.ts`, `lifi-canary-run.ts`,
+  `crosschain-discovery.ts`), and the gate below is the proof the merge is sound, not git's clean apply.
+- The bridge-core unit count falls from 706 to 696 by design: this phase deletes the old router's `flows.test.ts`
+  and `swap.test.ts` and rewrites `send-flow.test.ts`.
+- Gate on the integrated branch: G0 (forge, snapshot, halmos 23/23, lint, typecheck, `test:all`: design 242,
+  bridge-core 696 + 11 skipped, tools 1672), `audit:tools`, `build:testnet` + `verify:build-target`, and
+  `e2e:tools` 70 passed, all exit 0.
+
