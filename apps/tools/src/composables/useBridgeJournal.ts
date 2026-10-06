@@ -396,8 +396,8 @@ function observedRows(rec: AnyJournalRecord | undefined): { key: string; lines: 
 	const fields: Partial<Record<HashLeg, unknown>> = rec
 	const legs = HASH_LEGS.flatMap(([leg, name]) => {
 		const hash = fields[leg]
-		// A cross-chain deposit comes from discovery's proven event, and its own rows say so.
-		if ((cross && leg === "depositTxHash") || typeof hash !== "string" || !TX_HASH.test(hash)) return []
+		// A cross-chain deposit and source approval come from proven events, and their own rows say so.
+		if ((cross && (leg === "depositTxHash" || leg === "approveTxHash")) || typeof hash !== "string" || !TX_HASH.test(hash)) return []
 		// Observed, never "sent" or "confirmed": another tab's write reaches this through the same reload.
 		return [{ key: `${leg}:${hash.toLowerCase()}`, lines: [`${name} hash observed · ${trimTxHash(safeAddressText(hash))}`] }]
 	})

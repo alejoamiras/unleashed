@@ -65,6 +65,7 @@ import { useNow } from "@/lib/clock"
 import { sendView } from "@/lib/crosschain-activity"
 import { type CrossChainFigures, countdownText, quoteWord } from "@/lib/crosschain-figures"
 import { outcomeVariant } from "@/lib/crosschain-outcome"
+import { crossChainLogLinks } from "@/lib/crosschain-steps"
 import { formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString, trimAddress } from "@/lib/format"
 import { NETWORK } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
@@ -1603,7 +1604,11 @@ onBeforeUnmount(() => {
 		@change-send="resendFrom(view.record, false)"
 	>
 		<template v-if="journal.runtime.value[view.record.id]?.log?.length" #log>
-			<BridgeLog :rows="journal.runtime.value[view.record.id]?.log ?? []" :started-at="view.record.createdAt" />
+			<BridgeLog
+				:rows="journal.runtime.value[view.record.id]?.log ?? []"
+				:started-at="view.record.createdAt"
+				:links="crossChainLogLinks(view.record)"
+			/>
 		</template>
 	</CrossChainOutcome>
 	<BridgeReceipt

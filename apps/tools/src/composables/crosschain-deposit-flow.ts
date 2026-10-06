@@ -298,6 +298,7 @@ async function sendOnSource(
 		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain, so the deposit was not sent.")
 	}
 	if (approved) {
+		updateCrossChainRecord(id, { approveTxHash: approved })
 		markApproveOutcome(id, "done")
 		logRecordLine(id, approvalConfirmedLine(s.ask.srcChainId, approved))
 	}

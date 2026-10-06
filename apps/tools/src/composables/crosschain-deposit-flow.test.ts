@@ -146,6 +146,9 @@ describe("sendCrossChain", () => {
 		])
 		expect(rt?.step).toBeUndefined()
 		expect(rt?.approveOutcome).toBe("done")
+		const stored = currentCrossChainRecord(id)
+		expect(stored?.approveTxHash).toBe(hashOf(1))
+		expect(stored && stepperPhases(stored, {})[0]).toMatchObject({ key: "src-approve", state: "done", link: { text: "0x0000…0001" } })
 	})
 
 	it("keeps looking for a send the wallet took without answering, and reads it as in flight once found", async () => {
