@@ -196,21 +196,37 @@ export function withGasTerms<W extends WalletClient>(wallet: W, terms: GasTermsF
  * first. Returns the transactions sent, none when the allowance already equals `amount`.
  */
 export async function approveExact(l1: L1Ctx, token: Address, spender: Address, amount: bigint): Promise<Hex[]> {
-	const read = async () =>
+	const read = async (blockNumber?: bigint) =>
 		(await l1.pub.readContract({
 			address: token,
 			abi: ERC20_MIN_ABI,
 			functionName: "allowance",
 			args: [l1.account.address, spender],
+			...(blockNumber === undefined ? {} : { blockNumber }),
 		})) as bigint
 	const current = await read()
 	if (current === amount) return []
 	const approve = (value: bigint) => sendL1(l1, { address: token, abi: ERC20_MIN_ABI, functionName: "approve", args: [spender, value] })
 	const sent = current > 0n && amount > 0n ? [await approve(0n)] : []
-	sent.push(await approve(amount))
-	const after = await read()
+	const hash = await approve(amount)
+	sent.push(hash)
+	// A load-balanced RPC can answer `latest` from a backend behind the approval, so the read names its block; a
+	// backend without that block errors, and the read retries.
+	const { blockNumber } = await l1.pub.waitForTransactionReceipt({ hash })
+	const after = await retried(() => read(blockNumber))
 	if (after !== amount) throw new Error(`allowance of ${spender} over ${token} is ${after} after approving exactly ${amount} — STOP`)
 	return sent
+}
+
+async function retried<T>(read: () => Promise<T>, attempts = 10, delayMs = 1_000): Promise<T> {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await read()
+		} catch (e) {
+			if (attempt >= attempts) throw e
+			await new Promise((r) => setTimeout(r, delayMs))
+		}
+	}
 }
 
 export const lc = (v: unknown) => String(v).toLowerCase()
