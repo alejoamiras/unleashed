@@ -36,12 +36,14 @@ import GasBreakdown from "./GasBreakdown.vue"
 import MintStrip from "./MintStrip.vue"
 import ReviewDetails from "./ReviewDetails.vue"
 import ReviewStep from "./ReviewStep.vue"
+import StateNotice from "./StateNotice.vue"
 import StepStrip from "./StepStrip.vue"
 import TokenList from "./TokenList.vue"
 import TokenMark from "./TokenMark.vue"
 import TokenStep from "./TokenStep.vue"
 import TokenTile from "./TokenTile.vue"
 import WizardShell from "./WizardShell.vue"
+import WrongChainNotice from "./WrongChainNotice.vue"
 
 const TOKEN: SelectableToken = {
 	chainId: 11155111,
@@ -79,6 +81,13 @@ const LOOKUP: LookupState = {
 	logoKey: "11155111:0x779877a7b0d9e8603169ddbd7836e478b4624789",
 	identity: { symbol: "LINK", name: "ChainLink Token", decimals: 18 },
 }
+const SOURCE_ROW: SelectableToken = {
+	...TOKEN,
+	chainId: 84532,
+	address: "0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+	logoKey: "84532:0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+}
+const NATIVE_ROW: SelectableToken = { ...TOKEN, symbol: "ETH", source: "list", logoKey: "native:84532", chainId: 84532 }
 const TOKEN_STEP = {
 	direction: "l1-to-l2",
 	tokens: [TOKEN],
@@ -176,6 +185,13 @@ const CASES: Array<[string, Component, Record<string, unknown>]> = [
 	["TokenMark", TokenMark, { token: TOKEN }],
 	["TokenStep", TokenStep, TOKEN_STEP],
 	["TokenStep (lookup)", TokenStep, { ...TOKEN_STEP, lookup: LOOKUP }],
+	["TokenStep (cross-chain)", TokenStep, { ...TOKEN_STEP, sources: [SOURCE_ROW], natives: [NATIVE_ROW], contractChains: [84532] }],
+	[
+		"StateNotice",
+		StateNotice,
+		{ tone: "lost", icon: "square-alert", title: "Refused.", action: "Change wallet", actionTestid: TESTIDS.sendChangeWallet },
+	],
+	["WrongChainNotice", WrongChainNotice, { walletChainId: 42161, needChainId: 84532 }],
 	["TokenTile", TokenTile, { token: TOKEN, selected: false }],
 	["WizardShell", WizardShell, { direction: "l1-to-l2", step: 0, completed: 2, canSwitchDirection: true }],
 ]

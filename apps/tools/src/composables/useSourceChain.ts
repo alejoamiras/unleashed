@@ -3,7 +3,7 @@
  * rows, the owner's token and native balances on each chain, and the chains where the owner is a contract and so may
  * not send. Reads go through the build's pinned RPCs, never the wallet, so they hold whichever chain the wallet is on.
  */
-import { type Address, erc20Abi, type Hex } from "viem"
+import { type Address, erc20Abi, type Hex, zeroAddress } from "viem"
 import { type ComputedRef, computed, type Ref, shallowRef, watch } from "vue"
 import { MANIFEST } from "@/contracts/bridge-generation"
 import { chainLabel } from "@/lib/chains"
@@ -73,6 +73,20 @@ export function sourceTokenOf(
 /** Where a chain's native balance sits in `balances`; token rows sit under their `logoKey`. */
 export const nativeKeyOf = (chainId: number): string => `native:${chainId}`
 
+/** Each chain's native coin, Ethereum first: what pays the fees there, never something a deposit sends. */
+export function nativeRowsOf(sources: readonly AppSource[]): SelectableToken[] {
+	if (sources.length === 0) return []
+	const l1 = NETWORK.viemChain.nativeCurrency
+	const coins = [
+		{ chainId: NETWORK.l1ChainId, symbol: l1.symbol, decimals: l1.decimals },
+		...sourceChainIds(sources).map((id) => {
+			const coin = sources.find((s) => s.chainId === id)?.chain.nativeCurrency ?? l1
+			return { chainId: id, symbol: coin.symbol, decimals: coin.decimals }
+		}),
+	]
+	return coins.map((c) => ({ ...c, address: zeroAddress, name: c.symbol, source: "list" as const, logoKey: nativeKeyOf(c.chainId) }))
+}
+
 /** An EIP-7702 account's code is only this designator, and it still signs as an EOA. */
 const DELEGATION = /^0xef0100[0-9a-f]{40}$/i
 
@@ -110,6 +124,8 @@ export interface SourceChainDeps {
 export interface UseSourceChainHandle {
 	readonly sources: readonly AppSource[]
 	readonly rows: readonly SelectableToken[]
+	/** Info rows for each chain's native coin; none when the registry offers no source. */
+	readonly natives: readonly SelectableToken[]
 	/** Token balances under `logoKey`, native ones under `nativeKeyOf`; a chain that could not be read has none. */
 	readonly balances: Ref<Record<string, bigint>>
 	/** Source chains where the owner holds contract code. A chain whose code could not be read is not listed. */
@@ -187,6 +203,7 @@ export function useSourceChain(deps: SourceChainDeps): UseSourceChainHandle {
 	return {
 		sources,
 		rows,
+		natives: nativeRowsOf(sources),
 		balances,
 		contractChains,
 		walletChainId: computed(() => deps.walletChainId()),
