@@ -18,7 +18,7 @@ vi.mock("@/contracts/bridge-generation", () => ({
 		{ erc20: "0x70e0ba845a1a0f2da3359c97e0285013525ffc49", decimals: 6, displaySymbol: "USDC", source: "permissionless-mint" },
 	],
 	FEE_JUICE: { asset: "0x000000000000000000000000000000000000fee0" },
-	SWAP: undefined,
+	FUEL: undefined,
 }))
 
 /**
@@ -66,7 +66,7 @@ const GAS: GasLegPlan = {
 	fuelFj: 20_000_000_000_000_000_000n,
 	quote: 20_000_000_000_000_000_000n,
 	minFuelOutput: 19_000_000_000_000_000_000n,
-	route: { path: [], zeroForOnes: [] } as GasLegPlan["route"],
+	venue: null,
 	capped: null,
 }
 

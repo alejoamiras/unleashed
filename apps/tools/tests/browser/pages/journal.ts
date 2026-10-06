@@ -1,6 +1,6 @@
 /** The app's bridge journal, read from the page's storage: the exact figures a send recorded. */
 import { TxHash } from "@aztec-labs/aztec.js/tx"
-import { JOURNAL_KEY_PREFIX, SWAP_BRIDGE_ROUTER_ABI } from "@unleashed/bridge-core"
+import { DEPOSIT_ROUTER_ABI, JOURNAL_KEY_PREFIX } from "@unleashed/bridge-core"
 import type { Page } from "@playwright/test"
 import { decodeFunctionData } from "viem"
 
@@ -85,29 +85,35 @@ function collect(v: unknown, direction: string, out: Record<string, unknown>[] =
 
 /** The Permit2 fields the deposit transaction carried on-chain — what the signed permit must equal. */
 export interface DepositPermitCalldata {
-	functionName: "bridge" | "bridgeWithFuel"
+	functionName: string
 	to: string
 	nonce: bigint
 	deadline: bigint
 	bridgeToken: string
 	amount: bigint
+	/** The part of `amount` the gas leg takes; zero for a token-only send. */
+	fuelSlice: bigint
+	/** The bytes the router hands its swap target; empty when nothing is swapped. */
+	swapData: `0x${string}`
 }
 
 type PublicClientLike = { getTransaction: (a: { hash: `0x${string}` }) => Promise<{ to?: string | null; input: `0x${string}` }> }
 
-/** Decode the router call the journal's deposit hash points at: the entry, its token and total, and the permit. */
+/** Decode the router call the journal's deposit hash points at: the entry, its token, total and slice, and the permit. */
 export async function depositCalldata(pub: unknown, depositTxHash: string): Promise<DepositPermitCalldata> {
 	const tx = await (pub as PublicClientLike).getTransaction({ hash: depositTxHash as `0x${string}` })
-	const decoded = decodeFunctionData({ abi: SWAP_BRIDGE_ROUTER_ABI, data: tx.input })
-	const [p, permit] = decoded.args as unknown as [Record<string, unknown>, { nonce: bigint; deadline: bigint }]
-	const functionName = decoded.functionName as DepositPermitCalldata["functionName"]
+	const decoded = decodeFunctionData({ abi: DEPOSIT_ROUTER_ABI, data: tx.input })
+	if (decoded.functionName !== "bridgeWithPermit") throw new Error(`the deposit called ${decoded.functionName}, not bridgeWithPermit`)
+	const [intent, swapData, amount, permit] = decoded.args
 	return {
-		functionName,
+		functionName: decoded.functionName,
 		to: (tx.to ?? "").toLowerCase(),
 		nonce: permit.nonce,
 		deadline: permit.deadline,
-		bridgeToken: String(p.bridgeToken).toLowerCase(),
-		amount: (functionName === "bridge" ? p.amount : p.totalAmount) as bigint,
+		bridgeToken: intent.token.toLowerCase(),
+		amount,
+		fuelSlice: intent.fuelSlice,
+		swapData,
 	}
 }
 

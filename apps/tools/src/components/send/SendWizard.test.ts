@@ -18,7 +18,7 @@ const { FACTORY, IMPLEMENTATION, ERC20, L1_ADDRESS, AZTEC_ACCOUNT, L2_TOKEN, WOR
 	L2_TOKEN: `0x${"0a".repeat(32)}`,
 	WORD: `0x${"bb".repeat(32)}`,
 }))
-const ROUTE = { path: [{ currency0: ERC20, currency1: ERC20, fee: 500, tickSpacing: 10, hooks: ERC20 }], zeroForOnes: [true] }
+const VENUE = { provider: "testnetSwapper" } as const
 
 const catalogTokens = ref<SelectableToken[]>([])
 const search = ref("")
@@ -117,7 +117,7 @@ vi.mock("@/contracts/bridge-generation", () => ({
 	HUB: { toString: () => AZTEC_ACCOUNT },
 	HUB_TOKEN_ARTIFACT: {},
 	SEND_GENERATION: { factory: FACTORY, implementation: IMPLEMENTATION },
-	SWAP: { slippageBps: 300, fjPerTx: "100000000000000000", fjRegister: "500000000000000000", minFuelFj: "1000000" },
+	FUEL: { slippageBps: 300, fjPerTx: "100000000000000000", fjRegister: "500000000000000000", minFuelFj: "1000000" },
 	MANIFEST_TOKENS: [],
 }))
 vi.mock("@/composables/useL1Wallet", () => ({
@@ -204,8 +204,8 @@ vi.mock("@/composables/useTokenGrant", () => ({
 		dispose: grantDispose,
 	}),
 }))
-vi.mock("@/composables/useRouteQuote", () => ({
-	useRouteQuote: () => ({ quoted: routeQuoted, loading: ref(false), error: routeError, quote: quoteFn, dispose: routeDispose }),
+vi.mock("@/composables/useFuelQuote", () => ({
+	useFuelQuote: () => ({ quoted: routeQuoted, loading: ref(false), error: routeError, quote: quoteFn, dispose: routeDispose }),
 }))
 vi.mock("@/composables/useGasShare", () => ({
 	useGasShare: () => ({
@@ -466,9 +466,9 @@ describe("SendWizard", () => {
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
 		await flushPromises()
 		expect(w.findComponent({ name: "AmountStep" }).props("gas")).toBeNull()
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n })
 		await flushPromises()
-		expect(w.findComponent({ name: "AmountStep" }).props("gas")?.route).toEqual(ROUTE)
+		expect(w.findComponent({ name: "AmountStep" }).props("gas")?.venue).toEqual(VENUE)
 	})
 
 	it("the fee asset's gas leg is one-for-one with no pools and no slippage floor", async () => {
@@ -481,7 +481,7 @@ describe("SendWizard", () => {
 		setRoute({ kind: "identity" })
 		await flushPromises()
 		const gas = w.findComponent({ name: "AmountStep" }).props("gas")
-		expect(gas.route).toEqual({ path: [], zeroForOnes: [] })
+		expect(gas.venue).toBeNull()
 		expect(gas.minFuelOutput).toBe(gas.quote)
 		expect(gas.quote).toBe(gas.fuelAmount)
 	})
@@ -493,7 +493,7 @@ describe("SendWizard", () => {
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:amount", "1")
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "gas")
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n })
 		await flushPromises()
 		expect(w.findComponent({ name: "AmountStep" }).props("gas").fuelAmount).toBe(10n ** 8n)
 	})
@@ -743,7 +743,7 @@ describe("SendWizard", () => {
 		review.vm.$emit("back")
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 6n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 6n })
 		await flushPromises()
 		const amount = w.findComponent({ name: "AmountStep" })
 		expect(amount.props("gas")).toBeNull()
@@ -1086,7 +1086,7 @@ describe("SendWizard", () => {
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
 		// 0.02 token of slice at 135 FJ per token = 2.7 FJ, floor 2.619 FJ: the mocked ceilings (0.6 FJ)
 		// leave 2.019 FJ, twenty transactions at the mocked 0.1 FJ each.
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 135n * 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 135n * 10n ** 18n })
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
 		await flushPromises()
@@ -1109,7 +1109,7 @@ describe("SendWizard", () => {
 		review.vm.$emit("back")
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 135n * 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 135n * 10n ** 18n })
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
 		await flushPromises()
@@ -1121,7 +1121,7 @@ describe("SendWizard", () => {
 		review.vm.$emit("back")
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "gas")
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n })
 		await flushPromises()
 		expect(w.findComponent({ name: "AmountStep" }).props("gasSetAside")).toBe(4n * 10n ** 17n)
 		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
@@ -1162,7 +1162,7 @@ describe("SendWizard", () => {
 			amountStep().vm.$emit("update:is-private", isPrivate)
 			amountStep().vm.$emit("update:amount", "1")
 			amountStep().vm.$emit("update:valid", true)
-			setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n })
+			setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n })
 			await flushPromises()
 			amountStep().vm.$emit("next")
 			await flushPromises()
@@ -1179,7 +1179,7 @@ describe("SendWizard", () => {
 		const amountStep = () => w.findComponent({ name: "AmountStep" })
 		amountStep().vm.$emit("update:intent", "token+gas")
 		amountStep().vm.$emit("update:is-private", false)
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 135n * 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 135n * 10n ** 18n })
 		await flushPromises()
 		amountStep().vm.$emit("next")
 		await flushPromises()
@@ -1214,7 +1214,7 @@ describe("SendWizard", () => {
 		review.vm.$emit("back")
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n })
 		await flushPromises()
 		const amount = w.findComponent({ name: "AmountStep" })
 		expect(amount.props("gas")).toBeNull()
@@ -1232,7 +1232,7 @@ describe("SendWizard", () => {
 		review.vm.$emit("back")
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n })
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
 		await flushPromises()
@@ -1348,7 +1348,7 @@ describe("SendWizard", () => {
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:amount", "1")
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
 		await flushPromises()
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n }, L1_ADDRESS)
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n }, L1_ADDRESS)
 		await flushPromises()
 		expect(w.findComponent({ name: "AmountStep" }).props("gas")).toBeNull()
 		expect(w.findComponent({ name: "AmountStep" }).props("routeKind")).toBeNull()
@@ -1360,7 +1360,7 @@ describe("SendWizard", () => {
 		const reviewed = review.props("plan")
 
 		// A quote lands after the review rendered: the gas leg moves under the frozen plan.
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n })
 		w.findComponent({ name: "WizardShell" }).vm.$emit("goto", 1)
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
@@ -1693,7 +1693,7 @@ describe("SendWizard", () => {
 		const amount = w.findComponent({ name: "AmountStep" })
 		amount.vm.$emit("update:isPrivate", false)
 		amount.vm.$emit("update:intent", "gas")
-		setRoute({ kind: "route", route: ROUTE, quoteOut: 10n ** 18n })
+		setRoute({ kind: "route", venue: VENUE, probeOut: 10n ** 18n })
 		await flushPromises()
 		amount.vm.$emit("next")
 		await flushPromises()

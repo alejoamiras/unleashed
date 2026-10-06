@@ -3,7 +3,7 @@
  * the node dropped is offered again; a claim another submitter made first is found consumed; a
  * declined grant signs nothing.
  */
-import { balanceOf, freshToken, mint, mintPrivateGasNote, privateFpc, setRoutable } from "@unleashed/bridge-core/sandbox"
+import { balanceOf, freshToken, mint, mintPrivateGasNote, privateFpc, fuelSwapperOf, setFuelRate } from "@unleashed/bridge-core/sandbox"
 import { TESTIDS } from "../../../src/lib/testids"
 import { expect, test } from "../fixtures/test"
 import { connectAztec, driveToConnected, tid, walletCalls, walletFrame } from "../pages/connect"
@@ -184,7 +184,7 @@ test("cell 25 — a declined token grant ends on the review with the refusal; no
 	// A token the wallet has never been asked about: the generation's own are granted at connect,
 	// so only a fresh one raises the grant at the confirm, where the decline is armed.
 	const erc20 = await freshToken(sandbox.clients.l1, { name: "Fresh Declined", symbol: "FRSHD", decimals: 6 }, [l1.address], 1000n * USDC)
-	await setRoutable(sandbox.clients.l1, sandbox.clients.deployment.quoter, erc20)
+	await setFuelRate(sandbox.clients.l1, fuelSwapperOf(sandbox), erc20)
 	await page.goto("/")
 	await openSend(page)
 	await connectL1(page)

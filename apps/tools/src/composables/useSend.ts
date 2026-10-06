@@ -39,8 +39,17 @@ import {
 	readRegistration,
 	runSend,
 } from "@unleashed/bridge-core"
+import type { Hex, PublicClient } from "viem"
 import { type Ref, effectScope, ref, watch } from "vue"
-import { FUEL_PORTAL, HUB, MANIFEST_CHAIN, SEND_GENERATION, TOKEN_CLASS_ID, rebuildHubTokenInstance } from "@/contracts/bridge-generation"
+import {
+	FUEL_PORTAL,
+	HUB,
+	LEGACY_ROUTERS,
+	MANIFEST_CHAIN,
+	SEND_GENERATION,
+	TOKEN_CLASS_ID,
+	rebuildHubTokenInstance,
+} from "@/contracts/bridge-generation"
 import { classifyClaimReceipt } from "@/lib/claim-receipt"
 import { NETWORK } from "@/lib/network"
 import type { GasLegPlan, GrantOutcome, SendPlan } from "@/lib/send-model"
@@ -50,6 +59,7 @@ import { humanizeWalletError } from "@/lib/wallet-errors"
 import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
 import { findDepositTx } from "./deposit-reconcile"
+import { sliceSwapData } from "./useFuelQuote"
 import { reconcileFuelConsumed } from "./fuel-recovery"
 import { hubMessageState } from "@/lib/message-nullifier"
 import { resolveToolsTarget } from "@/lib/network-targets"
@@ -200,13 +210,12 @@ function buildSendRecord(i: RecordInputs): SendDepositRecord {
 
 /** The gas leg as bridge-core wants it. Private gas MUST use `deriveBridgeSecret`: the PrivateFPC
  *  re-derives that secret from msg_sender, so a random one would strand the Fee Juice forever. */
-function gasLegOf(gas: GasLegPlan, recipient: string, isPrivate: boolean, salt?: Fr): SendGasLeg {
+function gasLegOf(gas: GasLegPlan, swapData: Hex, recipient: string, isPrivate: boolean, salt?: Fr): SendGasLeg {
 	return {
 		fuelAmount: gas.fuelAmount,
 		fuelRecipient: fuelRecipientFor(isPrivate, recipient),
 		minFuelOutput: gas.minFuelOutput,
-		path: gas.route.path,
-		zeroForOnes: gas.route.zeroForOnes,
+		swapData,
 		...(salt ? { fuelSecret: deriveBridgeSecret(salt, AztecAddress.fromStringUnsafe(recipient)) } : {}),
 	}
 }
@@ -267,6 +276,7 @@ export function ensureSendJournalDeps(): void {
 				? findDepositTx(rec, l1.publicClient as never, {
 						chainId: MANIFEST_CHAIN.l1ChainId,
 						router: SEND_GENERATION.router,
+						legacyRouters: LEGACY_ROUTERS,
 						chainEpoch: () => l1.chainChanges.value,
 					})
 				: Promise.resolve("incomplete" as const),
@@ -737,6 +747,8 @@ async function executeSend(ctx: RunCtx): Promise<string> {
 	// Before the FIRST wallet interaction of the send (the private seal's signature), so a wallet on
 	// the wrong chain costs no prompt and leaves no record behind.
 	await assertL1Chain(actors.l1)
+	// Before anything is sealed or signed: a venue that no longer meets the reviewed floor stops here.
+	const swapData = plan.gas ? await sliceSwapData(actors.l1.publicClient as unknown as PublicClient, plan.token.address, plan.gas) : "0x"
 	const prepared = await prepareSecrets(plan, actors.recipient)
 	let id = prepared.id ?? makeProvisionalDepositId()
 	try {
@@ -747,7 +759,7 @@ async function executeSend(ctx: RunCtx): Promise<string> {
 		const res = await runSend(
 			l1Ctx(actors),
 			gen,
-			await sendParams(plan, actors, prepared),
+			await sendParams(plan, actors, prepared, swapData),
 			(s) => {
 				ctx.stage.value = s
 			},
@@ -940,7 +952,7 @@ async function prepareSecrets(plan: SendPlan, recipient: string): Promise<Prepar
 
 /** A wall-clock deadline fails on a drifted chain: the window is measured from the chain's own
  *  latest block, which is the clock the Permit2 check reads. */
-async function sendParams(plan: SendPlan, actors: SendActors, prepared: Prepared): Promise<SendParams> {
+async function sendParams(plan: SendPlan, actors: SendActors, prepared: Prepared, swapData: Hex): Promise<SendParams> {
 	const block = (await actors.l1.publicClient.getBlock()) as { timestamp: bigint }
 	const deadline = block.timestamp + PERMIT_DEADLINE_SECONDS
 	return {
@@ -950,7 +962,7 @@ async function sendParams(plan: SendPlan, actors: SendActors, prepared: Prepared
 		aztecRecipient: actors.recipient as `0x${string}`,
 		isPrivate: plan.isPrivate,
 		claimSalt: prepared.claimSalt,
-		gas: plan.gas ? gasLegOf(plan.gas, actors.recipient, plan.isPrivate, prepared.fuelSalt) : undefined,
+		gas: plan.gas ? gasLegOf(plan.gas, swapData, actors.recipient, plan.isPrivate, prepared.fuelSalt) : undefined,
 		nonce: BigInt(`0x${[...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("")}`),
 		deadline,
 	}

@@ -128,7 +128,7 @@ test("cell 43 — the switch is refused while the Ethereum leg is waiting on the
 	const b = pool.take()
 	const { usdt } = sandbox.tokens
 	await mint(sandbox.clients.l1, usdt.erc20 as `0x${string}`, l1.address, 200n * USDC)
-	const router = sandbox.manifest.bridge?.l1.router ?? ""
+	const router = sandbox.manifest.bridge?.l1.depositRouter ?? ""
 	expect(router).not.toBe("")
 	await page.goto("/")
 	await openSend(page)

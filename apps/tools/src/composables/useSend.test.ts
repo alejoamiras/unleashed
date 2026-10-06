@@ -39,6 +39,8 @@ const h = vi.hoisted(() => ({
 	wallet: { value: {} as unknown },
 	address: { value: "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d" as string | null },
 	signTypedData: vi.fn(async () => "0xsig"),
+	/** The swap bytes the slice is quoted to at send time; a throw is a venue that moved under the reviewed floor. */
+	sliceSwapData: vi.fn(async (_pub: unknown, _token: string, _gas: unknown) => "0x5eed" as `0x${string}`),
 	signMessage: vi.fn(async () => `0x${"a".repeat(130)}`),
 	writeContract: vi.fn(async () => "0xl1tx"),
 	chainId: { value: 31337 } as { value: number },
@@ -99,6 +101,8 @@ vi.mock("@/composables/useWalletConnection", async (importOriginal) => {
 		__resetWalletConnectionForTests: () => {},
 	}
 })
+
+vi.mock("./useFuelQuote", () => ({ sliceSwapData: h.sliceSwapData }))
 
 vi.mock("@/composables/useTokenGrant", () => ({
 	useTokenGrant: () => ({ isGranted: h.isGranted, ensureGranted: h.ensureGranted, dispose: h.disposeGrant }),
@@ -219,7 +223,7 @@ const gasLeg: GasLegPlan = {
 	fuelFj: 5n,
 	quote: 5n,
 	minFuelOutput: 4n,
-	route: { path: [], zeroForOnes: [] },
+	venue: { provider: "testnetSwapper" },
 	capped: null,
 }
 
@@ -376,6 +380,7 @@ describe("useSend", () => {
 		h.signMessage.mockImplementation(async () => SEAL_SIG)
 		h.resolveHubClaimSendOpts.mockImplementation(async () => ({ kind: "opts", opts: {} }))
 		h.runSend.mockImplementation(fakeRunSend())
+		h.sliceSwapData.mockImplementation(async () => "0x5eed")
 	})
 
 	it("a grant that THROWS is a reported failure, not an escaping exception - no send, no record", async () => {
@@ -567,17 +572,32 @@ describe("useSend", () => {
 		expect(params.claimSalt.toString()).toBe(sealed.secretStr)
 	})
 
-	it("token+gas passes the gas leg through and journals its fuel facts", async () => {
+	it("token+gas passes the gas leg through, swapped at the slice quoted at send time, and journals its fuel facts", async () => {
 		const send = useSend()
 		const id = await send.send(plan({ intent: "token+gas", gas: gasLeg }))
-		const params = h.runSend.mock.calls[0][2] as { gas?: { fuelAmount: bigint; minFuelOutput: bigint } }
+		const params = h.runSend.mock.calls[0][2] as { gas?: { fuelAmount: bigint; minFuelOutput: bigint; swapData: string } }
 		expect(params.gas?.fuelAmount).toBe(1_000_000n)
 		expect(params.gas?.minFuelOutput).toBe(4n)
+		expect(params.gas?.swapData).toBe("0x5eed")
+		expect(h.sliceSwapData).toHaveBeenCalledWith(expect.anything(), ERC20, gasLeg)
 		const rec = recordOf(id)
 		// The record's amount is the TOKEN claim: the total minus the slice the swap took.
 		expect(rec?.amount).toBe("99000000")
 		expect(rec?.fuel?.leafIndex).toBe("8")
 		expect(rec?.fuel?.received).toBe("5")
+	})
+
+	it("a gas slice the venue no longer prices at the reviewed floor stops before anything is sealed, signed or journaled", async () => {
+		h.sliceSwapData.mockImplementation(async () => {
+			throw new Error("The gas price moved since you reviewed this send")
+		})
+		const send = useSend()
+		await expect(send.send(plan({ isPrivate: true, intent: "token+gas", gas: gasLeg }))).resolves.toBe("")
+		expect(send.error.value).toMatch(/gas price moved/)
+		expect(h.sealPrivateRecord).not.toHaveBeenCalled()
+		expect(h.ensurePermit2Approval).not.toHaveBeenCalled()
+		expect(h.runSend).not.toHaveBeenCalled()
+		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
 
 	it("a gas-only send carries no token block and is keyed by its Fee Juice message", async () => {

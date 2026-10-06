@@ -3,7 +3,7 @@
  * the user has chosen, and the outcomes the grant and route steps can produce. Every composable
  * and every step component speaks these types; none of them re-declares a token shape of its own.
  */
-import type { FuelRoute, Registration, TokenState } from "@unleashed/bridge-core"
+import type { FuelProvider, Registration, TokenState } from "@unleashed/bridge-core"
 import type { Address, Hex } from "viem"
 
 export type Direction = "l1-to-l2" | "l2-to-l1"
@@ -85,7 +85,8 @@ export interface GasLegPlan {
 	/** What the probe says `fuelAmount` buys — display + floor input, never the claim amount. */
 	quote: bigint
 	minFuelOutput: bigint
-	route: FuelRoute
+	/** Where the slice is swapped; null for the fee asset, which needs no swap. */
+	venue: FuelProvider | null
 	capped: "min" | "half" | null
 }
 
@@ -94,6 +95,9 @@ export function tokenRemainder(amount: bigint, gas: Pick<GasLegPlan, "fuelAmount
 	const slice = gas?.fuelAmount ?? 0n
 	return amount > slice ? amount - slice : 0n
 }
+
+/** Why a send cannot include gas when no fuel venue is reachable on this network. */
+export const NO_GAS_ROUTE = "No route can buy Aztec gas on this network right now, so this send can't include gas."
 
 /** A route outcome that closes both gas choices. */
 export type GasBlock = "no-route" | "unavailable"

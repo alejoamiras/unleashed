@@ -219,7 +219,7 @@ export async function balanceOf(contract: ContractBase, from: AztecAddress, kind
 const generationOf = (s: SmokeContext) => sendGenerationOf(s.manifest, s.bridge)
 
 /** The deposit router's fuel swapper; a sandbox booted before the router existed has none. */
-export function fuelSwapperOf(s: SmokeContext): Address {
+export function fuelSwapperOf(s: Pick<SmokeContext, "clients">): Address {
 	const swapper = s.clients.deployment.fuelSwapper
 	if (!swapper) throw new Error("this sandbox has no fuel swapper — boot a fresh one")
 	return swapper

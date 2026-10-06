@@ -4,7 +4,6 @@ import { Icon } from "@unleashed/design"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract } from "@aztec-labs/aztec.js/contracts"
 import {
-	type RouteOutcome,
 	type SendDepositRecord,
 	type SendJournalRecord,
 	type SendWithdrawRecord,
@@ -17,7 +16,7 @@ import {
 } from "@unleashed/bridge-core"
 import type { Address, PublicClient } from "viem"
 import { computed, onBeforeUnmount, onScopeDispose, ref, watch } from "vue"
-import { HUB, HUB_TOKEN_ARTIFACT, SEND_GENERATION, SWAP } from "@/contracts/bridge-generation"
+import { FUEL, HUB, HUB_TOKEN_ARTIFACT, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { readHubBinding } from "@/contracts/hub-binding"
 
 /** Components */
@@ -40,7 +39,7 @@ import { useGasHeld } from "@/composables/useGasHeld"
 import { useGasShare } from "@/composables/useGasShare"
 import { EXIT_TOKEN_NOT_REGISTERED, useHubExit } from "@/composables/useHubExit"
 import { useL1Wallet } from "@/composables/useL1Wallet"
-import { useRouteQuote } from "@/composables/useRouteQuote"
+import { type FuelOutcome, useFuelQuote } from "@/composables/useFuelQuote"
 import { useRowBalances } from "@/composables/useRowBalances"
 import { previewBlock, useSend } from "@/composables/useSend"
 import { useToast } from "@/composables/useToast"
@@ -62,6 +61,7 @@ import {
 	type Direction,
 	type ExitPlan,
 	type GasLegPlan,
+	NO_GAS_ROUTE,
 	type ResolvedToken,
 	type SelectableToken,
 	type SendIntent,
@@ -73,11 +73,9 @@ import { type OwnGasSource, decideOwnGasSource } from "@/lib/fuel-claim-state"
 /** The rail's own etas, summed and rounded UP — the review must never undersell how long this takes. */
 const DEPOSIT_TAKES = "usually 3–8 min end to end"
 const EXIT_TAKES = "tens of minutes — Aztec proves exits in epoch batches"
-/** The fee asset needs no swap, so its gas leg carries no pools at all. */
-const NO_SWAP = { path: [], zeroForOnes: [] }
 const ONE_TO_ONE = { probeIn: 1n, probeOut: 1n }
 /** What one Aztec transaction is budgeted at on this network; null where nothing can buy gas. */
-const fjPerTx = SWAP ? BigInt(SWAP.fjPerTx) : null
+const fjPerTx = FUEL ? BigInt(FUEL.fjPerTx) : null
 /** A token-only claim spends gas the account already holds; there is no sponsor to fall back on. */
 const NO_GAS_FOR_TOKEN_ONLY =
 	"Your Aztec account holds no gas the bridge can claim with, so the token alone could not be claimed. Choose Token + gas to arrive with some."
@@ -148,7 +146,7 @@ const selection = useTokenSelection({
 })
 const grant = useTokenGrant()
 const gasHeld = useGasHeld({ aztec: () => bridge.wallet.value, account: () => bridge.selectedAccount.value ?? undefined })
-const routeQuote = useRouteQuote({ pub: () => l1.publicClient as unknown as PublicClient })
+const routeQuote = useFuelQuote({ pub: () => l1.publicClient as unknown as PublicClient })
 const gasShare = useGasShare({ aztec: () => bridge.wallet.value, account: () => bridge.selectedAccount.value ?? undefined })
 // A private slice is sized from live fees: price them now so the amount step never waits on them.
 void gasShare.prime()
@@ -314,7 +312,7 @@ function probeAmountOf(token: ResolvedToken): bigint {
 
 /** The route outcome ONLY while it answers the token on screen. A probe still in flight, or one
  *  left over from a token the user has moved off, prices nothing. */
-const routeOutcome = computed<RouteOutcome | null>(() => {
+const routeOutcome = computed<FuelOutcome | null>(() => {
 	const token = resolved.value
 	const answer = routeQuote.quoted.value
 	if (!token || !answer) return null
@@ -325,7 +323,7 @@ const routeKind = computed(() => routeOutcome.value?.kind ?? null)
 
 /** The floor the swap is signed against. The fee asset arrives one-for-one, so its floor is the
  *  slice itself: applying slippage there would sign a floor the identity path can never miss. */
-function floorFor(quote: bigint, outcome: RouteOutcome): bigint {
+function floorFor(quote: bigint, outcome: FuelOutcome): bigint {
 	return outcome.kind === "route" ? gasShare.floorFor(quote) : quote
 }
 
@@ -336,24 +334,24 @@ function buildGas(): { plan: GasLegPlan | null; error: string | null } {
 	if (!token || units === null || units <= 0n || !outcome) return { plan: null, error: null }
 	if (outcome.kind !== "route" && outcome.kind !== "identity") return { plan: null, error: null }
 	const probeIn = probeAmountOf(token)
-	const rate = outcome.kind === "route" ? { probeIn, probeOut: outcome.quoteOut } : ONE_TO_ONE
+	const rate = outcome.kind === "route" ? { probeIn, probeOut: outcome.probeOut } : ONE_TO_ONE
 	const share = gasShare.propose({ amount: units, decimals: token.decimals, state: token.state, rate, isPrivate: isPrivate.value })
 	// A private slice is priced from live fees; until they arrive there is nothing to size, like a
 	// route probe still in flight.
 	if (share === "pricing") return { plan: null, error: null }
-	if (!share) return { plan: null, error: "This network has no swap venue, so a send cannot buy gas." }
+	if (!share) return { plan: null, error: NO_GAS_ROUTE }
 	// Gas-only spends the whole amount; the router refuses any other split.
 	const fuelAmount = intent.value === "gas" ? units : share.fuelAmount
 	if (intent.value === "token+gas" && fuelAmount >= units) {
 		return { plan: null, error: "The amount is too small to buy gas and still send a token." }
 	}
-	const quote = outcome.kind === "route" ? (fuelAmount * outcome.quoteOut) / probeIn : fuelAmount
+	const quote = outcome.kind === "route" ? (fuelAmount * outcome.probeOut) / probeIn : fuelAmount
 	const minFuelOutput = floorFor(quote, outcome)
 	const shortfall = quoteShortfall(quote) ?? (intent.value === "gas" ? null : privateSliceShortfall(token.state, minFuelOutput))
 	if (shortfall) return { plan: null, error: shortfall }
-	const route = outcome.kind === "route" ? outcome.route : NO_SWAP
+	const venue = outcome.kind === "route" ? outcome.venue : null
 	return {
-		plan: { fuelAmount, fuelFj: share.fuelFj, quote, minFuelOutput, route, capped: share.capped },
+		plan: { fuelAmount, fuelFj: share.fuelFj, quote, minFuelOutput, venue, capped: share.capped },
 		error: null,
 	}
 }
@@ -362,8 +360,8 @@ function buildGas(): { plan: GasLegPlan | null; error: string | null } {
  *  floor), so a quote under it is a deposit that cannot go through — say so before a signature. The
  *  slice may have been capped at half the amount, far under what the transactions asked for. */
 function quoteShortfall(quote: bigint): string | null {
-	if (!SWAP || quote >= BigInt(SWAP.minFuelFj)) return null
-	return `This amount buys only ≈ ${formatCompact(quote, 18)} FJ of gas, under the ≈ ${formatCompact(BigInt(SWAP.minFuelFj), 18)} FJ minimum a claim needs — send a larger amount.`
+	if (!FUEL || quote >= BigInt(FUEL.minFuelFj)) return null
+	return `This amount buys only ≈ ${formatCompact(quote, 18)} FJ of gas, under the ≈ ${formatCompact(BigInt(FUEL.minFuelFj), 18)} FJ minimum a claim needs — send a larger amount.`
 }
 
 /** A private claim forfeits its fee ceilings before any gas reaches the user: a slice whose
@@ -511,7 +509,7 @@ function txCoveredOf(target: SendPlan | ExitPlan): number | null {
 function mandatoryGasOf(target: SendPlan): bigint | null {
 	if (target.intent === "gas") return gasOnlySetAside(target.isPrivate)
 	if (target.isPrivate) return gasShare.ceilingsFor(target.token.state)
-	return target.token.state.kind === "registered" || !SWAP ? 0n : BigInt(SWAP.fjRegister)
+	return target.token.state.kind === "registered" || !FUEL ? 0n : BigInt(FUEL.fjRegister)
 }
 
 /** A private gas-only claim is the standalone fuel claim, which forfeits its own ceiling. */
@@ -529,7 +527,7 @@ const fjFigure = (fj: bigint | null): string | null => (fj === null ? null : `�
  *  is the ceiling, priced from live fees, and the review says so. */
 function networkFeeOf(target: SendPlan | ExitPlan): FeeLine {
 	if (target.direction === "l2-to-l1") return exitFeeOf(target)
-	if (!target.gas || !SWAP || !fjPerTx) return heldGasFeeOf(target)
+	if (!target.gas || !FUEL || !fjPerTx) return heldGasFeeOf(target)
 	// A gas-only send bypasses token registration and claims under the standalone fuel claim's limits.
 	const gasOnly = target.intent === "gas"
 	if (target.isPrivate) {
@@ -541,7 +539,7 @@ function networkFeeOf(target: SendPlan | ExitPlan): FeeLine {
 		}
 	}
 	const registers = !gasOnly && target.token.state.kind !== "registered"
-	const feeFj = fjPerTx + (registers ? BigInt(SWAP.fjRegister) : 0n)
+	const feeFj = fjPerTx + (registers ? BigInt(FUEL.fjRegister) : 0n)
 	return { networkFee: fjFigure(feeFj), networkFeeNote: "taken from the gas that arrives" }
 }
 
@@ -584,7 +582,7 @@ function freezeReview(target: SendPlan | ExitPlan): ReviewSnapshot {
 	return {
 		plan: target,
 		account: target.direction === "l2-to-l1" ? target.recipientL1 : (bridge.selectedAccount.value ?? ""),
-		slippageBps: gasLeg && SWAP ? SWAP.slippageBps : null,
+		slippageBps: gasLeg && FUEL ? FUEL.slippageBps : null,
 		estimate: {
 			takes: target.direction === "l2-to-l1" ? EXIT_TAKES : DEPOSIT_TAKES,
 			...networkFeeOf(target),

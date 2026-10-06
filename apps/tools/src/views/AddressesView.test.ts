@@ -7,7 +7,7 @@ const gen = vi.hoisted(() => ({ promoted: true }))
 vi.mock("@/lib/network", () => ({ NETWORK: { viemChain: { name: "Sepolia" } } }))
 vi.mock("@/contracts/bridge-generation", () => ({
 	get GENERATION() {
-		return gen.promoted ? { l1: { factory: "0xfactory", router: "0xrouter" } } : null
+		return gen.promoted ? { l1: { factory: "0xfactory", router: "0xrouter", depositRouter: "0xdepositrouter" } } : null
 	},
 	get HUB() {
 		return gen.promoted ? { toString: () => "0xhub" } : undefined
@@ -44,7 +44,8 @@ describe("AddressesView", () => {
 		const rows = w.findAll(sel(TESTIDS.addressRow))
 		expect(rows.map((r) => [r.attributes("data-contract"), r.get("code").text()])).toEqual([
 			["Portal factory", "0xfactory"],
-			["Router", "0xrouter"],
+			// The router sends go through, never the retired one.
+			["Router", "0xdepositrouter"],
 			["Fee Juice portal", "0xfeejuice"],
 			["Bridge hub", "0xhub"],
 			["SIGNAL", "0xsignal"],

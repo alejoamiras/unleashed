@@ -7,7 +7,8 @@ import {
 	mintPrivateGasNote,
 	privateCreditOf,
 	privateFpc,
-	setRoutable,
+	fuelSwapperOf,
+	setFuelRate,
 } from "@unleashed/bridge-core/sandbox"
 import { ownGasTxs } from "@unleashed/bridge-core"
 import { getAddress } from "viem"
@@ -53,18 +54,20 @@ test("cell 13 — plain, public, nothing held: the claim pays from the fuel the 
 	expect(await privateCreditOf(actor.s, await privateFpc(actor.s)), "no credit was minted or spent").toBe(0n)
 
 	// One permit for the WHOLE amount (token leg + the slice that became gas), bound to the router
-	// and to the exact nonce + deadline the bridgeWithFuel call then carried.
+	// and to the exact nonce + deadline the bridgeWithPermit call then carried.
 	const permits = l1.permits()
 	expect(permits, "exactly one permit was signed").toHaveLength(1)
 	const permit = permits[0]
-	const router = (sandbox.manifest.bridge?.l1.router ?? "").toLowerCase()
+	const router = (sandbox.manifest.bridge?.l1.depositRouter ?? "").toLowerCase()
 	expect(permit.spender.toLowerCase()).toBe(router)
 	expect(permit.permitted.token.toLowerCase()).toBe(usdt.erc20.toLowerCase())
 	expect(permit.permitted.amount).toBe(100n * USDC)
 	expect(permit.deadline).toBeGreaterThan(BigInt(permit.signedAt))
 	const calldata = await depositCalldata(sandbox.clients.l1.pub, (await depositRecords(page)).at(-1)?.depositTxHash ?? "")
-	expect(calldata.functionName).toBe("bridgeWithFuel")
+	expect(calldata.functionName).toBe("bridgeWithPermit")
 	expect(calldata.to).toBe(router)
+	expect(calldata.fuelSlice).toBeGreaterThan(0n)
+	expect(calldata.swapData).not.toBe("0x")
 	expect(calldata.nonce).toBe(permit.nonce)
 	expect(calldata.deadline).toBe(permit.deadline)
 	expect(calldata.amount).toBe(100n * USDC)
@@ -183,7 +186,7 @@ test("cell 15b — selfpay, private, public FJ held: the private fence leaves it
 
 test("cell 16 — plain, private, first-time token: registration, then the credit-paid claim", async ({ page, sandbox, actor, l1, run }) => {
 	const erc20 = await freshToken(sandbox.clients.l1, { name: "Fresh Fueled", symbol: "FRSHG", decimals: 6 }, [l1.address], 1000n * USDC)
-	await setRoutable(sandbox.clients.l1, sandbox.clients.deployment.quoter, erc20)
+	await setFuelRate(sandbox.clients.l1, fuelSwapperOf(sandbox), erc20)
 
 	await page.goto("/")
 	await openSend(page)
