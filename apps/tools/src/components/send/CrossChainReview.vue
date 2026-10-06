@@ -193,11 +193,11 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 		<p class="note ul-notch" :data-testid="TESTIDS.sendXcFallback">
 			<span class="glyph"><Icon name="info-box" :size="24" /></span>
 			<span v-if="IS_MAINNET"
-				>If the deposit can’t run on {{ l1 }}, the {{ destSymbol }} goes to your own Ethereum address <span class="mono ink">{{ user }}</span>
+				>If the deposit can’t run on <span class="whole">{{ l1 }}</span>, the {{ destSymbol }} goes to your own Ethereum address <span class="mono ink">{{ user }}</span>
 				instead. You can continue from Ethereum later; that needs a little ETH there for gas.</span
 			>
 			<span v-else
-				>If the deposit can’t run on {{ l1 }}, the {{ destSymbol }} goes to your own address <span class="mono ink">{{ user }}</span> there
+				>If the deposit can’t run on <span class="whole">{{ l1 }}</span>, the {{ destSymbol }} goes to your own address <span class="mono ink">{{ user }}</span> there
 				instead. You can continue from there later; that needs a little test ETH for gas.</span
 			>
 		</p>
@@ -311,8 +311,11 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 .note {
 	--ul-fill: var(--ul-raised);
 	color: var(--ul-ink-2);
-	/* The address never breaks, so `pretty` alone still leaves a two-word last line. */
-	text-wrap: balance;
+	text-wrap: pretty;
+}
+
+.whole {
+	white-space: nowrap;
 }
 
 .glyph {
