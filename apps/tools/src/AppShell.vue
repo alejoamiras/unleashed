@@ -24,6 +24,7 @@ import { useShell } from "@/composables/useShell"
 
 /** Utils */
 import { computed } from "vue"
+import { appSources, fromChainsLine } from "@/composables/useSourceChain"
 import { IS_PLACEHOLDER } from "@/contracts/bridge-generation"
 import { TESTIDS } from "@/lib/testids"
 
@@ -43,8 +44,15 @@ const phone = useMediaQuery(PHONE_QUERY)
  *  everywhere; no-wallet has the install CTA on the faucet only (the others have no CTA, so it shows here). */
 const stripExclude = computed(() => (section.value === "drip" ? ["no-wallet", "capability-rejected"] : ["capability-rejected"]))
 
+/** "Base Sepolia or Ethereum · Sepolia" where the registry offers a source; "" on an Ethereum-only build. */
+const sendFrom = fromChainsLine(appSources())
 const HEADERS = {
-	send: { title: "Bridge", subline: "Any ERC-20 · Ethereum ↔ Aztec · public or private · arrive with gas" },
+	send: {
+		title: "Bridge",
+		subline: sendFrom
+			? `From ${sendFrom} · public or private · arrive with gas`
+			: "Any ERC-20 · Ethereum ↔ Aztec · public or private · arrive with gas",
+	},
 	drip: { title: "Faucet", subline: "Alpha-testnet only · fixed amounts · permissionless dripper · no rate limit" },
 	activity: { title: "Activity", subline: "Every bridge this browser started or restored, with its next step" },
 	addresses: { title: "Addresses", subline: "Every contract this build talks to" },

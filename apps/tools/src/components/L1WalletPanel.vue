@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { AddressDisplay, Button, Icon } from "@unleashed/design"
+import { computed } from "vue"
 import { useL1Wallet } from "@/composables/useL1Wallet"
+import { appSources, sourceChainIds } from "@/composables/useSourceChain"
 import { NETWORK } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
 
-const { address, isConnected, wrongChain, isConnecting, connect, disconnect, switchL1Network } = useL1Wallet()
+const { address, chainId, isConnected, isConnecting, connect, disconnect, switchL1Network } = useL1Wallet()
+
+/** One account signs on Ethereum and on every source chain, so the chip counts them all. */
+const chains = new Set([NETWORK.l1ChainId, ...sourceChainIds(appSources())])
+/** A source chain is a place a send starts, not a wrong chain: only a chain the app never signs on asks for the switch. */
+const offChain = computed(() => isConnected.value && chainId.value !== null && !chains.has(chainId.value))
 </script>
 
 <template>
@@ -12,10 +19,10 @@ const { address, isConnected, wrongChain, isConnecting, connect, disconnect, swi
 		<div v-if="isConnected && address" class="chip ul-notch">
 			<span class="dot" aria-hidden="true" />
 			<span class="identity">
-				<span class="label">Ethereum</span>
+				<span class="label">Ethereum wallet<span v-if="chains.size > 1" class="networks" :data-testid="TESTIDS.l1Networks"> · {{ chains.size }} networks</span></span>
 				<AddressDisplay :address="address ?? ''" :data-testid="TESTIDS.l1Account" />
 			</span>
-			<button v-if="wrongChain" class="wrong-chain ul-notch" type="button" :data-testid="TESTIDS.l1SwitchChain" @click="switchL1Network">
+			<button v-if="offChain" class="wrong-chain ul-notch" type="button" :data-testid="TESTIDS.l1SwitchChain" @click="switchL1Network">
 				<Icon name="warning-diamond" :size="12" />
 				Switch to {{ NETWORK.viemChain.name }}
 			</button>
@@ -57,12 +64,13 @@ const { address, isConnected, wrongChain, isConnecting, connect, disconnect, swi
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 1px;
+	gap: 3px;
 }
 
 .label {
 	font: 400 12px/1 var(--ul-font-body);
 	color: var(--ul-ink-caption);
+	white-space: nowrap;
 }
 
 /* One fill per chip: the address keeps its copy-on-click, not its own box. */
@@ -127,6 +135,10 @@ const { address, isConnected, wrongChain, isConnecting, connect, disconnect, swi
 	.label {
 		flex: 1;
 		font-size: 13px;
+	}
+
+	.networks {
+		display: none;
 	}
 
 	.wrong-chain {
