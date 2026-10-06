@@ -1,4 +1,4 @@
-import { ACROSS_TESTNET_API, SOURCE_CHAINS, TESTNET_NODE_URL, TOKEN_LIST_URL } from "@unleashed/bridge-core"
+import { SOURCE_CHAINS, TESTNET_NODE_URL, TOKEN_LIST_URL } from "@unleashed/bridge-core"
 import { describe, expect, it } from "vitest"
 import { localTarget, MAINNET_TARGET, resolveToolsTarget, TESTNET_TARGET } from "./network-targets"
 
@@ -24,7 +24,7 @@ describe("cspConnectSrc", () => {
 		expect(MAINNET_TARGET.cspConnectSrc).not.toContain(TOKEN_LIST_URL)
 	})
 
-	it("testnet reaches exactly the read RPCs and the Across API a cross-chain send is quoted and watched through", () => {
+	it("testnet reaches exactly the read RPCs a cross-chain send is built and watched through, and never Across's API", () => {
 		const remote = TESTNET_TARGET.cspConnectSrc.split(" ").filter((s) => s.startsWith("https://"))
 		expect(remote.sort()).toEqual(
 			[
@@ -33,12 +33,11 @@ describe("cspConnectSrc", () => {
 				"https://ethereum-sepolia-rpc.publicnode.com",
 				"https://base-sepolia-rpc.publicnode.com",
 				"https://sepolia.base.org",
-				"https://testnet.across.to",
 			].sort(),
 		)
 		// The Node-safe copies stay equal to the catalogue the decoder and discovery use.
 		expect(TESTNET_TARGET.readRpcUrls[84532]).toEqual(SOURCE_CHAINS[84532].rpcUrls)
-		expect(TESTNET_TARGET.acrossApiUrl).toBe(ACROSS_TESTNET_API)
+		expect(TESTNET_TARGET.acrossApiUrl).toBeUndefined()
 		expect(MAINNET_TARGET.readRpcUrls).toEqual({})
 		expect(MAINNET_TARGET.acrossApiUrl).toBeUndefined()
 	})

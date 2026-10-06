@@ -74,9 +74,6 @@ const TESTNET_NODE_SOURCE = "https://lb.drpc.live/aztec-testnet/Ak_eT5HA2kbyqamq
 const SEPOLIA_READ_RPCS = ["https://ethereum-sepolia-rpc.publicnode.com"] as const
 /** bridge-core's `SOURCE_CHAINS[84532].rpcUrls`, spelled out to stay Node-safe; the test pins the two equal. */
 const BASE_SEPOLIA_READ_RPCS = ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"] as const
-/** bridge-core's `ACROSS_TESTNET_API`; the test pins the two equal. */
-const ACROSS_TESTNET_API = "https://testnet.across.to/api"
-
 /** The CSP sources for a target's read RPCs and Across API: each origin once. */
 function readOrigins(readRpcUrls: Readonly<Record<number, readonly string[]>>, acrossApiUrl?: string): string[] {
 	const urls = [...Object.values(readRpcUrls).flat(), ...(acrossApiUrl ? [acrossApiUrl] : [])]
@@ -147,16 +144,10 @@ export const TESTNET_TARGET: ToolsTarget = {
 	nodeUrl: TESTNET_NODE_SOURCE,
 	l1ExplorerBaseUrl: "https://sepolia.etherscan.io",
 	// The node by its exact path (the wallet reports the same one), the community token list the send
-	// wizard's catalog fetches (omitted, the catalog degrades to manifest-only), and the read RPCs and
-	// Across API a cross-chain send is quoted and watched through.
-	cspConnectSrc: [
-		"'self' data: blob:",
-		TESTNET_NODE_SOURCE,
-		TOKEN_LIST_SOURCE,
-		...readOrigins(TESTNET_READ_RPCS, ACROSS_TESTNET_API),
-	].join(" "),
+	// wizard's catalog fetches (omitted, the catalog degrades to manifest-only), and the read RPCs a
+	// cross-chain send is built and watched through. Testnet sends ride fixed terms, so Across's API is never asked.
+	cspConnectSrc: ["'self' data: blob:", TESTNET_NODE_SOURCE, TOKEN_LIST_SOURCE, ...readOrigins(TESTNET_READ_RPCS)].join(" "),
 	readRpcUrls: TESTNET_READ_RPCS,
-	acrossApiUrl: ACROSS_TESTNET_API,
 }
 
 export const MAINNET_TARGET: ToolsTarget = {

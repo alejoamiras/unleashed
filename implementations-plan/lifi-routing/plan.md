@@ -703,8 +703,9 @@ with `op-remote`, batched into one sitting.
   - Refused: the Tenderly gateways truncate silently (a 50k-block Sepolia query returned 685 logs where its own
     10k-block tail returned 13,964), which would make discovery miss a deposit; `1rpc.io` caps logs at 50 blocks;
     dRPC's free tier serves no Sepolia; `rpc.sepolia.org` answers 404; thirdweb answers rate-limit text.
-  - The Across testnet API (`https://testnet.across.to`) needs no key or sign-up and answers with CORS `*`. It is in
-    the CSP because the browser asks it for the relay fee and limits, the job li.quest does on mainnet.
+  - The Across testnet API (`https://testnet.across.to`) needs no key or sign-up and answers with CORS `*`. It was in
+    the CSP for the browser to ask it for the relay fee and limits; once every testnet send rode fixed terms (D45,
+    D46) the app never asked it, and it left the testnet CSP.
   - Discovery pages `eth_getLogs` by block range, halves the range on a provider error, and reads logs only from
     these pinned providers; `verify-l1` defaults `BASE_SEPOLIA_RPC_URL` to the PublicNode endpoint, so the
     1Password item needs no new field.
@@ -744,7 +745,7 @@ with `op-remote`, batched into one sitting.
 - **A4 LI.FI's LGPL-3.0 code in tests and the sandbox**: a pinned, gitignored forge lib compiled under its own
   profile, never committed, never in production contracts. Confirm; otherwise twins only (lower fidelity).
 - **A5 Read RPCs and CSP. Resolved** (owner answers above): PublicNode for Sepolia and Base Sepolia,
-  `sepolia.base.org` as the Base Sepolia fallback, `testnet.across.to`. Mainnet providers (and `li.quest`) are
+  `sepolia.base.org` as the Base Sepolia fallback (`testnet.across.to` left with fixed terms). Mainnet providers (and `li.quest`) are
   decided in the mainnet plan.
 - **A6 v1 scope.** Testnet source Base Sepolia (USDC; WETH when Across testnet routes it with a message);
   mainnet-ready sources Base, Arbitrum, Optimism (USDC, WETH) via Stargate V2; no source-side swaps;
