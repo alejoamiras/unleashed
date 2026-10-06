@@ -19,6 +19,7 @@ import {
 	currentCrossChainRecord,
 	openClaimEnvelope,
 	updateCrossChainRecord,
+	useBridgeJournal,
 } from "./useBridgeJournal"
 
 const hashOf = (n: number): Hex => `0x${n.toString(16).padStart(64, "0")}`
@@ -121,6 +122,38 @@ describe("the cross-chain watcher", () => {
 		expect(rec && deriveCrossChainDepositStage(rec)).toBe("syncing")
 		expect(rec).toMatchObject({ depositTxHash: hashOf(77), amount: "4410000", fuel: { leafIndex: "8", messageHash: hashOf(79) } })
 		expect(w.claim).not.toHaveBeenCalled()
+	})
+
+	it("logs the rail once discovery proves the send, marks it late past its usual time, and ends at the deposit", async () => {
+		const id = await sent()
+		const proven: CrossChainDiscovery = {
+			...pending,
+			srcTxHash: hashOf(1),
+			transport: { kind: "across", originChainId: BASE_SEPOLIA, depositId: "1", relayHash: hashOf(5) },
+		}
+		const w = watchDeps([proven, proven, deposited((OUT - OUT / 10n).toString())])
+		let now = (currentCrossChainRecord(id)?.createdAt ?? 0) + 60_000
+		const steps: unknown[] = []
+		const journal = useBridgeJournal()
+		await watchCrossChain(id, {
+			...w.deps,
+			now: () => now,
+			wait: async () => {
+				steps.push(journal.runtime.value[id]?.step)
+				now += 10 * 60_000
+			},
+		})
+		expect(steps).toEqual(["bridging", "bridging-late"])
+		expect(journal.runtime.value[id]?.step).toBeUndefined()
+		expect(journal.runtime.value[id]?.log?.map((row) => row.text).slice(3)).toEqual([
+			"Base Sepolia confirmed 0x0000…0001",
+			"LI.FI handed it to Across",
+			"waiting for Across to deliver on Ethereum · Sepolia",
+			"still in Across, longer than usual",
+			"Across delivered 4.90 USDC on Ethereum · Sepolia",
+			"LI.FI called the deposit · 0.49 USDC into gas",
+			"Ethereum · Sepolia confirmed 0x0000…004d",
+		])
 	})
 
 	it.each(["delivered-to-wallet", "expired-on-source", "not-sent"] as const)(

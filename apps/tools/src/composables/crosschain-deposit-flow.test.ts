@@ -2,6 +2,7 @@
 import { deriveCrossChainDepositStage, ERC20_ABI, openDepositEnvelopeV3 } from "@unleashed/bridge-core"
 import { decodeFunctionData, type Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { crossChainUnconfirmed } from "@/lib/crosschain-steps"
 import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, signatureOf, USER } from "@/test/crosschain"
 import {
 	type CrossChainReads,
@@ -13,7 +14,7 @@ import {
 	type SourceCall,
 	sendCrossChain,
 } from "./crosschain-deposit-flow"
-import { __resetJournalForTests, currentCrossChainRecord, storedCrossChainRecords } from "./useBridgeJournal"
+import { __resetJournalForTests, currentCrossChainRecord, storedCrossChainRecords, useBridgeJournal } from "./useBridgeJournal"
 import { type CrossChainRoute, ROUTE_TTL_MS, routeRecordId } from "./useCrossChainRoute"
 
 const MAX = (1n << 256n) - 1n
@@ -128,5 +129,36 @@ describe("sendCrossChain", () => {
 		expect(sent.map((c) => (c.to === route.tx.to ? "deposit" : approvedAmount(c)))).toEqual([0n, 5_000_000n, "deposit"])
 		expect(currentCrossChainRecord(id)?.route).toMatchObject({ srcBatchId: "batch-1", srcTxHash: hashOf(42) })
 		await vi.waitFor(() => expect(watch.reads).toHaveBeenCalledWith(expect.objectContaining({ id })))
+	})
+
+	it("logs the seal, the approval and its receipt, and the send, then leaves the send to discovery", async () => {
+		const a = ask({ isPrivate: true })
+		const route = await quotedRoute(a)
+		const id = await sendCrossChain(sendOf(a, route), fakeWallet(route).wallet, fakeReads(0n), { watch: false })
+		const rt = useBridgeJournal().runtime.value[id]
+		expect(rt?.log?.map((row) => row.text)).toEqual([
+			"sealing the recovery secret on this device",
+			"approving 5.00 USDC on Base Sepolia",
+			"Base Sepolia confirmed the approval 0x0000…0001",
+			"sending on Base Sepolia through LI.FI",
+		])
+		expect(rt?.step).toBeUndefined()
+		expect(rt?.approveOutcome).toBe("done")
+	})
+
+	it("keeps a send the wallet took without answering as one still to be found", async () => {
+		const a = ask()
+		const route = await quotedRoute(a)
+		const { wallet } = fakeWallet(route)
+		const silent: CrossChainWallet = {
+			...wallet,
+			sendTransaction: async (call) => {
+				if (call.to === route.tx.to) throw new Error("Request timed out")
+				return hashOf(1)
+			},
+		}
+		await expect(sendCrossChain(sendOf(a, route), silent, fakeReads(0n), { watch: false })).rejects.toThrow(/timed out/)
+		const [rec] = storedCrossChainRecords()
+		expect(crossChainUnconfirmed(rec, useBridgeJournal().runtime.value[rec.id])).toBe(true)
 	})
 })

@@ -16,6 +16,7 @@ import {
 	verifyRoute,
 } from "@unleashed/bridge-core"
 import { type Address, type Chain, encodeFunctionData, type Hex, type PublicClient, type WalletClient } from "viem"
+import { approvalConfirmedLine } from "@/lib/crosschain-steps"
 import { NETWORK } from "@/lib/network"
 import type { ResolvedToken, SendPlan } from "@/lib/send-model"
 import { buildSendRecord, sealBindingOf } from "@/lib/send-record"
@@ -27,6 +28,8 @@ import {
 	currentCrossChainRecord,
 	discard,
 	flagRecordError,
+	logRecordLine,
+	markApproveOutcome,
 	markSessionLive,
 	runDepositClaim,
 	runOnLane,
@@ -217,7 +220,7 @@ async function sealCrossChain(rec: CrossChainDepositRecord, s: CrossChainSend, w
 	if (!currentCrossChainRecord(rec.id)?.sealedEnvelope) {
 		throw new Error("Could not persist the sealed recovery secret — aborting before the deposit (storage full?).")
 	}
-	setRecordStep(rec.id, undefined, undefined)
+	setRecordStep(rec.id, "preparing-source")
 }
 
 const approveCall = (token: Address, spender: Address, amount: bigint): SourceCall => ({
@@ -277,20 +280,31 @@ async function sendOnSource(
 	const deposit: SourceCall = { to: s.route.tx.to, data: s.route.tx.data, value: s.route.tx.value }
 	if (approvals.length > 0 && wallet.batch && (await wallet.batch.atomic(s.ask.srcChainId))) {
 		assertVerified(s.route)
+		setRecordStep(id, "sending-source")
 		onRequested()
 		const batchId = await wallet.batch.send([...approvals, deposit])
 		updateCrossChainRecord(id, (current) => ({ route: { ...current.route, srcBatchId: batchId } }))
+		setRecordStep(id, undefined)
 		await adoptBatchHash(id, wallet.batch, batchId, o)
 		return
 	}
+	let approved: Hex | undefined
 	for (const call of approvals) {
-		const receipt = await reads.source.waitForTransactionReceipt({ hash: await wallet.sendTransaction(call) })
+		setRecordStep(id, "approving-source")
+		approved = await wallet.sendTransaction(call)
+		const receipt = await reads.source.waitForTransactionReceipt({ hash: approved })
 		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain, so the deposit was not sent.")
 	}
+	if (approved) {
+		markApproveOutcome(id, "done")
+		logRecordLine(id, approvalConfirmedLine(s.ask.srcChainId, approved))
+	}
 	assertVerified(s.route)
+	setRecordStep(id, "sending-source")
 	onRequested()
 	const srcTxHash = await wallet.sendTransaction(deposit)
 	updateCrossChainRecord(id, (current) => ({ route: { ...current.route, srcTxHash } }))
+	setRecordStep(id, undefined)
 }
 
 /** Nothing bridged when the deposit never reached the wallet, or the wallet refused it: the record goes. Any
@@ -328,6 +342,9 @@ export async function sendCrossChain(
 	const rec = crossChainRecordOf(s, heads)
 	addCrossChainRecordVerified(rec)
 	markSessionLive(rec.id)
+	// From here until the wallet returns the send, a step is always set: a record without one reads as a send
+	// the wallet may have taken without answering.
+	setRecordStep(rec.id, "preparing-source")
 	let requested = false
 	try {
 		if (s.ask.isPrivate) await sealCrossChain(rec, s, wallet)

@@ -20,11 +20,13 @@ import {
 } from "@unleashed/bridge-core"
 import type { Address } from "viem"
 import { SEND_GENERATION } from "@/contracts/bridge-generation"
+import { bridgingLate } from "@/lib/crosschain-steps"
 import {
 	cacheSecret,
 	currentCrossChainRecord,
 	flagRecordError,
 	isSessionLive,
+	setRecordStep,
 	storedCrossChainRecords,
 	updateCrossChainRecord,
 } from "./useBridgeJournal"
@@ -100,11 +102,19 @@ export async function watchRound(id: string, deps: CrossChainWatchDeps): Promise
 	}
 	// Computed from the copy the write merges into: the claim lanes may have written since this run read.
 	const written = updateCrossChainRecord(id, (current) => discoveryPatch(current, d, deps.now()) ?? {})
+	if (written) narrateRail(written, d, deps.now())
 	if (d.verdict === "deposited") {
 		await afterDeposit(id, deps)
 		return "done"
 	}
 	return written && needsWatch(written) ? "again" : "done"
+}
+
+/** A proven source send is on its rail, late past its usual time, until a deposit or an outcome answers. */
+function narrateRail(rec: CrossChainDepositRecord, d: CrossChainDiscovery, now: number): void {
+	if (d.verdict !== "pending") setRecordStep(rec.id, undefined)
+	else if (rec.route.transport && rec.leafIndex === undefined)
+		setRecordStep(rec.id, bridgingLate(rec, now) ? "bridging-late" : "bridging")
 }
 
 /** Watch `id` until discovery decides it; a second call for a watched record is a no-op. */
