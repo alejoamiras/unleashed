@@ -37,9 +37,9 @@ const title = computed(() => (action.value === "switch" && props.switchLocked ? 
  *  secondary, so one screen never shows two filled calls. */
 const filled = computed(() => props.row.group === "needs-you" && action.value !== "retry")
 
-/** The second line in three parts that give way in turn: the route first, then a middle (visibility,
- *  an outcome's detail), never the last ("this send", the age), which tells two rows of one route
- *  apart. Beside a button the line has only its own column, so it drops the visibility. */
+/** The second line: the route, a middle (visibility, an outcome's detail) and a last (the age, or "this send"). It
+ *  clips at its end like one run of text, so the route survives; on the this-send row the route gives way first
+ *  instead, since the marker is that row's only identifier. Beside a button the line drops the visibility. */
 const meta = computed<{ route: string; middle?: string; last?: string }>(() => {
 	const r = props.row
 	if (r.foreground) return r.detail ? { route: r.route, middle: r.detail } : { route: r.route, last: "this send" }
@@ -95,7 +95,7 @@ function onAct(): void {
 		<button type="button" class="amt" :aria-label="openLabel" :data-testid="TESTIDS.activityRowOpen" @click.stop="emit('open', row.id)">
 			{{ row.amount }} {{ row.symbol }}
 		</button>
-		<span class="meta second"
+		<span class="meta second" :class="{ marked: meta.last === 'this send' }"
 			><span class="route">{{ meta.route }}</span><span v-if="meta.middle" class="middle">{{ " · " }}{{ meta.middle }}</span
 			><span v-if="meta.last" class="last">{{ " · " }}{{ meta.last }}</span></span
 		>
@@ -230,31 +230,34 @@ function onAct(): void {
 	color: var(--ul-ink-3);
 }
 
+/* A flex part would drop its leading " · " under `nowrap`. */
 .second {
+	white-space: pre;
+}
+
+.second.marked {
 	display: flex;
 }
 
 /* The route's weight dwarfs the middle's, so the middle's share of the shrink stays under a layout unit (any
    share at all would clip it) until the route stops at its minimum. Factors under one would instead leave
    the middle overflowing there. */
-.route {
+.marked .route {
 	flex: 0 1000000 auto;
 	min-width: 4ch;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-.middle {
+.marked .middle {
 	flex: 0 1 auto;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	white-space: pre;
 }
 
-.last {
+.marked .last {
 	flex: none;
-	white-space: pre;
 }
 
 /* A cross-chain phase's tone overrides its status's: an ended row is flat whatever its colour. */
@@ -263,7 +266,8 @@ function onAct(): void {
 	--ul-fill: transparent;
 }
 
-.row[data-tone="run"] .dot {
+/* A claim waiting on you keeps the needs-you dot while its phase word runs. */
+.row[data-tone="run"]:not([data-status="needs-you"]) .dot {
 	background: var(--ul-accent-text);
 }
 
