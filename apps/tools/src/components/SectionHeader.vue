@@ -48,9 +48,6 @@ h1 {
 	margin: 6px 0 0;
 	font: 400 13px/1.4 var(--ul-font-body);
 	color: var(--ul-ink-2);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
 }
 
 .wallets {
