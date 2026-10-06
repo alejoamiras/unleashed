@@ -275,6 +275,18 @@ export const TESTIDS = {
 	// A network whose manifest carries no bridge block: the SEND tab has nothing to send through while
 	// the rest of the app keeps working. Distinct from the mainnet placeholder, which IS the whole app.
 	sendUnavailable: "tl-send-unavailable",
+
+	// Cross-chain · token step, wallet chip
+	sendNetworkChips: "tl-send-network-chips",
+
+	// Cross-chain · amount and review
+	sendXcFees: "tl-send-xc-fees",
+
+	// Cross-chain · stepper and receipt
+	stepperXcBridge: "tl-stepper-xc-bridge",
+
+	// Cross-chain · activity, outcomes and footer
+	journalXcOutcome: "tl-journal-xc-outcome",
 } as const
 
 export type Testid = (typeof TESTIDS)[keyof typeof TESTIDS]
