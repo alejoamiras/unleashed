@@ -81,8 +81,9 @@ h1 {
 		white-space: normal;
 	}
 
+	/* Two chips share the row; a connect button too wide for half of it wraps to its own line. */
 	.wallets {
-		flex-direction: column;
+		flex-wrap: wrap;
 		align-items: stretch;
 		gap: 6px;
 	}

@@ -109,33 +109,31 @@ const offChain = computed(() => isConnected.value && chainId.value !== null && !
 	color: var(--ul-lost);
 }
 
-/* One 44px row: the label pushes the address right, and a wrong chain drops its switch to a second
-   line inside the chip. The × keeps its 32px target, so the right inset shrinks to match the
+/* Half the header row beside the Aztec chip, label over address; a wrong chain drops its switch to a
+   second line inside the chip. The × keeps its 32px target, so the right inset shrinks to match the
    Aztec chip's glyph. */
 @media (max-width: 760px) {
 	.l1-chip {
 		display: flex;
+		flex: 1 1 140px;
+	}
+
+	.l1-chip[data-connected="true"] {
+		min-width: 0;
 	}
 
 	.chip {
 		flex: 1;
 		flex-wrap: wrap;
-		gap: 8px 12px;
+		min-width: 0;
+		gap: 8px 10px;
 		min-height: 44px;
-		padding: 6px 2px 6px 14px;
+		padding: 6px 2px 6px 12px;
 	}
 
 	.identity {
 		flex: 1;
-		flex-direction: row;
-		align-items: center;
-		gap: 12px;
 		min-width: 0;
-	}
-
-	.label {
-		flex: 1;
-		font-size: 13px;
 	}
 
 	.networks {
