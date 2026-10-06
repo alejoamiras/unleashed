@@ -6,26 +6,19 @@
 import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
 import { ageWords } from "@/lib/activity"
 import { chainLabel, chainTxUrl, lifiScanUrl, railLabel } from "@/lib/chains"
-import {
-	assetText,
-	crossChainAsset,
-	crossChainPhase,
-	crossChainRoute,
-	etaWords,
-	expiryLead,
-	isStalled,
-	shortAddress,
-} from "@/lib/crosschain-activity"
+import { assetText, crossChainAsset, crossChainPhase, expiryLead, shortAddress } from "@/lib/crosschain-activity"
+import { bridgingLate, crossChainRoute, etaRange } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
 import { formatClock } from "@/lib/phase-clock"
 
 export type OutcomeVariant = "delivered" | "expired" | "not-sent" | "stalled"
 
-/** Which panel the record earns now; null while the stepper is still the right surface. */
+/** Which panel the record earns now; null while the stepper is still the right surface. A bridging
+ *  send is stalled by the same clock the rail's waiting segment reads. */
 export function outcomeVariant(rec: CrossChainDepositRecord, now: number): OutcomeVariant | null {
 	const phase = crossChainPhase(rec)
 	if (phase?.kind === "delivered" || phase?.kind === "expired" || phase?.kind === "not-sent") return phase.kind
-	return isStalled(rec, phase, now) ? "stalled" : null
+	return phase?.kind === "bridging" && bridgingLate(rec, now) ? "stalled" : null
 }
 
 /** Reads and quotes only the host can make. */
@@ -163,7 +156,7 @@ function stalledCopy(rec: CrossChainDepositRecord, w: Words, now: number): Outco
 		tag: "Slower than usual",
 		tagTone: "attention",
 		title: "Bridging is taking longer than usual",
-		when: `in the bridge, ${etaWords(rec.route.etaSeconds)}`,
+		when: `in the bridge, usually ${etaRange(rec.route.etaSeconds)}`,
 		clock: formatClock(elapsed),
 		happened: `Your ${w.symbol} left ${w.src} ${minutes} ${minutes === 1 ? "minute" : "minutes"} ago. ${w.rail} hasn’t delivered it to ${w.l1} yet.`,
 		means: `The money is in the bridge, not lost. When it lands on ${w.l1}, the deposit runs by itself and this page picks up from there.`,

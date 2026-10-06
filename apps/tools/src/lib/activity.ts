@@ -13,7 +13,8 @@ import {
 import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
 import { type BridgePhase, isFailedAttention, stepperPhases } from "@/lib/bridge-steps"
-import { crossChainAsset, type CrossChainPhase, crossChainRoute, sendView } from "@/lib/crosschain-activity"
+import { crossChainAsset, type CrossChainPhase, sendView } from "@/lib/crosschain-activity"
+import { crossChainRoute } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
 import type { RecordState } from "@/lib/record-policy"
 

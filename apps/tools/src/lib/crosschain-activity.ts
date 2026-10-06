@@ -14,6 +14,7 @@ import {
 import type { EthereumPrefill } from "@/composables/useShell"
 import { MANIFEST } from "@/contracts/bridge-generation"
 import { chainLabel, railLabel } from "@/lib/chains"
+import { etaRange } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
 import { IS_MAINNET, sourcesOf } from "@/lib/network"
 import { safeAddressText, safeDisplay } from "@/lib/token-display"
@@ -139,28 +140,10 @@ export function ethereumPrefillOf(rec: CrossChainDepositRecord): EthereumPrefill
 	}
 }
 
-/** "Base Sepolia → Aztec". */
-export function crossChainRoute(rec: CrossChainDepositRecord): string {
-	return `${chainLabel(rec.route.srcChainId)} → Aztec`
-}
-
 /** "0x3fA8…c41D": the stored address is user-writable, so it is stripped before it is shown. */
 export function shortAddress(address: string): string {
 	const clean = safeAddressText(address)
 	return clean.length > 12 ? `${clean.slice(0, 6)}…${clean.slice(-4)}` : clean
-}
-
-/** The rail's usual time as a range from its one estimate: "usually 2–4 min". */
-export function etaWords(etaSeconds: number): string {
-	const low = Math.max(1, Math.ceil(etaSeconds / 60))
-	return `usually ${low}–${low * 2} min`
-}
-
-/** Past twice the usual time and a minute more, a bridging transfer is slower than usual. */
-export function isStalled(rec: CrossChainDepositRecord, phase: CrossChainPhase | null, now: number): boolean {
-	if (phase?.kind !== "bridging") return false
-	const low = Math.max(1, Math.ceil(rec.route.etaSeconds / 60))
-	return now - rec.createdAt > (low * 2 + 1) * 60_000
 }
 
 /** How long the relay had before the transfer expired: "2 hours", "45 minutes"; null without a deadline. */
@@ -195,7 +178,7 @@ export function phaseGuide(rec: CrossChainDepositRecord, phase: CrossChainPhase,
 		case "sending":
 			return `We haven’t found your send on ${src} yet. Your wallet didn’t confirm it, so we keep looking.`
 		case "bridging":
-			return `${railLabel(rec.route.rail)} is moving your ${symbol} to ${chainLabel(rec.chainId)}. Nothing for you to do; ${etaWords(rec.route.etaSeconds)}.`
+			return `${railLabel(rec.route.rail)} is moving your ${symbol} to ${chainLabel(rec.chainId)}. Nothing for you to do; usually ${etaRange(rec.route.etaSeconds)}.`
 		case "finalizing":
 			return finalizingGuide(rec, phase.outcome, phase.chainId)
 		case "not-sent":
