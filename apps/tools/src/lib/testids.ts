@@ -296,6 +296,22 @@ export const TESTIDS = {
 
 	// Cross-chain · activity, outcomes and footer
 	journalXcOutcome: "tl-journal-xc-outcome",
+	journalXcGuide: "tl-journal-xc-guide",
+	journalXcContinue: "tl-journal-xc-continue",
+	journalXcDismiss: "tl-journal-xc-dismiss",
+	journalXcTrack: "tl-journal-xc-track",
+	journalXcReceipt: "tl-journal-xc-receipt",
+	journalXcRevoke: "tl-journal-xc-revoke",
+	journalXcAnotherDeposit: "tl-journal-xc-another-deposit",
+	xcOutcome: "tl-xc-outcome",
+	xcOutcomeContinue: "tl-xc-outcome-continue",
+	xcOutcomeDismiss: "tl-xc-outcome-dismiss",
+	xcOutcomeNewQuote: "tl-xc-outcome-new-quote",
+	xcOutcomeChangeSend: "tl-xc-outcome-change-send",
+	xcOutcomeTrack: "tl-xc-outcome-track",
+	xcOutcomeCopy: "tl-xc-outcome-copy",
+	xcOutcomeTx: "tl-xc-outcome-tx",
+	footerContract: "tl-footer-contract",
 } as const
 
 export type Testid = (typeof TESTIDS)[keyof typeof TESTIDS]
