@@ -4,7 +4,7 @@
  * whose figure the app cannot know is left out rather than guessed.
  */
 import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
-import { ageWords } from "@/lib/activity"
+import { agoWords } from "@/lib/activity"
 import { chainLabel, chainTxUrl, lifiScanUrl, railLabel } from "@/lib/chains"
 import { assetText, crossChainAsset, crossChainPhase, expiryLead, shortAddress } from "@/lib/crosschain-activity"
 import { bridgingLate, crossChainRoute, etaRange } from "@/lib/crosschain-steps"
@@ -169,7 +169,7 @@ function stalledCopy(rec: CrossChainDepositRecord, w: Words, now: number): Outco
 /** The panel's words for `variant`, read from the record at `now`. */
 export function outcomeCopy(rec: CrossChainDepositRecord, variant: OutcomeVariant, now: number, f: OutcomeFigures = {}): OutcomeCopy {
 	const w = wordsOf(rec)
-	const endedAgo = ageWords(rec.completedAt ?? rec.updatedAt, now)
+	const endedAgo = agoWords(rec.completedAt ?? rec.updatedAt, now)
 	switch (variant) {
 		case "delivered":
 			return deliveredCopy(rec, w, endedAgo, f)

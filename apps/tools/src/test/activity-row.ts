@@ -16,9 +16,10 @@ export function rowModel(over: Partial<ActivityRowModel> = {}): ActivityRowModel
 		amount: "0.5",
 		symbol: "WETH",
 		qualifier: null,
-		route: "ETH → Aztec",
+		route: "Ethereum → Aztec",
 		visibility: "public + gas",
-		age: "26m ago",
+		age: "26 min",
+		ageSpoken: "26 minutes ago",
 		counts: group === "needs-you" && !over.foreground,
 		...over,
 	}

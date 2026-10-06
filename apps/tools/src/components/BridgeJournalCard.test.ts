@@ -114,14 +114,14 @@ describe("BridgeJournalCard", () => {
 		expect(card.attributes("data-direction")).toBe("deposit")
 		expect(card.attributes("data-stage")).toBe("claimable")
 		expect(card.attributes("data-privacy")).toBe("private")
-		expect(w.text()).toContain("ETH → Aztec")
+		expect(w.text()).toContain("Ethereum · Sepolia → Aztec")
 		expect(w.text()).toContain(`100.00 ${BRIDGE_TOKEN_SYMBOL}`)
 		expect(w.text()).toContain("Private")
 	})
 
-	it("withdraw header reads Aztec → ETH", () => {
+	it("withdraw header reads Aztec → Ethereum · Sepolia", () => {
 		const w = mountCard(withdraw())
-		expect(w.text()).toContain("Aztec → ETH")
+		expect(w.text()).toContain("Aztec → Ethereum · Sepolia")
 	})
 
 	it("renders the compact phase rail with the live narration (one mapper, both surfaces)", () => {
@@ -215,10 +215,10 @@ describe("BridgeJournalCard", () => {
 		} as unknown as BridgeJournalRecord
 		const w = mountCard(gasOnly)
 		expect(w.get(".amt").text()).toBe("3.00 FJ")
-		expect(w.get(".dir").text()).toBe("before claim fees · ETH → Aztec")
+		expect(w.get(".dir").text()).toBe("before claim fees · Ethereum · Sepolia → Aztec")
 		expect(w.get("[data-status-chip]").text()).toBe("Arrived")
 		const token = mountCard(deposit({ leafIndex: "7" }))
-		expect(token.get(".dir").text()).toBe("ETH → Aztec")
+		expect(token.get(".dir").text()).toBe("Ethereum · Sepolia → Aztec")
 	})
 
 	it("a token send's gas chip says its Fee Juice is before claim fees once the amount is known", () => {

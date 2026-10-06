@@ -64,8 +64,9 @@ const side = computed(() => {
 const openLabel = computed(() => {
 	const r = props.row
 	const what = `${r.amount} ${r.symbol}${r.qualifier ? ` ${r.qualifier}` : ""}`
-	if (r.foreground) return `Show this send, ${what}, ${r.route}`
-	const tail = r.word && r.detail ? `${r.word.text.toLowerCase()}, ${r.detail}` : `${r.visibility}, ${r.age}`
+	if (r.foreground) return `Show this send, ${what}, ${r.route}${r.word?.spoken ? `, ${r.word.spoken}` : ""}`
+	const word = r.word?.spoken ?? r.word?.text.toLowerCase()
+	const tail = word && r.detail ? `${word}, ${r.detail}` : `${r.visibility}, ${r.ageSpoken}`
 	return `Open ${what}, ${r.route}, ${tail}${r.note ? `, ${r.note}` : ""}`
 })
 
@@ -236,6 +237,15 @@ function onAct(): void {
 .row[data-tone="run"] .word {
 	font-weight: 700;
 	color: var(--ul-accent-text);
+}
+
+.row[data-tone="need"] .dot {
+	background: var(--ul-attention);
+}
+
+.row[data-tone="need"] .word {
+	font-weight: 700;
+	color: var(--ul-attention);
 }
 
 .row[data-tone="wait"] .dot,

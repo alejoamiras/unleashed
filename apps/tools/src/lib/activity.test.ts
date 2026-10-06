@@ -5,7 +5,9 @@ import {
 	type ActivityAction,
 	type ActivityGroup,
 	type RecordStatus,
+	ageSpoken,
 	ageWords,
+	agoWords,
 	classify,
 	groupRecords,
 	needsYouCount,
@@ -259,11 +261,13 @@ describe("rows", () => {
 		})
 	})
 
-	it("ageWords", () => {
+	it("an age is abbreviated beside other facts, a sentence's time in prose, and spelled out when spoken", () => {
 		const t = 10 * 60_000
-		expect(ageWords(t, t + 10_000)).toBe("just now")
-		expect(ageWords(t, t + 3 * 60_000)).toBe("3m ago")
-		expect(ageWords(t, t + 5 * 3_600_000)).toBe("5h ago")
-		expect(ageWords(t, t + 72 * 3_600_000)).toBe("3d ago")
+		const at = (ms: number) => [ageWords(t, t + ms), agoWords(t, t + ms), ageSpoken(t, t + ms)]
+		expect(at(10_000)).toEqual(["now", "just now", "just now"])
+		expect(at(60_000)).toEqual(["1 min", "1 min ago", "1 minute ago"])
+		expect(at(5 * 3_600_000)).toEqual(["5 h", "5 h ago", "5 hours ago"])
+		expect(at(24 * 3_600_000)).toEqual(["1 d", "1 d ago", "1 day ago"])
+		expect(at(72 * 3_600_000)).toEqual(["3 d", "3 d ago", "3 days ago"])
 	})
 })

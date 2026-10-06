@@ -23,13 +23,13 @@ describe("CrossChainOutcome", () => {
 		const rec = xcRecord(ended, { outcome: "delivered-to-wallet", outcomeAmount: "4900000", outcomeTxHash: `0x${"de".repeat(32)}` })
 		const w = panel(rec, { ethHeld: "0.40", continueQuote: { amount: "4.41", symbol: "USDC", gas: "230 FJ" } })
 		expect(w.get("h2").text()).toBe("Delivered to your Ethereum wallet instead")
-		expect(w.get(".sub").text()).toBe("Base Sepolia → Aztec · 5.00 USDC · public · stopped at the deposit, 8m ago")
+		expect(w.get(".sub").text()).toBe("Base Sepolia → Aztec · 5.00 USDC · public · stopped at the deposit, 8 min ago")
 		expect(cards(w)).toEqual([
 			"Across delivered your USDC to Ethereum · Sepolia, but the deposit into Aztec didn’t go through. So LI.FI sent the USDC to your own Ethereum wallet.",
 			"The money is safe and yours, on Ethereum · Sepolia. It is not on Aztec yet. The LI.FI fee and the bridge fee are spent; nothing else was taken.",
 			"Continue from Ethereum: a new send from your Ethereum wallet. You sign there and pay its gas in ETH. You hold 0.40 ETH on Ethereum · Sepolia.",
 		])
-		expect(w.get(".figure").text()).toBe("4.90 USDC in 0x3fa8…c41d on Ethereum · Sepolia")
+		expect(w.get(".figure").text()).toBe("4.90 USDC in 0x3fA8…c41d on Ethereum · Sepolia")
 		expect(w.get(".lands").text()).toBe("Lands as ≈ 4.41 USDC, public, plus ≈ 230 FJ gas.")
 		expect(w.findAll(".tx dt").map((d) => d.text())).toEqual(["Sent on Base Sepolia", "Delivered on Ethereum · Sepolia", "Full trail"])
 		expect(w.get(".band").text()).toBe("Continuing starts a new send from Ethereum, with its own recovery secret.")
@@ -45,7 +45,7 @@ describe("CrossChainOutcome", () => {
 		expect(cards(expired)[0]).toBe(
 			"Across’s test relayer didn’t deliver this transfer to Ethereum · Sepolia within 2 hours, so it expired.",
 		)
-		expect(expired.get(".figure").text()).toBe("5.00 USDC due back in 0x3fa8…c41d on Base Sepolia")
+		expect(expired.get(".figure").text()).toBe("5.00 USDC due back in 0x3fA8…c41d on Base Sepolia")
 		expect(expired.get(sel(TESTIDS.xcOutcomeChangeSend)).text()).toBe("Pick another balance")
 
 		const notSent = panel(xcRecord(ended, { outcome: "not-sent" }))

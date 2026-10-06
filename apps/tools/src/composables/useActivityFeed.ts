@@ -3,6 +3,7 @@ import { computed } from "vue"
 import {
 	type ActivityAction,
 	type ActivityGroup,
+	ageSpoken,
 	ageWords,
 	classify,
 	groupRecords,
@@ -15,9 +16,9 @@ import {
 	visibilityWords,
 } from "@/lib/activity"
 import { useNow } from "@/lib/clock"
-import { type CrossChainTone, phaseChip, phaseDetail } from "@/lib/crosschain-activity"
+import { type DockWord, dockWord, phaseChip, phaseDetail } from "@/lib/crosschain-activity"
 import { type RecordState, recordState } from "@/lib/record-policy"
-import { useBridgeJournal } from "./useBridgeJournal"
+import { type RecordRuntime, useBridgeJournal } from "./useBridgeJournal"
 import { useBridgeWallet } from "./useBridgeWallet"
 
 export interface ActivityRowModel {
@@ -42,8 +43,10 @@ export interface ActivityRowModel {
 	route: string
 	visibility: string
 	age: string
-	/** A cross-chain phase's own word and tone, which replace the status's; null for any other row. */
-	word?: { text: string; tone: CrossChainTone } | null
+	/** The age as a screen reader says it ("2 days ago"). */
+	ageSpoken: string
+	/** A cross-chain send's own word and tone, which replace the status's; null for any other row. */
+	word?: DockWord | null
 	/** Replaces visibility and age on the second line ("refund pending"); null for any other row. */
 	detail?: string | null
 	/** A line of its own under the route ("another deposit found"); null for any other row. */
@@ -53,14 +56,22 @@ export interface ActivityRowModel {
 const ANOTHER_DEPOSIT = "another deposit found"
 
 /** The cross-chain parts of a row: what replaces the status word, the second line and the note. A
- *  failed record keeps its status's word, as an Ethereum-origin one does. */
-function crossChainParts(rec: AnyJournalRecord, state: RecordState, visibility: string) {
+ *  send in flight reads as its live phase (`live`); a failed record keeps its status's word, as an
+ *  Ethereum-origin one does. */
+function crossChainParts(rec: AnyJournalRecord, state: RecordState, visibility: string, live: DockWord | null) {
 	if (!isCrossChainRecord(rec)) return {}
 	const note = !state.crossChain && (rec.route.extraDeposits?.length ?? 0) > 0 ? ANOTHER_DEPOSIT : null
 	const phase = statusPhase(state)
-	if (!phase) return { note }
+	if (!phase) return live ? { word: live, note } : { note }
 	const chip = phaseChip(phase)
-	return { word: { text: chip.word, tone: chip.tone }, detail: phaseDetail(phase, visibility), note }
+	return { word: live ?? { text: chip.word, tone: chip.tone }, detail: phaseDetail(phase, visibility), note }
+}
+
+/** A cross-chain send's live phase as the dock words it. The "this send" row names the claim it
+ *  waits on, as its stepper does; anywhere else a claim is a button. */
+function liveWord(rec: AnyJournalRecord, rt: RecordRuntime, status: RecordStatus, foreground: boolean, at: number): DockWord | null {
+	if (!isCrossChainRecord(rec)) return null
+	return status === "running" || (foreground && status === "needs-you") ? dockWord(rec, rt, at) : null
 }
 
 /**
@@ -84,6 +95,7 @@ export function useActivityFeed() {
 			const c = classify(rec, state)
 			const action = foreground ? null : c.action
 			const visibility = visibilityWords(rec)
+			const live = liveWord(rec, rt, c.status, foreground, at)
 			return {
 				id: rec.id,
 				createdAt: rec.createdAt,
@@ -99,7 +111,8 @@ export function useActivityFeed() {
 				route: routeWords(rec),
 				visibility,
 				age: ageWords(rec.createdAt, at),
-				...crossChainParts(rec, state, visibility),
+				ageSpoken: ageSpoken(rec.createdAt, at),
+				...crossChainParts(rec, state, visibility, live),
 			}
 		}
 		const listed = journal.visibleRecords.value.map((rec) => toRow(rec, false))

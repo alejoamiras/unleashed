@@ -58,7 +58,7 @@ describe("LeftoverApproval", () => {
 		await flushPromises()
 		await w.get(`[data-testid="${TESTIDS.journalXcRevoke}"]`).trigger("click")
 		await flushPromises()
-		expect(w.get("[role='alert']").text()).toBe("Switch your wallet to 0x3fa8…c41d to revoke.")
+		expect(w.get("[role='alert']").text()).toBe("Switch your wallet to 0x3fA8…c41d to revoke.")
 		expect(wallet.switchChain).not.toHaveBeenCalled()
 		expect(sendTransaction).not.toHaveBeenCalled()
 	})

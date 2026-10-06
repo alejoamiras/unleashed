@@ -14,6 +14,7 @@ import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
 import { type BridgePhase, isFailedAttention, stepperPhases } from "@/lib/bridge-steps"
 import { crossChainAsset, type CrossChainPhase, sendView } from "@/lib/crosschain-activity"
+import { chainLabel } from "@/lib/chains"
 import { crossChainRoute } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
 import type { RecordState } from "@/lib/record-policy"
@@ -140,7 +141,8 @@ export function runningWord(rec: AnyJournalRecord, rt: RecordRuntime): string {
 
 export function routeWords(rec: AnyJournalRecord): string {
 	if (isCrossChainRecord(rec)) return crossChainRoute(rec)
-	return rec.direction === "deposit" ? "ETH → Aztec" : "Aztec → ETH"
+	const l1 = chainLabel(rec.chainId)
+	return rec.direction === "deposit" ? `${l1} → Aztec` : `Aztec → ${l1}`
 }
 
 function buysGas(rec: BridgeJournalRecord): boolean {
@@ -173,10 +175,32 @@ export function rowStrings(rec: AnyJournalRecord, phase: CrossChainPhase | null 
 	return { amount: displayAmountText(d), symbol: d.symbol, qualifier: amountQualifier(d) }
 }
 
-export function ageWords(createdAt: number, now: number): string {
-	const mins = Math.max(0, Math.round((now - createdAt) / 60_000))
-	if (mins < 1) return "just now"
-	if (mins < 60) return `${mins}m ago`
+type AgeUnit = "min" | "h" | "d"
+
+function ageOf(at: number, now: number): { n: number; unit: AgeUnit } | null {
+	const mins = Math.max(0, Math.round((now - at) / 60_000))
+	if (mins < 1) return null
+	if (mins < 60) return { n: mins, unit: "min" }
 	const hours = Math.round(mins / 60)
-	return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`
+	return hours < 24 ? { n: hours, unit: "h" } : { n: Math.round(hours / 24), unit: "d" }
+}
+
+/** A row's age as it sits beside other facts: "now", "6 min", "3 h", "2 d". */
+export function ageWords(at: number, now: number): string {
+	const age = ageOf(at, now)
+	return age ? `${age.n} ${age.unit}` : "now"
+}
+
+/** "just now", "9 min ago": an age read as a sentence's time. */
+export function agoWords(at: number, now: number): string {
+	const age = ageOf(at, now)
+	return age ? `${age.n} ${age.unit} ago` : "just now"
+}
+
+const SPOKEN: Record<AgeUnit, string> = { min: "minute", h: "hour", d: "day" }
+
+/** "just now", "2 days ago": the age a screen reader speaks in place of the abbreviated one. */
+export function ageSpoken(at: number, now: number): string {
+	const age = ageOf(at, now)
+	return age ? `${age.n} ${SPOKEN[age.unit]}${age.n === 1 ? "" : "s"} ago` : "just now"
 }

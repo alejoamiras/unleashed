@@ -15,10 +15,10 @@ import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import type { EthereumPrefill } from "@/composables/useShell"
 import { sourceTokenOf } from "@/composables/useSourceChain"
 import { chainLabel, railLabel } from "@/lib/chains"
-import { bridgingPrompt, crossChainPhases, crossChainUnconfirmed } from "@/lib/crosschain-steps"
+import { bridgingLate, bridgingPrompt, crossChainPhases, crossChainUnconfirmed } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
 import { IS_MAINNET } from "@/lib/network"
-import { safeAddressText, safeDisplay } from "@/lib/token-display"
+import { checksumAddress, safeAddressText, safeDisplay } from "@/lib/token-display"
 
 /** Where a cross-chain record stands while it is not a plain deposit; `finalizing` is any outcome
  *  whose deciding block is not final yet, read on `chainId`. */
@@ -69,6 +69,39 @@ const CHIPS: Record<CrossChainPhase["kind"], { word: string; tone: CrossChainTon
 
 export function phaseChip(phase: CrossChainPhase): { word: string; tone: CrossChainTone } {
 	return CHIPS[phase.kind]
+}
+
+const DOCK_WORDS: Partial<Record<string, string>> = {
+	"src-approve": "Approve",
+	"src-send": "Send",
+	bridge: "Bridging",
+	deposit: "Crossing",
+	sync: "Crossing",
+	register: "Claim",
+	claim: "Claim",
+	confirm: "Claim",
+}
+
+/** A dock word and how a screen reader says it when the word alone would not. */
+export interface DockWord {
+	text: string
+	tone: CrossChainTone
+	spoken?: string
+}
+
+/**
+ * The dock's word for a cross-chain send still in flight: its live phase in one word, or "Slow" once
+ * the rail runs past its range. Null once an outcome names the send, and while no phase is live (a
+ * failed or finished send keeps its status's word).
+ */
+export function dockWord(rec: CrossChainDepositRecord, rt: RecordRuntime, now: number): DockWord | null {
+	const phase = crossChainPhase(rec)
+	if (phase && phase.kind !== "sending" && phase.kind !== "bridging") return null
+	if (phase?.kind === "bridging" && (rt.step === "bridging-late" || bridgingLate(rec, now)))
+		return { text: "Slow", tone: "need", spoken: "bridging slowly" }
+	const live = crossChainPhases(rec, rt).find((p) => p.state === "active" || p.state === "waiting")
+	const text = live && DOCK_WORDS[live.key]
+	return text ? { text, tone: "run" } : null
 }
 
 /** The dock row's second line after the route, in place of visibility and age. */
@@ -129,9 +162,10 @@ export function ethereumPrefillOf(rec: CrossChainDepositRecord): EthereumPrefill
 	}
 }
 
-/** "0x3fA8…c41D": the stored address is user-writable, so it is stripped before it is shown. */
+/** "0x3fA8…c41D": the stored address is user-writable, so it is stripped before it is shown; a
+ *  transaction hash, which has no checksum, keeps its casing. */
 export function shortAddress(address: string): string {
-	const clean = safeAddressText(address)
+	const clean = checksumAddress(safeAddressText(address))
 	return clean.length > 12 ? `${clean.slice(0, 6)}…${clean.slice(-4)}` : clean
 }
 

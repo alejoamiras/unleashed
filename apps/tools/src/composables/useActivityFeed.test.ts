@@ -66,7 +66,7 @@ describe("useActivityFeed", () => {
 		expect(feed.rows.value.find((r) => r.id === "blocked")).toMatchObject({ status: "lost", action: null })
 		expect(feed.rows.value.find((r) => r.id === "claim")).toMatchObject({
 			action: "claim",
-			route: "ETH → Aztec",
+			route: "Ethereum · Sepolia → Aztec",
 			visibility: "public",
 			symbol: "TOKEN",
 			amount: "1.00",
@@ -142,11 +142,39 @@ describe("useActivityFeed", () => {
 		expect(row("arrived")?.word).toBeUndefined()
 	})
 
+	it("a cross-chain send in flight reads as its live phase in one word, and Slow once its rail runs late", () => {
+		const xc = (id: string, over: Partial<CrossChainDepositRecord>, route: Partial<CrossChainDepositRecord["route"]>) =>
+			xcRecord({ id, secretHashHex: id as `0x${string}`, ...over }, route) as unknown as BridgeJournalRecord
+		const landed = { leafIndex: "7" }
+		records.value = [
+			xc("approving", {}, { srcTxHash: undefined }),
+			xc("sending", {}, { srcTxHash: undefined }),
+			xc("slow", {}, { transport: XC_TRANSPORT }),
+			xc("crossing", landed, { transport: XC_TRANSPORT }),
+			xc("claim", landed, { transport: XC_TRANSPORT }),
+		]
+		runtime.value = {
+			approving: { step: "approving-source", busy: true },
+			sending: { step: "sending-source", busy: true },
+			slow: { step: "bridging-late" },
+			crossing: { step: "syncing", busy: true },
+			claim: { claimable: true },
+		}
+		activeFlowId.value = "claim"
+		const feed = useActivityFeed()
+		const word = (id: string) => feed.rows.value.find((r) => r.id === id)?.word
+		expect(word("approving")).toEqual({ text: "Approve", tone: "run" })
+		expect(word("sending")).toEqual({ text: "Send", tone: "run" })
+		expect(word("slow")).toEqual({ text: "Slow", tone: "need", spoken: "bridging slowly" })
+		expect(word("crossing")).toEqual({ text: "Crossing", tone: "run" })
+		expect(word("claim")).toEqual({ text: "Claim", tone: "run" })
+	})
+
 	it("ages tick with the shared clock", () => {
 		records.value = [dep({ id: "a", createdAt: now.value - 2 * 60_000 })]
 		const feed = useActivityFeed()
-		expect(feed.rows.value[0]?.age).toBe("2m ago")
+		expect(feed.rows.value[0]?.age).toBe("2 min")
 		now.value += 60 * 60_000
-		expect(feed.rows.value[0]?.age).toBe("1h ago")
+		expect(feed.rows.value[0]?.age).toBe("1 h")
 	})
 })
