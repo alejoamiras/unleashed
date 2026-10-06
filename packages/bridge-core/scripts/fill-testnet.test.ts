@@ -93,6 +93,7 @@ describe("fillSourceDeposit", () => {
 			},
 			simulateContract: async () => ({}),
 			estimateGas: async () => 100_000n,
+			getBlockNumber: async () => 1n,
 			simulateBlocks: async () => [{ calls: [{ status: "success", logs: [] }] }],
 			waitForTransactionReceipt: async ({ hash }: { hash: Hex }) => {
 				if (confirms(hash)) return { status: "success" }

@@ -196,27 +196,39 @@ export function withGasTerms<W extends WalletClient>(wallet: W, terms: GasTermsF
  * first. Returns the transactions sent, none when the allowance already equals `amount`.
  */
 export async function approveExact(l1: L1Ctx, token: Address, spender: Address, amount: bigint): Promise<Hex[]> {
-	const read = async (blockNumber?: bigint) =>
-		(await l1.pub.readContract({
-			address: token,
-			abi: ERC20_MIN_ABI,
-			functionName: "allowance",
-			args: [l1.account.address, spender],
-			...(blockNumber === undefined ? {} : { blockNumber }),
-		})) as bigint
-	const current = await read()
+	const current = await allowanceOf(l1, token, spender)
 	if (current === amount) return []
-	const approve = (value: bigint) => sendL1(l1, { address: token, abi: ERC20_MIN_ABI, functionName: "approve", args: [spender, value] })
-	const sent = current > 0n && amount > 0n ? [await approve(0n)] : []
-	const hash = await approve(amount)
-	sent.push(hash)
-	// A load-balanced RPC can answer `latest` from a backend behind the approval, so the read names its block; a
-	// backend without that block errors, and the read retries.
-	const { blockNumber } = await l1.pub.waitForTransactionReceipt({ hash })
-	const after = await retried(() => read(blockNumber))
-	if (after !== amount) throw new Error(`allowance of ${spender} over ${token} is ${after} after approving exactly ${amount} — STOP`)
+	const sent = current > 0n && amount > 0n ? [await sendL1(l1, approveCall(token, spender, 0n))] : []
+	sent.push(await setAllowance(l1, token, spender, amount))
 	return sent
 }
+
+/**
+ * Sends `approve(spender, amount)` whatever the allowance reads now, and reads it back at the approval's own block.
+ * Use it to revoke: a `latest` read can come from a backend behind an approval just made and report it absent.
+ *
+ * @throws when the approval reverts, or the allowance reads back as anything but `amount`.
+ */
+export async function setAllowance(l1: L1Ctx, token: Address, spender: Address, amount: bigint): Promise<Hex> {
+	const hash = await sendL1(l1, approveCall(token, spender, amount))
+	// A backend without the approval's block errors, and the read retries.
+	const { blockNumber } = await l1.pub.waitForTransactionReceipt({ hash })
+	const after = await retried(() => allowanceOf(l1, token, spender, blockNumber))
+	if (after !== amount) throw new Error(`allowance of ${spender} over ${token} is ${after} after approving exactly ${amount} — STOP`)
+	return hash
+}
+
+const approveCall = (token: Address, spender: Address, amount: bigint) =>
+	({ address: token, abi: ERC20_MIN_ABI, functionName: "approve", args: [spender, amount] }) as const
+
+const allowanceOf = async (l1: L1Ctx, token: Address, spender: Address, blockNumber?: bigint) =>
+	(await l1.pub.readContract({
+		address: token,
+		abi: ERC20_MIN_ABI,
+		functionName: "allowance",
+		args: [l1.account.address, spender],
+		...(blockNumber === undefined ? {} : { blockNumber }),
+	})) as bigint
 
 async function retried<T>(read: () => Promise<T>, attempts = 10, delayMs = 1_000): Promise<T> {
 	for (let attempt = 1; ; attempt++) {

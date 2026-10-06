@@ -19,7 +19,7 @@ import {
 } from "./lifi-canary-build"
 import { ethereumChain, FJ_PER_UNIT, fakeAcross, NOW_S, routedManifest, sourceChain } from "./lifi-canary-fixture"
 import { type CanaryCaps, CanaryRefusal, canaryBindings, formatCanaryRecord, GasBudget, planCanaryRows } from "./lifi-canary-plan"
-import { boundedSigner, type CanaryDeps, runCanary, runLiveRows } from "./lifi-canary-run"
+import { boundedSigner, type CanaryDeps, runCanary, runLiveRows, underExactApproval } from "./lifi-canary-run"
 import { canaryEdge } from "./lifi-canary-testnet"
 import { AllowanceStillLive, type Destination, sendFill } from "./sandbox/relayer"
 import { ERC20_MIN_ABI } from "./script-l1"
@@ -219,6 +219,7 @@ describe("the canary's gas ceilings", () => {
 			estimateGas: async () => 80_000n,
 			estimateFeesPerGas: async () => fees,
 			simulateContract: async () => ({}),
+			getBlockNumber: async () => 1n,
 			simulateBlocks: async () => [{ calls: [{ status: "success", logs: [] }] }],
 			waitForTransactionReceipt: async () => ({ status: "success" }),
 		}
@@ -259,6 +260,49 @@ describe("the canary's gas ceilings", () => {
 		const live = await fill(2n * 10n ** 14n).catch((e: unknown) => e)
 		expect(live).toBeInstanceOf(AllowanceStillLive)
 		expect(live).toMatchObject({ message: expect.stringMatching(/still holds a live allowance/), cause: expect.any(CanaryRefusal) })
+	})
+
+	it("revoke a source approval whose deposit fails, though `latest` lags the approval, and say so when that fails too", async () => {
+		let allowance = 0n
+		let revokeFails = false
+		const approvals: bigint[] = []
+		const l1 = {
+			account: { address: CANARY },
+			wallet: {
+				chain: undefined,
+				writeContract: vi.fn(async ({ args }: { args: [Address, bigint] }) => {
+					if (revokeFails && args[1] === 0n) throw new Error("rpc down")
+					approvals.push(args[1])
+					allowance = args[1]
+					return `0x${"a1".repeat(32)}` as Hex
+				}),
+			},
+			pub: {
+				// `latest` never shows the approval; the approval's own block does.
+				readContract: vi.fn(async ({ blockNumber }: { blockNumber?: bigint }) => (blockNumber === 9n ? allowance : 0n)),
+				waitForTransactionReceipt: vi.fn(async () => ({ status: "success", blockNumber: 9n })),
+			},
+		} as unknown as L1Ctx
+		const approval = { token: `0x${"70".repeat(20)}` as Address, spender: `0x${"d1".repeat(20)}` as Address, amount: 6n }
+		const reverted = new CanaryRefusal("crosschain-public: the source transaction reverted")
+		const deposit = async () => {
+			throw reverted
+		}
+
+		expect(await underExactApproval(l1, approval, "source deposit", async () => "landed")).toBe("landed")
+		expect(approvals).toEqual([6n])
+
+		await expect(underExactApproval(l1, approval, "source deposit", deposit)).rejects.toBe(reverted)
+		expect(approvals).toEqual([6n, 6n, 0n])
+		expect(allowance).toBe(0n)
+
+		revokeFails = true
+		const live = await underExactApproval(l1, approval, "source deposit", deposit).catch((e: unknown) => e)
+		expect(live).toBeInstanceOf(AllowanceStillLive)
+		expect(live).toMatchObject({
+			message: expect.stringMatching(/^the source deposit failed .* still holds a live allowance/),
+			cause: reverted,
+		})
 	})
 
 	it("reconcile the gas burned against the caps after every row, the last included", async () => {

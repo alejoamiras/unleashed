@@ -67,7 +67,10 @@ export interface AcrossV4DepositParams {
 	outputAmount: bigint
 	quoteTimestamp: number
 	fillDeadline: number
-	/** The only address that may fill, until `fillDeadline`, so a deposit it leaves unfilled refunds; anyone when absent. */
+	/**
+	 * The only address that may fill, until `fillDeadline`; anyone when absent. A deposit it leaves unfilled becomes
+	 * refundable after the deadline, and Across's settlement, not the deadline, returns the funds.
+	 */
 	exclusiveRelayer?: Address
 	/** The Executor's steps on the destination; at least one, since the deposit always carries a call. */
 	steps: readonly LifiSwapData[]

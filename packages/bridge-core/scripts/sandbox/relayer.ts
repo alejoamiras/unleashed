@@ -193,12 +193,12 @@ async function confirmApproval(dest: Destination, a: Approval, hash: Hex): Promi
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const firstLine = (e: unknown) => errorText(e).split("\n")[0]
 
-/** An approval a failed fill could not clear: the pool still holds it. `cause` is the fill's own failure. */
+/** An approval a failed send could not clear: the spender still holds it. `cause` is the send's own failure. */
 export class AllowanceStillLive extends Error {
-	constructor(spender: Address, token: Address, clearing: unknown, fill: unknown) {
+	constructor(spender: Address, token: Address, clearing: unknown, failed: unknown, what = "fill") {
 		super(
-			`the fill failed (${firstLine(fill)}) and clearing its approval failed (${firstLine(clearing)}): ${spender} still holds a live allowance over ${token}`,
-			{ cause: fill },
+			`the ${what} failed (${firstLine(failed)}) and clearing its approval failed (${firstLine(clearing)}): ${spender} still holds a live allowance over ${token}`,
+			{ cause: failed },
 		)
 		this.name = "AllowanceStillLive"
 	}
@@ -219,18 +219,24 @@ export const TX_GAS_CAP = 16_777_216n
 
 /**
  * The gas a fill is sent with. A node's estimate is not enough: under Amsterdam's schedule LI.FI's receiver catches an
- * underfunded message and recovers the delivery to the user, so the estimate settles on that recovery. The fill gets
- * the smallest of 2×, 4×, … the estimate whose simulated logs equal those at the cap, where nothing is underfunded.
+ * underfunded message and recovers the delivery to the user, so the estimate settles on that recovery. On one block's
+ * state, the fill gets the smallest of 2×, 4×, … the estimate whose simulated outcome (status, then every log's
+ * emitter, topics and data) equals the one at the cap, where nothing is underfunded. It is a simulation check: the
+ * block the fill lands in can still differ.
+ *
+ * @throws when the fill fails in simulation even at the cap.
  */
 export async function fillGas(dest: Destination, spokePool: Address, data: Hex): Promise<bigint> {
 	const account = dest.wallet.account
+	const blockNumber = await dest.public.getBlockNumber()
 	const outcome = async (gas: bigint) => {
-		const [block] = await dest.public.simulateBlocks({ blocks: [{ calls: [{ account, to: spokePool, data, gas }] }] })
-		const c = block.calls[0]
-		return `${c.status}:${c.logs?.map((l) => `${l.address.toLowerCase()}/${l.topics[0]}`).join(",")}`
+		const [block] = await dest.public.simulateBlocks({ blockNumber, blocks: [{ calls: [{ account, to: spokePool, data, gas }] }] })
+		const { status, logs = [] } = block.calls[0]
+		return `${status}:${logs.map((l) => `${l.address.toLowerCase()}/${l.topics.join("/")}/${l.data}`).join(",")}`
 	}
 	const atCap = await outcome(TX_GAS_CAP)
-	const estimate = await dest.public.estimateGas({ account, to: spokePool, data })
+	if (!atCap.startsWith("success:")) throw new Error(`fillRelay on ${spokePool} fails in simulation even at the ${TX_GAS_CAP} gas cap`)
+	const estimate = await dest.public.estimateGas({ account, to: spokePool, data, blockNumber })
 	for (let gas = estimate * 2n; gas < TX_GAS_CAP; gas *= 2n) if ((await outcome(gas)) === atCap) return gas
 	return TX_GAS_CAP
 }
