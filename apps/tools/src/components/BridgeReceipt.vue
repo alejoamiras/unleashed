@@ -483,10 +483,6 @@ const note = computed(() => {
 }
 
 @media (max-width: 760px) {
-	.receipt {
-		--pad: 20px;
-	}
-
 	.fact {
 		grid-template-columns: minmax(0, 1fr);
 	}

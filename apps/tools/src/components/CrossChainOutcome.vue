@@ -123,7 +123,7 @@ function onContinue(): void {
 					<Button size="large" variant="secondary" :data-testid="TESTIDS.xcOutcomeDismiss" @click="emit('dismiss')">
 						Keep it on Ethereum
 					</Button>
-					<p class="aside below">Keeping it closes this send. You can deposit from Ethereum any time later.</p>
+					<p class="aside">Keeping it closes this send. You can deposit from Ethereum any time later.</p>
 				</template>
 				<template v-else-if="variant === 'stalled'">
 					<a
@@ -343,11 +343,6 @@ h2 {
 	color: var(--ul-ink-3);
 }
 
-/* It qualifies the second button, so it reads under both rather than beside them. */
-.aside.below {
-	flex-basis: 100%;
-}
-
 .link-btn {
 	--ul-fill: var(--ul-raised);
 	--ul-notch: var(--ul-notch-2);
@@ -432,28 +427,5 @@ span.hash {
 	margin: 0;
 	font: 400 13px/1.45 var(--ul-font-body);
 	color: var(--ul-ink-2);
-}
-
-@media (max-width: 760px) {
-	.main {
-		padding: 20px 16px;
-	}
-
-	.band {
-		padding: 14px 16px;
-	}
-
-	.actions {
-		flex-direction: column;
-		align-items: flex-start;
-	}
-
-	.aside {
-		flex: none;
-	}
-
-	.tx dt {
-		flex-basis: 100%;
-	}
 }
 </style>
