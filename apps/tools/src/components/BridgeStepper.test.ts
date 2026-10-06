@@ -123,10 +123,10 @@ describe("BridgeStepper", () => {
 			caption: ["Seal · phase 1 of 6", "2:40 elapsed"],
 		})
 
-		// Three phases done and two of Crossing's three blocks in: (3 + 2/3) / 6.
+		// Three phases done: the bar stands at Crossing's start whatever its meter reads.
 		runtime.value = { "0xd": { step: "syncing", syncBlock: 102 } }
 		const crossing = mount(BridgeStepper, { props: { record: dep({ depositTxHash: "0xt", leafIndex: "7", depositL2Block: 100 }) } })
-		expect(read(crossing).bar[2]).toBe("61")
+		expect(read(crossing).bar[2]).toBe("50")
 		expect(read(crossing).caption[0]).toBe("Crossing · phase 4 of 6")
 
 		runtime.value = { "0xd": { attention: "error", note: "boom" } }

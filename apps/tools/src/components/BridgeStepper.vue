@@ -112,7 +112,7 @@ const caption = computed(() => {
 	return `${liveName.value} · phase ${overall.value.index} of ${overall.value.total}${asks}`
 })
 const valuetext = computed(() => `${Math.round(overall.value.fraction * 100)} percent, ${liveName.value}`)
-const TONE = { running: "signal", failed: "lost", ended: "signal", done: "carrier" } as const
+const TONE = { running: "signal", failed: "lost", ended: "ended", done: "carrier" } as const
 const clockStart = computed(() => props.startedAt ?? props.record.createdAt)
 const elapsed = computed(() => formatClock((props.record.completedAt ?? now.value) - clockStart.value))
 
@@ -232,11 +232,13 @@ const logTitleId = useId()
 	padding: 24px;
 }
 
+/* Wrapping drops Backup under the sub line once the titles need the row. */
 .head-row {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: flex-start;
 	justify-content: space-between;
-	gap: 16px;
+	gap: 12px 16px;
 }
 
 .titles {
@@ -263,6 +265,7 @@ const logTitleId = useId()
 .amount {
 	font-family: var(--ul-font-mono);
 	color: var(--ul-ink);
+	white-space: nowrap;
 }
 
 .backup {

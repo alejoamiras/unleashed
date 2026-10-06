@@ -153,9 +153,9 @@ export function compactPhases<P extends BridgePhase>(phases: readonly P[]): P[] 
 		.map((p) => (p.key === "claim" && register ? { ...register, key: p.key, label: p.label, compact: p.compact } : p))
 }
 
-/** Where the whole run stands: done phases plus the live one's measured share, over every phase on
- *  the rail. Derived from the phases on each render and never smoothed, so a retry that returns to
- *  an earlier phase lowers it. */
+/** Where the whole run stands: the done phases over every phase on the rail, so the bar marks the live
+ *  phase's start and the rail's own meter shows progress inside it. Derived from the phases on each render
+ *  and never smoothed, so a retry that returns to an earlier phase lowers it. */
 export interface OverallProgress {
 	/** 0..1; exactly 1 only when every phase is done. */
 	fraction: number
@@ -166,9 +166,6 @@ export interface OverallProgress {
 	state: "running" | "failed" | "ended" | "done"
 }
 
-/** A live phase never fills its own slot; only its completion does. */
-const LIVE_SHARE_CAP = 0.99
-
 export function overallProgress(phases: readonly BridgePhase[]): OverallProgress {
 	const total = phases.length
 	const done = phases.filter((p) => p.state === "done").length
@@ -177,8 +174,7 @@ export function overallProgress(phases: readonly BridgePhase[]): OverallProgress
 		const complete = total > 0 && done === total
 		return { fraction: complete ? 1 : 0, index: done, total, state: complete ? "done" : "running" }
 	}
-	const share = clamp01(Math.min(phases[live].progress?.fraction ?? 0, LIVE_SHARE_CAP))
-	return { fraction: (done + share) / total, index: live + 1, total, state: OVERALL[phases[live].state] }
+	return { fraction: done / total, index: live + 1, total, state: OVERALL[phases[live].state] }
 }
 
 const OVERALL: Record<PhaseState, OverallProgress["state"]> = {
