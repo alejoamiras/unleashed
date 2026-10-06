@@ -1902,8 +1902,9 @@ describe("SendWizard", () => {
 		review.vm.$emit("confirm")
 		await flushPromises()
 		const delivered = xcRecord({ id: "xc-1", completedAt: 2_000 }, { outcome: "delivered-to-wallet", outcomeAmount: "4900000" })
-		catalogTokens.value = [candidate(delivered.token.erc20)]
-		setRoute({ kind: "route", probeOut: 10n ** 20n, venue: VENUE }, delivered.token.erc20)
+		const ethToken = delivered.token?.erc20 ?? ""
+		catalogTokens.value = [candidate(ethToken)]
+		setRoute({ kind: "route", probeOut: 10n ** 20n, venue: VENUE }, ethToken)
 		crossChainRecords.value = [delivered]
 		await flushPromises()
 		// 4,900,000 base units less the 2,000,000 slice, at 8 decimals; the slice buys 2 FJ at the probe's rate.
