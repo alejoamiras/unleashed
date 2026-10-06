@@ -330,6 +330,7 @@ function onUseAll(): void {
 				:state="crossChain.notice"
 				:src-chain-id="crossChain.srcChainId"
 				:send-text="`${formatDisplayAmount(parsed ?? 0n, token.decimals)} ${symbolText}`"
+				:symbol="symbolText"
 				@act="emit('retry')"
 			/>
 			<CrossChainFees

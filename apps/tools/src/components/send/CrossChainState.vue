@@ -30,6 +30,8 @@ const props = defineProps<{
 	srcChainId: number
 	/** "500.00 USDC": what the send takes, for the no-route line. */
 	sendText: string
+	/** The source token's symbol, for the over-cap line. */
+	symbol: string
 }>()
 const emit = defineEmits<{ act: [] }>()
 
@@ -52,6 +54,8 @@ const box = computed<Box>(() => {
 	switch (s.kind) {
 		case "no-route":
 			return { tone: "attention", icon: "warning-diamond", title: "No route for this amount right now.", ...RETRY }
+		case "over-cap":
+			return { tone: "attention", icon: "warning-diamond", title: "This is more than one testnet send carries." }
 		case "refused":
 			return {
 				tone: "lost",
@@ -109,6 +113,9 @@ const box = computed<Box>(() => {
 	>
 		<template v-if="state.kind === 'no-route'">
 			LI.FI found no way to bring {{ sendText }} from {{ source }} to Aztec. Routes change often.
+		</template>
+		<template v-else-if="state.kind === 'over-cap'">
+			A testnet send carries at most {{ state.max }} {{ symbol }}. Send less, or split it into several sends.
 		</template>
 		<template v-else-if="state.kind === 'refused'">
 			<template v-if="state.field">Field that differs: <span class="mono">{{ state.field }}</span>. </template>Nothing was signed and

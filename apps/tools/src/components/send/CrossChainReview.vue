@@ -245,7 +245,14 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 		</div>
 
 		<WrongChainNotice v-if="walletChainId !== null && !state" :wallet-chain-id="walletChainId" :need-chain-id="src" @switch="emit('switch-chain')" />
-		<CrossChainState v-if="state" :state="state" :src-chain-id="src" :send-text="`${sendAmount} ${symbol}`" @act="emit('act')" />
+		<CrossChainState
+			v-if="state"
+			:state="state"
+			:src-chain-id="src"
+			:send-text="`${sendAmount} ${symbol}`"
+			:symbol="symbol"
+			@act="emit('act')"
+		/>
 		<p v-if="error" class="error" aria-live="polite" :data-testid="TESTIDS.sendReviewError">
 			<Icon name="square-alert" :size="24" />{{ safeSentence(error) }}
 		</p>

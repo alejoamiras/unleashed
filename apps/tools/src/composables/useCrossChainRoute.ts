@@ -101,8 +101,9 @@ export interface CrossChainRoute {
 
 export type CrossChainRouteOutcome =
 	| { kind: "route"; route: CrossChainRoute }
-	/** Nothing to sign for this ask: Across or the gas venue quotes none. */
-	| { kind: "no-route"; reason: string }
+	/** Nothing to sign for this ask: Across or the gas venue quotes none, or the amount is over `max`, the most one
+	 *  fixed-terms send carries. */
+	| { kind: "no-route"; reason: string; max?: bigint }
 	/** The decoder refused bytes we built: never offered, never signed. */
 	| { kind: "refused"; field: string; reason: string }
 	/** This build cannot route the ask: no router, no rail it builds, no Across API, or fees still pricing. */
@@ -299,8 +300,8 @@ async function quotedTerms(c: RouteCtx, across: AcrossClient): Promise<Terms | O
 async function termsOf(c: RouteCtx): Promise<Terms | Outcome> {
 	const fixed = c.deps.fixedTerms
 	if (fixed) {
-		if (c.ask.srcAmount > selfBuiltMaxDeposit(c.ask.srcToken.decimals))
-			return noRoute("The amount is over what one testnet send carries.")
+		const max = selfBuiltMaxDeposit(c.ask.srcToken.decimals)
+		if (c.ask.srcAmount > max) return settle({ kind: "no-route", reason: "The amount is over what one testnet send carries.", max })
 		const head = await fixed.sourceHeadSec(c.ask.srcChainId)
 		return { rail: selfBuiltTerms(c.b.l1ChainId, c.ask.srcAmount, head, fixed.filler), limits: null }
 	}

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import { ref, shallowRef } from "vue"
 import { type AppSource, readChainOf } from "@/lib/network"
 import { PRIVATE_SLICE_SHORT, type ResolvedToken, type SelectableToken } from "@/lib/send-model"
-import { BASE_SEPOLIA, DEST_TOKEN, DEST_USDC, OUT, routeDeps, SRC_USDC, USER } from "@/test/crosschain"
+import { BASE_SEPOLIA, DEST_TOKEN, DEST_USDC, NOW_S, OUT, routeDeps, SRC_USDC, USER } from "@/test/crosschain"
 import { ROUTE_TTL_MS } from "./useCrossChainRoute"
 import { type CrossChainSendDeps, useCrossChainSend } from "./useCrossChainSend"
 import type { UseTokenSelectionHandle } from "./useTokenSelection"
@@ -96,6 +96,12 @@ describe("useCrossChainSend", () => {
 		quoting.value = true
 		now.value += 1_000
 		await vi.waitFor(() => expect(h.quoted.value).not.toBe(first), { timeout: 10_000 })
+		h.dispose()
+	}, 30_000)
+
+	it("says an amount over the fixed-terms cap is over it, not that no route exists", async () => {
+		const { h } = setup({ amount: () => 9_000_000n, routeDeps: (slice) => ({ ...routeDeps({ fixedAt: NOW_S }), slice }) })
+		await vi.waitFor(() => expect(h.notice.value).toEqual({ kind: "over-cap", max: "8.00" }), { timeout: 10_000 })
 		h.dispose()
 	}, 30_000)
 

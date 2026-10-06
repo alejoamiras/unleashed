@@ -111,5 +111,11 @@ describe("AmountStep, cross-chain", () => {
 		await none.find(sel(TESTIDS.sendXcRetry)).trigger("click")
 		expect(none.emitted("retry")).toHaveLength(1)
 		none.unmount()
+
+		const over = step({ figures: null, notice: { kind: "over-cap", max: "8.00" } })
+		expect(over.find(sel(TESTIDS.sendXcNotice)).text()).toContain("A testnet send carries at most 8.00 USDC.")
+		expect(over.find(sel(TESTIDS.sendXcRetry)).exists()).toBe(false)
+		expect(continues(over)).toBe(false)
+		over.unmount()
 	})
 })

@@ -11,6 +11,7 @@ import type { Address, WalletClient } from "viem"
 import { FUEL } from "@/contracts/bridge-generation"
 import { readHubBinding } from "@/contracts/hub-binding"
 import { type CrossChainFigures, type FeeCeiling, feeCeilingOf, figuresOf } from "@/lib/crosschain-figures"
+import { formatDisplayAmount } from "@/lib/format"
 import { IS_MAINNET, NETWORK } from "@/lib/network"
 import {
 	GAS_TOO_SMALL,
@@ -46,6 +47,8 @@ import { type TokenSelectionDeps, type UseTokenSelectionHandle, useTokenSelectio
 export type CrossChainNotice =
 	/** The rail or the gas venue quotes nothing for this ask. */
 	| { kind: "no-route" }
+	/** The amount is over the most one fixed-terms send carries; `max` is that cap as display text. */
+	| { kind: "over-cap"; max: string }
 	/** Our own bytes failed the decoder; nothing is offered. */
 	| { kind: "refused"; field: string }
 	/** The gas venue could not be read: an outage, not a refusal. */
@@ -130,10 +133,13 @@ function destRowOf(token: AppSource["tokens"][number]): SelectableToken {
 function noticeOf(quoted: QuotedRoute | null, error: string | null, destError: string | null): CrossChainNotice | null {
 	const failure = destError ?? error
 	if (failure) return { kind: "failed", message: failure }
-	const o = quoted?.outcome
-	if (!o || o.kind === "route") return null
+	if (!quoted || quoted.outcome.kind === "route") return null
+	const o = quoted.outcome
 	if (o.kind === "refused") return { kind: "refused", field: o.field }
-	if (o.kind === "no-route") return { kind: "no-route" }
+	if (o.kind === "no-route")
+		return o.max === undefined
+			? { kind: "no-route" }
+			: { kind: "over-cap", max: formatDisplayAmount(o.max, quoted.ask.srcToken.decimals) }
 	// A private slice still waiting on Aztec's fees is loading, not unroutable.
 	if (o.reason === "pricing") return null
 	return o.reason === "The gas venue could not be read." ? { kind: "venue" } : { kind: "unavailable" }

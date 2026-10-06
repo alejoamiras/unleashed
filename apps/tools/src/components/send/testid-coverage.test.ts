@@ -238,8 +238,12 @@ const CASES: Array<[string, Component, Record<string, unknown>]> = [
 		CrossChainFees,
 		{ figures: XC_FIGURES, decimals: 6, symbol: "USDC", srcChainId: 84532, rail: "acrossV4", intent: "token", expiresIn: 30_000 },
 	],
-	["CrossChainState", CrossChainState, { state: { kind: "contract" }, srcChainId: 84532, sendText: "5.00 USDC" }],
-	["CrossChainState (expired)", CrossChainState, { state: { kind: "expired" }, srcChainId: 84532, sendText: "5.00 USDC" }],
+	["CrossChainState", CrossChainState, { state: { kind: "contract" }, srcChainId: 84532, sendText: "5.00 USDC", symbol: "USDC" }],
+	[
+		"CrossChainState (expired)",
+		CrossChainState,
+		{ state: { kind: "expired" }, srcChainId: 84532, sendText: "5.00 USDC", symbol: "USDC" },
+	],
 	["CrossChainReview", CrossChainReview, XC_REVIEW],
 	["CrossChainReview (blocked)", CrossChainReview, { ...XC_REVIEW, state: { kind: "no-route" }, walletChainId: 1 }],
 	[
