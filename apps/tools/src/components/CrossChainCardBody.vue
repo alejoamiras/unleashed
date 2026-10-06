@@ -55,7 +55,7 @@ function onContinue(): void {
 		<StateNotice
 			v-if="notSent"
 			tone="lost"
-			icon="square-alert"
+			icon="close"
 			title="Not sent"
 			action="Dismiss"
 			:action-testid="TESTIDS.journalXcDismiss"
@@ -129,6 +129,7 @@ function onContinue(): void {
 }
 
 .card-btn {
+	min-height: 40px;
 	padding: 0 14px;
 }
 

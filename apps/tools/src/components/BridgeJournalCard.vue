@@ -265,11 +265,12 @@ const phase = computed(() => state.value.crossChain)
 /** The rail's mapper tells a cross-chain record apart by its own schema. */
 const railRecord = computed(() => props.record as BridgeJournalRecord)
 
-/** Another account's card hides its rail, so it states any failure itself. A cross-chain card keeps
- *  its rail to the end: its segments are where it says how far the send got. */
+/** Another account's card hides its rail, so it states any failure itself. A card keeps its rail to
+ *  the end, except an Ethereum-origin one whose completion is now lost: an all-done rail would
+ *  contradict its status. */
 const railShown = computed(() => {
 	if (phase.value) return true
-	return (stage.value !== "done" || xc.value !== null) && !state.value.ownedByOther
+	return (stage.value !== "done" || xc.value !== null || !lost.value) && !state.value.ownedByOther
 })
 
 const anotherDeposit = computed(() => {
@@ -549,28 +550,13 @@ function onDiscard() {
 </template>
 
 <style scoped>
-/* A 4px status edge rides on the clipped fill: amber when the user has to act, red when the signal
-   was lost; running and done cards have none. */
 .journal-card {
 	--ul-fill: var(--ul-panel);
 	--ul-notch: var(--ul-notch-4);
-	--edge: transparent;
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
 	padding: 18px 20px;
-}
-
-.journal-card::before {
-	box-shadow: inset 4px 0 0 var(--edge);
-}
-
-.journal-card[data-status="needs-you"] {
-	--edge: var(--ul-attention);
-}
-
-.journal-card[data-status="lost"] {
-	--edge: var(--ul-lost);
 }
 
 .journal-card[data-status="needs-you"] :deep(.cell.active .seg:not(.partial)),
@@ -615,6 +601,7 @@ function onDiscard() {
 }
 
 .card-btn {
+	min-height: 40px;
 	padding: 0 14px;
 }
 

@@ -134,7 +134,7 @@ describe("BridgeJournalCard", () => {
 		expect(w.find(sel(TESTIDS.journalStep)).text()).toContain("check 12")
 	})
 
-	it("a done card says Arrived: the chip, and the time it took beside its links; no stamp", () => {
+	it("a done card says Arrived: the chip, its finished rail, and the time it took beside its links; no stamp", () => {
 		const created = 1_000_000
 		const w = mountCard(
 			deposit({ leafIndex: "7", claimTxHash: `0x${"ab".repeat(32)}`, createdAt: created, completedAt: created + 221_000 }),
@@ -144,14 +144,14 @@ describe("BridgeJournalCard", () => {
 		expect(card.get("[data-status-chip]").text()).toBe("Arrived")
 		expect(w.text()).toContain("Arrived in 3m 41s")
 		expect(w.text()).not.toContain("Bridged")
-		expect(w.find(sel(TESTIDS.journalRail)).exists()).toBe(false)
+		expect(w.find(sel(TESTIDS.journalRail)).exists()).toBe(true)
 		// The receipt's guard: a completion stamped at or before its start has no duration to show.
 		const instant = mountCard(deposit({ leafIndex: "7", createdAt: created, completedAt: created }))
 		expect(instant.text()).toContain("Arrived")
 		expect(instant.text()).not.toContain("Arrived in")
 	})
 
-	it("data-status drives the edge: needs-you and lost, a completed + blocked card included", () => {
+	it("data-status names needs-you and lost, a completed + blocked card included, whose rail is hidden", () => {
 		expect(
 			mountCard(deposit({ leafIndex: "7" }))
 				.get(sel(TESTIDS.journalCard))
@@ -170,6 +170,7 @@ describe("BridgeJournalCard", () => {
 		expect(blocked.text()).toContain("Previously recorded as arrived")
 		expect(blocked.text()).not.toContain("Arrived in")
 		expect(blocked.get(sel(TESTIDS.journalAttention)).text()).toContain("stopped")
+		expect(blocked.find(sel(TESTIDS.journalRail)).exists()).toBe(false)
 	})
 
 	it("a blocked, completed record keeps its gas recovery but never says the tokens arrived", () => {
