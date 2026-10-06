@@ -1436,6 +1436,11 @@ code or the chain.
      never earlier than the approval's receipt block, and each probe retries a lagging backend.
   2. A node that omits simulation logs made a cap deposit and an underfunded recovery compare equal. The cap's
      outcome must now succeed and log the pool's own `FilledRelay`, or the fill is refused.
+- Round 3 (one medium; both round 2 fixes held): `fillOnce` still ran a `simulateContract` preflight on unpinned
+  `latest` before `fillGas`, so a backend behind the approval reported no allowance and aborted the fill (the
+  approval was revoked; the deposit stays exclusive and refundable). The preflight is gone: the pinned cap
+  simulation is the pre-send check, and its error carries the simulated revert reason. Round 3 is the plan's hard
+  stop; the owner chose *"Run round 4 (Recommended)"*, for this loop only.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's

@@ -165,8 +165,8 @@ export interface Destination {
 export interface FillCall {
 	/** Where Across would repay the relayer; the fork suites and the canary name the origin chain. */
 	repaymentChainId: bigint
-	/** Explicit gas, which skips the pre-send simulation and {@link fillGas}: a fill that cannot run its message lands
-	 *  as a revert, or as a recovery under Amsterdam's schedule. */
+	/** Explicit gas, which skips {@link fillGas} and its simulation: a fill that cannot run its message lands as a
+	 *  revert, or as a recovery under Amsterdam's schedule. */
 	gas?: bigint
 }
 
@@ -239,14 +239,16 @@ export async function fillGas(dest: Destination, spokePool: Address, data: Hex, 
 	const outcome = async (gas: bigint) => {
 		const blocks = [{ calls: [{ account, to: spokePool, data, gas }] }]
 		const [block] = await retried(() => dest.public.simulateBlocks({ blockNumber, blocks }))
-		const { status, logs = [] } = block.calls[0]
+		const { status, logs = [], ...call } = block.calls[0]
 		return {
+			reason: "error" in call && call.error ? `: ${firstLine(call.error)}` : "",
 			fills: status === "success" && logs.some((l) => isAddressEqual(l.address, spokePool) && l.topics[0] === FILLED_RELAY_TOPIC),
 			key: `${status}:${logs.map((l) => `${l.address.toLowerCase()}/${l.topics.join("/")}/${l.data}`).join(",")}`,
 		}
 	}
 	const atCap = await outcome(TX_GAS_CAP)
-	if (!atCap.fills) throw new Error(`fillRelay on ${spokePool} logs no FilledRelay in simulation even at the ${TX_GAS_CAP} gas cap`)
+	if (!atCap.fills)
+		throw new Error(`fillRelay on ${spokePool} logs no FilledRelay in simulation even at the ${TX_GAS_CAP} gas cap${atCap.reason}`)
 	const estimate = await retried(() => dest.public.estimateGas({ account, to: spokePool, data, blockNumber }))
 	for (let gas = estimate * 2n; gas < TX_GAS_CAP; gas *= 2n) if ((await outcome(gas)).key === atCap.key) return gas
 	return TX_GAS_CAP
@@ -256,11 +258,10 @@ async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRela
 	const account = dest.wallet.account
 	// viem's inference collapses this tuple argument to `never`; `AcrossRelayData` is `RELAY_DATA` field for field.
 	const args = [relay as never, call.repaymentChainId, pad(account.address, { size: 32 })] as const
-	let gas = call.gas
-	if (gas === undefined) {
-		await dest.public.simulateContract({ account, address: spokePool, abi: SPOKE_POOL_ABI, functionName: "fillRelay", args })
-		gas = await fillGas(dest, spokePool, encodeFunctionData({ abi: SPOKE_POOL_ABI, functionName: "fillRelay", args }), approvedAt)
-	}
+	// fillGas's cap simulation is the pre-send check; a `latest` simulation here could run before the approval.
+	const gas =
+		call.gas ??
+		(await fillGas(dest, spokePool, encodeFunctionData({ abi: SPOKE_POOL_ABI, functionName: "fillRelay", args }), approvedAt))
 	const hash = await dest.wallet.writeContract({
 		address: spokePool,
 		abi: SPOKE_POOL_ABI,
@@ -276,9 +277,10 @@ async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRela
 
 /**
  * Approves `spokePool` for exactly `relay.outputAmount` of its output token and sends `fillRelay` from the wallet's
- * account, which is also the logged relayer. Without explicit gas the fill is simulated before it is sent, so a fill
- * that would revert throws without a fill transaction, and is sent with {@link fillGas}. Once the approval is
- * submitted, any failure short of a landed fill, its own confirmation included, clears the approval again.
+ * account, which is also the logged relayer. Without explicit gas the fill is sent with {@link fillGas}, whose
+ * simulation on a block no earlier than the approval refuses a fill that would not fill, before any fill transaction.
+ * Once the approval is submitted, any failure short of a landed fill, its own confirmation included, clears the
+ * approval again.
  *
  * @throws the approval's submit error as is; otherwise the first failure once the approval is cleared, or
  * {@link AllowanceStillLive} when the clear fails too.

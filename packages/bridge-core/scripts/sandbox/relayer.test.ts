@@ -1,7 +1,7 @@
-import type { Address, Hex } from "viem"
+import { type Address, type Hex, pad } from "viem"
 import { describe, expect, it } from "vitest"
-import { FILLED_RELAY_TOPIC } from "../../src/crosschain-discovery"
-import { type Destination, fillGas, TX_GAS_CAP } from "./relayer"
+import { type AcrossRelayData, FILLED_RELAY_TOPIC } from "../../src/crosschain-discovery"
+import { type Destination, fillGas, sendFill, TX_GAS_CAP } from "./relayer"
 
 const POOL: Address = `0x${"5b".repeat(20)}`
 const HEAD = 77n
@@ -78,5 +78,50 @@ describe("fillGas", () => {
 	])("refuses a fill that %s at the cap", async (_, atCap) => {
 		const { dest } = destination(600_000n, 0n, atCap, atCap)
 		await expect(fillGas(dest, POOL, "0x" as Hex, 0n)).rejects.toThrow(/logs no FilledRelay in simulation even at the 16777216 gas cap/)
+	})
+})
+
+describe("sendFill", () => {
+	it("fills on the approval's block although `latest` answers from a backend behind it", async () => {
+		const token: Address = `0x${"70".repeat(20)}`
+		const approvedAt = HEAD + 1n
+		const sent: string[] = []
+		const pub = {
+			getBlockNumber: async () => HEAD,
+			waitForTransactionReceipt: async () => ({ status: "success", blockNumber: approvedAt }),
+			// Before the approval's block the pool cannot pull the output, so the fill reverts.
+			estimateGas: async () => 100_000n,
+			simulateContract: async () => {
+				throw new Error("ERC20: insufficient allowance")
+			},
+			simulateBlocks: async ({ blockNumber }: { blockNumber: bigint }) => [
+				{ calls: [blockNumber >= approvedAt ? delivered : { status: "failure", logs: [] }] },
+			],
+		}
+		const wallet = {
+			account: { address: `0x${"ca".repeat(20)}` },
+			chain: undefined,
+			writeContract: async ({ functionName }: { functionName: string }) => {
+				sent.push(functionName)
+				return `0x${"01".repeat(32)}`
+			},
+		}
+		const relay: AcrossRelayData = {
+			depositor: pad(wallet.account.address as Address),
+			recipient: pad(wallet.account.address as Address),
+			exclusiveRelayer: pad("0x00"),
+			inputToken: pad(token),
+			outputToken: pad(token),
+			inputAmount: 5n,
+			outputAmount: 5n,
+			originChainId: 84532n,
+			depositId: 1n,
+			fillDeadline: 0,
+			exclusivityDeadline: 0,
+			message: "0x",
+		}
+		const dest = { public: pub, wallet } as unknown as Destination
+		expect(await sendFill(dest, POOL, relay, { repaymentChainId: 84532n })).toMatchObject({ status: "success" })
+		expect(sent).toEqual(["approve", "fillRelay"])
 	})
 })
