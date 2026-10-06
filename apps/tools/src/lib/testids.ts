@@ -278,6 +278,15 @@ export const TESTIDS = {
 
 	// Cross-chain · token step, wallet chip
 	sendNetworkChips: "tl-send-network-chips",
+	sendNetworkChip: "tl-send-network-chip",
+	sendTokenChain: "tl-send-token-chain",
+	sendTokenSub: "tl-send-token-sub",
+	sendSourceOnly: "tl-send-source-only",
+	sendContractWallet: "tl-send-contract-wallet",
+	sendChangeWallet: "tl-send-change-wallet",
+	sendWrongChain: "tl-send-wrong-chain",
+	sendWrongChainSwitch: "tl-send-wrong-chain-switch",
+	l1Networks: "tl-l1-networks",
 
 	// Cross-chain · amount and review
 	sendXcFees: "tl-send-xc-fees",
