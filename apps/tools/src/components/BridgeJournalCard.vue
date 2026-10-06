@@ -19,7 +19,7 @@ import { useShell } from "@/composables/useShell"
 import { switchActiveAccount } from "@/composables/useWalletConnection"
 
 /** Utils */
-import { ageWords, classify, routeWords, rowStrings, runningWord, statusPhase } from "@/lib/activity"
+import { ageFrom, ageWords, classify, routeWords, rowStrings, runningWord, statusPhase } from "@/lib/activity"
 import { chainLabel, chainTxUrl } from "@/lib/chains"
 import { phaseChip } from "@/lib/crosschain-activity"
 import { useNow } from "@/lib/clock"
@@ -331,7 +331,7 @@ const route = computed(() => {
 const running = computed(() => runningWord(props.record, rt.value))
 
 const now = useNow()
-const age = computed(() => ageWords(props.record.createdAt, now.value))
+const age = computed(() => ageWords(ageFrom(props.record), now.value))
 
 function onAction() {
 	if (props.record.direction === "deposit") void journal.runDepositClaim(props.record.id)

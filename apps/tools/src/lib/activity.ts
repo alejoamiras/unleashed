@@ -3,15 +3,9 @@
  * share. A persisted `blocked` or any runtime attention overrides completion; completion overrides a
  * stale busy runtime; ownership moves group and count, never status.
  */
-import {
-	type AnyJournalRecord,
-	type BridgeJournalRecord,
-	type DepositJournalRecord,
-	assetKindOf,
-	isCrossChainRecord,
-} from "@unleashed/bridge-core"
+import { type AnyJournalRecord, type BridgeJournalRecord, isCrossChainRecord } from "@unleashed/bridge-core"
 import type { RecordRuntime } from "@/composables/useBridgeJournal"
-import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
+import { amountQualifier, displayAmountOf, displayAmountText, sentAmountOf } from "@/lib/asset-label"
 import { type BridgePhase, isFailedAttention, stepperPhases } from "@/lib/bridge-steps"
 import { crossChainAsset, type CrossChainPhase, sendView } from "@/lib/crosschain-activity"
 import { chainLabel } from "@/lib/chains"
@@ -110,11 +104,11 @@ export interface GroupedRows<T extends { group: ActivityGroup; createdAt: number
 	otherAccount: T[]
 }
 
-/** Lost records first (they share Needs you with the claims), then newest first inside each group. */
+/** Newest first inside each group, except that lost records lead the claims they share Needs you with. */
 export function groupRecords<T extends { group: ActivityGroup; createdAt: number; status?: RecordStatus }>(
 	rows: readonly T[],
 ): GroupedRows<T> {
-	const lostFirst = (r: T) => (r.status === "lost" ? 0 : 1)
+	const lostFirst = (r: T) => (r.group === "needs-you" && r.status === "lost" ? 0 : 1)
 	const by = (g: ActivityGroup) =>
 		rows.filter((r) => r.group === g).sort((a, b) => lostFirst(a) - lostFirst(b) || b.createdAt - a.createdAt)
 	return { needsYou: by("needs-you"), running: by("running"), done: by("done"), otherAccount: by("other-account") }
@@ -145,15 +139,14 @@ export function routeWords(rec: AnyJournalRecord): string {
 	return rec.direction === "deposit" ? `${l1} → Aztec` : `Aztec → ${l1}`
 }
 
-function buysGas(rec: BridgeJournalRecord): boolean {
-	if (rec.direction !== "deposit" || assetKindOf(rec) === "fee-juice") return false
-	if ("intent" in rec) return rec.intent === "token+gas"
-	return (rec as DepositJournalRecord).fuel !== undefined
+/** "private" / "public": the visibility as a word. */
+export function visibilityWords(rec: AnyJournalRecord): string {
+	return rec.isPrivate ? "private" : "public"
 }
 
-/** "private + gas" / "public": the visibility and whether a gas leg rides along, as words. */
-export function visibilityWords(rec: AnyJournalRecord): string {
-	return `${rec.isPrivate ? "private" : "public"}${buysGas(sendView(rec)) ? " + gas" : ""}`
+/** The moment a row's age counts from: arrival once a send finished, else when it started. */
+export function ageFrom(rec: AnyJournalRecord): number {
+	return rec.completedAt ?? rec.createdAt
 }
 
 export interface RowStrings {
@@ -163,15 +156,17 @@ export interface RowStrings {
 }
 
 /**
- * Amount, symbol and qualifier for a row, read as every record surface reads them (`displayAmountOf`).
- * A cross-chain record shows what it sent while `phase` holds, then what its deposit carries.
+ * Amount, symbol and qualifier for a row. A send under way, or a cross-chain one an outcome ended, shows what
+ * left the wallet, as its stepper's headline does; a finished send shows what its deposit carried.
  */
 export function rowStrings(rec: AnyJournalRecord, phase: CrossChainPhase | null = null): RowStrings {
-	if (phase && isCrossChainRecord(rec)) {
+	const underWay = rec.completedAt === undefined
+	if (isCrossChainRecord(rec) && (phase || underWay)) {
 		const asset = crossChainAsset(rec)
 		return { amount: formatStoredAmount(rec.route.srcAmount, asset.decimals), symbol: asset.symbol, qualifier: null }
 	}
-	const d = displayAmountOf(sendView(rec))
+	const view = sendView(rec)
+	const d = underWay ? sentAmountOf(view) : displayAmountOf(view)
 	return { amount: displayAmountText(d), symbol: d.symbol, qualifier: amountQualifier(d) }
 }
 

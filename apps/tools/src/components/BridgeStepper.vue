@@ -8,7 +8,7 @@ import { computed, useId } from "vue"
 import { type RecordRuntime, useBridgeJournal } from "@/composables/useBridgeJournal"
 
 /** Utils */
-import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
+import { amountQualifier, displayAmountText, sentAmountOf } from "@/lib/asset-label"
 import { isTerminalAttention, overallProgress, stepperPhases } from "@/lib/bridge-steps"
 import { useNow } from "@/lib/clock"
 import { crossChainRoute, sourceAmountText } from "@/lib/crosschain-steps"
@@ -87,16 +87,16 @@ const route = computed(() => {
 	if (isCrossChainRecord(r)) return crossChainRoute(r)
 	return r.direction === "deposit" ? "Ethereum → Aztec" : "Aztec → Ethereum"
 })
-/** A cross-chain send is headed by what it takes on its source chain. */
+/** A send is headed by what left the wallet: a cross-chain one in its source token, a token + gas one with its gas slice. */
 const amount = computed(() => {
 	const r = props.record
 	if (isCrossChainRecord(r)) return sourceAmountText(r) ?? "—"
-	const d = displayAmountOf(r)
+	const d = sentAmountOf(r)
 	return `${displayAmountText(d)} ${d.symbol}`
 })
 const qualifier = computed(() => {
 	const r = props.record
-	return isCrossChainRecord(r) ? null : amountQualifier(displayAmountOf(r))
+	return isCrossChainRecord(r) ? null : amountQualifier(sentAmountOf(r))
 })
 
 const livePhase = computed(() => phases.value[overall.value.index - 1])

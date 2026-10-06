@@ -228,12 +228,22 @@ describe("rows", () => {
 		expect(runningWord(dep({ leafIndex: "1" }), { busy: true, step: "syncing" })).toBe("Crossing")
 	})
 
-	it("visibilityWords: privacy as a word, plus gas when a fuel leg rides along", () => {
+	it("visibilityWords: privacy as a word, with or without a fuel leg", () => {
 		expect(visibilityWords(dep({ isPrivate: true }))).toBe("private")
-		expect(visibilityWords(dep({ schema: 2, fuel: FUEL }))).toBe("public + gas")
-		const send = { ...dep({ id: "0xs" }), schema: 3, intent: "token+gas", token: undefined } as unknown as SendDepositRecord
-		expect(visibilityWords(send)).toBe("public + gas")
-		expect(visibilityWords(dep({ assetKind: "fee-juice" }))).toBe("public")
+		expect(visibilityWords(dep({ schema: 2, fuel: FUEL }))).toBe("public")
+	})
+
+	it("rowStrings: a token + gas send under way shows what left the wallet, its gas slice included; once done, what arrived", () => {
+		const fuel = { ...FUEL, amount: "4000000" } as DepositJournalRecord["fuel"]
+		const send = (over: Partial<DepositJournalRecord>) =>
+			({
+				...dep({ amount: "406000000", fuel, ...over }),
+				schema: 3,
+				intent: "token+gas",
+				token: { displaySymbol: "USDC", decimals: 6 },
+			}) as unknown as SendDepositRecord
+		expect(rowStrings(send({})).amount).toBe("410.00")
+		expect(rowStrings(send({ completedAt: 2 })).amount).toBe("406.00")
 	})
 
 	it("rowStrings strips and caps a persisted symbol (a restore file can carry anything)", () => {
