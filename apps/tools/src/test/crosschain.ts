@@ -1,5 +1,5 @@
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { lifiBook, testnetSwapperFuelProvider } from "@unleashed/bridge-core"
+import { lifiBook, TESTNET_FILLER, testnetSwapperFuelProvider } from "@unleashed/bridge-core"
 import { type Address, type Hex, keccak256, toBytes } from "viem"
 import { vi } from "vitest"
 import { type CrossChainAsk, type CrossChainRoute, quoteCrossChainRoute, type RouteDeps } from "@/composables/useCrossChainRoute"
@@ -69,7 +69,7 @@ export function acrossApi(answer: "quote" | "error" = "quote") {
 export type Venue = "swapper" | "reverts" | "down" | "answers-another-slice"
 
 /** A fixed-rate swapper venue and a stub Across; the slice is a tenth of the delivery. */
-export function routeDeps(o: { venue?: Venue; across?: ReturnType<typeof acrossApi>; sourceHead?: number } = {}): RouteDeps {
+export function routeDeps(o: { venue?: Venue; across?: ReturnType<typeof acrossApi>; fixedAt?: number } = {}): RouteDeps {
 	const venue = o.venue ?? "swapper"
 	const quote = async (_: Address, amountIn: bigint) => {
 		if (venue === "reverts" || venue === "down") throw new Error(venue)
@@ -96,7 +96,7 @@ export function routeDeps(o: { venue?: Venue; across?: ReturnType<typeof acrossA
 		slice: (_, delivered) => delivered / 10n,
 		random: Fr.random,
 		nowSec: () => NOW_S,
-		...(o.sourceHead === undefined ? {} : { sourceHeadSec: async () => o.sourceHead as number }),
+		...(o.fixedAt === undefined ? {} : { fixedTerms: { filler: TESTNET_FILLER, sourceHeadSec: async () => o.fixedAt as number } }),
 	}
 }
 

@@ -1,9 +1,9 @@
 /**
  * A cross-chain deposit's route, priced and verified before anything is shown: fresh claim secrets, the gas
  * slice quoted at what the rail delivers, Across's terms for our exact message, and the source transaction our
- * own encoder builds from them, accepted by `verifyRoute`. Off mainnet, a deposit Across will not quote is built on
- * `selfBuiltTerms` instead. Questions are debounced, only the latest publishes, and a route is readable for
- * `ROUTE_TTL_MS`: a review older than that quotes again before it signs.
+ * own encoder builds from them, accepted by `verifyRoute`. Off mainnet, every deposit is built on `selfBuiltTerms`
+ * instead, held for `TESTNET_FILLER`, and Across is never asked. Questions are debounced, only the latest publishes,
+ * and a route is readable for `ROUTE_TTL_MS`: a review older than that quotes again before it signs.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
@@ -29,6 +29,7 @@ import {
 	type RouterIntent,
 	type RouteTx,
 	selfBuiltTerms,
+	TESTNET_FILLER,
 	verifyRoute,
 } from "@unleashed/bridge-core"
 import type { Address, Hex } from "viem"
@@ -93,7 +94,7 @@ export interface CrossChainRoute {
 	fillDeadline: number
 	/** Across's own bounds on the amount; null on fixed terms, which nobody quoted. */
 	limits: AcrossLimits | null
-	/** `fixed`: Across quoted nothing, so the deposit rides `selfBuiltTerms` and waits for a fill by hand. */
+	/** `fixed`: the deposit rides `selfBuiltTerms`, held for one filler who fills it by hand. */
 	terms: "quoted" | "fixed"
 }
 
@@ -125,9 +126,9 @@ export interface RouteDeps {
 	book?: (chainId: number) => LifiChainBook
 	random?: () => Fr
 	nowSec?: () => number
-	/** The source chain's head time in seconds, which fixed terms are timed from. Absent on mainnet: there, a deposit
-	 *  Across will not quote has no route. */
-	sourceHeadSec?: (chainId: number) => Promise<number>
+	/** Off mainnet only: build every deposit on fixed terms held for `filler`, timed from the source chain's head (in
+	 *  seconds), and never ask Across. Absent, Across's quote is the only terms, and no quote means no route. */
+	fixedTerms?: { filler: Address; sourceHeadSec: (chainId: number) => Promise<number> }
 }
 
 const hashOf = async (secret: Fr): Promise<Hex> => (await computeSecretHash(secret)).toString() as Hex
@@ -282,29 +283,41 @@ interface Terms {
 	limits: AcrossLimits | null
 }
 
-/** Across's quote for the draft's message or, where the deps can time them, fixed terms when it quotes none. */
-async function termsOf(c: RouteCtx, across: AcrossClient, draft: RouterCallAt): Promise<Terms | Outcome> {
-	const fees = await acrossTerms(c, across, draft, (c.deps.nowSec ?? (() => Math.floor(Date.now() / 1000)))())
-	if (fees.ok) {
-		const { outputAmount, quoteTimestamp, fillDeadline, limits, estimatedFillTimeSec } = fees.quote
-		if (!withinLimits(c.ask.srcAmount, limits)) return noRoute("The amount is outside what Across relays.")
-		const etaSeconds = Math.ceil(estimatedFillTimeSec)
-		return { rail: { quote: "across", outputAmount, quoteTimestamp, fillDeadline, etaSeconds }, limits }
-	}
-	if (!c.deps.sourceHeadSec) return noRoute(`Across quotes no relay for this deposit (${fees.reason}).`)
-	const head = await c.deps.sourceHeadSec(c.ask.srcChainId)
-	return { rail: selfBuiltTerms(c.b.l1ChainId, c.ask.srcAmount, head), limits: null }
-}
-
-async function quoteAcross(c: RouteCtx, across: AcrossClient): Promise<Outcome> {
+/** Across's quote for a draft of the deposit's message. */
+async function quotedTerms(c: RouteCtx, across: AcrossClient): Promise<Terms | Outcome> {
 	const draft = await routerCallAt(c, c.ask.srcAmount)
 	if ("answer" in draft) return draft
-	const terms = await termsOf(c, across, draft)
+	const fees = await acrossTerms(c, across, draft, (c.deps.nowSec ?? (() => Math.floor(Date.now() / 1000)))())
+	if (!fees.ok) return noRoute(`Across quotes no relay for this deposit (${fees.reason}).`)
+	const { outputAmount, quoteTimestamp, fillDeadline, limits, estimatedFillTimeSec } = fees.quote
+	if (!withinLimits(c.ask.srcAmount, limits)) return noRoute("The amount is outside what Across relays.")
+	const etaSeconds = Math.ceil(estimatedFillTimeSec)
+	return { rail: { quote: "across", outputAmount, quoteTimestamp, fillDeadline, etaSeconds }, limits }
+}
+
+async function termsOf(c: RouteCtx): Promise<Terms | Outcome> {
+	const fixed = c.deps.fixedTerms
+	if (fixed) {
+		const head = await fixed.sourceHeadSec(c.ask.srcChainId)
+		return { rail: selfBuiltTerms(c.b.l1ChainId, c.ask.srcAmount, head, fixed.filler), limits: null }
+	}
+	return c.deps.across ? quotedTerms(c, c.deps.across) : unavailable("This build has no Across API.")
+}
+
+async function quoteAcross(c: RouteCtx): Promise<Outcome> {
+	const terms = await termsOf(c)
 	if ("answer" in terms) return terms
-	const { outputAmount, quoteTimestamp, fillDeadline, etaSeconds } = terms.rail
+	const { outputAmount, quoteTimestamp, fillDeadline, etaSeconds, exclusiveRelayer } = terms.rail
 	const call = await routerCallAt(c, outputAmount)
 	if ("answer" in call) return call
-	const x = expectationOf(c, call, { kind: "acrossV4", outputAmount, quoteTimestamp, fillDeadline })
+	const rail = {
+		kind: "acrossV4" as const,
+		outputAmount,
+		quoteTimestamp,
+		fillDeadline,
+		...(exclusiveRelayer ? { exclusiveRelayer } : {}),
+	}
+	const x = expectationOf(c, call, rail)
 	const tx = acrossRouteTx(x)
 	const verdict = verifyRoute(tx, x)
 	if (!verdict.ok) return settle({ kind: "refused", field: verdict.field, reason: verdict.reason })
@@ -319,13 +332,12 @@ export async function quoteCrossChainRoute(ask: CrossChainAsk, deps: RouteDeps):
 	const b = deps.bindings
 	if (!b) return unavailable("This bridge generation has no deposit router.")
 	if (ask.rail !== "acrossV4") return unavailable("This build routes only through Across.")
-	if (!deps.across) return unavailable("This build has no Across API.")
 	const random = deps.random ?? Fr.random
 	const lifiTxId = random().toString() as Hex
 	const secrets = await crossChainSecrets(ask.intent, ask.isPrivate, ask.recipient, random)
 	const fuel = ask.intent === "token" ? undefined : deps.fuel(lifiTxId)
 	const venue = fuel?.provider ? { provider: fuel.provider, reverted: fuel.reverted } : undefined
-	return quoteAcross({ ask, deps, b, lifiTxId, secrets, venue }, deps.across)
+	return quoteAcross({ ask, deps, b, lifiTxId, secrets, venue })
 }
 
 /** This build's bindings, Across API and Ethereum reader. */
@@ -341,7 +353,7 @@ export function appRouteDeps(slice: SliceSizer): RouteDeps {
 			: undefined,
 		fuel: (lifiTxId) => (ethereum ? fuelProviderOn(ethereum, lifiTxId) : { provider: undefined, reverted: () => false }),
 		slice,
-		...(IS_MAINNET ? {} : { sourceHeadSec }),
+		...(IS_MAINNET ? {} : { fixedTerms: { filler: TESTNET_FILLER, sourceHeadSec } }),
 	}
 }
 

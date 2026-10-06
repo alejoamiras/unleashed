@@ -71,7 +71,7 @@ const limits = computed(() => {
 
 const fixedTerms = computed(
 	() =>
-		`Fixed testnet terms, not a quote: ${rail.value} quotes nothing for this send, so the relay fee is a fixed ${feeShareText(props.figures.feeBps)} and the send waits for a manual fill on ${l1}.`,
+		`Fixed testnet terms, not a quote: the relay fee is a fixed ${feeShareText(props.figures.feeBps)} and the send waits for a manual fill on ${l1}.`,
 )
 
 const gasLine = computed(() => {

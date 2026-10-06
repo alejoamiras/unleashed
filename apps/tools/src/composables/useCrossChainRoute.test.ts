@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { acrossMessageOf, lifiBook } from "@unleashed/bridge-core"
+import { acrossMessageOf, lifiBook, TESTNET_FILLER } from "@unleashed/bridge-core"
 import { describe, expect, it } from "vitest"
 import { NO_GAS_ROUTE } from "@/lib/send-model"
 import { acrossApi, ask, BASE_SEPOLIA, NOW_S, OUT, routeDeps } from "@/test/crosschain"
@@ -41,12 +41,14 @@ describe("quoteCrossChainRoute", () => {
 		expect(tokenOnly.kind === "route" && tokenOnly.route.gas).toBeUndefined()
 	})
 
-	it("builds a deposit Across will not quote on fixed terms timed from the source head, only where the deps can time them", async () => {
-		const { answer } = await quoteCrossChainRoute(ask(), routeDeps({ across: acrossApi("error"), sourceHead: NOW_S }))
+	it("off mainnet, builds every deposit on fixed terms held for the testnet filler, without asking Across", async () => {
+		const across = acrossApi()
+		const { answer } = await quoteCrossChainRoute(ask(), routeDeps({ across, fixedAt: NOW_S }))
 		if (answer.kind !== "route") throw new Error(`expected a route, got ${JSON.stringify(answer)}`)
 		const { route } = answer
+		expect(across.asked).toHaveLength(0)
 		expect([route.terms, route.limits, route.minReceived, route.fillDeadline]).toEqual(["fixed", null, 3_750_000n, NOW_S + 7_200])
-		expect(route.x.rail).toMatchObject({ outputAmount: 3_750_000n, quoteTimestamp: NOW_S })
+		expect(route.x.rail).toMatchObject({ outputAmount: 3_750_000n, quoteTimestamp: NOW_S, exclusiveRelayer: TESTNET_FILLER })
 		expect(route.gas?.fuelAmount).toBe(375_000n)
 	})
 })

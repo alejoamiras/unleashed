@@ -34,7 +34,7 @@ export interface CrossChainFigures {
 	refundAfterSeconds: number | null
 	/** Across's bounds on the amount; null on fixed terms. */
 	limits: { min: bigint; max: bigint } | null
-	/** Built on fixed testnet terms because Across quoted none: the relay fee is a fixed share and the fill is manual. */
+	/** Built on fixed testnet terms: the relay fee is a fixed share and the fill is manual. */
 	fixed: boolean
 }
 
