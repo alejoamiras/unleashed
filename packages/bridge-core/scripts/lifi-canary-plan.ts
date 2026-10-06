@@ -6,7 +6,7 @@
 import { type Address, getAddress, type Hex } from "viem"
 import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import { enabledSources } from "../src/source-chains"
-import type { AcrossLimits } from "./lifi-canary-across"
+import type { AcrossLimits } from "../src/across-api"
 
 /** A refusal before any send, or a contradiction a live row found; the run stops on it. */
 export class CanaryRefusal extends Error {

@@ -27,7 +27,7 @@ import { hashDepositWitness, PERMIT_DEADLINE_SECONDS } from "../src/l1"
 import { acrossDepositFor, type RouteExpectation, type RouterIntent, type RouteTx } from "../src/lifi-decode"
 import type { ManifestV2 } from "../src/manifest-v2"
 import { PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
-import { type AcrossClient, type AcrossLimits, acrossSuggestedFees } from "./lifi-canary-across"
+import { type AcrossClient, type AcrossLimits, acrossSuggestedFees } from "../src/across-api"
 import {
 	bridgeFromCallerCall,
 	bridgeWithPermitCall,
