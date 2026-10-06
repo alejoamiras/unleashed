@@ -97,6 +97,12 @@ export function tokenRemainder(amount: bigint, gas: Pick<GasLegPlan, "fuelAmount
 	return amount > slice ? amount - slice : 0n
 }
 
+/** Who swaps a gas slice: LI.FI names the venue its quote routed through. `tool` is provider-supplied text, so the
+ *  caller strips it for display. */
+export function venueText(venue: FuelProvider, display: (s: string) => string): string {
+	return venue.provider === "lifi" ? `LI.FI (${display(venue.tool)})` : "the testnet fuel swapper"
+}
+
 /** Why a send cannot include gas when no fuel venue is reachable on this network. */
 export const NO_GAS_ROUTE = "No route can buy Aztec gas on this network right now, so this send can't include gas."
 

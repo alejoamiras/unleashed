@@ -4,7 +4,7 @@ import { Icon } from "@unleashed/design"
 import { computed, ref } from "vue"
 import { etherscanAddressUrl } from "@/lib/explorer"
 import { trimAddress } from "@/lib/format"
-import type { ExitPlan, GasLegPlan, SendPlan } from "@/lib/send-model"
+import { type ExitPlan, type SendPlan, venueText } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { checksumAddress, safeDisplay } from "@/lib/token-display"
 
@@ -31,16 +31,11 @@ const open = ref(false)
 /** The fee asset's name on Ethereum, the side the swap runs on. */
 const FEE_ASSET_L1 = "AZTEC"
 
-/** Who swaps the slice: LI.FI names the venue its quote routed through. */
-function venueText(venue: NonNullable<GasLegPlan["venue"]>): string {
-	return venue.provider === "lifi" ? `LI.FI (${safeDisplay(venue.tool)})` : "the testnet fuel swapper"
-}
-
 const routeText = computed(() => {
 	if (props.plan.direction === "l2-to-l1") return "Direct: the hub burns your tokens, the portal releases them on Ethereum."
 	const venue = props.plan.gas?.venue
 	if (!venue) return "Direct: no swap, the whole amount is bridged."
-	return `${safeDisplay(props.plan.token.symbol)} → ${FEE_ASSET_L1} through ${venueText(venue)}, then the gas leg is bridged.`
+	return `${safeDisplay(props.plan.token.symbol)} → ${FEE_ASSET_L1} through ${venueText(venue, safeDisplay)}, then the gas leg is bridged.`
 })
 
 const slippageText = computed(() => (props.slippageBps === null ? "—" : `${(props.slippageBps / 100).toFixed(2)}%`))

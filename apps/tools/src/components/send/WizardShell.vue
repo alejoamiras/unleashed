@@ -95,6 +95,8 @@ watch(
 				<slot v-else name="review" />
 			</div>
 		</div>
+		<!-- A strip across the panel's foot, under the rail and the step alike. -->
+		<div v-if="$slots.band" class="band ul-notch"><slot name="band" /></div>
 	</section>
 </template>
 
@@ -133,6 +135,16 @@ watch(
 	outline: none;
 }
 
+.band {
+	--ul-fill: var(--ul-raised);
+	--ul-notch: var(--ul-notch-4-bottom);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 16px;
+	padding: 12px 24px;
+}
+
 @media (max-width: 760px) {
 	.head {
 		flex-direction: column;
@@ -156,6 +168,11 @@ watch(
 
 	.panel {
 		padding: 16px 12px;
+	}
+
+	/* A phone step carries the band's line in its own action bar, where the thumb is. */
+	.band {
+		display: none;
 	}
 }
 </style>

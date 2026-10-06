@@ -51,6 +51,8 @@ type Props = {
 	grant: "idle" | "pending" | "declined"
 	busy: boolean
 	error: string | null
+	gasUnavailable: boolean
+	wrongChain: { walletChainId: number; needChainId: number }
 }
 
 function review(over: Partial<Props> = {}) {
@@ -256,6 +258,18 @@ describe("ReviewStep", () => {
 		expect(shown.join("")).toMatch(/^liar x+…$/)
 		expect(shown).toHaveLength(241)
 		remote.unmount()
+	})
+
+	it("says why a send carries no gas, and puts the chain switch in place of Sign and send", async () => {
+		const w = review({ gasUnavailable: true, wrongChain: { walletChainId: 84532, needChainId: 11155111 } })
+		expect(w.find(sel(TESTIDS.sendReviewNoGas)).text()).toBe(
+			"No route can buy Aztec gas on this network right now, so this send can't include gas.",
+		)
+		expect(w.find(sel(TESTIDS.sendReviewConfirm)).exists()).toBe(false)
+		expect(w.find(sel(TESTIDS.sendWrongChain)).text()).toContain("This send starts on Ethereum · Sepolia.")
+		await w.find(sel(TESTIDS.sendWrongChainSwitch)).trigger("click")
+		expect(w.emitted("switch-chain")).toHaveLength(1)
+		w.unmount()
 	})
 
 	it("confirms and goes back", async () => {

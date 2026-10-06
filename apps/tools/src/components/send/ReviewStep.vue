@@ -3,12 +3,13 @@
 import { Button, Icon } from "@unleashed/design"
 import { computed } from "vue"
 import { formatCompact, formatDisplayAmount, trimAddress } from "@/lib/format"
-import { type ExitPlan, type SendPlan, tokenRemainder } from "@/lib/send-model"
+import { type ExitPlan, NO_GAS_ROUTE, type SendPlan, tokenRemainder } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { safeDisplay, safeSentence } from "@/lib/token-display"
 
 /** Components */
 import ReviewDetails, { type PortalState } from "./ReviewDetails.vue"
+import WrongChainNotice from "./WrongChainNotice.vue"
 
 /** What the view states about the plan, frozen with it: the clock, the fee model, the transaction
  *  count the gas was sized for. Strings and a count, so this step only repeats them. */
@@ -34,8 +35,12 @@ const props = defineProps<{
 	error: string | null
 	/** Set when a pause refused the exit before anything was authorised; the balance is untouched. */
 	paused?: "l1" | "l2" | null
+	/** No route could buy gas when the amount step was left, so this send carries none. */
+	gasUnavailable?: boolean
+	/** The wallet sits on another chain than the one this send signs on: the switch replaces Sign and send. */
+	wrongChain?: { walletChainId: number; needChainId: number } | null
 }>()
-const emit = defineEmits<{ back: []; confirm: [] }>()
+const emit = defineEmits<{ back: []; confirm: []; "switch-chain": [] }>()
 
 const isExit = computed(() => props.plan.direction === "l2-to-l1")
 
@@ -120,6 +125,9 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 			</div>
 		</dl>
 
+		<p v-if="gasUnavailable" class="note attention ul-notch" :data-testid="TESTIDS.sendReviewNoGas">
+			<Icon name="warning-diamond" :size="24" />{{ NO_GAS_ROUTE }}
+		</p>
 		<p v-if="firstTime" class="note soft ul-notch" :data-testid="TESTIDS.sendReviewFirstTime">
 			<Icon name="info-box" :size="24" color="secondary" />
 			First time for this token here — the send takes a little longer and costs a bit more than the next one will.
@@ -165,9 +173,22 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 			<Icon name="square-alert" :size="24" />{{ safeSentence(error) }}
 		</p>
 
+		<WrongChainNotice
+			v-if="wrongChain"
+			:wallet-chain-id="wrongChain.walletChainId"
+			:need-chain-id="wrongChain.needChainId"
+			@switch="emit('switch-chain')"
+		/>
 		<div class="nav">
 			<Button variant="secondary" size="large" :disabled="busy" :data-testid="TESTIDS.sendReviewBack" @click="emit('back')">Back</Button>
-			<Button size="large" :disabled="confirmDisabled" :loading="busy" :data-testid="TESTIDS.sendReviewConfirm" @click="emit('confirm')">
+			<Button
+				v-if="!wrongChain"
+				size="large"
+				:disabled="confirmDisabled"
+				:loading="busy"
+				:data-testid="TESTIDS.sendReviewConfirm"
+				@click="emit('confirm')"
+			>
 				<Icon v-if="!busy" name="key" :size="24" />
 				{{ busy ? "Sending" : "Sign and send" }}
 			</Button>
@@ -300,6 +321,17 @@ dd {
 	--ul-notch: var(--ul-notch-2);
 	padding: 12px 14px;
 	color: var(--ul-ink-2);
+}
+
+.attention {
+	--ul-fill: var(--ul-attention-bg);
+	--ul-notch: var(--ul-notch-2);
+	padding: 12px 14px;
+	color: var(--ul-ink);
+}
+
+.attention > :first-child {
+	color: var(--ul-attention);
 }
 
 .status {
