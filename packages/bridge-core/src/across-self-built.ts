@@ -23,6 +23,13 @@ export interface RailTerms {
 export const SELF_BUILT_RELAY_FEE_BPS = 2_500n
 /** Across's testnet fill window. */
 export const SELF_BUILT_FILL_WINDOW_S = 7_200
+/** The most one self-built send carries, in whole source tokens: Across's testnet `maxDeposit` for USDC (8.00). */
+export const SELF_BUILT_MAX_WHOLE_TOKENS = 8n
+
+/** `SELF_BUILT_MAX_WHOLE_TOKENS` in the base units of a token with `decimals`. */
+export function selfBuiltMaxDeposit(decimals: number): bigint {
+	return SELF_BUILT_MAX_WHOLE_TOKENS * 10n ** BigInt(decimals)
+}
 /** The pinned testnet canary key: the one account `fill-testnet.ts` signs fills with. */
 export const TESTNET_FILLER: Address = "0x7A4f7Be599Afa3AfB0A41bb1D44762Ce441f8fAc"
 

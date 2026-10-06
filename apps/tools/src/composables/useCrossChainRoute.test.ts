@@ -53,6 +53,14 @@ describe("quoteCrossChainRoute", () => {
 	})
 })
 
+describe("quoteCrossChainRoute on fixed terms", () => {
+	it("carries at most the testnet cap per send, and refuses more as no route", async () => {
+		const at = (srcAmount: bigint) => quoteCrossChainRoute(ask({ srcAmount }), routeDeps({ fixedAt: NOW_S }))
+		expect((await at(8_000_000n)).answer.kind).toBe("route")
+		expect((await at(8_000_001n)).answer).toMatchObject({ kind: "no-route" })
+	})
+})
+
 describe("useCrossChainRoute", () => {
 	it("publishes only the latest ask, and its route expires after the TTL", async () => {
 		let now = 1_000

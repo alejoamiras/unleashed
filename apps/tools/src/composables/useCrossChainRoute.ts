@@ -28,6 +28,7 @@ import {
 	type RouteExpectation,
 	type RouterIntent,
 	type RouteTx,
+	selfBuiltMaxDeposit,
 	selfBuiltTerms,
 	TESTNET_FILLER,
 	verifyRoute,
@@ -298,6 +299,8 @@ async function quotedTerms(c: RouteCtx, across: AcrossClient): Promise<Terms | O
 async function termsOf(c: RouteCtx): Promise<Terms | Outcome> {
 	const fixed = c.deps.fixedTerms
 	if (fixed) {
+		if (c.ask.srcAmount > selfBuiltMaxDeposit(c.ask.srcToken.decimals))
+			return noRoute("The amount is over what one testnet send carries.")
 		const head = await fixed.sourceHeadSec(c.ask.srcChainId)
 		return { rail: selfBuiltTerms(c.b.l1ChainId, c.ask.srcAmount, head, fixed.filler), limits: null }
 	}
