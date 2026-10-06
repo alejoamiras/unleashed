@@ -24,7 +24,15 @@ import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { getContractClassFromArtifact } from "@aztec-labs/stdlib/contract"
 import { resolvePackageAsset } from "@alejoamiras/nulo-resolve-asset"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
-import { type Address, getContractAddress, type Hex, keccak256 } from "viem"
+import {
+	type Address,
+	encodeDeployData,
+	getContractAddress,
+	type Hex,
+	keccak256,
+	TransactionNotFoundError,
+	TransactionReceiptNotFoundError,
+} from "viem"
 import { tokenBridgeHubArtifact } from "../src/artifacts"
 import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
@@ -536,6 +544,11 @@ const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000"
 export type AdoptableKind = "fuel-swapper-deployed" | "deposit-router-deployed"
 type AdoptableStep = Extract<DeployStep, { kind: AdoptableKind }>
 
+const ADOPTABLE_CONTRACT: Readonly<Record<AdoptableKind, string>> = {
+	"fuel-swapper-deployed": "TestnetFuelSwapper",
+	"deposit-router-deployed": "DepositRouter",
+}
+
 /** A contract the router-only arc deployed or adopted. */
 export interface AdoptableDeploy {
 	address: Address
@@ -549,8 +562,19 @@ export interface AdoptionKey {
 	constructorArgs: Address[]
 }
 
-export function adoptionKey(contract: string, args: readonly string[]): AdoptionKey {
-	return { creationCodeHash: keccak256(evmArtifact(contract).bytecode), constructorArgs: args.map(lc) }
+interface Adoption {
+	key: AdoptionKey
+	/** The creation transaction's input this run would send: the creation code, then the ABI-encoded arguments. */
+	deployData: Hex
+}
+
+function adoptionOf(kind: AdoptableKind, args: readonly string[]): Adoption {
+	const { abi, bytecode } = evmArtifact(ADOPTABLE_CONTRACT[kind])
+	const constructorArgs = args.map(lc)
+	return {
+		key: { creationCodeHash: keccak256(bytecode), constructorArgs },
+		deployData: encodeDeployData({ abi, bytecode, args: constructorArgs }),
+	}
 }
 
 const sameKey = (step: AdoptableStep, key: AdoptionKey): boolean =>
@@ -558,21 +582,41 @@ const sameKey = (step: AdoptableStep, key: AdoptionKey): boolean =>
 	step.constructorArgs.length === key.constructorArgs.length &&
 	step.constructorArgs.every((a, i) => a.toLowerCase() === key.constructorArgs[i])
 
+/** Why the step's own transaction does not prove it created this contract at its address, or `undefined` when it does. */
+async function creationMismatch(l1: L1Ctx, step: AdoptableStep, deployData: Hex): Promise<string | undefined> {
+	const hash = step.txHash as Hex
+	const found = await Promise.all([l1.pub.getTransaction({ hash }), l1.pub.getTransactionReceipt({ hash })]).catch((e: unknown) => {
+		if (e instanceof TransactionNotFoundError || e instanceof TransactionReceiptNotFoundError) return undefined
+		throw e
+	})
+	if (!found) return `its transaction ${hash} is not on this chain`
+	const [tx, receipt] = found
+	if (receipt.status !== "success") return `its transaction ${hash} reverted`
+	if (tx.to !== null) return `its transaction ${hash} called ${tx.to} instead of creating a contract`
+	if (lc(receipt.contractAddress ?? "") !== lc(step.address)) return `its transaction ${hash} created ${receipt.contractAddress}`
+	if (tx.input.toLowerCase() !== deployData.toLowerCase()) return `its transaction ${hash} sent other creation code or arguments`
+	return undefined
+}
+
 /**
- * The newest journalled `kind` whose creation code and constructor arguments both equal `key` and whose address
- * carries code on this chain; `undefined` means the run must deploy. Read-only, so a dry run can report it.
+ * The newest journalled `kind` that this run would deploy identically and that the chain proves: its address carries
+ * code, and its journalled transaction is a successful creation of exactly that address from exactly this creation
+ * code and these arguments. The journal alone is only a claim, and an adopted contract is configured and funded before
+ * strict verification runs. `undefined` means the run must deploy. Read-only, so a dry run can report it.
  */
 export async function findAdoptable(
 	l1: L1Ctx,
 	journal: Pick<DeployJournal, "steps">,
 	kind: AdoptableKind,
-	key: AdoptionKey,
+	args: readonly string[],
 ): Promise<Address | undefined> {
+	const { key, deployData } = adoptionOf(kind, args)
 	const matches = journal.steps.filter((s): s is AdoptableStep => s.kind === kind && sameKey(s, key)).reverse()
 	for (const step of matches) {
 		const code = await l1.pub.getCode({ address: step.address as Address })
-		if (code && code !== "0x") return lc(step.address)
-		console.log(`  ${kind} ${step.address} matches but has no code on this chain — not adopted`)
+		const mismatch = !code || code === "0x" ? "it has no code on this chain" : await creationMismatch(l1, step, deployData)
+		if (!mismatch) return lc(step.address)
+		console.log(`  ${kind} ${step.address} matches the journal but ${mismatch} — not adopted`)
 	}
 	return undefined
 }
@@ -583,19 +627,14 @@ export async function findAdoptable(
  * predecessor stays as written. The step is appended after the receipt, so a crash between landing and the
  * append leaves an orphan that the re-run replaces with a fresh deploy.
  */
-async function deployOrAdopt(
-	l1: L1Ctx,
-	journal: DeployJournal,
-	kind: AdoptableKind,
-	contract: string,
-	args: Address[],
-): Promise<AdoptableDeploy> {
-	const key = adoptionKey(contract, args)
-	const adopted = await findAdoptable(l1, journal, kind, key)
+async function deployOrAdopt(l1: L1Ctx, journal: DeployJournal, kind: AdoptableKind, args: Address[]): Promise<AdoptableDeploy> {
+	const contract = ADOPTABLE_CONTRACT[kind]
+	const adopted = await findAdoptable(l1, journal, kind, args)
 	if (adopted) {
 		console.log(`  ${contract}: ${adopted} (adopted — identical code and constructor arguments)`)
 		return { address: adopted, adopted: true }
 	}
+	const { key } = adoptionOf(kind, args)
 	const nonce = await nonceOf(l1)
 	const predicted = lc(getContractAddress({ from: l1.account.address, nonce }))
 	const { address, txHash } = await deployEvm(l1, contract, key.constructorArgs, nonce)
@@ -617,7 +656,7 @@ export function fuelSwapperArgs(a: FuelSwapperArgs): Address[] {
 
 /** `TestnetFuelSwapper`: the DepositRouter's swap target off mainnet, where its constructor refuses chain 1. */
 export function deployFuelSwapper(l1: L1Ctx, journal: DeployJournal, a: FuelSwapperArgs): Promise<AdoptableDeploy> {
-	return deployOrAdopt(l1, journal, "fuel-swapper-deployed", "TestnetFuelSwapper", fuelSwapperArgs(a))
+	return deployOrAdopt(l1, journal, "fuel-swapper-deployed", fuelSwapperArgs(a))
 }
 
 export interface DepositRouterArgs {
@@ -634,7 +673,7 @@ export function depositRouterArgs(a: DepositRouterArgs): Address[] {
 }
 
 export function deployDepositRouter(l1: L1Ctx, journal: DeployJournal, a: DepositRouterArgs): Promise<AdoptableDeploy> {
-	return deployOrAdopt(l1, journal, "deposit-router-deployed", "DepositRouter", depositRouterArgs(a))
+	return deployOrAdopt(l1, journal, "deposit-router-deployed", depositRouterArgs(a))
 }
 
 export interface RouterBindings extends DepositRouterArgs {

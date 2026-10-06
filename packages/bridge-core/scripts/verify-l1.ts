@@ -39,6 +39,7 @@ import { readErc20Metadata } from "../src/erc20"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import { readRegistration } from "../src/factory-registry"
 import { DEPOSIT_WITNESS_TYPE_STRING } from "../src/l1"
+import { FUEL_SWAP_SELECTORS } from "../src/lifi-abi"
 import { LIFI_BOOK, type LifiChainBook, type LifiCodeHashes } from "../src/lifi-addresses"
 import type { BridgeBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import { toWord } from "../src/register-hash"
@@ -390,8 +391,9 @@ export interface BookFinding {
 
 /**
  * The book's pins against one chain's answers: code at every entry, and the runtime code hashes of the immutable
- * periphery exactly. The Diamond is upgradeable by design, so a facet moved behind a pinned selector is a warning
- * for review, never a refusal: the router's floor and the decoder bound what a facet can do.
+ * periphery exactly. A moved fuel-swap facet only warns: it runs inside the router's call, whose floor bounds it.
+ * A moved bridge facet fails: it holds the user's approved input on the source chain before any check of ours
+ * runs, and the decoder reads calldata, not the code that executes it.
  */
 export function judgeBook(book: LifiChainBook, seen: ObservedBook): BookFinding[] {
 	const label = `LI.FI book (chain ${book.chainId})`
@@ -410,7 +412,8 @@ export function judgeBook(book: LifiChainBook, seen: ObservedBook): BookFinding[
 	}
 	for (const [selector, facet] of Object.entries(book.facets)) {
 		const live = seen.facets[selector] ?? "(none)"
-		push(live.toLowerCase() === facet.toLowerCase(), `facet behind ${selector}`, `${live} vs pinned ${facet}: review the facet`, "warn")
+		const onMiss = FUEL_SWAP_SELECTORS.includes(selector as Hex) ? "warn" : "fail"
+		push(live.toLowerCase() === facet.toLowerCase(), `facet behind ${selector}`, `${live} vs pinned ${facet}: review the facet`, onMiss)
 	}
 	return findings
 }

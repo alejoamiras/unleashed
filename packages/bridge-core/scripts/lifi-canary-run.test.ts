@@ -1,7 +1,8 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { decodeFunctionData, type Hex } from "viem"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import type { L1Ctx } from "../src/flows"
 import { SWAP_TOKENS_SINGLE_V3_ABI } from "../src/lifi-abi"
 import { lifiBook } from "../src/lifi-addresses"
 import {
@@ -15,9 +16,10 @@ import {
 	verifiedRoute,
 } from "./lifi-canary-build"
 import { ethereumChain, FJ_PER_UNIT, fakeAcross, NOW_S, routedManifest, sourceChain } from "./lifi-canary-fixture"
-import { canaryBindings, formatCanaryRecord } from "./lifi-canary-plan"
-import { type CanaryDeps, runCanary } from "./lifi-canary-run"
+import { type CanaryCaps, canaryBindings, formatCanaryRecord, GasBudget, planCanaryRows } from "./lifi-canary-plan"
+import { boundedSigner, type CanaryDeps, runCanary, runLiveRows } from "./lifi-canary-run"
 import { canaryEdge } from "./lifi-canary-testnet"
+import { ERC20_MIN_ABI } from "./script-l1"
 
 const CANARY = `0x${"ca".repeat(20)}` as const
 const cfg = () => canaryEdge(routedManifest(), { dryRun: true, canary: CANARY }, {}, null).cfg
@@ -148,5 +150,72 @@ describe("the canary's transactions", () => {
 		expect(recovery.minOut).toBeGreaterThan(recovery.expectedOut)
 		const signed = decodeFunctionData({ abi: SWAP_TOKENS_SINGLE_V3_ABI, data: recovery.swapData }).args[4]
 		expect(signed).toBe(recovery.minOut)
+	})
+})
+
+describe("the canary's gas ceilings", () => {
+	const GWEI = 10n ** 9n
+
+	it("send with explicit gas and fee caps, and refuse a send whose worst case passes what the chain's cap has left", async () => {
+		const fees = { maxFeePerGas: 4n * GWEI, maxPriorityFeePerGas: GWEI }
+		const wallet = {
+			account: { address: CANARY },
+			chain: undefined,
+			writeContract: vi.fn(async (_: object) => `0x${"01".repeat(32)}`),
+			sendTransaction: vi.fn(async (_: object) => `0x${"02".repeat(32)}`),
+		}
+		const l1 = {
+			account: { address: CANARY },
+			pub: { estimateGas: vi.fn(async () => 80_000n), estimateFeesPerGas: vi.fn(async () => fees) },
+			wallet,
+		} as unknown as L1Ctx
+		const budget = new GasBudget("source", 10n ** 15n)
+		const bounded = boundedSigner(l1, budget, "crosschain-public").l1.wallet
+
+		// 80,000 estimated + a quarter = 100,000 gas at 4 gwei: a worst case of 4 × 10^14 wei per send.
+		await bounded.sendTransaction({ to: CANARY, data: "0x1234", account: CANARY } as never)
+		await bounded.writeContract({ address: CANARY, abi: ERC20_MIN_ABI, functionName: "approve", args: [CANARY, 1n] } as never)
+		const terms = { gas: 100_000n, ...fees }
+		expect(wallet.sendTransaction.mock.calls[0]?.[0]).toMatchObject(terms)
+		expect(wallet.writeContract.mock.calls[0]?.[0]).toMatchObject(terms)
+		expect(budget.left).toBe(2n * 10n ** 14n)
+
+		// A fee spike prices the next send past what is left: refused before the wallet sees it.
+		fees.maxFeePerGas = 10n * GWEI
+		await expect(bounded.sendTransaction({ to: CANARY, data: "0x1234" } as never)).rejects.toThrow(
+			/crosschain-public: a send to .* may burn 1000000000000000 wei on the source chain, over the 200000000000000 wei/,
+		)
+		expect(wallet.sendTransaction).toHaveBeenCalledTimes(1)
+	})
+
+	it("reconcile the gas burned against the caps after every row, the last included", async () => {
+		const caps: CanaryCaps = {
+			sourceChainId: 84532,
+			sourcePerRow: 1n,
+			sourceTotal: 1n,
+			ethereumTotal: 1n,
+			gasWei: { source: 100n, ethereum: 100n },
+		}
+		const rows = planCanaryRows({ crossChain: 1n, ethereumPlain: 1n, ethereumFueled: 1n }).slice(0, 2)
+		const burns = [
+			{ source: 0n, ethereum: 0n },
+			{ source: 20n, ethereum: 30n },
+			{ source: 101n, ethereum: 40n },
+		]
+		const left: bigint[][] = []
+		const run = runLiveRows(
+			rows,
+			{ caps, perRow: { source: 10n, ethereum: 10n }, burned: async () => burns.shift() as (typeof burns)[number] },
+			async (row, b) => {
+				left.push([b.source.left, b.ethereum.left])
+				return { kind: row.kind, status: "built", to: CANARY, selector: "0x00000000", detail: "" }
+			},
+		)
+		await expect(run).rejects.toThrow(/after crosschain-private the run has burned 101 wei on the source chain, over its cap 100/)
+		// Each row's budgets are what the caps had left after the rows before it.
+		expect(left).toEqual([
+			[100n, 100n],
+			[80n, 70n],
+		])
 	})
 })

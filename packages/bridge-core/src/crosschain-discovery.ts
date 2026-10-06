@@ -6,9 +6,9 @@
  * LI.FI marker of the execution that delivered that transport, read from the marker's callback side of
  * the transport event inside one transaction. Anyone can drive the permissionless Executor, fill an
  * Across relay with caller-supplied data, or bridge their own funds to a public secret hash; those
- * logs are at most extra deposits for the same secret, never the outcome. Every address that
- * authenticates a log comes from the caller's pinned context; every read goes through one budget, and
- * a run that cannot answer for its window is `incomplete`, never a verdict.
+ * logs are at most extra deposits, and only when the record can claim them, never the outcome.
+ * Every address that authenticates a log comes from the caller's pinned context; every read goes
+ * through one budget, and a run that cannot answer for its window is `incomplete`, never a verdict.
  */
 import { InboxAbi } from "@aztec-foundation/l1-artifacts"
 import {
@@ -203,8 +203,7 @@ export interface DiscoveryFacts {
 	/** The source transaction, confirmed from the record or found by the `Transfer` scan. */
 	srcTxHash?: Hex
 	transport?: CrossChainTransport
-	/** Authenticated `Deposited` events for the record's secret hash at or above its floor, other than
-	 *  the intended one. */
+	/** Router `Deposited` events the record can claim, at or above its floor, other than the intended one. */
 	extraDeposits: CrossChainExtraDeposit[]
 }
 
@@ -512,7 +511,8 @@ type Execution =
 
 interface EthereumFacts {
 	finalized: { number: bigint; timestamp: bigint }
-	deposits: RouterDeposit[]
+	/** The router's deposits for the record's secret hash that the record can claim. */
+	claimable: RouterDeposit[]
 	execution?: Execution
 	expired?: boolean
 }
@@ -619,31 +619,49 @@ function assertLeaf(logs: readonly RawLog[], inbox: InboxContext, leaf: string, 
 	}
 }
 
+/** The leaf `d`'s token leg inserts when it mints for `x`: publicly to its recipient, or privately. */
+async function tokenLeaf(d: DepositedArgs, x: DepositExpectation, eth: DepositLogContext): Promise<string> {
+	const content = x.isPrivate ? await mintToPrivateContentHash(d.tokenAmount) : await mintToPublicContentHash(x.recipient, d.tokenAmount)
+	return inboxLeaf({
+		sender: eth.tokenPortal as Address,
+		l1ChainId: x.l1ChainId,
+		recipient: eth.inbox.l2Hub,
+		version: eth.inbox.rollupVersion,
+		content,
+		secretHash: d.tokenSecretHash,
+		index: d.tokenIndex,
+	})
+}
+
+/** Who `x`'s Fee Juice is claimed for: the PrivateFPC for private fuel, the recipient otherwise. */
+const fuelRecipient = (x: DepositExpectation): Hex => (x.isPrivate ? (x.fuel?.fpc ?? PRIVATE_FPC_ADDRESS) : x.recipient)
+
+/** The leaf `d`'s fuel leg inserts when it pays `x`'s Fee Juice recipient. */
+async function fuelLeaf(d: DepositedArgs, x: DepositExpectation, eth: DepositLogContext): Promise<string> {
+	const { inbox } = eth
+	return inboxLeaf({
+		sender: inbox.feeJuice.l1Sender,
+		l1ChainId: x.l1ChainId,
+		recipient: inbox.feeJuice.l2,
+		version: inbox.rollupVersion,
+		content: await sha256ToField(bytesFromHex(CLAIM_SELECTOR.slice(2) + word(fuelRecipient(x)) + word(toHex(d.fuelOut)))),
+		secretHash: d.fuelSecretHash,
+		index: d.fuelIndex,
+	})
+}
+
 async function tokenLeg(
 	logs: readonly RawLog[],
 	d: DepositedArgs,
 	x: DepositExpectation,
 	eth: DepositLogContext,
 ): Promise<DepositedFacts["token"]> {
-	const portal = eth.tokenPortal as Address
 	const event = x.isPrivate ? PORTAL_PRIVATE : PORTAL_PUBLIC
-	const own = logs.map((l) => eventFrom(portal, event, l)).find((a) => hexEq(a?.key, d.tokenKey))
-	const to = x.isPrivate ? undefined : x.recipient
-	if (!own || own.amount !== d.tokenAmount || own.index !== d.tokenIndex || (to !== undefined && !hexEq(own.to, to))) {
+	const own = logs.map((l) => eventFrom(eth.tokenPortal as Address, event, l)).find((a) => hexEq(a?.key, d.tokenKey))
+	if (!own || own.amount !== d.tokenAmount || own.index !== d.tokenIndex || (!x.isPrivate && !hexEq(own.to, x.recipient))) {
 		throw new ScanIncomplete("the token portal did not log this deposit")
 	}
-	const content = to === undefined ? await mintToPrivateContentHash(d.tokenAmount) : await mintToPublicContentHash(to, d.tokenAmount)
-	const inbox = eth.inbox
-	const leaf = await inboxLeaf({
-		sender: portal,
-		l1ChainId: x.l1ChainId,
-		recipient: inbox.l2Hub,
-		version: inbox.rollupVersion,
-		content,
-		secretHash: d.tokenSecretHash,
-		index: d.tokenIndex,
-	})
-	assertLeaf(logs, inbox, leaf, d.tokenKey, "token")
+	assertLeaf(logs, eth.inbox, await tokenLeaf(d, x, eth), d.tokenKey, "token")
 	return { amount: d.tokenAmount.toString(), leafIndex: d.tokenIndex.toString(), messageHash: d.tokenKey }
 }
 
@@ -663,21 +681,10 @@ async function fuelLeg(
 	eth: DepositLogContext,
 ): Promise<DepositedFacts["fuel"]> {
 	const own = logs.map((l) => feeJuiceDeposit(l, eth.feeJuicePortal)).find((e) => hexEq(e?.key, d.fuelKey))
-	const to = x.isPrivate ? (x.fuel?.fpc ?? PRIVATE_FPC_ADDRESS) : x.recipient
-	if (!own || own.amount !== d.fuelOut || own.leafIndex !== d.fuelIndex || !hexEq(own.to, to)) {
+	if (!own || own.amount !== d.fuelOut || own.leafIndex !== d.fuelIndex || !hexEq(own.to, fuelRecipient(x))) {
 		throw new ScanIncomplete("the FeeJuicePortal did not log this deposit")
 	}
-	const inbox = eth.inbox
-	const leaf = await inboxLeaf({
-		sender: inbox.feeJuice.l1Sender,
-		l1ChainId: x.l1ChainId,
-		recipient: inbox.feeJuice.l2,
-		version: inbox.rollupVersion,
-		content: await sha256ToField(bytesFromHex(CLAIM_SELECTOR.slice(2) + word(to) + word(toHex(d.fuelOut)))),
-		secretHash: d.fuelSecretHash,
-		index: d.fuelIndex,
-	})
-	assertLeaf(logs, inbox, leaf, d.fuelKey, "fuel")
+	assertLeaf(logs, eth.inbox, await fuelLeaf(d, x, eth), d.fuelKey, "fuel")
 	return { consumed: d.fuelIn.toString(), received: d.fuelOut.toString(), leafIndex: d.fuelIndex.toString(), messageHash: d.fuelKey }
 }
 
@@ -822,6 +829,22 @@ async function expiredOnSource(c: Ctx, client: DiscoveryChainReads, t: SourceTra
 	return finalized.timestamp > BigInt(t.relay.fillDeadline)
 }
 
+/** Anyone can deposit to a public secret hash for another recipient or privacy mode, which this record
+ *  can never claim. The pinned router's args are authentic, so a deposit is the record's when the key it
+ *  logged is the leaf recomputed from the record's privacy, recipient and portal with the event's own
+ *  amount, secret hash and index. */
+async function claimableBy(d: DepositedArgs, x: DepositExpectation, eth: DepositLogContext): Promise<boolean> {
+	if (d.isPrivate !== x.isPrivate) return false
+	if (!x.token) return hexEq(await fuelLeaf(d, x, eth), d.fuelKey)
+	return hexEq(d.token, x.token.erc20) && hexEq(await tokenLeaf(d, x, eth), d.tokenKey)
+}
+
+async function claimableDeposits(c: Ctx, deposits: RouterDeposit[]): Promise<RouterDeposit[]> {
+	const x = expectationOf(c.rec)
+	const keep = await Promise.all(deposits.map(({ args }) => claimableBy(args, x, c.ctx.ethereum)))
+	return deposits.filter((_, i) => keep[i])
+}
+
 async function readEthereum(c: Ctx, client: DiscoveryChainReads, source: SourceFacts): Promise<EthereumFacts> {
 	const scan = await openChainScan(client, c.rec.chainId, c.read, epochOf(client))
 	const head = await c.read(() => client.getBlock({ blockTag: "finalized" }))
@@ -832,7 +855,7 @@ async function readEthereum(c: Ctx, client: DiscoveryChainReads, source: SourceF
 	const execution = transport ? await findExecution(c, client, range, transport, deposits) : undefined
 	const expired = transport && !execution ? await expiredOnSource(c, client, transport, finalized) : false
 	await scan.close()
-	return { finalized, deposits, execution, expired }
+	return { finalized, claimable: await claimableDeposits(c, deposits), execution, expired }
 }
 
 // ── verdict ──────────────────────────────────────────────────────────────────
@@ -844,12 +867,12 @@ function extraFloor(rec: CrossChainDepositRecord): bigint {
 	return BigInt(rec.route.minReceived) - BigInt(rec.fuel?.amount ?? "0")
 }
 
-function extrasOf(rec: CrossChainDepositRecord, deposits: RouterDeposit[], intended?: { txHash: Hex; leafIndex: string }) {
+function extrasOf(rec: CrossChainDepositRecord, claimable: RouterDeposit[], intended?: { txHash: Hex; leafIndex: string }) {
 	const floor = extraFloor(rec)
 	const out: CrossChainExtraDeposit[] = []
-	for (const { txHash, args: d } of deposits) {
+	for (const { txHash, args: d } of claimable) {
 		const [amount, leafIndex] = rec.intent === "gas" ? [d.fuelOut, d.fuelIndex] : [d.tokenAmount, d.tokenIndex]
-		if (amount < floor || (rec.intent !== "gas" && !hexEq(d.token, rec.token.erc20))) continue
+		if (amount < floor) continue
 		if (intended && hexEq(txHash, intended.txHash) && leafIndex.toString() === intended.leafIndex) continue
 		out.push({ txHash, leafIndex: leafIndex.toString(), amount: amount.toString() })
 	}
@@ -867,7 +890,7 @@ function decide(rec: CrossChainDepositRecord, source: SourceFacts, eth: Ethereum
 	const facts: DiscoveryFacts = {
 		...(source.kind === "unknown" ? {} : { srcTxHash: source.srcTxHash }),
 		...(source.kind === "sent" ? { transport: persistedTransport(source.transport) } : {}),
-		extraDeposits: extrasOf(rec, eth.deposits, intended && x ? { txHash: x.txHash, leafIndex: intended.leafIndex } : undefined),
+		extraDeposits: extrasOf(rec, eth.claimable, intended && x ? { txHash: x.txHash, leafIndex: intended.leafIndex } : undefined),
 	}
 	const onEthereum = (blockNumber: bigint): ChainBlock => ({ chainId: rec.chainId, blockNumber })
 	const finalized = onEthereum(eth.finalized.number)
@@ -980,11 +1003,19 @@ function depositPatch(rec: CrossChainDepositRecord, deposit: DepositedFacts): Pa
 	}
 }
 
+/** Clears what `depositPatch` derived from a deposit the canonical chain no longer carries, so no claim
+ *  targets a vanished leaf. `amount` is required and claims nothing without a leaf, so it stays. */
+function withoutDeposit(rec: CrossChainDepositRecord): Partial<CrossChainDepositRecord> {
+	const fuel = rec.fuel && { ...rec.fuel, received: undefined, leafIndex: undefined, messageHash: undefined }
+	return { leafIndex: undefined, messageHash: undefined, depositTxHash: undefined, ...(fuel ? { fuel } : {}) }
+}
+
 /**
  * The journal patch a discovery implies, or `undefined` for `incomplete` (a partial run proves nothing).
  * Facts merge (extras are only ever added, so a lying read cannot make a record retirable). A final
- * record (`completedAt`) keeps its outcome; otherwise every run replaces the stored provisional outcome:
- * a deposit or `pending` clears it, an outcome goes through `outcomePatch`.
+ * record (`completedAt`) keeps its outcome and deposit; otherwise every run replaces both provisional
+ * facts: a deposit clears the outcome, `pending` clears both, an outcome goes through `outcomePatch`
+ * and clears the deposit.
  */
 export function discoveryPatch(
 	rec: CrossChainDepositRecord,
@@ -994,7 +1025,7 @@ export function discoveryPatch(
 	if (d.verdict === "incomplete") return undefined
 	const route = withFacts(rec.route, d)
 	if (rec.completedAt !== undefined) return { route }
-	if (d.verdict === "pending") return { route: withoutOutcome(route) }
 	if (d.verdict === "deposited") return { route: withoutOutcome(route), ...depositPatch(rec, d.deposit) }
-	return outcomePatch({ ...rec, route }, d.observation, now)
+	if (d.verdict === "pending") return { route: withoutOutcome(route), ...withoutDeposit(rec) }
+	return { ...withoutDeposit(rec), ...outcomePatch({ ...rec, route }, d.observation, now) }
 }

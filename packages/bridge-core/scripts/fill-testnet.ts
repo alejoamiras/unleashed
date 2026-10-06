@@ -3,15 +3,17 @@
  * Fills one named Base Sepolia source deposit on Sepolia, as an Across relayer would, for a testnet route Across's own
  * relayers leave unfilled. The relay is read from the pinned Base Sepolia SpokePool's `FundsDeposited` in that
  * transaction and filled on the pinned Sepolia SpokePool from the canary key; anything it cannot fill exactly as
- * logged is refused before a transaction exists.
+ * logged is refused before a transaction exists. The key must be the pinned testnet canary
+ * (`PLAN_PINNED_CANARY_SIGNERS`), checked before any client exists.
  *
  *   CANARY_PRIVATE_KEY=… bun scripts/fill-testnet.ts <base-sepolia-tx-hash>
  *
  * `BASE_SEPOLIA_RPC_URL` and `SEPOLIA_RPC_URL` override the PublicNode endpoints. Non-interactive; never prints the key.
  */
-import { type Address, erc20Abi, type Hex, isAddressEqual, type PublicClient } from "viem"
+import { type Address, erc20Abi, getAddress, type Hex, isAddressEqual, type PublicClient } from "viem"
 import { type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts"
 import { lifiBook } from "../src/lifi-addresses"
+import { PLAN_PINNED_CANARY_SIGNERS } from "./live-intent"
 import {
 	type Destination,
 	depositsIn,
@@ -25,7 +27,7 @@ import {
 	wordAddress,
 } from "./sandbox/relayer"
 import { createL1Clients, createL1PublicClient } from "./script-bootstrap"
-import { manifestL1Chain } from "./script-l1"
+import { type GasTermsFor, manifestL1Chain, withGasTerms } from "./script-l1"
 
 /** The one route this filler serves. */
 export const FILL_ROUTE = { source: 84532, destination: 11155111 } as const
@@ -45,6 +47,9 @@ export interface FillDeps {
 	destinationSpokePool: Address
 	/** Seconds the fill deadline must stay ahead of the destination's head; 120 by default. */
 	deadlineMarginS?: number
+	/** Explicit gas terms for the approve and the fill, refused before sending when they do not fit; without them the
+	 *  wallet prices both itself. */
+	gasTerms?: GasTermsFor
 }
 
 export interface FillResult {
@@ -163,8 +168,11 @@ export async function fillSourceDeposit(deps: FillDeps, srcTxHash: Hex): Promise
 	const filled: FillResult = { fillTxHash: null, relayHash, alreadyFilled: true }
 	if (await isFilled(deps, relayHash)) return filled
 	await assertFillable(deps, d)
+	const destination = deps.gasTerms
+		? { ...deps.destination, wallet: withGasTerms(deps.destination.wallet, deps.gasTerms) }
+		: deps.destination
 	try {
-		const r = await sendFill(deps.destination, deps.destinationSpokePool, d.relay, { repaymentChainId: d.relay.originChainId })
+		const r = await sendFill(destination, deps.destinationSpokePool, d.relay, { repaymentChainId: d.relay.originChainId })
 		if (r.status !== "success") throw new FillRefused("fill-reverted", `the fill ${r.hash} reverted`)
 		return { fillTxHash: r.hash, relayHash, alreadyFilled: false }
 	} catch (e) {
@@ -184,13 +192,22 @@ export interface FillConfig {
 	destinationRpcUrl: string
 }
 
-/** Reads `<srcTxHash>` from `argv` and the key from `CANARY_PRIVATE_KEY` alone; an error never carries the key. */
-export function fillConfigFromEnv(env: Readonly<Record<string, string | undefined>>, argv: readonly string[]): FillConfig {
+/**
+ * Reads `<srcTxHash>` from `argv` and the key from `CANARY_PRIVATE_KEY` alone; an error never carries the key.
+ *
+ * @throws when the hash is malformed, no canary is `pinned`, or the key is missing, malformed or not the pinned canary's.
+ */
+export function fillConfigFromEnv(
+	env: Readonly<Record<string, string | undefined>>,
+	argv: readonly string[],
+	pinned: string | null = PLAN_PINNED_CANARY_SIGNERS.testnet,
+): FillConfig {
 	const args = argv.slice(2)
 	const srcTxHash = args[0]
 	if (args.length !== 1 || !srcTxHash || !isTxHash(srcTxHash)) {
 		throw new FillRefused("not-a-hash", "usage: bun scripts/fill-testnet.ts <base-sepolia-tx-hash> — exactly one 32-byte 0x hash")
 	}
+	if (!pinned) throw new Error("no testnet canary is pinned in PLAN_PINNED_CANARY_SIGNERS: this filler signs as the pinned canary only")
 	const key = env.CANARY_PRIVATE_KEY
 	if (!key) throw new Error("CANARY_PRIVATE_KEY is not set: this filler signs with the canary key and no other")
 	let account: PrivateKeyAccount
@@ -200,6 +217,8 @@ export function fillConfigFromEnv(env: Readonly<Record<string, string | undefine
 	} catch {
 		throw new Error("CANARY_PRIVATE_KEY is not a valid 0x-prefixed 32-byte secp256k1 key")
 	}
+	if (account.address !== getAddress(pinned))
+		throw new Error(`CANARY_PRIVATE_KEY signs as ${account.address}, not the pinned canary ${pinned}`)
 	return {
 		srcTxHash,
 		account,
@@ -215,8 +234,13 @@ async function assertRoute(source: PublicClient, destination: PublicClient): Pro
 	if (d !== FILL_ROUTE.destination) throw new Error(`SEPOLIA_RPC_URL answers chain ${d}, not ${FILL_ROUTE.destination}`)
 }
 
-async function main(): Promise<void> {
-	const cfg = fillConfigFromEnv(process.env, process.argv)
+/** The CLI: every refusal of {@link fillConfigFromEnv} fires before a client exists. */
+export async function fillCli(
+	env: Readonly<Record<string, string | undefined>>,
+	argv: readonly string[],
+	pinned: string | null = PLAN_PINNED_CANARY_SIGNERS.testnet,
+): Promise<void> {
+	const cfg = fillConfigFromEnv(env, argv, pinned)
 	const sourceChain = manifestL1Chain({ network: "base-sepolia", l1ChainId: FILL_ROUTE.source }, cfg.sourceRpcUrl)
 	const destinationChain = manifestL1Chain({ network: "sepolia", l1ChainId: FILL_ROUTE.destination }, cfg.destinationRpcUrl)
 	const source = createL1PublicClient({ chain: sourceChain, rpcUrl: cfg.sourceRpcUrl })
@@ -238,7 +262,7 @@ async function main(): Promise<void> {
 }
 
 if (import.meta.main) {
-	main().catch((e) => {
+	fillCli(process.env, process.argv).catch((e) => {
 		console.error(e instanceof FillRefused ? `refused (${e.reason}): ${e.message}` : errorText(e))
 		process.exit(1)
 	})

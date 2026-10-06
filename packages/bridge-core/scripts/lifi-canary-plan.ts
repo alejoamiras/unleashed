@@ -56,7 +56,7 @@ export interface CanaryAmounts {
 
 /**
  * The matrix at its amounts. A cross-chain row is capped at `limits.maxDeposit` when Across quoted one
- * (the testnet cap, A10); without a quote the canary self-fills and only the caps bound it.
+ * (its testnet deposit cap); without a quote the canary self-fills and only the caps bound it.
  *
  * @throws CanaryRefusal when an amount is not positive, or the capped amount falls under `limits.minDeposit`.
  */
@@ -125,16 +125,65 @@ export function assertWithinCaps(rows: readonly CanaryRow[], caps: CanaryCaps, s
 	return spend
 }
 
+export type GasChain = "source" | "ethereum"
+
+/** Native gas burned per chain, in wei: the canary's balance at the run's start minus now. */
+export type GasBurn = Record<GasChain, bigint>
+
+const CHAIN_LABEL: Readonly<Record<GasChain, string>> = { source: "the source chain", ethereum: "Ethereum" }
+
 /**
  * The live check before each row, on what the run actually burned so far (native balance at start minus now).
  *
  * @throws CanaryRefusal when one more row's gas could pass a chain's cap.
  */
-export function assertGasHeadroom(row: CanaryRow, burned: { source: bigint; ethereum: bigint }, perRow: GasPerRow, caps: CanaryCaps): void {
-	const over = (chain: "source" | "ethereum") => burned[chain] + perRow[chain] > caps.gasWei[chain]
+export function assertGasHeadroom(row: CanaryRow, burned: GasBurn, perRow: GasPerRow, caps: CanaryCaps): void {
+	const over = (chain: GasChain) => burned[chain] + perRow[chain] > caps.gasWei[chain]
 	if (row.origin === "crosschain" && over("source"))
 		refuse(`${row.kind}: ${burned.source} wei burned on the source chain leaves no room under ${caps.gasWei.source}`)
 	if (over("ethereum")) refuse(`${row.kind}: ${burned.ethereum} wei burned on Ethereum leaves no room under ${caps.gasWei.ethereum}`)
+}
+
+/**
+ * What one chain's sends may still burn within a row, in wei: its cap less what the run burned before the row. Each
+ * send is charged its worst case before it exists, so a fee spike or a high estimate refuses the send instead of
+ * passing the cap mid-row.
+ */
+export class GasBudget {
+	#left: bigint
+
+	constructor(
+		readonly chain: GasChain,
+		left: bigint,
+	) {
+		this.#left = left
+	}
+
+	get left(): bigint {
+		return this.#left
+	}
+
+	/** @throws CanaryRefusal when `worstWei` exceeds what is left; charges it otherwise. */
+	charge(worstWei: bigint, what: string): void {
+		if (worstWei > this.#left)
+			refuse(`${what} may burn ${worstWei} wei on ${CHAIN_LABEL[this.chain]}, over the ${this.#left} wei its cap has left`)
+		this.#left -= worstWei
+	}
+}
+
+export type RowBudgets = Record<GasChain, GasBudget>
+
+export const rowBudgets = (burned: GasBurn, caps: CanaryCaps): RowBudgets => ({
+	source: new GasBudget("source", caps.gasWei.source - burned.source),
+	ethereum: new GasBudget("ethereum", caps.gasWei.ethereum - burned.ethereum),
+})
+
+/** The check after each row, the last included. @throws CanaryRefusal when what the run burned passed either chain's cap. */
+export function assertGasReconciled(row: CanaryRow, burned: GasBurn, caps: CanaryCaps): void {
+	for (const chain of ["source", "ethereum"] as const) {
+		if (burned[chain] > caps.gasWei[chain])
+			refuse(`after ${row.kind} the run has burned ${burned[chain]} wei on ${CHAIN_LABEL[chain]}, over its cap ${caps.gasWei[chain]}`)
+	}
 }
 
 /** Everything the rows read from the manifest, resolved once. */
@@ -295,6 +344,8 @@ export interface CanaryRecord {
 	caps: CanaryCaps
 	funding: string[]
 	rows: RowRecord[]
+	/** A live run's gas, measured after its last row. */
+	burned?: GasBurn
 }
 
 const deposited = (d: DepositedRecord): string => {
@@ -339,7 +390,7 @@ function rowLines(r: RowRecord): [string, string][] {
 	]
 }
 
-/** The block a run prints for `lessons/phase-6.md`: chain facts only, no timestamps, commit ids or secrets. */
+/** The block a run prints for the deployment record: chain facts only, no timestamps, commit ids or secrets. */
 export function formatCanaryRecord(rec: CanaryRecord): string {
 	const out = [
 		`#### LI.FI canary (${rec.mode})`,
@@ -348,6 +399,7 @@ export function formatCanaryRecord(rec: CanaryRecord): string {
 		`- spend: source ${rec.spend.source} of cap ${rec.caps.sourceTotal} (chain ${rec.caps.sourceChainId}); Ethereum at most ${rec.spend.ethereum} of cap ${rec.caps.ethereumTotal}`,
 		`- gas budget: source ${rec.spend.gas.source} of cap ${rec.caps.gasWei.source} wei; Ethereum ${rec.spend.gas.ethereum} of cap ${rec.caps.gasWei.ethereum} wei`,
 		...(rec.funding.length > 0 ? [`- funding short: ${rec.funding.join("; ")}`] : []),
+		...(rec.burned ? [`- gas burned: source ${rec.burned.source} wei; Ethereum ${rec.burned.ethereum} wei`] : []),
 	]
 	for (const r of rec.rows) {
 		out.push(`- **${r.kind}**`)

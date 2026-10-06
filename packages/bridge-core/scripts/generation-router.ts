@@ -15,7 +15,6 @@ import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import type { L1Ctx } from "../src/flows"
 import { type BridgeBlock, evmAddressV2, type ManifestV2, routingSchema } from "../src/manifest-v2"
 import {
-	adoptionKey,
 	type AdoptableDeploy,
 	assertBindings,
 	type DepositRouterArgs,
@@ -33,7 +32,7 @@ import { ERC20_MIN_ABI, FEE_ASSET_HANDLER_ABI, FUEL_SWAPPER_ABI, sendL1, swapper
 type FuelBudgets = NonNullable<BridgeBlock["l1"]["fuel"]>
 export type Routing = z.infer<typeof routingSchema>
 
-/** The cross-chain floor's slippage until calibration measures its own (A7). */
+/** The cross-chain floor's slippage until calibration measures its own. */
 export const DEFAULT_CROSS_CHAIN_SLIPPAGE_BPS = 300
 /** More faucet calls than this for one top-up means the floor is out of proportion with the faucet. */
 const MAX_INVENTORY_MINTS = 10n
@@ -292,7 +291,7 @@ export async function planRouterOnly(o: RouterOnlyOptions): Promise<string[]> {
 	const journal = { steps: readDeployJournal(o.journalPath) }
 	await assertGeneration(o.l1, b, journal)
 	const swapperArgs = fuelSwapperArgs(swapperArgsOf(o, b))
-	const swapper = await findAdoptable(o.l1, journal, "fuel-swapper-deployed", adoptionKey("TestnetFuelSwapper", swapperArgs))
+	const swapper = await findAdoptable(o.l1, journal, "fuel-swapper-deployed", swapperArgs)
 	const lines = [
 		`signer ${o.l1.account.address} · chain ${o.network.l1ChainId}/${o.network.rollupVersion} · journal ${journal.steps.length} step(s)`,
 		swapper ? `swapper: adopt ${swapper}` : `swapper: deploy TestnetFuelSwapper(${swapperArgs.join(", ")})`,
@@ -301,7 +300,7 @@ export async function planRouterOnly(o: RouterOnlyOptions): Promise<string[]> {
 		lines.push(`router: deploy DepositRouter bound to the new swapper; ${Object.keys(o.rates).length} rate(s) to set`)
 	} else {
 		const routerArgs = depositRouterArgs(routerArgsOf(o, b, swapper))
-		const router = await findAdoptable(o.l1, journal, "deposit-router-deployed", adoptionKey("DepositRouter", routerArgs))
+		const router = await findAdoptable(o.l1, journal, "deposit-router-deployed", routerArgs)
 		lines.push(router ? `router: adopt ${router}` : `router: deploy DepositRouter(${routerArgs.join(", ")})`)
 		let unset = 0
 		for (const [token, rate] of Object.entries(o.rates)) if ((await rateOf(o.l1, swapper, token)) !== rate) unset++

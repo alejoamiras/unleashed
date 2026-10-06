@@ -181,7 +181,7 @@ async function liveMode(edge: CanaryEdge, signer: LocalAccount): Promise<CanaryL
 		ethereum,
 		discovery: { source: source.pub as unknown as DiscoveryChainReads, ethereum: ethereum.pub as unknown as DiscoveryChainReads },
 		l2,
-		selfFill: (srcTxHash) => fillSourceDeposit(fillDeps, srcTxHash),
+		selfFill: (srcTxHash, gasTerms) => fillSourceDeposit({ ...fillDeps, gasTerms }, srcTxHash),
 	}
 }
 

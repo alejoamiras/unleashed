@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { Fr } from "@aztec-labs/foundation/curves/bn254"
+import { EthAddress } from "@aztec-labs/foundation/eth-address"
+import { AztecAddress } from "@aztec-labs/stdlib/aztec-address"
+import { L1Actor, L1ToL2Message, L2Actor } from "@aztec-labs/stdlib/messaging"
 import {
 	type AbiEvent,
 	type Address,
@@ -14,9 +18,11 @@ import {
 	pad,
 	parseAbiItem,
 	toEventSelector,
+	toFunctionSelector,
 	toHex,
 } from "viem"
 import { describe, expect, it } from "vitest"
+import { bytesFromHex, mintToPrivateContentHash, mintToPublicContentHash, sha256ToField, word } from "./content-hash"
 import {
 	acrossRelayHash,
 	type CrossChainDiscovery,
@@ -29,7 +35,7 @@ import {
 } from "./crosschain-discovery"
 import { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
 import { TOKEN_PORTAL_ABI } from "./factory-abi"
-import { type CrossChainDepositRecord, outcomeFinality } from "./journal"
+import { type CrossChainDepositRecord, deriveCrossChainDepositStage, outcomeFinality } from "./journal"
 import { LIFI_RECEIVER_MESSAGE_PARAMS } from "./lifi-abi"
 import { CROSSCHAIN_TOKEN, crossChainRecord } from "./test/crosschain-record"
 
@@ -328,23 +334,73 @@ function log(address: Address, event: AbiEvent, args: Record<string, unknown>): 
 	}
 }
 
-/** A router `Deposited` for the record's token secret hash, as anyone bridging their own funds emits it. */
-const gift = (tokenAmount: bigint, tokenIndex: bigint, emitter: Address = RAIL.router.router, payer: Address = ATTACKER) =>
-	log(emitter, DEPOSITED, {
-		tokenSecretHash: PUBLIC.intent.tokenSecretHash,
-		fuelSecretHash: pad("0x00"),
-		token: RAIL.destination.usdc,
+/** The Inbox leaf of a message from `sender` to the L2 actor `l2`, hashed by stdlib's own `L1ToL2Message`. */
+const leafOf = (sender: Address, l2: Hex, content: string, secretHash: Hex, index: bigint): Hex =>
+	new L1ToL2Message(
+		new L1Actor(EthAddress.fromString(sender), ETH),
+		new L2Actor(AztecAddress.fromStringUnsafe(l2), Number(ACROSS_CTX.ethereum.inbox.rollupVersion)),
+		Fr.fromHexString(content),
+		Fr.fromHexString(secretHash),
+		new Fr(index),
+	)
+		.hash()
+		.toString() as Hex
+
+const NO_DEPOSIT = {
+	tokenSecretHash: pad("0x00"),
+	fuelSecretHash: pad("0x00"),
+	token: RAIL.destination.usdc,
+	payer: ATTACKER,
+	received: 0n,
+	tokenAmount: 0n,
+	tokenKey: pad("0x00"),
+	tokenIndex: 0n,
+	fuelIn: 0n,
+	fuelOut: 0n,
+	fuelKey: pad("0x00"),
+	fuelIndex: 0n,
+	isPrivate: false,
+}
+
+/** A router `Deposited` for the record's token secret hash, as anyone bridging their own funds emits it.
+ *  Its key is the portal's leaf for a public mint to `to` (the record's recipient by default), or a private one. */
+async function gift(
+	tokenAmount: bigint,
+	tokenIndex: bigint,
+	o: { emitter?: Address; payer?: Address; to?: Hex; isPrivate?: boolean } = {},
+): Promise<RawLog> {
+	const { emitter = RAIL.router.router, payer = ATTACKER, to = PUBLIC.intent.aztecRecipient, isPrivate = false } = o
+	const secretHash = PUBLIC.intent.tokenSecretHash
+	const content = isPrivate ? await mintToPrivateContentHash(tokenAmount) : await mintToPublicContentHash(to, tokenAmount)
+	const tokenKey = leafOf(RAIL.destination.portal, HUB, content, secretHash, tokenIndex)
+	return log(emitter, DEPOSITED, {
+		...NO_DEPOSIT,
+		tokenSecretHash: secretHash,
 		payer,
 		received: tokenAmount,
 		tokenAmount,
-		tokenKey: label(`key${tokenIndex}`),
+		tokenKey,
 		tokenIndex,
-		fuelIn: 0n,
-		fuelOut: 0n,
-		fuelKey: pad("0x00"),
-		fuelIndex: 0n,
-		isPrivate: false,
+		isPrivate,
 	})
+}
+
+/** A gas-only `Deposited` for the record's fuel secret hash, whose Fee Juice is claimed for `to`. */
+async function fuelGift(fuelOut: bigint, fuelIndex: bigint, to: Hex = PUBLIC.intent.aztecRecipient): Promise<RawLog> {
+	const secretHash = PUBLIC.intent.fuelSecretHash
+	const claim = toFunctionSelector("claim(bytes32,uint256)").slice(2)
+	const content = await sha256ToField(bytesFromHex(claim + word(to) + word(toHex(fuelOut))))
+	const fuelKey = leafOf(FEE_JUICE, pad(FEE_JUICE), content, secretHash, fuelIndex)
+	return log(RAIL.router.router, DEPOSITED, {
+		...NO_DEPOSIT,
+		fuelSecretHash: secretHash,
+		received: fuelOut,
+		fuelIn: fuelOut,
+		fuelOut,
+		fuelKey,
+		fuelIndex,
+	})
+}
 
 const marker = (event: AbiEvent, emitter: Address, id: Hex) =>
 	log(emitter, event, { transactionId: id, receivingAssetId: RAIL.destination.usdc, receiver: ATTACKER, amount: 1n, timestamp: 0n })
@@ -380,6 +436,11 @@ function depositedFacts(r: Receipts, depositTxHash: Hex) {
 	}
 }
 const FACTS = depositedFacts(ROUTED, FILL_TX)
+/** The routed relay filled into a recovery: the same transfer delivered to the wallet instead. */
+const ROUTED_RECOVERY = [
+	ROUTED.destination.logs[0],
+	...withId(ROUTED_RECOVERED.destination.logs.slice(1), FLOOR_UNMET.transactionId, PUBLIC.transactionId),
+]
 
 describe("discoverCrossChain", () => {
 	it("hashes a relay exactly as the deployed Sepolia SpokePool's getV3RelayHash does", () => {
@@ -472,7 +533,7 @@ describe("discoverCrossChain", () => {
 	})
 
 	it("a decoy before the real fill is an extra deposit, never the intended one", async () => {
-		const decoy: Tx = { hash: label("decoy"), block: ETH_BLOCK - 5n, logs: [gift(5_000_000n, 900n)] }
+		const decoy: Tx = { hash: label("decoy"), block: ETH_BLOCK - 5n, logs: [await gift(5_000_000n, 900n)] }
 		const d = await discover(record(), reads([sourceTx(ROUTED)], [decoy, fillTx(ROUTED.destination.logs)]))
 		expect(d).toMatchObject({
 			verdict: "deposited",
@@ -482,13 +543,34 @@ describe("discoverCrossChain", () => {
 	})
 
 	it("ignores dust below the floor and keeps a deposit exactly at it", async () => {
-		const dust: Tx = { hash: label("dust"), block: ETH_BLOCK - 5n, logs: [gift(FLOOR - 1n, 900n)] }
-		const atFloor: Tx = { hash: label("at-floor"), block: ETH_BLOCK - 4n, logs: [gift(FLOOR, 901n)] }
+		const dust: Tx = { hash: label("dust"), block: ETH_BLOCK - 5n, logs: [await gift(FLOOR - 1n, 900n)] }
+		const atFloor: Tx = { hash: label("at-floor"), block: ETH_BLOCK - 4n, logs: [await gift(FLOOR, 901n)] }
 		const d = await discover(record(), reads([sourceTx(ROUTED)], [dust, atFloor, fillTx(ROUTED.destination.logs)]))
 		expect(d).toMatchObject({
 			verdict: "deposited",
 			extraDeposits: [{ txHash: atFloor.hash, leafIndex: "901", amount: FLOOR.toString() }],
 		})
+	})
+
+	it("a deposit to the record's secret hash for another recipient or the other privacy mode is never an extra", async () => {
+		const elsewhere = await gift(5_000_000n, 900n, { to: label("someone else") })
+		const privately = await gift(5_000_000n, 901n, { isPrivate: true })
+		const gifts: Tx = { hash: label("unclaimable"), block: ETH_BLOCK - 5n, logs: [elsewhere, privately] }
+		const d = await discover(record(), reads([sourceTx(ROUTED)], [gifts, fillTx(ROUTED.destination.logs)]))
+		expect(d).toMatchObject({ verdict: "deposited", deposit: FACTS, extraDeposits: [] })
+	})
+
+	it("a gas-only record's extras are the Fee Juice deposits claimed for its own recipient", async () => {
+		const gas = { ...record(), intent: "gas", token: undefined } as CrossChainDepositRecord
+		const floor = BigInt(PUBLIC.intent.minFuelOutput)
+		const ours: Tx = { hash: label("fuel gift"), block: ETH_BLOCK - 5n, logs: [await fuelGift(floor, 900n)] }
+		const theirs: Tx = {
+			hash: label("fuel elsewhere"),
+			block: ETH_BLOCK - 4n,
+			logs: [await fuelGift(floor, 901n, label("someone else"))],
+		}
+		const d = await discover(gas, reads([sourceTx(ROUTED)], [ours, theirs]))
+		expect(d).toMatchObject({ verdict: "pending", extraDeposits: [{ txHash: ours.hash, leafIndex: "900", amount: floor.toString() }] })
 	})
 
 	it("ignores look-alike events from any emitter but the pinned ones", async () => {
@@ -498,11 +580,16 @@ describe("discoverCrossChain", () => {
 		// Spliced back to front so each index still names the real log: before the real marker, a foreign
 		// `Deposited` with other amounts; before the real FeeJuicePortal event, a foreign one with its key;
 		// right after the fill, a foreign recovery marker.
-		logs.splice(at(COMPLETED, RAIL.destination.executor), 0, gift(9_000_000n, 999n, ATTACKER, RAIL.destination.executor))
+		const foreign = await gift(9_000_000n, 999n, { emitter: ATTACKER, payer: RAIL.destination.executor })
+		logs.splice(at(COMPLETED, RAIL.destination.executor), 0, foreign)
 		const fjLookAlike = { to: pad("0xa11ce0"), amount: 1n, secretHash: pad("0x00"), key: FACTS.fuel.messageHash, index: 1n }
 		logs.splice(at(FJ_DEPOSIT, RAIL.router.feeJuicePortal), 0, log(ATTACKER, FJ_DEPOSIT, fjLookAlike))
 		logs.splice(1, 0, marker(RECOVERED, ATTACKER, PUBLIC.transactionId))
-		const lie: DiscoveryLog = { ...gift(9_000_000n, 998n, ATTACKER), transactionHash: label("lie"), blockNumber: ETH_BLOCK }
+		const lie: DiscoveryLog = {
+			...(await gift(9_000_000n, 998n, { emitter: ATTACKER })),
+			transactionHash: label("lie"),
+			blockNumber: ETH_BLOCK,
+		}
 		const d = await discover(record(), reads([sourceTx(ROUTED)], [fillTx(logs)], { lie: [lie] }))
 		expect(d).toMatchObject({ verdict: "deposited", deposit: FACTS, extraDeposits: [] })
 	})
@@ -564,11 +651,7 @@ describe("discoverCrossChain", () => {
 
 	it("a reorg after discovery returned is re-derived: the provisional outcome is replaced by the deposit", async () => {
 		// The same relay recovered on a fork the chain later left, then deposited on the canonical one.
-		const recovery = [
-			ROUTED.destination.logs[0],
-			...withId(ROUTED_RECOVERED.destination.logs.slice(1), FLOOR_UNMET.transactionId, PUBLIC.transactionId),
-		]
-		const forked = await discover(record(), reads([sourceTx(ROUTED)], [fillTx(recovery, { block: ETH_BLOCK + 2n })]))
+		const forked = await discover(record(), reads([sourceTx(ROUTED)], [fillTx(ROUTED_RECOVERY, { block: ETH_BLOCK + 2n })]))
 		const provisional = { ...record(), ...discoveryPatch(record(), forked, 7) } as CrossChainDepositRecord
 		expect(provisional.route.outcome).toBe("delivered-to-wallet")
 
@@ -588,6 +671,34 @@ describe("discoverCrossChain", () => {
 		})
 	})
 
+	it("a deposit the canonical chain no longer carries leaves no claim facts behind, unless the record is final", async () => {
+		const deposited = await discover(record(), reads([sourceTx(ROUTED)], [fillTx(ROUTED.destination.logs)]))
+		const claimable = { ...record(), ...discoveryPatch(record(), deposited, 7) } as CrossChainDepositRecord
+		expect(deriveCrossChainDepositStage(claimable)).toBe("syncing")
+		const rerun = async (ethTxs: Tx[], rec = claimable) =>
+			({ ...rec, ...discoveryPatch(rec, await discover(rec, reads([sourceTx(ROUTED)], ethTxs)), 9) }) as CrossChainDepositRecord
+		const gone = {
+			leafIndex: undefined,
+			messageHash: undefined,
+			depositTxHash: undefined,
+			fuel: { received: undefined, leafIndex: undefined, messageHash: undefined },
+		}
+
+		const reorgedOut = await rerun([])
+		expect(reorgedOut).toMatchObject(gone)
+		expect(deriveCrossChainDepositStage(reorgedOut)).toBe("bridging")
+
+		const recovered = await rerun([fillTx(ROUTED_RECOVERY, { hash: label("recovery") })])
+		expect(recovered).toMatchObject({ ...gone, route: { outcome: "delivered-to-wallet" } })
+
+		const claimed = await rerun([], { ...claimable, completedAt: 8 })
+		expect(claimed).toMatchObject({
+			leafIndex: FACTS.token.leafIndex,
+			depositTxHash: FILL_TX,
+			fuel: { leafIndex: FACTS.fuel.leafIndex },
+		})
+	})
+
 	it("finds a lost source hash through the Transfer scan, skipping the sender's other LI.FI transfers", async () => {
 		const other: Tx = { hash: label("other send"), block: SRC_BLOCK - 3n, logs: PLAIN.source.logs }
 		const ours: Tx = { hash: label("lost"), block: SRC_BLOCK, logs: ROUTED.source.logs }
@@ -604,7 +715,7 @@ describe("discoverCrossChain", () => {
 			...fill,
 			data: fill.data.toLowerCase().replace(RAIL.inputs.user.slice(2).toLowerCase(), ATTACKER.slice(2)) as Hex,
 		}
-		const forged = fillTx([forgedFill, ...callback, gift(4_000_000n, 950n, RAIL.router.router, RAIL.destination.executor)])
+		const forged = fillTx([forgedFill, ...callback, await gift(4_000_000n, 950n, { payer: RAIL.destination.executor })])
 		const d = await discover(record(), reads([sourceTx(ROUTED)], [forged]))
 		expect(d).toMatchObject({
 			verdict: "pending",
@@ -627,7 +738,7 @@ describe("discoverCrossChain", () => {
 			const id = rec.route.lifiTxId
 			const forgeries = [marker(COMPLETED, RAIL.destination.executor, id), marker(RECOVERED, ctx.rail.receiver, id)]
 			const real = stargate ? composed(r, variant) : r.destination.logs
-			const logs = [gift(5_000_000n, 900n), ...forgeries, ...real, ...forgeries, gift(5_000_000n, 901n)]
+			const logs = [await gift(5_000_000n, 900n), ...forgeries, ...real, ...forgeries, await gift(5_000_000n, 901n)]
 			const d = await discover(rec, stargate ? baseReads([fillTx(logs)]) : reads([sourceTx(r)], [fillTx(logs)]), ctx)
 			const extraDeposits = [
 				{ txHash: FILL_TX, leafIndex: "900", amount: "5000000" },

@@ -3,7 +3,9 @@
  * router wiring, caps, funding), and builds and verifies each row's transactions right before its turn.
  * A live run then sends the row, waits out an organic-fill window, self-fills what no relayer filled,
  * reads the outcome back (discovery for cross-chain rows, the router's `Deposited` for Ethereum-origin
- * ones) and claims on Aztec. A dry run has no way to send: its dependencies carry no signer.
+ * ones) and claims on Aztec. Every L1 transaction a live row sends carries explicit gas and fee caps
+ * whose worst case fits what that chain's cap has left. A dry run has no way to send: its dependencies
+ * carry no signer.
  */
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
@@ -55,16 +57,30 @@ import {
 	assertCanaryIdentity,
 	assertCanaryPreconditions,
 	assertGasHeadroom,
+	assertGasReconciled,
 	assertWithinCaps,
 	canaryBindings,
 	type FillWay,
 	fundingShortfalls,
+	type GasBudget,
+	type GasBurn,
 	type GasPerRow,
 	planCanaryRows,
 	type RailRecord,
+	type RowBudgets,
 	type RowRecord,
+	rowBudgets,
 } from "./lifi-canary-plan"
-import { approveExact, ERC20_MIN_ABI, ensureRouterPermit2, FACTORY_CONSTANTS_ABI } from "./script-l1"
+import {
+	approveExact,
+	boundedGasTerms,
+	ERC20_MIN_ABI,
+	ensureRouterPermit2,
+	FACTORY_CONSTANTS_ABI,
+	type GasPricing,
+	type GasTermsFor,
+	withGasTerms,
+} from "./script-l1"
 
 const SWAPPER_QUOTE_ABI = parseAbi(["function quote(address token, uint256 amountIn) view returns (uint256)"])
 
@@ -123,7 +139,8 @@ export interface CanaryLive {
 	ethereum: L1Ctx
 	discovery: DiscoveryReads
 	l2: CanaryL2
-	selfFill: (srcTxHash: Hex) => Promise<SelfFill>
+	/** Fills the relay `srcTxHash` started, its approve and fill both carrying terms from `gas`. */
+	selfFill: (srcTxHash: Hex, gas: GasTermsFor) => Promise<SelfFill>
 }
 
 export interface CanaryDeps {
@@ -145,9 +162,15 @@ interface RowCtx {
 	deps: CanaryDeps
 }
 
-interface LiveCtx extends RowCtx {
+interface LiveRun extends RowCtx {
 	live: CanaryLive
 	discovery: CrossChainDiscoveryContext
+}
+
+/** One live row: `live`'s signers bounded by the row's budgets. */
+interface LiveCtx extends LiveRun {
+	/** The Ethereum budget's terms, which the self-fill's transactions carry. */
+	fillGas: GasTermsFor
 }
 
 const nowSec = (ctx: RowCtx) => Math.floor(ctx.deps.now() / 1000)
@@ -402,7 +425,7 @@ async function settleFill(
 	let selfTx: Hex | null = null
 	if (!decided(d)) {
 		ctx.deps.log(`${c.row.kind}: no relayer filled within the window; self-filling`)
-		const r = await ctx.live.selfFill(rec.route.srcTxHash as Hex)
+		const r = await ctx.live.selfFill(rec.route.srcTxHash as Hex, ctx.fillGas)
 		way = r.alreadyFilled ? "organic" : "self"
 		selfTx = r.fillTxHash
 		d = await discoverWithin(ctx, rec, ctx.cfg.windows.settleMs)
@@ -593,7 +616,7 @@ async function runEthereum(ctx: RowCtx, live: LiveCtx | undefined, row: CanaryRo
 // ── the run ──────────────────────────────────────────────────────────────────
 
 /** Native gas the run burned so far: no row moves the canary's ether except as gas. */
-async function gasBurned(ctx: RowCtx, start: CanaryFacts): Promise<{ source: bigint; ethereum: bigint }> {
+async function gasBurned(ctx: RowCtx, start: CanaryFacts): Promise<GasBurn> {
 	const { reads } = ctx.deps
 	return {
 		source: start.balances.sourceNative - (await reads.source.getBalance({ address: ctx.cfg.canary })),
@@ -630,6 +653,62 @@ async function discoveryContext(ctx: RowCtx): Promise<CrossChainDiscoveryContext
 	}
 }
 
+/** `l1` with every send it makes bounded by `budget`, and the terms it charges, for a send made through another wallet. */
+export function boundedSigner(l1: L1Ctx, budget: GasBudget, label: string): { l1: L1Ctx; terms: GasTermsFor } {
+	const terms = boundedGasTerms(l1.pub as unknown as GasPricing, (worstWei, r) =>
+		budget.charge(worstWei, `${label}: a send to ${r.to ?? "a new contract"}`),
+	)
+	return { l1: { ...l1, wallet: withGasTerms(l1.wallet, terms) }, terms }
+}
+
+function boundedRow(run: LiveRun, row: CanaryRow, budgets: RowBudgets): LiveCtx {
+	const source = boundedSigner(run.live.source, budgets.source, row.kind)
+	const ethereum = boundedSigner(run.live.ethereum, budgets.ethereum, row.kind)
+	return { ...run, live: { ...run.live, source: source.l1, ethereum: ethereum.l1 }, fillGas: ethereum.terms }
+}
+
+export interface LiveGas {
+	caps: CanaryCaps
+	perRow: GasPerRow
+	/** What the run has burned so far, read fresh from the chains. */
+	burned: () => Promise<GasBurn>
+}
+
+/**
+ * A live run's rows, in order. Before each, one more row's gas must fit under the caps; each row signs under budgets
+ * of what the caps have left; after each, the last included, what the run burned is reconciled against the caps.
+ *
+ * @throws CanaryRefusal at the first row without headroom, the first send over its budget, or the first
+ *   reconciliation over a cap; nothing after it runs.
+ */
+export async function runLiveRows(
+	rows: readonly CanaryRow[],
+	gas: LiveGas,
+	run: (row: CanaryRow, budgets: RowBudgets) => Promise<RowRecord>,
+): Promise<{ records: RowRecord[]; burned: GasBurn }> {
+	const records: RowRecord[] = []
+	let burned = await gas.burned()
+	for (const row of rows) {
+		assertGasHeadroom(row, burned, gas.perRow, gas.caps)
+		records.push(await run(row, rowBudgets(burned, gas.caps)))
+		burned = await gas.burned()
+		assertGasReconciled(row, burned, gas.caps)
+	}
+	return { records, burned }
+}
+
+const runRow = (ctx: RowCtx, live: LiveCtx | undefined, row: CanaryRow): Promise<RowRecord> =>
+	row.origin === "crosschain" ? runCrossChain(ctx, live, row) : runEthereum(ctx, live, row)
+
+async function runDryRows(ctx: RowCtx, rows: readonly CanaryRow[]): Promise<RowRecord[]> {
+	const records: RowRecord[] = []
+	for (const row of rows) {
+		ctx.deps.log(`${row.kind}: ${row.amount}`)
+		records.push(await runRow(ctx, undefined, row))
+	}
+	return records
+}
+
 /**
  * Plans the matrix, refuses before any send, then runs each row in order and returns the record to print.
  *
@@ -644,12 +723,14 @@ export async function runCanary(cfg: CanaryConfig, deps: CanaryDeps): Promise<Ca
 	const rows = planCanaryRows(cfg.amounts, await acrossLimits(ctx, planCanaryRows(cfg.amounts)))
 	const spend = assertWithinCaps(rows, cfg.caps, b.source.chainId, cfg.gasPerRow)
 	assertCanaryPreconditions(b, spend, facts)
-	const live = deps.mode.kind === "live" ? { ...ctx, live: deps.mode, discovery: await discoveryContext(ctx) } : undefined
-	const records: RowRecord[] = []
-	for (const row of rows) {
+	const record = { mode: deps.mode.kind, canary: cfg.canary, spend, caps: cfg.caps, funding: fundingShortfalls(spend, facts) }
+	if (deps.mode.kind !== "live") return { ...record, rows: await runDryRows(ctx, rows) }
+
+	const live: LiveRun = { ...ctx, live: deps.mode, discovery: await discoveryContext(ctx) }
+	const gas: LiveGas = { caps: cfg.caps, perRow: cfg.gasPerRow, burned: () => gasBurned(ctx, facts) }
+	const { records, burned } = await runLiveRows(rows, gas, (row, budgets) => {
 		deps.log(`${row.kind}: ${row.amount}`)
-		if (live) assertGasHeadroom(row, await gasBurned(ctx, facts), cfg.gasPerRow, cfg.caps)
-		records.push(row.origin === "crosschain" ? await runCrossChain(ctx, live, row) : await runEthereum(ctx, live, row))
-	}
-	return { mode: deps.mode.kind, canary: cfg.canary, spend, caps: cfg.caps, funding: fundingShortfalls(spend, facts), rows: records }
+		return runRow(ctx, boundedRow(live, row, budgets), row)
+	})
+	return { ...record, rows: records, burned }
 }

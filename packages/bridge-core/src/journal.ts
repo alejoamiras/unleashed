@@ -241,8 +241,9 @@ export type CrossChainTransport =
 	| { kind: "across"; originChainId: number; depositId: string; relayHash: Hex }
 	| { kind: "stargate"; guid: Hex; pool: Address }
 
-/** An authenticated `Deposited` for the same secret hash that is not the intended one. No extra
- *  carries a claim marker, so every listed extra is unclaimed. */
+/** A `Deposited` for the same secret hash, other than the intended one, whose message this record
+ *  can claim (same recipient, privacy and portal). No extra carries a claim marker, so every listed
+ *  extra is unclaimed. */
 export interface CrossChainExtraDeposit {
 	txHash: Hex
 	leafIndex: string
