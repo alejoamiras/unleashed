@@ -78,3 +78,31 @@
    `apps/tools/public/` changes with every promotion, so they now read a frozen copy:
    `packages/bridge-core/test/fixtures/testnet-bridge.pre-lifi.json`. Run the unit suite after any commit that
    rewrites a public manifest.
+4. **The first live re-run stopped on a stale read.** The canary's Base Sepolia approval confirmed, then
+   `approveExact` read the allowance back as 0 and stopped before any deposit: PublicNode had answered `latest` from
+   a backend behind the approval's block (the chain held 6,000,000). `approveExact` now reads at the approval's
+   receipt block and retries a backend that lacks it. The 6 USDC allowance it left was the exact amount the next
+   run needed, so that run sent no approval.
+5. **The old router's fuel regression has the smoke's slice problem.** `fuel-testnet.ts` sizes a 0.25 USDC slice by
+   default, which quoted 7.36 FJ against this generation's 29.77 FJ floor; viem's pre-send estimate caught
+   `UniswapFuelSwap: insufficient output` and nothing was sent but a test-USDC faucet mint. The run had built a
+   fresh router-only intent (`intent-gates.json`): this arc's source edits since the deploy intent make that one's
+   tree gate refuse, as designed. Re-run with `FUEL_SLICE_UNITS=1500000`.
+
+## The canary matrix (live, exclusive self-fills)
+
+Every cross-chain row ran on fixed terms (6 USDC in, 4.5 out; Across quotes `AMOUNT_TOO_LOW`) naming the canary as
+exclusive relayer until `fillDeadline`, and the canary filled each one itself. Spend: source 18 of the 24 USDC cap,
+Ethereum at most 23 of 30 USDC; gas 0.0000034 ETH on Base Sepolia and 0.0042 ETH on Sepolia, inside both caps.
+
+| Row | Source tx | Ethereum tx (fill) | `Deposited` / outcome | L2 claim | Discovery |
+|---|---|---|---|---|---|
+| crosschain-public | `0x4491f817fcdd9c250f5cfae76af1e1e645bc34663f2c050c3574ef56d13b9999` | `0x65c7c3d070e43a9f92643a6a47c590a3fa17937bb62310d5be05472353d532d5` (self) | received 4,500,000; token 2,290,617 leaf 148; fuel 2,209,383 → 70.70 FJ leaf 147 | `0x2392231ddde4b95a2824d35f0ac78178c2ae7e74d72fdbc2289d1e5b9dd48894` | `deposited` |
+| crosschain-private | `0x22fd739e458e547e34b4ea1173d117a0a6a9a49ca188b4d357ce6c2063e4812f` | `0xe502a9f19782e6628a9240a9b9504e7a2e314db45200939670a4c9c9e19d90d5` (self) | received 4,500,000; token 2,290,617 leaf 150; fuel 2,209,383 → 70.70 FJ leaf 149 | `0x1320ffd30e2265d808f92ad4f8e06cb150f855ca9fdb2682ea92f76509338504` | `deposited` |
+| ethereum-plain | — | `0xec286a5ced822458ac71b1653d1539930e1928b7968f5ea700c36035c2568620` | received 2,000,000; token leaf 151 | `0x11e72699216bd7e8b05f16c322c1413ce3cf7433b31db67ca2d26ed292dabb87` | — |
+| ethereum-fueled | — | `0x88e848271eff457d2b216fe8903669e3d1362306bb6655db456834dbbf73077f` | received 3,000,000; token 1,500,000 leaf 153; fuel 1,500,000 → 48 FJ leaf 152 | `0x219a71f224a19ee06f97c752db17f7bfb12be627dd7b09f49d16d984c321a418` | — |
+| crosschain-recovery | `0x55384b2218ab27b695895458b8f42e7ab409ac47eaaaf0eee4c61a8d6f9e9044` | `0x61873746b95a540edd41a8e951f48adaad65150120e8f01afd08151f9730f754` (self) | `LiFiTransferRecovered` 4,500,000; the canary's Sepolia USDC unchanged across its own fill (it paid 4,500,000 and got it back) | — | `delivered-to-wallet` |
+
+**Exclusivity, on chain.** The public row's `FundsDeposited` carries `exclusiveRelayer` = the canary and
+`exclusivityDeadline` = `fillDeadline`. At the block before the canary's fill, the same `fillRelay` from Across's
+testnet relayer (`0x9A8f92a830A5cB89a3816e3D267CB7791c16b04D`) reverts `NotExclusiveRelayer()` (`0xc3a9b9d0`).
