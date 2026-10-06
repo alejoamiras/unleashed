@@ -14,7 +14,7 @@ const props = defineProps<{
 }>()
 
 /** The well is a notch host, which cannot scroll, so it shows only the latest rows. */
-const LOG_ROWS = 8
+const LOG_ROWS = 6
 const shown = computed(() => props.rows.slice(-LOG_ROWS))
 
 /** A short hash as the log writes it ("0x52d7…d3c8"); the capture keeps it in `split`'s output. */

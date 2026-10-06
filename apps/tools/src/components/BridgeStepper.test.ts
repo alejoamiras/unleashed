@@ -171,17 +171,17 @@ describe("BridgeStepper", () => {
 		expect(selected(exit)).toBe("Out to Ethereum")
 	})
 
-	it("the session log shows its latest 8 rows as m:ss from the run's start, as text only; the permission prompt has none", () => {
+	it("the session log shows its latest 6 rows as m:ss from the run's start, as text only; the permission prompt has none", () => {
 		const log = Array.from({ length: 10 }, (_, i) => ({ seq: i, at: 40_000 + i * 15_000, text: `row ${i}` }))
 		log[9] = { seq: 9, at: 175_000, text: "approving the <img src=x onerror=alert(1)> spend" }
 		runtime.value = { "0xd": { step: "sealing", log } }
 		const well = mount(BridgeStepper, { props: { record: dep(), startedAt: 40_000 } }).get(sel(TESTIDS.stepperLog))
 		expect(well.attributes("role")).toBe("log")
 		const rows = well.findAll(".row")
-		expect(rows.map((r) => r.get(".at").text())).toEqual(["0:30", "0:45", "1:00", "1:15", "1:30", "1:45", "2:00", "2:15"])
-		expect(rows[0].get(".text").text()).toBe("row 2")
+		expect(rows.map((r) => r.get(".at").text())).toEqual(["1:00", "1:15", "1:30", "1:45", "2:00", "2:15"])
+		expect(rows[0].get(".text").text()).toBe("row 4")
 		expect(well.find("img").exists()).toBe(false)
-		expect(rows[7].get(".text").text()).toBe("approving the <img src=x onerror=alert(1)> spend_")
+		expect(rows[5].get(".text").text()).toBe("approving the <img src=x onerror=alert(1)> spend_")
 		expect(well.findAll(".cursor").map((c) => c.attributes("aria-hidden"))).toEqual(["true"])
 
 		// The permission prompt keeps its full-width list: the split is only for a stepper with a log.
