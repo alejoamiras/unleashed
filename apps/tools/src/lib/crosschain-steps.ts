@@ -220,6 +220,7 @@ function linkOf(href: string, hash: string, lead?: string): Pick<BridgePhase, "l
 
 function sourceCopy(rec: CrossChainDepositRecord, w: Words): Record<"src-approve" | "src-send", PhaseCopy> {
 	const tx = rec.route.srcTxHash
+	const approval = rec.approveTxHash
 	const handed = tx !== undefined || rec.route.srcBatchId !== undefined
 	const send = w.sent ? `Confirm the send in your wallet. It moves ${w.sent}.` : "Confirm the send in your wallet."
 	return {
@@ -229,6 +230,7 @@ function sourceCopy(rec: CrossChainDepositRecord, w: Words): Record<"src-approve
 				? `Approve exactly ${w.sent} in your wallet. No funds move yet.`
 				: "Approve the exact amount in your wallet. No funds move yet.",
 			eta: "your signature",
+			done: approval ? linkOf(chainTxUrl(rec.route.srcChainId, approval), approval) : {},
 		},
 		"src-send": {
 			label: `Send on ${w.src}`,
@@ -374,14 +376,14 @@ function livePhase(base: BridgePhase, c: PhaseCopy, cursor: Cursor, rt: RecordRu
 }
 
 /**
- * The cross-chain rail: Approve on {source} (only while this run approves, or after it did), Send on {source},
+ * The cross-chain rail: Approve on {source} (only while this run approves, or once an approval was journaled), Send on {source},
  * Bridge to {L1}, Deposit on {L1}, Cross to Aztec, Register on Aztec (a first-time private token), Claim on
  * Aztec, Done. An outcome stops it at its deciding phase; every phase after a stop is pending with no estimate.
  */
 export function crossChainPhases(rec: CrossChainDepositRecord, rt: RecordRuntime = {}): BridgePhase[] {
 	const registers = rec.isPrivate && registersOf(rec)
 	const keys: Key[] = [
-		...(rt.step === "approving-source" || rt.approveOutcome === "done" ? (["src-approve"] as const) : []),
+		...(rt.step === "approving-source" || rt.approveOutcome === "done" || rec.approveTxHash ? (["src-approve"] as const) : []),
 		"src-send",
 		"bridge",
 		"deposit",

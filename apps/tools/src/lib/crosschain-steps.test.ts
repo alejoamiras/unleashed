@@ -56,7 +56,7 @@ describe("stepperPhases - a cross-chain send", () => {
 		expect(p.claim).toMatchObject({ state: "pending", estimate: "your signature", signs: true })
 	})
 
-	it("shows Approve only while this run approves, and says what the send moves", () => {
+	it("shows Approve while this run approves or once an approval is journaled, and says what the send moves", () => {
 		const approving = stepperPhases(unsent(), { step: "approving-source" })
 		expect(approving[0]).toMatchObject({
 			key: "src-approve",
@@ -68,6 +68,13 @@ describe("stepperPhases - a cross-chain send", () => {
 		const sending = byKey(unsent(), { step: "sending-source", approveOutcome: "done" })
 		expect(sending["src-approve"].state).toBe("done")
 		expect(sending["src-send"]).toMatchObject({ state: "active", detail: "Confirm the send in your wallet. It moves 5.00 USDC." })
+		// A journaled approval keeps its row and link after a reload, with no session runtime.
+		const approval = `0x5e21${"0".repeat(56)}a9c4`
+		expect(byKey(bridging(), {})["src-approve"]).toBeUndefined()
+		expect(byKey(xcRecord({ approveTxHash: approval }, { transport: TRANSPORT }), {})["src-approve"]).toMatchObject({
+			state: "done",
+			link: { href: `https://sepolia.basescan.org/tx/${approval}`, text: "0x5e21…a9c4" },
+		})
 	})
 
 	it("deposited: the gas the slice became, then a claim the user starts only while nothing runs it", () => {
