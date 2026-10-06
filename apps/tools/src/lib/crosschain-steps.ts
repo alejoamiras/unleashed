@@ -453,6 +453,19 @@ export function crossChainLogFacts(rec: CrossChainDepositRecord): { key: string;
 	return rows
 }
 
+/** The explorer link for each transaction a record's log rows name by short hash. */
+export function crossChainLogLinks(rec: CrossChainDepositRecord): { text: string; href: string }[] {
+	const legs: [number, string | undefined][] = [
+		[rec.route.srcChainId, rec.approveTxHash],
+		[rec.route.srcChainId, rec.route.srcTxHash],
+		[rec.chainId, rec.depositTxHash],
+	]
+	return legs.flatMap(([chainId, hash]) => {
+		const href = hash ? chainTxUrl(chainId, hash) : ""
+		return hash && href ? [{ text: short(hash), href }] : []
+	})
+}
+
 /** The row for a source-chain approval whose receipt the flow saw succeed. */
 export function approvalConfirmedLine(srcChainId: number, hash: string): string {
 	return `${chainLabel(srcChainId)} confirmed the approval ${short(hash)}`
