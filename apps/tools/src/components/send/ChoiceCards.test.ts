@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import type { GasBlock, SendIntent } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import ChoiceCards from "./ChoiceCards.vue"
@@ -12,9 +12,6 @@ type Props = {
 	feeAsset: boolean
 	gasBlock: GasBlock | null
 	tokenReason?: string | null
-	txTarget: number
-	breakdownId?: string
-	breakdownOpen?: boolean
 }
 
 const NO_ROUTE = "This token can't buy Aztec gas on the way in."
@@ -22,7 +19,7 @@ const NO_ROUTE = "This token can't buy Aztec gas on the way in."
 function cards(over: Partial<Props> = {}) {
 	return mount(ChoiceCards, {
 		attachTo: document.body,
-		props: { intent: "token", exitOnly: false, feeAsset: false, gasBlock: null, txTarget: 2, ...over },
+		props: { intent: "token", exitOnly: false, feeAsset: false, gasBlock: null, ...over },
 	})
 }
 
@@ -178,6 +175,7 @@ describe("ChoiceCards", () => {
 		expect(w.emitted("update:intent")).toEqual([["gas"], ["token+gas"]])
 		w.unmount()
 	})
+
 	it("is one radio group named by its heading, three radios with no control inside any of them", () => {
 		const w = cards()
 		const group = w.get('[role="radiogroup"]')
@@ -185,64 +183,6 @@ describe("ChoiceCards", () => {
 		const radios = w.findAll('[role="radio"]')
 		expect(radios).toHaveLength(3)
 		for (const radio of radios) expect(radio.find("button").exists()).toBe(false)
-		w.unmount()
-	})
-
-	describe("at phone width", () => {
-		afterEach(() => vi.unstubAllGlobals())
-
-		function phoneCards(over: Partial<Props> = {}) {
-			vi.stubGlobal("matchMedia", (query: string) => ({
-				matches: query === "(max-width: 760px)",
-				media: query,
-				addEventListener() {},
-				removeEventListener() {},
-			}))
-			return cards({ intent: "token+gas", breakdownId: "gas-breakdown", breakdownOpen: false, ...over })
-		}
-
-		it("the selected gas row's hint is a button beside its radio that opens the breakdown and selects nothing", async () => {
-			const w = phoneCards()
-			const hint = w.get(sel(TESTIDS.sendGasDisclosure))
-			expect(hint.element.closest('[role="radio"]')).toBeNull()
-			expect(hint.element.parentElement).toBe(w.get(sel(TESTIDS.sendChoiceTokenGas)).element.parentElement)
-			expect(hint.attributes("aria-controls")).toBe("gas-breakdown")
-			expect(hint.attributes("aria-expanded")).toBe("false")
-			expect(hint.text()).toBe("gas for 2 transactions, gas breakdown")
-			await hint.trigger("click")
-			expect(w.emitted("toggle-gas")).toHaveLength(1)
-			expect(w.emitted("update:intent")).toBeUndefined()
-			expect(w.findAll(sel(TESTIDS.sendGasDisclosure))).toHaveLength(1)
-			w.unmount()
-		})
-
-		it("the arrow keys walk only the radios; the hint button is the tab stop right after the selected one", async () => {
-			const w = phoneCards()
-			const hint = w.get(sel(TESTIDS.sendGasDisclosure))
-			await hint.trigger("keydown", { key: "ArrowRight" })
-			expect(w.emitted("update:intent")).toBeUndefined()
-			const tabbable = [...document.querySelectorAll<HTMLElement>("button")].filter((b) => b.tabIndex >= 0)
-			const radio = w.get(sel(TESTIDS.sendChoiceTokenGas)).element
-			expect(tabbable[tabbable.indexOf(hint.element as HTMLElement) - 1]).toBe(radio)
-			expect(tabbable).toHaveLength(2)
-			await w.get(sel(TESTIDS.sendChoiceTokenGas)).trigger("keydown", { key: "ArrowRight" })
-			expect(document.activeElement).toBe(w.get(sel(TESTIDS.sendChoiceGas)).element)
-			expect(w.emitted("update:intent")).toEqual([["gas"]])
-			w.unmount()
-		})
-
-		it("no hint button on the token row, on a blocked gas row, nor without a breakdown to open", () => {
-			for (const over of [{ intent: "token" as const }, { breakdownId: undefined }, { gasBlock: "unavailable" as const }]) {
-				const w = phoneCards(over)
-				expect(w.find(sel(TESTIDS.sendGasDisclosure)).exists()).toBe(false)
-				w.unmount()
-			}
-		})
-	})
-
-	it("renders no hint button on a desktop", () => {
-		const w = cards({ intent: "token+gas", breakdownId: "gas-breakdown" })
-		expect(w.find(sel(TESTIDS.sendGasDisclosure)).exists()).toBe(false)
 		w.unmount()
 	})
 })

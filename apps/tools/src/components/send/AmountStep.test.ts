@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { nextTick } from "vue"
 import type { Direction, GasLegPlan, ResolvedToken, SendIntent, TokenBalances } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
@@ -397,70 +397,5 @@ describe("AmountStep", () => {
 			expect(w.find(sel(TESTIDS.sendPrivacyVeil)).exists()).toBe(false)
 			w.unmount()
 		}
-	})
-	describe("at phone width", () => {
-		afterEach(() => vi.unstubAllGlobals())
-
-		function phoneStep(over: Partial<Props> = {}) {
-			vi.stubGlobal("matchMedia", (query: string) => ({
-				matches: query === "(max-width: 760px)",
-				media: query,
-				addEventListener() {},
-				removeEventListener() {},
-			}))
-			return step({ intent: "token+gas", gas: GAS, ...over })
-		}
-		const breakdown = (w: ReturnType<typeof step>) => w.get(sel(TESTIDS.sendGasBreakdown))
-		const hint = (w: ReturnType<typeof step>) => w.get(sel(TESTIDS.sendGasDisclosure))
-
-		it("folds the breakdown behind the selected row's hint, which opens it", async () => {
-			const w = phoneStep()
-			expect(hint(w).attributes("aria-controls")).toBe(breakdown(w).attributes("id"))
-			expect(breakdown(w).isVisible()).toBe(false)
-			expect(hint(w).attributes("aria-expanded")).toBe("false")
-			await hint(w).trigger("click")
-			expect(breakdown(w).isVisible()).toBe(true)
-			expect(hint(w).attributes("aria-expanded")).toBe("true")
-			w.unmount()
-		})
-
-		it("an error or a cap note holds the breakdown open without a tap", () => {
-			const capped = { ...GAS, capped: "half" } as GasLegPlan
-			for (const over of [{ gasError: "That amount cannot buy gas." }, { gas: capped }]) {
-				const w = phoneStep(over)
-				expect(breakdown(w).isVisible()).toBe(true)
-				expect(hint(w).attributes("aria-expanded")).toBe("true")
-				w.unmount()
-			}
-		})
-
-		it("taps on a held breakdown change nothing: once the hold ends it folds, as before the taps", async () => {
-			const w = phoneStep({ gas: { ...GAS, capped: "half" } as GasLegPlan })
-			expect(hint(w).attributes("aria-disabled")).toBe("true")
-			await hint(w).trigger("click")
-			await hint(w).trigger("click")
-			await hint(w).trigger("click")
-			await w.setProps({ gas: GAS })
-			expect(hint(w).attributes("aria-disabled")).toBeUndefined()
-			expect(breakdown(w).isVisible()).toBe(false)
-			expect(hint(w).attributes("aria-expanded")).toBe("false")
-			w.unmount()
-		})
-
-		it("a capped gas-only plan has no cap note, so its breakdown stays folded until tapped", async () => {
-			const w = phoneStep({ intent: "gas", gas: { ...GAS, capped: "half" } as GasLegPlan })
-			expect(breakdown(w).isVisible()).toBe(false)
-			expect(hint(w).attributes("aria-expanded")).toBe("false")
-			await hint(w).trigger("click")
-			expect(breakdown(w).isVisible()).toBe(true)
-			w.unmount()
-		})
-	})
-
-	it("a desktop shows the breakdown with no hint button", () => {
-		const w = step({ intent: "token+gas", gas: GAS })
-		expect(w.get(sel(TESTIDS.sendGasBreakdown)).isVisible()).toBe(true)
-		expect(w.find(sel(TESTIDS.sendGasDisclosure)).exists()).toBe(false)
-		w.unmount()
 	})
 })

@@ -2,7 +2,6 @@
 /** Utils */
 import { Button, Icon } from "@unleashed/design"
 import { computed, onScopeDispose, ref, watch } from "vue"
-import { PHONE_QUERY, useMediaQuery } from "@/composables/useMediaQuery"
 import { formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString } from "@/lib/format"
 import {
 	type AmountToken,
@@ -157,26 +156,7 @@ const gasBlock = computed<GasBlock | null>(() =>
 // Only an outcome is announced; a route still being checked says nothing rather than a spinner line.
 const routeLine = computed(() => (isExit.value || props.routeLoading || !gasBlock.value ? null : GAS_BLOCK_REASON[gasBlock.value]))
 
-const phone = useMediaQuery(PHONE_QUERY)
 const shownGasError = computed(() => (touched.value || settled.value ? props.gasError : null))
-
-/** On a phone the breakdown folds behind the selected gas row's hint, but never over an error or a
- *  cap note: those hold it open. */
-const gasOpen = ref(false)
-watch(
-	() => props.token,
-	() => {
-		gasOpen.value = false
-	},
-)
-// The breakdown draws its cap note only for token + gas; a capped gas-only plan has none to show.
-const showsCapNote = computed(() => props.intent === "token+gas" && Boolean(props.gas?.capped))
-const breakdownHeld = computed(() => shownGasError.value !== null || showsCapNote.value)
-const breakdownOpen = computed(() => gasOpen.value || breakdownHeld.value)
-// A tap while held would flip a state nobody sees, and decide what shows once the hold ends.
-function toggleGas(): void {
-	if (!breakdownHeld.value) gasOpen.value = !gasOpen.value
-}
 
 /** A cross-chain route that may go: priced, refused by nothing, and not over a ceiling that blocks. */
 const crossChainOk = computed(() => {
@@ -264,12 +244,7 @@ function onUseAll(): void {
 			:fee-asset="routeKind === 'identity'"
 			:gas-block="gasBlock"
 			:token-reason="isExit ? null : (tokenOnlyBlocked ?? null)"
-			:tx-target="txTarget"
-			:breakdown-id="showGas ? GAS_BREAKDOWN_ID : undefined"
-			:breakdown-open="breakdownOpen"
-			:breakdown-held="breakdownHeld"
 			@update:intent="emit('update:intent', $event)"
-			@toggle-gas="toggleGas"
 		/>
 
 		<!-- The cards show these reasons in place; this region only announces them. It stays mounted
@@ -282,8 +257,6 @@ function onUseAll(): void {
 		</div>
 
 		<div class="amount" :class="{ 'with-arrives': crossChain }">
-			<!-- The field names itself; this is the phone's visible caption for it. -->
-			<span class="amount-label" aria-hidden="true">Amount</span>
 			<label
 				class="field ul-notch"
 				:data-invalid="shownError ? 'true' : undefined"
@@ -337,7 +310,6 @@ function onUseAll(): void {
 
 		<GasBreakdown
 			v-if="showGas && intent !== 'token'"
-			v-show="!phone || breakdownOpen"
 			:id="GAS_BREAKDOWN_ID"
 			:token="token"
 			:amount="figures?.delivered ?? parsed ?? 0n"
@@ -421,7 +393,7 @@ function onUseAll(): void {
 			<Button variant="secondary" size="large" :data-testid="TESTIDS.sendAmountBack" @click="emit('back')">Back</Button>
 			<Button class="next" size="large" :disabled="!canContinue" :data-testid="TESTIDS.sendAmountNext" @click="emit('next')">
 				Continue
-				<Icon name="chevron" :size="phone ? 12 : 24" :rotate="-90" />
+				<Icon name="chevron" :size="24" :rotate="-90" />
 			</Button>
 		</div>
 	</section>
@@ -475,11 +447,6 @@ function onUseAll(): void {
 .over-gas > :first-child {
 	flex: none;
 	margin-top: 1px;
-}
-
-.amount-label {
-	display: none;
-	grid-area: label;
 }
 
 /* An implicit row, so an absent error leaves no gap behind. */
@@ -714,77 +681,15 @@ function onUseAll(): void {
 	padding-right: 14px;
 }
 
+/* Narrow, the balance goes under what arrives: side by side they would squeeze both. */
 @media (max-width: 760px) {
-	.step {
-		gap: 14px;
-	}
-
-	.amount,
 	.amount.with-arrives {
-		grid-template-columns: auto minmax(0, 1fr);
-		grid-template-areas: "label balance" "field field";
-		align-items: baseline;
-		gap: 6px 12px;
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: "field" "arrives" "balance";
 	}
 
-	.amount.with-arrives {
-		grid-template-areas: "label balance" "field field" "arrives arrives";
-	}
-
-	.amount-label {
-		display: block;
-		font: 700 13px/1.3 var(--ul-font-body);
-		color: var(--ul-ink);
-	}
-
-	.balance {
-		font-size: 12.5px;
-	}
-
-	.balance-unit {
-		display: none;
-	}
-
-	.privacy,
-	.privacy.on {
-		--ul-fill: transparent;
-		padding: 0;
-	}
-
-	/* The veil line always wraps here, so the separator would only open the second line. */
-	.dot {
-		display: none;
-	}
-
-	.nav {
-		flex-direction: column-reverse;
-	}
-
-	.nav > * {
-		width: 100%;
-	}
-
-	.next {
-		padding-right: 0;
-	}
-
-	.field {
-		gap: 10px;
-		min-height: 60px;
-		padding: 0 14px;
-	}
-
-	.input {
-		font-size: 28px;
-	}
-
-	.unit {
-		font-size: 14px;
-	}
-
-	.cursor {
-		width: 12px;
-		height: 26px;
+	.amount.with-arrives .balance-btn {
+		justify-self: start;
 	}
 }
 </style>

@@ -167,7 +167,7 @@ const CASES: Array<[string, Component, Record<string, unknown>]> = [
 			gasError: null,
 		},
 	],
-	["ChoiceCards", ChoiceCards, { intent: "token", exitOnly: false, feeAsset: false, gasBlock: null, txTarget: 2 }],
+	["ChoiceCards", ChoiceCards, { intent: "token", exitOnly: false, feeAsset: false, gasBlock: null }],
 	["DirectionSegment", DirectionSegment, { direction: "l1-to-l2", locked: false }],
 	[
 		"GasBreakdown",
@@ -293,19 +293,6 @@ describe("send-step testid coverage", () => {
 		// A selector that stops matching would otherwise pass silently; only the gas-only card (two
 		// read-only lines), the fee lines and the token mark are inert.
 		expect(seen > 0 || ["GasBreakdown (gas)", "CrossChainFees", "TokenMark"].includes(name)).toBe(true)
-	})
-
-	it("the phone's gas hint button carries its testid", async () => {
-		vi.stubGlobal("matchMedia", (query: string) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} }))
-		try {
-			const props = { intent: "token+gas" as const, exitOnly: false, feeAsset: false, gasBlock: null, txTarget: 2, breakdownId: "b" }
-			const w = mount(ChoiceCards, { props, attachTo: document.body })
-			expect(w.find(`[data-testid="${TESTIDS.sendGasDisclosure}"]`).exists()).toBe(true)
-			expect((await sweep(w)).missing).toEqual([])
-			w.unmount()
-		} finally {
-			vi.unstubAllGlobals()
-		}
 	})
 
 	it("the orchestrators own no bare controls of their own", () => {
