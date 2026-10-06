@@ -261,6 +261,12 @@ function move(from: number, delta: number): void {
 	text-overflow: ellipsis;
 }
 
+/* A done value names the source chain too ("USDC on Base Sepolia"), which the rail's width cannot hold on one line. */
+.vertical .value {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
 .caption,
 .value,
 .label,
