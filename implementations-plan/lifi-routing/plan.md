@@ -963,7 +963,7 @@ the `Transfer` scan, a forged Across fill reusing our `(originChainId, depositId
 transaction before and after a real fill that succeeds, and one that recovers; the client fails closed on byte cap, redirect, timeout
 and schema miss. Layers: unit, live-data (opt-in).
 
-#### Phase 5: Operator tooling, sandbox, integration through the claim
+#### Phase 5: Operator tooling, sandbox, integration through the claim ✓
 
 Ops: `deploy-generation.ts --router-only` (journalled `fuel-swapper-deployed`, `deposit-router-deployed` carrying
 the creation-code hash and constructor arguments; it adopts a landed router only when both match exactly, else it

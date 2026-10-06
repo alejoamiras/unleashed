@@ -72,3 +72,21 @@ integration cells, the operator tooling, and the canary. The parent unified the 
    leaf. Discovery's leg checks were lifted into the exported `readRouterDeposit`, and the canary uses it.
 3. The canary first loaded `fill-testnet.ts` dynamically because it did not exist yet. It now imports it
    statically.
+4. **`aztec start --local-network` always spawns its own `anvil --port 8545`**, inside its process group, even
+   when it is given `--l1-rpc-urls`. In a concurrent run only the first spawn binds. Every later run logs
+   `Address already in use (os error 98)` near the top of its aztec log and carries on against the L1 it was
+   given. This is noise, not a failure.
+5. **The live `verify:l1` ran over the A5 PublicNode Sepolia RPC, not as a keyed run.** `env-exec` refuses a HEAD
+   that is not the tip of a pushed branch, and pushing before the arc loops converge would put the stack on
+   GitHub early. The check only reads, so it needs no secret.
+6. **Gate.**
+   - G0: forge build, the `lifi` build, 247 hermetic tests, the gas snapshot, 23 halmos proofs (2 + 11 + 2 + 8),
+     lint, `typecheck:all`, `test:all`, `lint:actions` and `test:ci-gating` all exit 0.
+   - `test:integration` from two checkouts started at the same moment: 8 files, 47/47 in each. That includes
+     the cross-chain cells and the four router-only rehearsal cells: crash-resume, identical re-run adopts, a
+     changed router deploys beside, and the candidate passes `verify:l1 --strict`.
+   - `sandbox:smoke`: OK in 12.0 min, every (j) cross-chain step ✅.
+   - `verify:l1 --config apps/tools/public/testnet-bridge.json` passes on the live manifest (old router). The
+     `--strict` run passes on a `sandbox:up` candidate.
+   - Operator suites (`verify-l1 live-intent deploy-manifest generation calibration`): 6 files, 39 passed.
+   - No anvil or aztec process from these runs remains, and none of their rows is left in `~/.agents/ports.md`.
