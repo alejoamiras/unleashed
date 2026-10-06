@@ -130,6 +130,24 @@ describe("ActivityDock", () => {
 		expect(document.activeElement).toBe(w.get(sel(TESTIDS.dockOpen)).element)
 	})
 
+	it("stacked under a phone's page it shows without the strip, folds to its heading in place, and never writes the choice", async () => {
+		viewport(true)
+		rows.value = [rowModel({ id: "a", group: "running", action: null })]
+		const w = mount(ActivityDock, { props: { feed, stacked: true }, attachTo: document.body })
+		expect(w.find(sel(TESTIDS.dockStrip)).exists()).toBe(false)
+		expect(w.get(sel(TESTIDS.dock)).attributes("role")).toBeUndefined()
+		expect(w.findAll(sel(TESTIDS.activityRow))).toHaveLength(1)
+		const toggle = w.get(sel(TESTIDS.dockHide))
+		await toggle.trigger("click")
+		expect(toggle.text()).toBe("Show")
+		expect(toggle.attributes("aria-expanded")).toBe("false")
+		expect(w.findAll(sel(TESTIDS.activityRow))).toHaveLength(0)
+		expect(localStorage.getItem(DOCK_KEY)).toBeNull()
+		await toggle.trigger("click")
+		expect(toggle.text()).toBe("Hide")
+		expect(w.findAll(sel(TESTIDS.activityRow))).toHaveLength(1)
+	})
+
 	it("opens itself once for a record that starts needing you — never for another account's, never twice, never touching the choice", async () => {
 		rows.value = [rowModel({ id: "theirs", group: "other-account", action: "switch", counts: false })]
 		const w = dock()
