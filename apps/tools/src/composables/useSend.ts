@@ -59,6 +59,7 @@ import { normalizeError } from "@/lib/errors"
 import { humanizeWalletError } from "@/lib/wallet-errors"
 import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
+import { appWatchDeps, resumeCrossChainWatches } from "./crosschain-watch"
 import { findDepositTx } from "./deposit-reconcile"
 import { sliceSwapData } from "./useFuelQuote"
 import { reconcileFuelConsumed } from "./fuel-recovery"
@@ -222,6 +223,8 @@ export function ensureSendJournalDeps(): void {
 		claimReceiptStatus: (txHash) => claimReceiptStatus(txHash),
 		locks: webJournalLocks(),
 	})
+	// Reads only: a transfer still crossing from another chain is watched without any wallet.
+	resumeCrossChainWatches(appWatchDeps())
 }
 
 function signL1With(l1: ReturnType<typeof useL1Wallet>, message: string): Promise<string> {
