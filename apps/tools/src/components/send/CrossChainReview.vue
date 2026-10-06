@@ -171,7 +171,7 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 			</div>
 			<div class="line" :data-testid="TESTIDS.sendXcYouSign">
 				<dt>You sign</dt>
-				<dd class="prose sign">{{ youSign }}</dd>
+				<dd class="prose itemised">{{ youSign }}</dd>
 			</div>
 		</dl>
 
@@ -469,7 +469,7 @@ dd {
 	font-family: var(--ul-font-body);
 }
 
-.sign {
+.itemised {
 	font-size: 13px;
 	color: var(--ul-ink-3);
 }
