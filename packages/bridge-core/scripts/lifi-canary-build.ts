@@ -8,20 +8,13 @@ import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, encodeFunctionData, type Hex, zeroHash } from "viem"
-import { buildAcrossV4Deposit } from "../src/across-v4"
 import { deriveTokenClaimSecret } from "../src/claim-secret"
+import { acrossRouteTx, bridgeFromCallerCall as routerCall } from "../src/crosschain-route"
 import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { type FuelQuoteProvider, withFuelFloor } from "../src/fuel-quote"
 import { proposeGasShare } from "../src/gas-share"
 import { type DepositWitness, depositWitness, depositWitnessPermitTypedData } from "../src/l1"
-import {
-	acrossDepositFor,
-	type DecodedRoute,
-	type RouteExpectation,
-	type RouterIntent,
-	type RouteTx,
-	verifyRoute,
-} from "../src/lifi-decode"
+import { type DecodedRoute, type RouteExpectation, type RouterIntent, type RouteTx, verifyRoute } from "../src/lifi-decode"
 import { deriveBridgeSecret, PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
 import { type CanaryBindings, CanaryRefusal, type CanaryRowShape, recoveryFloor } from "./lifi-canary-plan"
 
@@ -127,7 +120,7 @@ export function routerIntent(token: Address, isPrivate: boolean, legs: RowLegs, 
 
 /** `bridgeFromCaller` for an Across delivery: the rail delivers exactly `delivered`, so it bounds the pull on both sides. */
 export function bridgeFromCallerCall(intent: RouterIntent, swapData: Hex, delivered: bigint): Hex {
-	return encodeFunctionData({ abi: DEPOSIT_ROUTER_ABI, functionName: "bridgeFromCaller", args: [intent, swapData, delivered, delivered] })
+	return routerCall(intent, swapData, delivered, delivered)
 }
 
 /** The Across terms a deposit is built on: a live quote, or the canary's own when Across quotes none. */
@@ -189,17 +182,7 @@ export function crossChainExpectation(
 }
 
 /** The source transaction and its exact approval, encoded by `across-v4.ts` from the expectation itself. */
-export function crossChainTx(x: RouteExpectation): RouteTx {
-	const call = buildAcrossV4Deposit(acrossDepositFor(x))
-	return {
-		chainId: x.srcChainId,
-		from: x.user,
-		to: call.to,
-		value: call.value,
-		data: call.data,
-		approval: { token: x.srcToken, spender: call.to, amount: x.srcAmount },
-	}
-}
+export const crossChainTx: (x: RouteExpectation) => RouteTx = acrossRouteTx
 
 /** `verifyRoute`'s acceptance, or a refusal naming the field it refused. */
 export function verifiedRoute(tx: RouteTx, x: RouteExpectation): DecodedRoute {
