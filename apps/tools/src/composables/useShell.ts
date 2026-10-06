@@ -27,8 +27,9 @@ const section = ref<Section>("send")
 const highlightedId = ref<string | null>(null)
 /** The send wizard is on one of its form steps (token, amount, review), whose footer is the real-funds line alone. */
 const bridgeForm = ref(false)
-/** The send wizard shows a receipt reopened from Activity, whose footer lists the contracts as Activity's does. */
-const receiptFromActivity = ref(false)
+/** The record whose receipt the send wizard shows reopened from Activity, else null: the footer lists the
+ *  contracts as Activity's does, and the dock marks the record's row as the one on screen. */
+const receiptFromActivity = ref<string | null>(null)
 /** Requests the wizard consumes once: a pre-filled send, or the receipt of one record. */
 const prefill = ref<EthereumPrefill | null>(null)
 const receiptRequest = ref<string | null>(null)
@@ -89,7 +90,7 @@ export function __resetShellForTests(): void {
 	section.value = "send"
 	highlightedId.value = null
 	bridgeForm.value = false
-	receiptFromActivity.value = false
+	receiptFromActivity.value = null
 	prefill.value = null
 	receiptRequest.value = null
 }

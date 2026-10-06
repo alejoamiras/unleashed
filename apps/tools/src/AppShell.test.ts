@@ -92,7 +92,7 @@ describe("AppShell", () => {
 		await nextTick()
 		expect(footer()).toBe("false")
 		useShell().bridgeForm.value = false
-		useShell().receiptFromActivity.value = true
+		useShell().receiptFromActivity.value = "rec-1"
 		await nextTick()
 		expect(footer()).toBe("true")
 		useShell().goTo("activity")

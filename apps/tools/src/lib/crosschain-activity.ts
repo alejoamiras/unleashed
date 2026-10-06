@@ -104,6 +104,33 @@ export function dockWord(rec: CrossChainDepositRecord, rt: RecordRuntime, now: n
 	return text ? { text, tone: "run" } : null
 }
 
+/**
+ * The dock row of the send on screen: an outcome names itself on the second line in place of "this send"
+ * (`detail` null keeps it), and a delivered send's word is the Continue its panel asks for.
+ */
+export function currentRowParts(
+	rec: CrossChainDepositRecord,
+	phase: CrossChainPhase,
+	live: DockWord | null,
+): { word: DockWord; detail: string | null } {
+	const chip = phaseChip(phase)
+	switch (phase.kind) {
+		case "delivered":
+			return { word: { text: "Continue", tone: "need", spoken: "delivered to Ethereum" }, detail: "now on Ethereum" }
+		case "expired":
+			return {
+				word: { text: chip.word, tone: chip.tone, spoken: `refund pending on ${chainLabel(rec.route.srcChainId)}` },
+				detail: "refund pending",
+			}
+		case "not-sent":
+			return { word: { text: chip.word, tone: chip.tone, spoken: "did not go through" }, detail: "nothing moved" }
+		case "finalizing":
+			return { word: { text: chip.word, tone: chip.tone }, detail: phaseDetail(phase, "") }
+		default:
+			return { word: live ?? { text: chip.word, tone: chip.tone }, detail: null }
+	}
+}
+
 /** The dock row's second line after the route, in place of visibility and age. */
 export function phaseDetail(phase: CrossChainPhase, visibility: string): string {
 	switch (phase.kind) {

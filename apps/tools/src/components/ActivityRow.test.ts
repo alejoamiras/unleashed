@@ -17,7 +17,7 @@ describe("ActivityRow", () => {
 		expect(w.get(".amt").text()).toBe("0.5 WETH")
 		expect(w.get(".meta").text()).toBe("Ethereum → Aztec · 26 min")
 		expect(w.get(sel(TESTIDS.activityRowOpen)).attributes("aria-label")).toBe(
-			"Open 0.5 WETH, Ethereum → Aztec, public + gas, 26 minutes ago",
+			"Open 0.5 WETH, Ethereum to Aztec, public, 26 minutes ago",
 		)
 		expect(w.get(sel(TESTIDS.activityRowAction)).text()).toBe("Claim")
 		expect(w.get(sel(TESTIDS.activityRowAction)).classes()).toContain("filled")
@@ -27,7 +27,7 @@ describe("ActivityRow", () => {
 		const running = mountRow(row({ group: "running", action: null, phase: "Proving", age: "3 min" }))
 		expect(running.find(sel(TESTIDS.activityRowAction)).exists()).toBe(false)
 		expect(running.get(".side").text()).toBe("Proving")
-		expect(running.get(".meta").text()).toBe("Ethereum → Aztec · public + gas · 3 min")
+		expect(running.get(".meta").text()).toBe("Ethereum → Aztec · public · 3 min")
 		const done = mountRow(row({ group: "done", action: null, age: "yesterday" }))
 		expect(done.get(".side").text()).toBe("Arrived")
 		expect(done.get(".side").findComponent(Icon).props("name")).toBe("check")
@@ -40,7 +40,7 @@ describe("ActivityRow", () => {
 		expect(done.get(".amt").text()).toBe("2.00 FJ")
 		expect(done.get(".qualifier").text()).toBe("before claim fees")
 		expect(done.get(sel(TESTIDS.activityRowOpen)).attributes("aria-label")).toBe(
-			"Open 2.00 FJ before claim fees, Ethereum → Aztec, public, 3 minutes ago",
+			"Open 2.00 FJ before claim fees, Ethereum to Aztec, public, 3 minutes ago",
 		)
 		expect(mountRow(row()).find(".qualifier").exists()).toBe(false)
 	})
@@ -95,12 +95,20 @@ describe("ActivityRow", () => {
 		expect(acting.findComponent(BusyPixels).exists()).toBe(true)
 	})
 
-	it("the foreground row is the current item: this send, no button, its running word", () => {
+	it("the foreground row is the current item: this send, or the outcome that ended it, after a route that truncates first", () => {
 		const w = mountRow(row({ group: "running", status: "running", action: null, foreground: true, phase: "Crossing" }))
 		expect(w.attributes("aria-current")).toBe("true")
-		expect(w.get(".meta").text()).toBe("Ethereum → Aztec · this send")
+		expect(w.get(".meta .route").text()).toBe("Ethereum → Aztec")
+		expect(w.get(".meta .tail").text()).toBe("· this send")
 		expect(w.get(".side").text()).toBe("Crossing")
-		expect(w.find(sel(TESTIDS.activityRowAction)).exists()).toBe(false)
+		const ended = { text: "Expired", tone: "ended" as const }
+		const expired = mountRow(
+			row({ group: "done", status: "done", action: null, foreground: true, word: ended, detail: "refund pending" }),
+		)
+		expect(expired.get(".meta").text()).toBe("Ethereum → Aztec · refund pending")
+		const receipt = mountRow(row({ group: "done", status: "done", action: null, current: true }))
+		expect(receipt.attributes("aria-current")).toBe("true")
+		expect(receipt.get(".meta").text()).toBe("Ethereum → Aztec · public · 26 min")
 	})
 
 	it("a late send reads Slow in the attention tone, and its open label says why", () => {
@@ -108,6 +116,8 @@ describe("ActivityRow", () => {
 		const w = mountRow(row({ group: "running", status: "running", action: null, foreground: true, word: slow, route: "Base → Aztec" }))
 		expect(w.get(".side").text()).toBe("Slow")
 		expect(w.attributes("data-tone")).toBe("need")
-		expect(w.get(sel(TESTIDS.activityRowOpen)).attributes("aria-label")).toBe("Show this send, 0.5 WETH, Base → Aztec, bridging slowly")
+		expect(w.get(sel(TESTIDS.activityRowOpen)).attributes("aria-label")).toBe(
+			"Show this send, 0.5 WETH, Base to Aztec, bridging slowly",
+		)
 	})
 })

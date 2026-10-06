@@ -22,6 +22,7 @@ vi.mock("@/lib/clock", () => ({ useNow: () => now }))
 
 import { XC_CREATED, XC_TRANSPORT, xcRecord } from "@/test/crosschain-record"
 import { useActivityFeed } from "./useActivityFeed"
+import { __resetShellForTests, useShell } from "./useShell"
 
 const DEPLOY = { chainId: 11155111, portal: "0xportal", bridge: "0xbridge" }
 function dep(over: Partial<DepositJournalRecord> = {}): DepositJournalRecord {
@@ -45,6 +46,7 @@ describe("useActivityFeed", () => {
 		records.value = []
 		runtime.value = {}
 		activeFlowId.value = null
+		__resetShellForTests()
 	})
 
 	it("groups rows newest first; counts and auto-opens lost and needs-you rows of the active account only", () => {
@@ -73,22 +75,44 @@ describe("useActivityFeed", () => {
 		})
 	})
 
-	it("lists the record the wizard is showing read-only under Running: no action, not counted, never opening the dock", () => {
-		records.value = [dep({ id: "fg", leafIndex: "1" }), dep({ id: "other", leafIndex: "1" })]
+	it("lists the send on screen in its own group with its action and count, marked current, but never opening the dock", () => {
+		const shown = dep({ id: "shown", leafIndex: "1", completedAt: 5 })
+		records.value = [dep({ id: "fg", leafIndex: "1" }), dep({ id: "other", leafIndex: "1" }), shown]
 		activeFlowId.value = "fg"
+		useShell().receiptFromActivity.value = "shown"
 		const feed = useActivityFeed()
-		expect(feed.rows.value.map((r) => r.id)).toEqual(["other", "fg"])
-		expect(feed.rows.value.find((r) => r.id === "fg")).toMatchObject({
-			foreground: true,
-			group: "running",
-			status: "needs-you",
-			action: null,
-			counts: false,
-		})
-		expect(feed.grouped.value.running.map((r) => r.id)).toEqual(["fg"])
-		expect(feed.count.value).toBe(1)
+		const row = (id: string) => feed.rows.value.find((r) => r.id === id)
+		expect(row("fg")).toMatchObject({ foreground: true, current: true, group: "needs-you", action: "claim", counts: true })
+		expect(feed.grouped.value.needsYou.map((r) => r.id).sort()).toEqual(["fg", "other"])
+		expect(feed.count.value).toBe(2)
 		expect(feed.autoOpenIds.value).toEqual(["other"])
-		expect(feed.liveIds.value.has("fg")).toBe(true)
+		expect(row("shown")).toMatchObject({ foreground: false, current: true, group: "done" })
+		expect(row("other")?.current).toBe(false)
+	})
+
+	it("the send on screen names its outcome in place of this send; a delivered one's Continue is a word", () => {
+		const done = { completedAt: XC_CREATED + 1 }
+		const xc = (id: string, route: Partial<CrossChainDepositRecord["route"]>) =>
+			xcRecord({ id, secretHashHex: id as `0x${string}`, ...done }, route) as unknown as BridgeJournalRecord
+		records.value = [
+			xc("delivered", { outcome: "delivered-to-wallet", outcomeAmount: "4900000" }),
+			xc("expired", { outcome: "expired-on-source" }),
+		]
+		const feed = useActivityFeed()
+		const row = (id: string) => feed.rows.value.find((r) => r.id === id)
+		activeFlowId.value = "delivered"
+		expect(row("delivered")).toMatchObject({
+			group: "needs-you",
+			action: null,
+			detail: "now on Ethereum",
+			word: { text: "Continue", tone: "need", spoken: "delivered to Ethereum" },
+		})
+		activeFlowId.value = "expired"
+		expect(row("expired")).toMatchObject({
+			group: "done",
+			detail: "refund pending",
+			word: { text: "Expired", tone: "ended", spoken: "refund pending on Base Sepolia" },
+		})
 	})
 
 	it("an other-account record groups last; a gas-only foreground row shows its Fee Juice", () => {
@@ -168,6 +192,7 @@ describe("useActivityFeed", () => {
 		expect(word("slow")).toEqual({ text: "Slow", tone: "need", spoken: "bridging slowly" })
 		expect(word("crossing")).toEqual({ text: "Crossing", tone: "run" })
 		expect(word("claim")).toEqual({ text: "Claim", tone: "run" })
+		expect(feed.rows.value.find((r) => r.id === "claim")).toMatchObject({ group: "needs-you", action: "claim", amount: "5.00" })
 	})
 
 	it("ages tick with the shared clock", () => {

@@ -217,6 +217,8 @@ const sendStartedAt = ref<number | undefined>(undefined)
 const activeId = journal.activeFlowId
 const ownedId = ref<string | null>(null)
 const receiptSnapshot = ref<ReceiptSnapshot | null>(null)
+/** The record a receipt reopened from Activity belongs to; the snapshot itself names no record. */
+const reopenedId = ref<string | null>(null)
 const receiptL2Token = ref<string | null>(null)
 /** The add-token CTA waits for the wallet to say it lacks the receipt's token, so a token it already
  *  lists is never offered; a wallet that cannot answer says "lacks" (fail open). */
@@ -325,15 +327,15 @@ watch(
 	{ immediate: true },
 )
 watch(
-	() => view.value.kind === "receipt" && view.value.snapshot.reopened === true,
-	(reopened) => {
-		shell.receiptFromActivity.value = reopened
+	() => (view.value.kind === "receipt" && view.value.snapshot.reopened === true ? reopenedId.value : null),
+	(id) => {
+		shell.receiptFromActivity.value = id
 	},
 	{ immediate: true },
 )
 onScopeDispose(() => {
 	shell.bridgeForm.value = false
-	shell.receiptFromActivity.value = false
+	shell.receiptFromActivity.value = null
 })
 
 const busy = computed(() => preflighting.value || submitting.value || sendFlow.busy.value || exitFlow.busy.value)
@@ -1326,6 +1328,7 @@ function openReceipt(rec: AnyJournalRecord, reopened = false): boolean {
 	const view = sendView(rec)
 	if (!isSendRecord(view)) return false
 	const base = { ...snapshotOf(view), ...(reopened ? { reopened } : {}) }
+	reopenedId.value = reopened ? rec.id : null
 	receiptSnapshot.value = isCrossChainRecord(rec)
 		? { ...base, source: { chainId: rec.route.srcChainId, txHash: rec.route.srcTxHash }, sender: rec.route.srcSender }
 		: base

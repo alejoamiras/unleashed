@@ -37,13 +37,14 @@ const title = computed(() => (action.value === "switch" && props.switchLocked ? 
  *  secondary, so one screen never shows two filled calls. */
 const filled = computed(() => props.row.group === "needs-you" && action.value !== "retry")
 
-/** Beside a button the second line has only its own column, so it keeps route and age: at the
- *  dock's width the visibility would truncate under the button. */
-const meta = computed(() => {
+/** The second line as route and tail: the route truncates first, since the tail ("this send", the
+ *  age) is what tells two rows of one route apart. Beside a button the line has only its own column,
+ *  so it drops the visibility. */
+const meta = computed<{ route: string; tail: string }>(() => {
 	const r = props.row
-	if (r.foreground) return `${r.route} · this send`
-	if (r.detail) return `${r.route} · ${r.detail}`
-	return action.value ? `${r.route} · ${r.age}` : `${r.route} · ${r.visibility} · ${r.age}`
+	if (r.foreground) return { route: r.route, tail: r.detail ?? "this send" }
+	if (r.detail) return { route: r.route, tail: r.detail }
+	return { route: r.route, tail: action.value ? r.age : `${r.visibility} · ${r.age}` }
 })
 
 /** The qualifier and the note share the third line. */
@@ -64,10 +65,11 @@ const side = computed(() => {
 const openLabel = computed(() => {
 	const r = props.row
 	const what = `${r.amount} ${r.symbol}${r.qualifier ? ` ${r.qualifier}` : ""}`
-	if (r.foreground) return `Show this send, ${what}, ${r.route}${r.word?.spoken ? `, ${r.word.spoken}` : ""}`
+	const route = r.route.replace(" → ", " to ").replaceAll(" · ", " ")
+	if (r.foreground) return `Show this send, ${what}, ${route}${r.word?.spoken ? `, ${r.word.spoken}` : ""}`
 	const word = r.word?.spoken ?? r.word?.text.toLowerCase()
 	const tail = word && r.detail ? `${word}, ${r.detail}` : `${r.visibility}, ${r.ageSpoken}`
-	return `Open ${what}, ${r.route}, ${tail}${r.note ? `, ${r.note}` : ""}`
+	return `Open ${what}, ${route}, ${tail}${r.note ? `, ${r.note}` : ""}`
 })
 
 // Action clicks must not also open Activity.
@@ -79,8 +81,8 @@ function onAct(): void {
 <template>
 	<li
 		class="row ul-notch"
-		:class="{ 'has-button': !!action, foreground: row.foreground, qualified: !!extra }"
-		:aria-current="row.foreground || undefined"
+		:class="{ 'has-button': !!action, foreground: row.foreground, current: row.current, qualified: !!extra }"
+		:aria-current="row.current || undefined"
 		:data-testid="TESTIDS.activityRow"
 		:data-record-id="row.id"
 		:data-group="row.group"
@@ -93,7 +95,9 @@ function onAct(): void {
 		<button type="button" class="amt" :aria-label="openLabel" :data-testid="TESTIDS.activityRowOpen" @click.stop="emit('open', row.id)">
 			{{ row.amount }} {{ row.symbol }}
 		</button>
-		<span class="meta">{{ meta }}</span>
+		<span class="meta second"
+			><span class="route">{{ meta.route }}</span><span class="tail">{{ " · " }}{{ meta.tail }}</span></span
+		>
 		<span v-if="extra" class="meta qualifier" :class="{ note: !row.qualifier }">{{ extra }}</span>
 		<button
 			v-if="action"
@@ -160,7 +164,8 @@ function onAct(): void {
 	background: var(--ul-carrier);
 }
 
-.row.foreground[data-status="running"] .dot {
+/* A cross-chain row's tone words its own colour ("Slow" in attention); this is for the rest. */
+.row.foreground[data-status="running"]:not([data-tone]) .dot {
 	background: var(--ul-accent-text);
 }
 
@@ -215,13 +220,28 @@ function onAct(): void {
 	color: var(--ul-carrier);
 }
 
-.row.foreground[data-status="running"] .word {
+.row.foreground[data-status="running"]:not([data-tone]) .word {
 	font-weight: 700;
 	color: var(--ul-accent-text);
 }
 
 .meta.note {
 	color: var(--ul-ink-3);
+}
+
+.second {
+	display: flex;
+}
+
+.route {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.tail {
+	flex: none;
+	white-space: pre;
 }
 
 /* A cross-chain phase's tone overrides its status's: an ended row is flat whatever its colour. */
@@ -264,6 +284,15 @@ function onAct(): void {
 
 .row[data-tone="ended"] .word {
 	color: var(--ul-ink);
+}
+
+/* The send on screen is raised whatever its tone, and an outcome's word on it is bold. */
+.row.current[aria-current] {
+	--ul-fill: var(--ul-raised);
+}
+
+.row.foreground[data-tone] .word {
+	font-weight: 700;
 }
 
 .btn {

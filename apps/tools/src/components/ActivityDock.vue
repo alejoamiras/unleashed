@@ -24,8 +24,8 @@ import { userMessage } from "@/lib/errors"
 import { TESTIDS } from "@/lib/testids"
 
 /**
- * The side list of every bridge, grouped by what it wants from you; the send the wizard is showing
- * is listed read-only. It dispatches to the same engine entry points the page card does, so a
+ * The side list of every bridge, grouped by what it wants from you; the send on screen beside it
+ * is marked current. It dispatches to the same engine entry points the page card does, so a
  * button here can never do something the card would refuse. On the wide layout open or hidden is
  * the user's persisted choice, and the dock opens itself once per record that starts counting as
  * needing you, never for another account's. `stacked` (a phone) lays it under the page, where it
