@@ -40,7 +40,8 @@ import type { GrantOutcome } from "@/lib/send-model"
 import { NETWORK } from "@/lib/network"
 import { computed, ref } from "vue"
 import { FUEL_PORTAL } from "@/contracts/bridge-generation"
-import { SYNC_TARGET_MARGIN_BLOCKS, logPhrase } from "@/lib/bridge-steps"
+import { SYNC_TARGET_MARGIN_BLOCKS, stepLogLines } from "@/lib/bridge-steps"
+import { crossChainLogFacts } from "@/lib/crosschain-steps"
 import { trimTxHash } from "@/lib/format"
 import { humanizeWalletError, isUserRejection } from "@/lib/wallet-errors"
 import { isWellFormedTxHash } from "@/lib/claim-receipt"
@@ -116,6 +117,12 @@ export type BridgeStep =
 	| "sending"
 	| "confirming"
 	| "verifying"
+	// A cross-chain send's source leg and its rail's crossing to Ethereum.
+	| "preparing-source"
+	| "approving-source"
+	| "sending-source"
+	| "bridging"
+	| "bridging-late"
 
 export interface RecordRuntime {
 	busy?: boolean
@@ -379,20 +386,38 @@ const loggedHashes = new Map<string, Set<string>>()
 const loggedSteps = new Map<string, Set<BridgeStep>>()
 let logSeq = 0
 
-function observedHashes(rec: BridgeJournalRecord | undefined): { key: string; name: string; hash: string }[] {
-	const fields: Partial<Record<HashLeg, unknown>> = rec ?? {}
-	return HASH_LEGS.flatMap(([leg, name]) => {
+/** The rows a record's facts earn, once per key: a cross-chain send's proven legs in its own words,
+ *  every other transaction hash as merely observed. */
+function observedRows(rec: AnyJournalRecord | undefined): { key: string; lines: string[] }[] {
+	if (!rec) return []
+	const cross = isCrossChainRecord(rec)
+	const fields: Partial<Record<HashLeg, unknown>> = rec
+	const legs = HASH_LEGS.flatMap(([leg, name]) => {
 		const hash = fields[leg]
-		return typeof hash === "string" && TX_HASH.test(hash) ? [{ key: `${leg}:${hash.toLowerCase()}`, name, hash }] : []
+		// A cross-chain deposit comes from discovery's proven event, and its own rows say so.
+		if ((cross && leg === "depositTxHash") || typeof hash !== "string" || !TX_HASH.test(hash)) return []
+		// Observed, never "sent" or "confirmed": another tab's write reaches this through the same reload.
+		return [{ key: `${leg}:${hash.toLowerCase()}`, lines: [`${name} hash observed · ${trimTxHash(safeAddressText(hash))}`] }]
 	})
+	return cross ? [...crossChainLogFacts(rec), ...legs] : legs
 }
 
-/** The runtime patch appending `text` to a record's log; a log that starts here seeds its seen hashes. */
-function logPatch(id: string, text: string): Pick<RecordRuntime, "log"> {
+/** The runtime patch appending `texts` to a record's log; a log that starts here seeds its seen hashes. */
+function logPatch(id: string, ...texts: string[]): Pick<RecordRuntime, "log"> {
 	const rows = runtime.value[id]?.log
-	if (!rows) loggedHashes.set(id, new Set(observedHashes(engineRecords().find((r) => r.id === id)).map((h) => h.key)))
-	logSeq += 1
-	return { log: [...(rows ?? []), { seq: logSeq, at: deps.now(), text }].slice(-LOG_CAP) }
+	if (!rows) loggedHashes.set(id, new Set(observedRows(engineRecords().find((r) => r.id === id)).map((h) => h.key)))
+	const added = texts.map((text) => {
+		logSeq += 1
+		return { seq: logSeq, at: deps.now(), text }
+	})
+	return { log: [...(rows ?? []), ...added].slice(-LOG_CAP) }
+}
+
+/** Appends a row the caller saw proven, such as a source-chain approval's successful receipt; never a
+ *  note or an error. */
+export function logRecordLine(id: string, text: string): void {
+	loggedSteps.delete(id)
+	setRuntime(id, logPatch(id, text))
 }
 
 function moveEntry<T>(map: Map<string, T>, from: string, to: string): void {
@@ -406,19 +431,18 @@ function stepLogPatch(id: string, step: BridgeStep): Partial<Pick<RecordRuntime,
 	if (seen.has(step)) return {}
 	loggedSteps.set(id, seen.add(step))
 	const rec = engineRecords().find((r) => r.id === id)
-	return logPatch(id, logPhrase(step, rec))
+	return logPatch(id, ...stepLogLines(step, rec))
 }
 
 function logNewHashes(): void {
 	for (const rec of engineRecords()) {
 		const seen = runtime.value[rec.id]?.log ? loggedHashes.get(rec.id) : undefined
 		if (!seen) continue
-		for (const { key, name, hash } of observedHashes(rec)) {
+		for (const { key, lines } of observedRows(rec)) {
 			if (seen.has(key)) continue
 			seen.add(key)
 			loggedSteps.delete(rec.id)
-			// Observed, never "sent" or "confirmed": another tab's write reaches this through the same reload.
-			setRuntime(rec.id, logPatch(rec.id, `${name} hash observed · ${trimTxHash(safeAddressText(hash))}`))
+			setRuntime(rec.id, logPatch(rec.id, ...lines))
 		}
 	}
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** Services */
-import type { BridgeJournalRecord } from "@unleashed/bridge-core"
+import { type AnyJournalRecord, isCrossChainRecord } from "@unleashed/bridge-core"
 import { Button, Icon, type IconName } from "@unleashed/design"
 import { computed } from "vue"
 
@@ -8,13 +8,14 @@ import { computed } from "vue"
 import { type RecordRuntime, useBridgeJournal } from "@/composables/useBridgeJournal"
 
 /** Utils */
-import { type BridgePhase, stepperPhases } from "@/lib/bridge-steps"
+import { type BridgePhase, compactPhases, stepperPhases } from "@/lib/bridge-steps"
+import { chainLabel } from "@/lib/chains"
 import { useNow } from "@/lib/clock"
 import { formatClock, type TimedBridgePhase, trackPhases } from "@/lib/phase-clock"
 import { TESTIDS } from "@/lib/testids"
 
 const props = defineProps<{
-	record: BridgeJournalRecord
+	record: AnyJournalRecord
 	compact?: boolean
 	retryable?: boolean
 	/** Narration for a record the journal does not hold yet (the wizard's permission phase). */
@@ -22,7 +23,9 @@ const props = defineProps<{
 	/** How the permission step names the user's wallet (a `walletLabel`). */
 	walletLabel?: string
 }>()
-const emit = defineEmits<{ retry: [] }>()
+/** `claim`: the user starts a claim nothing is running; `new-send`: the user starts over although the source
+ *  send may still be on its way. */
+const emit = defineEmits<{ retry: []; claim: []; "new-send": [] }>()
 
 const journal = useBridgeJournal()
 
@@ -37,6 +40,8 @@ const phases = computed(() => {
 	void now.value // re-evaluate every tick so live timers advance.
 	return trackPhases(props.record.id, stepperPhases(props.record, rt.value, props.walletLabel))
 })
+const cells = computed(() => compactPhases(phases.value))
+const sourceName = computed(() => (isCrossChainRecord(props.record) ? chainLabel(props.record.route.srcChainId) : ""))
 const activePhase = computed(() => phases.value.find((p) => p.state === "active" || p.state === "failed"))
 /** Compact cards narrate only what is LIVE: a failed note, or the engine's running stepDetail -
  *  never the static signing prompt (an idle card must not instruct "confirm in your wallet"). */
@@ -47,11 +52,16 @@ const compactDetail = computed(() => {
 	return rt.value.stepDetail ? phase.detail : null
 })
 
-/** The live phase draws a plain square instead. */
-const ICON: Record<Exclude<BridgePhase["state"], "active">, IconName> = {
+type Running = "active" | "waiting"
+const isRunning = (state: BridgePhase["state"]): state is Running => state === "active" || state === "waiting"
+
+/** A running phase draws a plain square instead. */
+const ICON: Record<Exclude<BridgePhase["state"], Running>, IconName> = {
 	pending: "hourglass",
 	done: "check",
 	failed: "square-alert",
+	stopped: "warning-diamond",
+	ended: "minus",
 }
 
 /** Spoken in place of the glyph, which carries the state on screen. */
@@ -60,6 +70,9 @@ const STATE_WORD: Record<BridgePhase["state"], string> = {
 	active: "in progress",
 	done: "done",
 	failed: "failed",
+	stopped: "did not go through",
+	ended: "ended",
+	waiting: "still waiting",
 }
 
 function percent(fraction: number): number {
@@ -68,14 +81,22 @@ function percent(fraction: number): number {
 
 function timeOf(phase: TimedBridgePhase): string | undefined {
 	if (phase.state === "done" && phase.elapsedMs !== undefined) return formatClock(phase.elapsedMs)
-	if (phase.state === "active" && phase.startedAt !== undefined) return formatClock(now.value - phase.startedAt)
+	if (isRunning(phase.state) && phase.startedAt !== undefined) return formatClock(now.value - phase.startedAt)
 	return phase.state === "pending" ? phase.estimate : undefined
 }
+
+const spoken = (phase: BridgePhase): string => phase.word ?? phase.suffix ?? STATE_WORD[phase.state]
 
 /** `role="img"` hides the cell's fill from assistive tech, so the label carries its progress. */
 function cellLabel(phase: TimedBridgePhase): string {
 	const p = phase.progress
-	return `${phase.label}, ${STATE_WORD[phase.state]}${p ? `, ${p.current} of ${p.target}` : ""}`
+	const label = phase.compact?.label ?? phase.label
+	return `${label}, ${spoken(phase)}${p ? `, ${p.current} of ${p.target}` : ""}`
+}
+
+const cellText = (phase: BridgePhase): string => {
+	const label = phase.compact?.label ?? phase.label
+	return phase.suffix ? `${label} · ${phase.suffix}` : label
 }
 </script>
 
@@ -83,10 +104,11 @@ function cellLabel(phase: TimedBridgePhase): string {
 	<div v-if="compact" class="rail compact" :data-testid="TESTIDS.journalRail" :data-id="record.id">
 		<div class="strip">
 			<span
-				v-for="phase in phases"
+				v-for="phase in cells"
 				:key="phase.key"
 				class="cell"
-				:class="[phase.state, { landed: phase.state === 'active' && phase.landed }]"
+				:class="[phase.state, { live: phase.state !== 'pending' && phase.state !== 'done', landed: phase.state === 'active' && phase.landed }]"
+				:style="phase.compact ? { '--weight': phase.compact.weight } : undefined"
 				role="img"
 				:aria-label="cellLabel(phase)"
 				:data-testid="TESTIDS.journalPhase"
@@ -101,8 +123,8 @@ function cellLabel(phase: TimedBridgePhase): string {
 						:style="{ width: `${percent(phase.progress.fraction)}%` }"
 				/></span>
 				<span class="seg-label" aria-hidden="true"
-					><Icon v-if="phase.state === 'done' || phase.state === 'failed'" :name="ICON[phase.state]" :size="12" />{{
-						phase.label
+					><Icon v-if="!phase.compact && (phase.state === 'done' || phase.state === 'failed')" :name="ICON[phase.state]" :size="12" />{{
+						cellText(phase)
 					}}</span
 				>
 			</span>
@@ -116,22 +138,57 @@ function cellLabel(phase: TimedBridgePhase): string {
 			:key="phase.key"
 			class="phase"
 			:class="phase.state"
-			:aria-current="phase.state === 'active' || phase.state === 'failed' ? 'step' : undefined"
+			:aria-current="phase.state !== 'pending' && phase.state !== 'done' ? 'step' : undefined"
 			:data-testid="phase.key === 'register' ? TESTIDS.sendStepperRegister : TESTIDS.stepperPhase"
 			:data-phase="phase.key"
 			:data-state="phase.state"
 		>
 			<span class="glyph">
-				<template v-if="phase.state === 'active'">
+				<template v-if="isRunning(phase.state)">
 					<span class="square" :class="{ landed: phase.landed }" aria-hidden="true" /><span class="sr-only">{{
-						STATE_WORD.active
+						phase.needsYou ? "needs you" : spoken(phase)
 					}}</span>
 				</template>
-				<Icon v-else :name="ICON[phase.state]" :size="12" :label="STATE_WORD[phase.state]" />
+				<Icon v-else :name="ICON[phase.state]" :size="12" :label="spoken(phase)" />
 			</span>
 			<div class="body">
 				<span class="label">{{ phase.label }}</span>
-				<p v-if="phase.detail && (phase.state === 'active' || phase.state === 'failed')" class="detail">{{ phase.detail }}</p>
+				<p v-if="phase.detail && phase.state !== 'pending' && phase.state !== 'done'" class="detail">{{ phase.detail }}</p>
+				<span v-if="phase.note && (phase.state === 'done' || phase.state === 'pending')" class="note" :data-testid="TESTIDS.stepperXcNote">{{
+					phase.note
+				}}</span>
+				<span v-if="phase.meter && phase.progress && isRunning(phase.state)" class="meter" :data-testid="TESTIDS.stepperXcMeter">
+					<span
+						role="progressbar"
+						class="meter-bar"
+						:aria-label="phase.meter === 'block' ? 'Aztec blocks' : 'Aztec checkpoints'"
+						aria-valuemin="0"
+						:aria-valuemax="phase.progress.target"
+						:aria-valuenow="phase.progress.current"
+						><span class="meter-fill" :style="{ width: `${percent(phase.progress.fraction)}%` }"
+					/></span>
+					<span class="meter-text">{{ phase.meter }} {{ phase.progress.current }} of {{ phase.progress.target }}</span>
+				</span>
+				<span v-if="phase.lifi" class="lifi" :data-testid="TESTIDS.stepperXcBridge"
+					>Powered by
+					<a href="https://li.fi" target="_blank" rel="noopener noreferrer" :data-testid="TESTIDS.stepperXcLifi">LI.FI</a></span
+				>
+				<a v-if="phase.link" class="link" :href="phase.link.href" target="_blank" rel="noopener noreferrer" :data-testid="TESTIDS.stepperXcLink"
+					><span v-if="phase.link.lead" class="lead">{{ phase.link.lead }}</span>{{ phase.link.text }}<Icon name="external-link" :size="12"
+				/></a>
+				<div v-if="phase.unconfirmed" role="status" class="not-found ul-notch" :data-testid="TESTIDS.stepperXcNotFound">
+					<Icon name="search" :size="24" />
+					<span class="not-found-body">
+						<strong>We haven’t found your send on {{ sourceName }} yet.</strong>
+						<span>Your wallet didn’t confirm it, so we keep looking. Sending again may move your funds twice.</span>
+						<Button size="small" variant="secondary" class="new-send" :data-testid="TESTIDS.stepperXcNewSend" @click="emit('new-send')"
+							>Start a new send anyway</Button
+						>
+					</span>
+				</div>
+				<Button v-if="phase.claimAction && phase.state === 'active'" size="small" class="claim" :data-testid="TESTIDS.stepperXcClaim" @click="emit('claim')">
+					<Icon name="key" :size="12" />Claim on Aztec
+				</Button>
 				<Button
 					v-if="phase.state === 'failed' && retryable"
 					size="small"
@@ -143,7 +200,7 @@ function cellLabel(phase: TimedBridgePhase): string {
 					<Icon name="reload" :size="12" />Retry
 				</Button>
 			</div>
-			<span v-if="timeOf(phase)" class="time">{{ timeOf(phase) }}</span>
+			<span v-if="timeOf(phase)" class="time" :class="{ words: phase.state === 'pending' && phase.signs }">{{ timeOf(phase) }}</span>
 		</li>
 	</ol>
 </template>
@@ -245,10 +302,120 @@ function cellLabel(phase: TimedBridgePhase): string {
 	color: var(--ul-lost);
 }
 
+/* ---------- a cross-chain send's own states ---------- */
+.phase.waiting {
+	align-items: flex-start;
+	padding: 10px 0;
+}
+
+.phase.waiting .square {
+	background: var(--ul-attention);
+}
+
+.phase.waiting .label,
+.phase.ended .label {
+	font-weight: 700;
+	color: var(--ul-ink);
+}
+
+.phase.stopped .glyph,
+.phase.stopped .label {
+	font-weight: 700;
+	color: var(--ul-attention);
+}
+
+.phase.ended .glyph {
+	color: var(--ul-ink-2);
+}
+
 .phase .detail {
 	margin: 0;
 	line-height: 1.4;
 	overflow-wrap: anywhere;
+}
+
+.note,
+.lifi {
+	font: 400 12.5px/1.4 var(--ul-font-body);
+	color: var(--ul-ink-3);
+}
+
+.lifi a,
+.link {
+	color: var(--ul-ink-2);
+	text-decoration: underline dotted;
+	text-underline-offset: 4px;
+}
+
+.lifi a {
+	font-weight: 700;
+}
+
+.link {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font: 400 12.5px/1.4 var(--ul-font-mono);
+}
+
+.link .lead {
+	font-family: var(--ul-font-body);
+}
+
+.meter {
+	display: flex;
+	align-self: stretch;
+	align-items: center;
+	gap: 10px;
+}
+
+.meter-bar {
+	display: flex;
+	flex: 1 1 auto;
+	height: 8px;
+	background: var(--ul-line);
+}
+
+.meter-fill {
+	background: var(--ul-signal);
+	box-shadow: inset -2px 0 0 var(--ul-ink);
+}
+
+.meter-text {
+	flex: none;
+	font: 400 12.5px/1 var(--ul-font-mono);
+	color: var(--ul-ink-2);
+}
+
+.not-found {
+	--ul-fill: var(--ul-attention-bg);
+	--ul-notch: var(--ul-notch-2);
+	display: flex;
+	align-self: stretch;
+	align-items: flex-start;
+	gap: 12px;
+	margin-top: 4px;
+	padding: 12px 14px;
+}
+
+.not-found > svg {
+	flex: none;
+	margin-top: 1px;
+	color: var(--ul-attention);
+}
+
+.not-found-body {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+	font: 400 14px/1.45 var(--ul-font-body);
+	color: var(--ul-ink);
+}
+
+.not-found-body strong {
+	font-weight: 700;
+	color: var(--ul-attention);
 }
 
 .time {
@@ -261,12 +428,24 @@ function cellLabel(phase: TimedBridgePhase): string {
 	color: var(--ul-ink-3);
 }
 
+.time.words {
+	font-family: var(--ul-font-body);
+}
+
 .phase.active .time {
 	color: var(--ul-accent-text);
 }
 
-.retry {
+.retry,
+.new-send {
+	align-self: flex-start;
 	margin-top: 4px;
+}
+
+.claim {
+	min-height: 40px;
+	padding: 0 14px;
+	gap: 8px;
 }
 
 /* ---------- compact rail (journal cards) ---------- */
@@ -284,7 +463,7 @@ function cellLabel(phase: TimedBridgePhase): string {
 
 .cell {
 	display: flex;
-	flex: 1 1 0;
+	flex: var(--weight, 1) 1 0;
 	flex-direction: column;
 	gap: 6px;
 	min-width: 0;
@@ -308,6 +487,19 @@ function cellLabel(phase: TimedBridgePhase): string {
 
 .cell.failed .seg {
 	background: var(--ul-lost);
+}
+
+.cell.stopped .seg {
+	background: var(--ul-attention);
+}
+
+.cell.ended .seg {
+	background: var(--ul-ink-2);
+}
+
+/* Striped: still live, and nothing is wrong yet. */
+.cell.waiting .seg {
+	background: repeating-linear-gradient(90deg, var(--ul-attention) 0 8px, var(--ul-attention-bg) 8px 12px);
 }
 
 /* The outline keeps a live segment at 0% distinct from a pending one. */
@@ -347,14 +539,24 @@ function cellLabel(phase: TimedBridgePhase): string {
 	color: var(--ul-lost);
 }
 
+.cell.stopped .seg-label,
+.cell.waiting .seg-label {
+	font-weight: 700;
+	color: var(--ul-attention);
+}
+
+.cell.ended .seg-label {
+	font-weight: 700;
+	color: var(--ul-ink);
+}
+
 /* Six labels do not fit a phone card: only the live one keeps its words, and room to show them. */
 @media (max-width: 760px) {
-	.cell.active,
-	.cell.failed {
+	.cell.live {
 		flex-grow: 4;
 	}
 
-	.cell:not(.active, .failed) .seg-label {
+	.cell:not(.live) .seg-label {
 		visibility: hidden;
 	}
 }

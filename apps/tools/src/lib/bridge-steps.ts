@@ -1,13 +1,15 @@
 import {
-	type BridgeJournalRecord,
+	type AnyJournalRecord,
 	type DepositJournalRecord,
 	type SendDepositRecord,
 	type WithdrawJournalRecord,
 	assetKindOf,
 	deriveSendDepositStage,
+	isCrossChainRecord,
 	isSendRecord,
 } from "@unleashed/bridge-core"
 import type { BridgeStep, RecordRuntime } from "@/composables/useBridgeJournal"
+import { crossChainLogWords, crossChainPhases } from "@/lib/crosschain-steps"
 import { safeDisplay, safeSentence } from "@/lib/token-display"
 
 /**
@@ -18,10 +20,30 @@ import { safeDisplay, safeSentence } from "@/lib/token-display"
  * active, its live detail, and its determinate progress.
  */
 
-export type PhaseState = "pending" | "active" | "done" | "failed"
+/**
+ * `stopped`, `ended` and `waiting` are a cross-chain send's: its funds went back to the user's Ethereum
+ * wallet, its rail let it expire, or nothing has answered yet (a source send not found, a rail slower
+ * than usual) and nothing is wrong.
+ */
+export type PhaseState = "pending" | "active" | "done" | "failed" | "stopped" | "ended" | "waiting"
 
 export interface BridgePhase {
-	key: "permit" | "seal" | "approve" | "sign" | "deposit" | "sync" | "register" | "claim" | "confirm" | "exit" | "prove" | "finish"
+	key:
+		| "permit"
+		| "seal"
+		| "approve"
+		| "sign"
+		| "deposit"
+		| "sync"
+		| "register"
+		| "claim"
+		| "confirm"
+		| "exit"
+		| "prove"
+		| "finish"
+		| "src-approve"
+		| "src-send"
+		| "bridge"
 	label: string
 	state: PhaseState
 	/** Live narration when active/failed (runtime detail or the phase's signing prompt). */
@@ -36,6 +58,28 @@ export interface BridgePhase {
 	/** Deposit CONFIRM quiet flip: the claim was seen in a PROPOSED block. The rail renders the
 	 *  live phase in the done colour - display-only evidence, never a completion signal. */
 	landed?: boolean
+	/** The journal card's segment, where the card draws one; a phase without it has no segment there. */
+	compact?: { label: string; weight: number }
+	/** Words after the label on the card: "finalizing", "to your wallet", "expired", "waiting". */
+	suffix?: string
+	/** Spoken in place of the state's own word. */
+	word?: string
+	/** A fact under the label, on a done or pending phase. */
+	note?: string
+	/** An explorer page; `href` is built from a validated hash only. */
+	link?: { href: string; text: string; lead?: string }
+	/** The live phase is the rail LI.FI routes. */
+	lifi?: boolean
+	/** The live phase's `progress`, counted in these units. */
+	meter?: "block" | "checkpoint"
+	/** The phase waits on the user's signature. */
+	signs?: boolean
+	/** The live phase waits on the user. */
+	needsYou?: boolean
+	/** Nothing is running for the live claim: the user starts it. */
+	claimAction?: boolean
+	/** The source send went to the wallet and no answer came back: it may still be on its way. */
+	unconfirmed?: boolean
 }
 
 /** L2 blocks between the deposit-time snapshot and presumed message arrival (raven-style pacing). */
@@ -76,9 +120,12 @@ type DepositRailRecord = DepositJournalRecord | SendDepositRecord
 
 /** The record's rail. `wallet` names the user's Aztec wallet in the permission step's copy: a
  *  `walletLabel`, never a raw claimed name. */
-export function stepperPhases(record: BridgeJournalRecord, runtime: RecordRuntime = {}, wallet = "your wallet"): BridgePhase[] {
-	const phases =
-		record.direction === "deposit" ? depositPhases(record, runtime, wallet) : withdrawPhases(record as WithdrawJournalRecord, runtime)
+export function stepperPhases(record: AnyJournalRecord, runtime: RecordRuntime = {}, wallet = "your wallet"): BridgePhase[] {
+	const phases = isCrossChainRecord(record)
+		? crossChainPhases(record, runtime)
+		: record.direction === "deposit"
+			? depositPhases(record, runtime, wallet)
+			: withdrawPhases(record as WithdrawJournalRecord, runtime)
 	return record.blocked === undefined ? phases : phases.map(failBlocked)
 }
 
@@ -87,7 +134,23 @@ export function stepperPhases(record: BridgeJournalRecord, runtime: RecordRuntim
  *  fails adds none. */
 function failBlocked(phase: BridgePhase): BridgePhase {
 	if (phase.state === "done") return phase
-	return { key: phase.key, label: phase.label, state: phase.state === "active" ? "failed" : phase.state }
+	const live = phase.state === "active" || phase.state === "waiting"
+	return {
+		key: phase.key,
+		label: phase.label,
+		state: live ? "failed" : phase.state,
+		...(phase.compact ? { compact: phase.compact } : {}),
+	}
+}
+
+/** The card's segments: the phases that carry one, a registration showing in the claim's segment while
+ *  it is live; every phase where none carries one. */
+export function compactPhases<P extends BridgePhase>(phases: readonly P[]): P[] {
+	if (!phases.some((p) => p.compact)) return [...phases]
+	const register = phases.find((p) => p.key === "register" && p.state !== "pending" && p.state !== "done")
+	return phases
+		.filter((p) => p.compact)
+		.map((p) => (p.key === "claim" && register ? { ...register, key: p.key, label: p.label, compact: p.compact } : p))
 }
 
 /** Where the whole run stands: done phases plus the live one's measured share, over every phase on
@@ -99,7 +162,8 @@ export interface OverallProgress {
 	/** 1-based position of the live or failed phase; with none live, the count of done phases. */
 	index: number
 	total: number
-	state: "running" | "failed" | "done"
+	/** `ended`: the live phase is where a cross-chain send stopped short of Aztec. */
+	state: "running" | "failed" | "ended" | "done"
 }
 
 /** A live phase never fills its own slot; only its completion does. */
@@ -108,19 +172,32 @@ const LIVE_SHARE_CAP = 0.99
 export function overallProgress(phases: readonly BridgePhase[]): OverallProgress {
 	const total = phases.length
 	const done = phases.filter((p) => p.state === "done").length
-	const live = phases.findIndex((p) => p.state === "active" || p.state === "failed")
+	const live = phases.findIndex((p) => p.state !== "pending" && p.state !== "done")
 	if (live === -1) {
 		const complete = total > 0 && done === total
 		return { fraction: complete ? 1 : 0, index: done, total, state: complete ? "done" : "running" }
 	}
 	const share = clamp01(Math.min(phases[live].progress?.fraction ?? 0, LIVE_SHARE_CAP))
-	const state = phases[live].state === "failed" ? "failed" : "running"
-	return { fraction: (done + share) / total, index: live + 1, total, state }
+	return { fraction: (done + share) / total, index: live + 1, total, state: OVERALL[phases[live].state] }
 }
+
+const OVERALL: Record<PhaseState, OverallProgress["state"]> = {
+	pending: "running",
+	active: "running",
+	waiting: "running",
+	done: "done",
+	failed: "failed",
+	stopped: "ended",
+	ended: "ended",
+}
+
+/** Holds the source send's live phase between its prompts; nothing new has started, so nothing is logged. */
+type SilentStep = "preparing-source"
+type PhrasedStep = Exclude<BridgeStep, SilentStep>
 
 /** The session log's line for a step starting. A step starting is not its transaction landing, so
  *  no phrase claims anything was sent or confirmed. */
-const LOG_PHRASE: Record<BridgeStep, string> = {
+const LOG_PHRASE: Record<PhrasedStep, string> = {
 	granting: "asking your wallet to read {token}",
 	sealing: "sealing the recovery secret on this device",
 	signing: "signing the bridge intent",
@@ -132,14 +209,37 @@ const LOG_PHRASE: Record<BridgeStep, string> = {
 	sending: "claiming on Aztec",
 	confirming: "waiting for the confirmation",
 	verifying: "checking the record against the chain",
+	"approving-source": "approving {amount} on {src}",
+	"sending-source": "sending on {src} through LI.FI",
+	bridging: "waiting for {rail} to deliver on {l1}",
+	"bridging-late": "still in {rail}, longer than usual",
 }
+
+export type RouteWords = Record<"amount" | "src" | "rail" | "l1", string>
+
+/** What a record other than a cross-chain send reads in a route step's phrase. */
+const NO_ROUTE: RouteWords = { amount: "this token", src: "the source chain", rail: "the bridge", l1: "Ethereum" }
 
 /** `{token}` is the symbol of the record's own token block; a record without one reads "this token"
  *  rather than guess, since a gas-only send approves the ERC-20 it pays with, not the Fee Juice it
- *  bridges. */
-export function logPhrase(step: BridgeStep, rec?: BridgeJournalRecord): string {
-	const symbol = rec && isSendRecord(rec) && rec.token ? safeDisplay(rec.token.displaySymbol) : "this token"
-	return LOG_PHRASE[step].replace("{token}", () => symbol)
+ *  bridges. A cross-chain send's phrases name its chains, its rail and what it sends. */
+export function logPhrase(step: PhrasedStep, rec?: AnyJournalRecord): string {
+	const cross = rec !== undefined && isCrossChainRecord(rec)
+	const symbol = rec && !cross && isSendRecord(rec) && rec.token ? safeDisplay(rec.token.displaySymbol) : "this token"
+	const words = cross ? crossChainLogWords(rec) : NO_ROUTE
+	return LOG_PHRASE[step]
+		.replace("{token}", () => symbol)
+		.replace(/\{(amount|src|rail|l1)\}/g, (_, word: keyof RouteWords) => words[word])
+}
+
+/** A cross-chain claim's prompt opens once Aztec has the message, so it marks both. */
+const CROSSCHAIN_SENDING = ["Aztec included it · ready to claim", "waiting for your Aztec wallet"]
+
+/** The session log's rows for a step starting. */
+export function stepLogLines(step: BridgeStep, rec?: AnyJournalRecord): string[] {
+	if (step === "preparing-source") return []
+	if (step === "sending" && rec !== undefined && isCrossChainRecord(rec)) return CROSSCHAIN_SENDING
+	return [logPhrase(step, rec)]
 }
 
 const phaseIf = (on: boolean, key: BridgePhase["key"]): BridgePhase["key"][] => (on ? [key] : [])
@@ -184,7 +284,7 @@ function preDepositKey(rec: DepositRailRecord, rt: RecordRuntime): BridgePhase["
 }
 
 /** What the claim's confirmation does, by what rides in that one transaction. */
-const UNSEAL_PROMPT = "Sign in your Ethereum wallet to unseal the recovery secret, then confirm in your Aztec wallet."
+export const UNSEAL_PROMPT = "Sign in your Ethereum wallet to unseal the recovery secret, then confirm in your Aztec wallet."
 
 function claimPromptOf(fueled: boolean, registersInClaim: boolean): string {
 	if (registersInClaim) {

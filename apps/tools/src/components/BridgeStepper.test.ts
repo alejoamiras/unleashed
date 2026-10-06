@@ -20,6 +20,7 @@ vi.mock("@/lib/clock", () => ({
 }))
 
 import { TESTIDS } from "@/lib/testids"
+import { xcRecord } from "@/test/crosschain-record"
 import BridgeStepper from "./BridgeStepper.vue"
 
 const sel = (t: string) => `[data-testid="${t}"]`
@@ -271,6 +272,23 @@ describe("BridgeStepper", () => {
 		const text = mount(BridgeStepper, { props: { record: gasOnly, runtime: { step: "signing" } } }).text()
 		expect(text).toContain("≥ 2.00 FJ before claim fees · public")
 		expect(text).not.toContain("5.00")
+	})
+
+	it("a cross-chain send: headed by its source and what it sends; a waiting claim needs you and starts from here", async () => {
+		const rec = xcRecord(
+			{ leafIndex: "7" },
+			{ transport: { kind: "across", originChainId: 84532, depositId: "1", relayHash: `0x${"4e".repeat(32)}` } },
+		)
+		runtime.value = { [rec.id]: { claimable: true } }
+		const w = mount(BridgeStepper, { props: { record: rec } })
+		expect(w.get(".headline").text()).toBe("Base Sepolia → Aztec · 5.00 USDC · public")
+		expect(w.get(".caption span").text()).toBe("Claim on Aztec · phase 5 of 6 · needs you")
+		await w.get(sel(TESTIDS.stepperXcClaim)).trigger("click")
+		expect(runDepositClaim).toHaveBeenCalledWith(rec.id)
+
+		const unsent = mount(BridgeStepper, { props: { record: xcRecord({}, { srcTxHash: undefined }) } })
+		await unsent.get(sel(TESTIDS.stepperXcNewSend)).trigger("click")
+		expect(unsent.emitted("new-send")).toHaveLength(1)
 	})
 
 	it("the headline renders a hostile stored symbol and an impossible amount as text it can vouch for", () => {

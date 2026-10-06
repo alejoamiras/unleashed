@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** Services */
-import { type BridgeJournalRecord, type DepositJournalRecord, isProvisionalRecordId } from "@unleashed/bridge-core"
+import { type AnyJournalRecord, type DepositJournalRecord, isCrossChainRecord, isProvisionalRecordId } from "@unleashed/bridge-core"
 import { Button, Icon, ProgressBar } from "@unleashed/design"
 import { computed, useId } from "vue"
 
@@ -11,6 +11,7 @@ import { type RecordRuntime, useBridgeJournal } from "@/composables/useBridgeJou
 import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
 import { isTerminalAttention, overallProgress, stepperPhases } from "@/lib/bridge-steps"
 import { useNow } from "@/lib/clock"
+import { crossChainRoute, sourceAmountText } from "@/lib/crosschain-steps"
 import { formatClock } from "@/lib/phase-clock"
 import type { Direction } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
@@ -22,7 +23,7 @@ import DirectionSegment from "./send/DirectionSegment.vue"
 // `withDefaults`: an absent boolean prop is cast to false, and backgrounding must stay the default.
 const props = withDefaults(
 	defineProps<{
-		record: BridgeJournalRecord
+		record: AnyJournalRecord
 		/** Narration for a record the journal does not hold yet (the wizard's permission phase). */
 		runtime?: RecordRuntime
 		/** False while nothing is running in the journal yet: there is nothing to background. */
@@ -35,7 +36,8 @@ const props = withDefaults(
 	}>(),
 	{ runtime: undefined, canBackground: true, walletLabel: undefined, startedAt: undefined },
 )
-const emit = defineEmits<{ background: []; backup: [record: BridgeJournalRecord] }>()
+/** `new-send`: the user starts over while a source send that never confirmed may still be on its way. */
+const emit = defineEmits<{ background: []; backup: [record: AnyJournalRecord]; "new-send": [] }>()
 const exportable = computed(() => {
 	if (isProvisionalRecordId(props.record.id)) return false
 	const r = props.record
@@ -72,24 +74,44 @@ function onRetry() {
 	else void journal.runWithdrawConsume(props.record.id)
 }
 
+function onClaim() {
+	void journal.runDepositClaim(props.record.id)
+}
+
 /** The stepper's copy of the switch answers none of the wizard's selectors. */
 const LOCKED_TESTIDS = { root: TESTIDS.stepperDirection }
 const direction = computed<Direction>(() => (props.record.direction === "deposit" ? "l1-to-l2" : "l2-to-l1"))
-const route = computed(() => (props.record.direction === "deposit" ? "Ethereum → Aztec" : "Aztec → Ethereum"))
+const route = computed(() => {
+	const r = props.record
+	if (isCrossChainRecord(r)) return crossChainRoute(r)
+	return r.direction === "deposit" ? "Ethereum → Aztec" : "Aztec → Ethereum"
+})
+/** A cross-chain send is headed by what it takes on its source chain. */
 const amount = computed(() => {
-	const d = displayAmountOf(props.record)
+	const r = props.record
+	if (isCrossChainRecord(r)) return sourceAmountText(r) ?? "—"
+	const d = displayAmountOf(r)
 	return `${displayAmountText(d)} ${d.symbol}`
 })
-const qualifier = computed(() => amountQualifier(displayAmountOf(props.record)))
-
-const liveName = computed(() => {
-	const { state, index } = overall.value
-	if (state === "done") return "Done"
-	return `${phases.value[index - 1]?.label ?? ""}${state === "failed" ? " failed" : ""}`
+const qualifier = computed(() => {
+	const r = props.record
+	return isCrossChainRecord(r) ? null : amountQualifier(displayAmountOf(r))
 })
-const caption = computed(() => `${liveName.value} · phase ${overall.value.index} of ${overall.value.total}`)
+
+const livePhase = computed(() => phases.value[overall.value.index - 1])
+const liveName = computed(() => {
+	const { state } = overall.value
+	if (state === "done") return "Done"
+	const label = livePhase.value?.label ?? ""
+	if (state === "failed") return `${label} failed`
+	return state === "ended" && livePhase.value?.suffix ? `${label} · ${livePhase.value.suffix}` : label
+})
+const caption = computed(() => {
+	const asks = overall.value.state === "running" && livePhase.value?.needsYou ? " · needs you" : ""
+	return `${liveName.value} · phase ${overall.value.index} of ${overall.value.total}${asks}`
+})
 const valuetext = computed(() => `${Math.round(overall.value.fraction * 100)} percent, ${liveName.value}`)
-const TONE = { running: "signal", failed: "lost", done: "carrier" } as const
+const TONE = { running: "signal", failed: "lost", ended: "signal", done: "carrier" } as const
 const clockStart = computed(() => props.startedAt ?? props.record.createdAt)
 const elapsed = computed(() => formatClock((props.record.completedAt ?? now.value) - clockStart.value))
 
@@ -151,7 +173,15 @@ const logTitleId = useId()
 			</div>
 
 			<div class="split" :class="{ 'with-log': hasLog }">
-				<BridgePhaseRail :record="record" :runtime="runtime" :wallet-label="walletLabel" :retryable="canRetry" @retry="onRetry" />
+				<BridgePhaseRail
+					:record="record"
+					:runtime="runtime"
+					:wallet-label="walletLabel"
+					:retryable="canRetry"
+					@retry="onRetry"
+					@claim="onClaim"
+					@new-send="emit('new-send')"
+				/>
 				<div v-if="hasLog" class="log-panel">
 					<p :id="logTitleId" class="log-title">Log <span class="log-sub">· what actually happened</span></p>
 					<div class="log ul-notch" role="log" :aria-labelledby="logTitleId" :data-testid="TESTIDS.stepperLog">

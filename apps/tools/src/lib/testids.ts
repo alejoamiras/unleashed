@@ -293,6 +293,13 @@ export const TESTIDS = {
 
 	// Cross-chain · stepper and receipt
 	stepperXcBridge: "tl-stepper-xc-bridge",
+	stepperXcLifi: "tl-stepper-xc-lifi",
+	stepperXcLink: "tl-stepper-xc-link",
+	stepperXcNote: "tl-stepper-xc-note",
+	stepperXcMeter: "tl-stepper-xc-meter",
+	stepperXcClaim: "tl-stepper-xc-claim",
+	stepperXcNotFound: "tl-stepper-xc-not-found",
+	stepperXcNewSend: "tl-stepper-xc-new-send",
 
 	// Cross-chain · activity, outcomes and footer
 	journalXcOutcome: "tl-journal-xc-outcome",
