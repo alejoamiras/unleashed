@@ -128,7 +128,10 @@ function onTarget(event: Event): void {
 				<dd>
 					<template v-if="loading">—</template>
 					<template v-else-if="intent === 'gas'">{{ gasArrives }}</template>
-					<template v-else>{{ gasArrives }} <span class="from" :data-testid="TESTIDS.sendGasShare">from {{ sliceText }} {{ token.symbol }}</span></template>
+					<template v-else
+						>{{ gasArrives }}<span class="sr-only">{{ " " }}</span
+						><span class="from" :data-testid="TESTIDS.sendGasShare">from {{ sliceText }} {{ token.symbol }}</span></template
+					>
 				</dd>
 			</div>
 			<div v-if="intent === 'gas' && enoughFor !== null" class="line" :data-testid="TESTIDS.sendGasEnough">
@@ -236,15 +239,16 @@ function onTarget(event: Event): void {
 	background: var(--ul-panel);
 }
 
+/* A value too long for the label's line drops whole under it. */
 .line {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: space-between;
 	align-items: baseline;
-	gap: 16px;
+	gap: 4px 16px;
 }
 
 dt {
-	min-width: 0;
 	font: 400 14px/1.4 var(--ul-font-body);
 	color: var(--ul-ink-2);
 }
