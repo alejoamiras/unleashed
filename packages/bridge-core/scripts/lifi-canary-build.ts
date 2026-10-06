@@ -8,6 +8,7 @@ import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, encodeFunctionData, type Hex, zeroHash } from "viem"
+import type { RailTerms } from "../src/across-self-built"
 import { deriveTokenClaimSecret } from "../src/claim-secret"
 import { acrossRouteTx, bridgeFromCallerCall as routerCall } from "../src/crosschain-route"
 import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
@@ -121,37 +122,6 @@ export function routerIntent(token: Address, isPrivate: boolean, legs: RowLegs, 
 /** `bridgeFromCaller` for an Across delivery: the rail delivers exactly `delivered`, so it bounds the pull on both sides. */
 export function bridgeFromCallerCall(intent: RouterIntent, swapData: Hex, delivered: bigint): Hex {
 	return routerCall(intent, swapData, delivered, delivered)
-}
-
-/** The Across terms a deposit is built on: a live quote, or the canary's own when Across quotes none. */
-export interface RailTerms {
-	quote: "across" | "self-built"
-	outputAmount: bigint
-	quoteTimestamp: number
-	fillDeadline: number
-	etaSeconds: number
-	/**
-	 * The only filler until `fillDeadline`. Every testnet send names one: Sepolia's Amsterdam schedule makes a relayer's
-	 * estimated fill too small for LI.FI's message, whose receiver then recovers the delivery to the user's wallet.
-	 */
-	exclusiveRelayer?: Address
-}
-
-/** The testnet relay fee Across charged a message-bearing 5 USDC deposit; a self-built deposit asks the same. */
-export const SELF_BUILT_RELAY_FEE_BPS = 2_500n
-/** Across's testnet fill window. */
-export const SELF_BUILT_FILL_WINDOW_S = 7_200
-
-/** Terms for a deposit Across will not quote: priced like its testnet quotes, timed from the source head, `filler`'s alone. */
-export function selfBuiltTerms(srcAmount: bigint, sourceHeadTimestamp: number, filler: Address): RailTerms {
-	return {
-		quote: "self-built",
-		outputAmount: srcAmount - (srcAmount * SELF_BUILT_RELAY_FEE_BPS) / 10_000n,
-		quoteTimestamp: sourceHeadTimestamp,
-		fillDeadline: sourceHeadTimestamp + SELF_BUILT_FILL_WINDOW_S,
-		etaSeconds: SELF_BUILT_FILL_WINDOW_S,
-		exclusiveRelayer: filler,
-	}
 }
 
 /** What `verifyRoute` holds a cross-chain row to, from the manifest and our own builders only. */

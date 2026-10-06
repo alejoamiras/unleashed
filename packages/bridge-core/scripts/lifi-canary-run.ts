@@ -28,6 +28,7 @@ import { acrossDepositFor, type RouteExpectation, type RouterIntent, type RouteT
 import type { ManifestV2 } from "../src/manifest-v2"
 import { PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
 import { type AcrossClient, type AcrossLimits, acrossSuggestedFees } from "../src/across-api"
+import { type RailTerms, SELF_BUILT_FILL_WINDOW_S, selfBuiltTerms } from "../src/across-self-built"
 import {
 	bridgeFromCallerCall,
 	bridgeWithPermitCall,
@@ -37,12 +38,9 @@ import {
 	fuelLegFor,
 	type PermitTerms,
 	permitPayload,
-	type RailTerms,
 	type RowLegs,
 	routerIntent,
 	rowLegs,
-	SELF_BUILT_FILL_WINDOW_S,
-	selfBuiltTerms,
 	verifiedRoute,
 } from "./lifi-canary-build"
 import type { CanaryL2 } from "./lifi-canary-l2"
@@ -306,7 +304,7 @@ async function railTerms(ctx: RowCtx, row: CanaryRow, message: Hex): Promise<Rai
 	}
 	ctx.deps.log(`${row.kind}: Across quotes nothing (${q.reason}); self-built terms`)
 	const head = await ctx.deps.reads.source.getBlock({ blockTag: "latest" })
-	return selfBuiltTerms(row.amount, Number(head.timestamp), filler)
+	return selfBuiltTerms(ctx.b.l1ChainId, row.amount, Number(head.timestamp), filler)
 }
 
 interface CrossChainBuilt extends RouterCall {
