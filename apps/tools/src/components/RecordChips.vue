@@ -54,16 +54,26 @@ const gas = computed(() => {
 </script>
 
 <template>
-	<Tag size="small" :tone="record.isPrivate ? 'private' : 'neutral'" :icon="record.isPrivate ? 'eye-off' : 'eye'">{{
-		record.isPrivate ? "Private" : "Public"
-	}}</Tag>
-	<Tag v-if="gas" class="gas" size="small" tone="ink" icon="zap">{{ gas }}</Tag>
-	<Tag size="small" :tone="look" :icon="null" :data-status-chip="status" :data-chip-tone="chip?.tone">{{
-		statusWord
-	}}</Tag>
+	<span class="chips">
+		<Tag size="small" :tone="record.isPrivate ? 'private' : 'neutral'" :icon="record.isPrivate ? 'eye-off' : 'eye'">{{
+			record.isPrivate ? "Private" : "Public"
+		}}</Tag>
+		<Tag v-if="gas" class="gas" size="small" tone="ink" icon="zap">{{ gas }}</Tag>
+		<Tag size="small" :tone="look" :icon="null" :data-status-chip="status" :data-chip-tone="chip?.tone">{{
+			statusWord
+		}}</Tag>
+	</span>
 </template>
 
 <style scoped>
+/* One unit in the card header: the chips wrap to the next line together, never one by one. */
+.chips {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
 .gas {
 	--ul-fill: var(--ul-ink);
 	color: var(--ul-bg);
