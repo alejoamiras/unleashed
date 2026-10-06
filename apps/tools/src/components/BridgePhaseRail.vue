@@ -107,7 +107,10 @@ const cellText = (phase: BridgePhase): string => {
 				v-for="phase in cells"
 				:key="phase.key"
 				class="cell"
-				:class="[phase.state, { live: phase.state !== 'pending' && phase.state !== 'done', landed: phase.state === 'active' && phase.landed }]"
+				:class="[
+					phase.state,
+					{ live: phase.state !== 'pending' && phase.state !== 'done', landed: phase.state === 'active' && phase.landed, plain: !phase.compact },
+				]"
 				:style="phase.compact ? { '--weight': phase.compact.weight } : undefined"
 				role="img"
 				:aria-label="cellLabel(phase)"
@@ -547,5 +550,17 @@ const cellText = (phase: BridgePhase): string => {
 .cell.ended .seg-label {
 	font-weight: 700;
 	color: var(--ul-ink);
+}
+
+/* An Ethereum-origin rail's six labels fit a phone card only when each cell takes its label's width
+   and a done cell's mark is its carrier segment alone, as the cross-chain strip marks it. */
+@media (max-width: 760px) {
+	.cell.plain {
+		flex: 1 1 auto;
+	}
+
+	.cell.plain.done .seg-label svg {
+		display: none;
+	}
 }
 </style>

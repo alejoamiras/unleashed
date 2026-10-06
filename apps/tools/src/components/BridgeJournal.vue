@@ -131,7 +131,7 @@ const sorted = computed(() => {
 <style scoped>
 .journal h2 {
 	margin: 0;
-	font: 700 17px/1.2 var(--ul-font-body);
+	font: 700 20px/1.2 var(--ul-font-body);
 	letter-spacing: var(--ul-tracking-heading);
 	color: var(--ul-ink);
 }
