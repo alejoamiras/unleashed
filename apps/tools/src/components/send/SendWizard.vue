@@ -42,6 +42,7 @@ import { useL1Wallet } from "@/composables/useL1Wallet"
 import { type FuelOutcome, useFuelQuote } from "@/composables/useFuelQuote"
 import { useRowBalances } from "@/composables/useRowBalances"
 import { previewBlock, useSend } from "@/composables/useSend"
+import { useSourceChain } from "@/composables/useSourceChain"
 import { useToast } from "@/composables/useToast"
 import { useTokenCatalog } from "@/composables/useTokenCatalog"
 import { useTokenGrant } from "@/composables/useTokenGrant"
@@ -50,6 +51,7 @@ import { useTokenSelection } from "@/composables/useTokenSelection"
 /** Utils */
 import { displayAmountOf, recordTokenBlock } from "@/lib/asset-label"
 import { stepperPhases } from "@/lib/bridge-steps"
+import { chainLabel } from "@/lib/chains"
 import { formatCompact, formatDisplayAmount, parseAmountStrict } from "@/lib/format"
 import { TESTIDS } from "@/lib/testids"
 import { safeDisplay } from "@/lib/token-display"
@@ -133,6 +135,16 @@ const rowBalances = useRowBalances({
 	owner: () => l1Reader.value,
 	tokens: () => catalog.filtered.value,
 })
+// Reads through the build's own RPCs, so the owner stands whichever chain the wallet is on.
+const sourceChain = useSourceChain({
+	owner: () => l1.address.value ?? undefined,
+	walletChainId: () => l1.chainId.value,
+	switchChain: (chainId) => l1.switchChain(chainId),
+})
+const tokenBalances = computed(() => ({ ...rowBalances.balances.value, ...sourceChain.balances.value }))
+const sourceKeys = new Set(sourceChain.rows.map((r) => r.logoKey))
+/** A row the registry offers starts on its source chain; every other row is an Ethereum token. */
+const isSourceRow = (token: SelectableToken): boolean => sourceKeys.has(token.logoKey)
 const selection = useTokenSelection({
 	pub: () => l1.publicClient as unknown as PublicClient,
 	l1Account: () => l1Reader.value,
@@ -293,13 +305,19 @@ const amountToken = computed<AmountToken | null>(() => {
 	return row.decimals >= 0 ? { symbol: safeDisplay(row.symbol), decimals: row.decimals } : null
 })
 
-const tokenLabel = computed(() => (amountToken.value ? safeDisplay(amountToken.value.symbol) : undefined))
+const tokenSymbol = computed(() => (amountToken.value ? safeDisplay(amountToken.value.symbol) : undefined))
+/** "USDC on Base Sepolia": a deposit names the chain it starts on, since one symbol lives on several. */
+const tokenLabel = computed(() => {
+	const chainId = picked.value?.chainId
+	if (!tokenSymbol.value || chainId === undefined || direction.value !== "l1-to-l2") return tokenSymbol.value
+	return `${tokenSymbol.value} on ${chainLabel(chainId)}`
+})
 
 /** What the step strip shows for the amount once the user has moved past it. */
 const amountLabel = computed(() => {
 	const token = resolved.value
 	const units = amountUnits.value
-	return token && units !== null && units > 0n ? `${formatDisplayAmount(units, token.decimals)} ${tokenLabel.value}` : undefined
+	return token && units !== null && units > 0n ? `${formatDisplayAmount(units, token.decimals)} ${tokenSymbol.value}` : undefined
 })
 
 /** ---- the gas leg -------------------------------------------------------------------------- */
@@ -620,6 +638,8 @@ function promisedLine(target: SendPlan | ExitPlan): string {
 /** ---- selection --------------------------------------------------------------------------- */
 
 async function reselect(token: SelectableToken, dir: Direction): Promise<void> {
+	// A source chain's token has no hub binding to read on Ethereum.
+	if (isSourceRow(token)) return
 	const resolving = selection.select(token, dir)
 	// `select` claims its epoch before its first await; a later pick or direction claims the next one.
 	const mine = selection.epoch()
@@ -661,6 +681,25 @@ async function onSelect(token: SelectableToken): Promise<void> {
 	await reselect(token, direction.value)
 }
 
+/** A registry row: its symbol and decimals are committed, so the amount step needs no read first. */
+function onSelectSource(row: SelectableToken): void {
+	resetAmount()
+	addError.value = null
+	picked.value = row
+	goToStep(1)
+}
+
+function onPick(token: SelectableToken): void {
+	if (!isSourceRow(token)) void onSelect(token)
+	else onSelectSource(token)
+}
+
+/** A contract account cannot send from a source chain; the user picks another account in the wallet's own prompt. */
+function onChangeWallet(): void {
+	l1.disconnect()
+	void l1.connect()
+}
+
 watch(
 	() => selection.error.value,
 	(failure) => {
@@ -686,6 +725,7 @@ async function onAdd(address: string): Promise<void> {
 function onMinted(): void {
 	void selection.refreshBalances()
 	void rowBalances.refresh()
+	void sourceChain.refresh()
 }
 
 // The row balances re-read themselves when the reader changes; the selected token's are read here.
@@ -1142,6 +1182,7 @@ function onNewSend(): void {
 	const token = picked.value
 	if (token) void reselect(token, direction.value)
 	void rowBalances.refresh()
+	void sourceChain.refresh()
 	void gasHeld.refresh()
 }
 
@@ -1242,6 +1283,7 @@ onBeforeUnmount(() => {
 	grant.dispose()
 	selection.dispose()
 	rowBalances.dispose()
+	sourceChain.dispose()
 	lookup.dispose()
 	catalog.dispose()
 })
@@ -1301,10 +1343,14 @@ onBeforeUnmount(() => {
 				:add-error="addError"
 				:selected="picked"
 				:selection-error="selection.error.value"
-				:row-balances="rowBalances.balances.value"
+				:row-balances="tokenBalances"
+				:sources="sourceChain.rows"
+				:natives="sourceChain.natives"
+				:contract-chains="sourceChain.contractChains.value"
 				@update:search="catalog.search.value = $event"
-				@select="onSelect"
+				@select="onPick"
 				@add="onAdd"
+				@change-wallet="onChangeWallet"
 			/>
 		</template>
 		<template #amount>
