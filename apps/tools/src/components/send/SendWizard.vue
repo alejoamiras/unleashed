@@ -62,8 +62,11 @@ import {
 	type AmountToken,
 	type Direction,
 	type ExitPlan,
+	GAS_TOO_SMALL,
 	type GasLegPlan,
+	gasMinimumShortfall,
 	NO_GAS_ROUTE,
+	PRIVATE_SLICE_SHORT,
 	type ResolvedToken,
 	type SelectableToken,
 	type SendIntent,
@@ -360,9 +363,7 @@ function buildGas(): { plan: GasLegPlan | null; error: string | null } {
 	if (!share) return { plan: null, error: NO_GAS_ROUTE }
 	// Gas-only spends the whole amount; the router refuses any other split.
 	const fuelAmount = intent.value === "gas" ? units : share.fuelAmount
-	if (intent.value === "token+gas" && fuelAmount >= units) {
-		return { plan: null, error: "The amount is too small to buy gas and still send a token." }
-	}
+	if (intent.value === "token+gas" && fuelAmount >= units) return { plan: null, error: GAS_TOO_SMALL }
 	const quote = outcome.kind === "route" ? (fuelAmount * outcome.probeOut) / probeIn : fuelAmount
 	const minFuelOutput = floorFor(quote, outcome)
 	const shortfall = quoteShortfall(quote) ?? (intent.value === "gas" ? null : privateSliceShortfall(token.state, minFuelOutput))
@@ -374,23 +375,17 @@ function buildGas(): { plan: GasLegPlan | null; error: string | null } {
 	}
 }
 
-/** The bridge refuses gas under its claim minimum on Ethereum (the swap reverts at the router's
- *  floor), so a quote under it is a deposit that cannot go through — say so before a signature. The
- *  slice may have been capped at half the amount, far under what the transactions asked for. */
+/** The slice may have been capped at half the amount, far under what the transactions asked for. */
 function quoteShortfall(quote: bigint): string | null {
-	if (!FUEL || quote >= BigInt(FUEL.minFuelFj)) return null
-	return `This amount buys only ≈ ${formatCompact(quote, 18)} FJ of gas, under the ≈ ${formatCompact(BigInt(FUEL.minFuelFj), 18)} FJ minimum a claim needs — send a larger amount.`
+	return FUEL ? gasMinimumShortfall(quote, BigInt(FUEL.minFuelFj)) : null
 }
 
-/** A private claim forfeits its fee ceilings before any gas reaches the user: a slice whose
- *  GUARANTEED floor cannot cover them (the half-of-the-deposit cap ships less than the target while
- *  the target still counts the ceilings) would cross to Aztec only for the fee ladder to refuse it,
- *  after the Ethereum deposit is already irreversible — so it is refused here, before a signature. */
+/** The GUARANTEED floor must cover the ceilings: the half-of-the-deposit cap ships less than the target while the
+ *  target still counts them. */
 function privateSliceShortfall(state: TokenState, minFuelOutput: bigint): string | null {
 	if (!isPrivate.value) return null
 	const ceilings = gasShare.ceilingsFor(state)
-	if (ceilings === null || minFuelOutput >= ceilings) return null
-	return "The gas slice is too small to cover the fees a private claim sets aside — send a larger amount, or send it publicly."
+	return ceilings === null || minFuelOutput >= ceilings ? null : PRIVATE_SLICE_SHORT
 }
 
 const gasResult = computed(() => {

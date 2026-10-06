@@ -5,6 +5,7 @@
  */
 import type { FuelProvider, Registration, TokenState } from "@unleashed/bridge-core"
 import type { Address, Hex } from "viem"
+import { formatCompact } from "./format"
 
 export type Direction = "l1-to-l2" | "l2-to-l1"
 
@@ -98,6 +99,21 @@ export function tokenRemainder(amount: bigint, gas: Pick<GasLegPlan, "fuelAmount
 
 /** Why a send cannot include gas when no fuel venue is reachable on this network. */
 export const NO_GAS_ROUTE = "No route can buy Aztec gas on this network right now, so this send can't include gas."
+
+/** A token + gas split whose slice would take the whole amount. */
+export const GAS_TOO_SMALL = "The amount is too small to buy gas and still send a token."
+
+/** A private claim forfeits its fee ceilings before any gas reaches the user, so a slice whose guaranteed floor
+ *  cannot cover them would cross only for the claim to refuse it, after the deposit is irreversible. */
+export const PRIVATE_SLICE_SHORT =
+	"The gas slice is too small to cover the fees a private claim sets aside — send a larger amount, or send it publicly."
+
+/** The bridge refuses gas under its claim minimum on Ethereum (the swap reverts at the router's floor), so a quote
+ *  under it is a deposit that cannot go through; null when the quote clears it. */
+export function gasMinimumShortfall(quote: bigint, minFuelFj: bigint): string | null {
+	if (quote >= minFuelFj) return null
+	return `This amount buys only ≈ ${formatCompact(quote, 18)} FJ of gas, under the ≈ ${formatCompact(minFuelFj, 18)} FJ minimum a claim needs — send a larger amount.`
+}
 
 /** A route outcome that closes both gas choices. */
 export type GasBlock = "no-route" | "unavailable"
