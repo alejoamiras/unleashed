@@ -26,7 +26,7 @@ product wallet, so a green run proves the app and not a pairing.
 
 ## The Nulo wallet is a separate product
 
-The Nulo wallet is developed in its own repository, `alejoamiras/nulo`. No test here reads, builds
+The Nulo wallet is developed in its own repository, `nulo-sh/nulo`. No test here reads, builds
 or boots it, and nothing here imports from it except its three published npm packages. The two
 repositories share exactly four facts, each with one owner:
 
