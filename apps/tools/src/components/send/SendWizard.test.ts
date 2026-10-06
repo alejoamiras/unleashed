@@ -40,6 +40,7 @@ const selectFn = vi.fn(async (token: SelectableToken) => {
 	epoch++
 	selected.value = nextResolved(token)
 })
+const resolveFn = vi.fn(async (token: SelectableToken) => nextResolved(token))
 
 const granted = ref<string[]>([])
 let grantOutcome: GrantOutcome = "granted"
@@ -275,6 +276,7 @@ vi.mock("@/composables/useTokenSelection", () => ({
 			error: selectionError,
 			epoch: () => epoch,
 			select: selectFn,
+			resolve: resolveFn,
 			refreshBalances,
 			dispose: selectDispose,
 		}
@@ -365,7 +367,7 @@ const stubs = {
 		"crossChain",
 	]),
 	CrossChainReview: stub("CrossChainReview", ["plan", "ask", "expiresIn", "state", "walletChainId", "busy", "error"]),
-	CrossChainOutcome: { name: "CrossChainOutcome", props: ["record"], template: `<div><slot name="log" /></div>` },
+	CrossChainOutcome: { name: "CrossChainOutcome", props: ["record", "figures"], template: `<div><slot name="log" /></div>` },
 	ReviewStep: stub("ReviewStep", [
 		"plan",
 		"portalVerified",
@@ -1892,6 +1894,24 @@ describe("SendWizard", () => {
 		expect(w.findComponent({ name: "TokenStep" }).exists()).toBe(true)
 	})
 
+	it("a delivered send's panel says what continuing it lands as, its gas slice sized as the amount step sizes it", async () => {
+		const w = await wizard()
+		const review = await atCrossChainReview(w)
+		l1ChainId.value = XC_SOURCE
+		crossChainRecords.value = [xcRecord({ id: "xc-1" })]
+		review.vm.$emit("confirm")
+		await flushPromises()
+		const delivered = xcRecord({ id: "xc-1", completedAt: 2_000 }, { outcome: "delivered-to-wallet", outcomeAmount: "4900000" })
+		catalogTokens.value = [candidate(delivered.token.erc20)]
+		setRoute({ kind: "route", probeOut: 10n ** 20n, venue: VENUE }, delivered.token.erc20)
+		crossChainRecords.value = [delivered]
+		await flushPromises()
+		// 4,900,000 base units less the 2,000,000 slice, at 8 decimals; the slice buys 2 FJ at the probe's rate.
+		expect(w.findComponent({ name: "CrossChainOutcome" }).props("figures")).toMatchObject({
+			continueQuote: { amount: "0.02", symbol: "WBTC", gas: "2 FJ" },
+		})
+	})
+
 	it("a stalled cross-chain send keeps this session's log under its outcome panel", async () => {
 		const w = await wizard()
 		const review = await atCrossChainReview(w)
@@ -1964,17 +1984,10 @@ describe("SendWizard", () => {
 	it("disposes every composable on unmount", async () => {
 		const w = await wizard()
 		w.unmount()
-		for (const dispose of [
-			xcDispose,
-			exitDispose,
-			sendDispose,
-			gasShareDispose,
-			routeDispose,
-			grantDispose,
-			selectDispose,
-			catalogDispose,
-		]) {
+		for (const dispose of [xcDispose, exitDispose, sendDispose, gasShareDispose, grantDispose, selectDispose, catalogDispose]) {
 			expect(dispose).toHaveBeenCalledTimes(1)
 		}
+		// The form's fuel quote and the delivered panel's.
+		expect(routeDispose).toHaveBeenCalledTimes(2)
 	})
 })

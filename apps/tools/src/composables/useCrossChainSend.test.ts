@@ -46,6 +46,7 @@ function destSelection(): UseTokenSelectionHandle {
 		select: vi.fn(async () => {
 			selected.value = DEST_TOKEN
 		}),
+		resolve: vi.fn(async () => DEST_TOKEN),
 		refreshBalances: async () => {},
 		dispose: vi.fn(),
 	}

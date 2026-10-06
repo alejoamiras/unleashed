@@ -43,12 +43,13 @@ import { useAddressLookup } from "@/composables/useAddressLookup"
 import { useBridgeBackup } from "@/composables/useBridgeBackup"
 import { type RecordRuntime, useBridgeJournal } from "@/composables/useBridgeJournal"
 import { useBridgeWallet } from "@/composables/useBridgeWallet"
+import { readClientFor } from "@/composables/useEthereumReader"
 import { useAddDripToken } from "@/composables/useAddDripToken"
 import { useGasHeld } from "@/composables/useGasHeld"
 import { useGasShare } from "@/composables/useGasShare"
 import { EXIT_TOKEN_NOT_REGISTERED, useHubExit } from "@/composables/useHubExit"
 import { useL1Wallet } from "@/composables/useL1Wallet"
-import { type FuelOutcome, useFuelQuote } from "@/composables/useFuelQuote"
+import { type FuelOutcome, type QuotedFuel, useFuelQuote } from "@/composables/useFuelQuote"
 import { useRowBalances } from "@/composables/useRowBalances"
 import { previewBlock, useSend } from "@/composables/useSend"
 import { useSourceChain } from "@/composables/useSourceChain"
@@ -62,11 +63,11 @@ import { displayAmountOf, recordTokenBlock } from "@/lib/asset-label"
 import { stepperPhases } from "@/lib/bridge-steps"
 import { chainLabel } from "@/lib/chains"
 import { useNow } from "@/lib/clock"
-import { sendView } from "@/lib/crosschain-activity"
+import { ethereumPrefillOf, sendView } from "@/lib/crosschain-activity"
 import { type CrossChainFigures, countdownText, quoteWord } from "@/lib/crosschain-figures"
-import { outcomeVariant } from "@/lib/crosschain-outcome"
+import { type OutcomeFigures, outcomeVariant } from "@/lib/crosschain-outcome"
 import { crossChainLogLinks } from "@/lib/crosschain-steps"
-import { formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString, trimAddress } from "@/lib/format"
+import { formatAmount, formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString, trimAddress } from "@/lib/format"
 import { NETWORK } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
 import { checksumAddress, safeDisplay } from "@/lib/token-display"
@@ -440,31 +441,45 @@ function floorFor(quote: bigint, outcome: FuelOutcome): bigint {
 	return outcome.kind === "route" ? gasShare.floorFor(quote) : quote
 }
 
-function buildGas(): { plan: GasLegPlan | null; error: string | null } {
-	const token = resolved.value
-	const units = amountUnits.value
-	const outcome = routeOutcome.value
-	if (!token || units === null || units <= 0n || !outcome) return { plan: null, error: null }
+interface GasAsk {
+	token: ResolvedToken
+	units: bigint
+	outcome: FuelOutcome
+	intent: SendIntent
+	isPrivate: boolean
+}
+
+/** The gas slice a send of `units` carries, as the amount step sizes it. */
+function gasPlanFor(a: GasAsk): { plan: GasLegPlan | null; error: string | null } {
+	const { token, units, outcome } = a
 	if (outcome.kind !== "route" && outcome.kind !== "identity") return { plan: null, error: null }
 	const probeIn = probeAmountOf(token)
 	const rate = outcome.kind === "route" ? { probeIn, probeOut: outcome.probeOut } : ONE_TO_ONE
-	const share = gasShare.propose({ amount: units, decimals: token.decimals, state: token.state, rate, isPrivate: isPrivate.value })
+	const share = gasShare.propose({ amount: units, decimals: token.decimals, state: token.state, rate, isPrivate: a.isPrivate })
 	// A private slice is priced from live fees; until they arrive there is nothing to size, like a
 	// route probe still in flight.
 	if (share === "pricing") return { plan: null, error: null }
 	if (!share) return { plan: null, error: NO_GAS_ROUTE }
 	// Gas-only spends the whole amount; the router refuses any other split.
-	const fuelAmount = intent.value === "gas" ? units : share.fuelAmount
-	if (intent.value === "token+gas" && fuelAmount >= units) return { plan: null, error: GAS_TOO_SMALL }
+	const fuelAmount = a.intent === "gas" ? units : share.fuelAmount
+	if (a.intent === "token+gas" && fuelAmount >= units) return { plan: null, error: GAS_TOO_SMALL }
 	const quote = outcome.kind === "route" ? (fuelAmount * outcome.probeOut) / probeIn : fuelAmount
 	const minFuelOutput = floorFor(quote, outcome)
-	const shortfall = quoteShortfall(quote) ?? (intent.value === "gas" ? null : privateSliceShortfall(token.state, minFuelOutput))
+	const shortfall = quoteShortfall(quote) ?? (a.intent === "gas" ? null : privateSliceShortfall(token.state, minFuelOutput, a.isPrivate))
 	if (shortfall) return { plan: null, error: shortfall }
 	const venue = outcome.kind === "route" ? outcome.venue : null
 	return {
 		plan: { fuelAmount, fuelFj: share.fuelFj, quote, minFuelOutput, venue, capped: share.capped },
 		error: null,
 	}
+}
+
+function buildGas(): { plan: GasLegPlan | null; error: string | null } {
+	const token = resolved.value
+	const units = amountUnits.value
+	const outcome = routeOutcome.value
+	if (!token || units === null || units <= 0n || !outcome) return { plan: null, error: null }
+	return gasPlanFor({ token, units, outcome, intent: intent.value, isPrivate: isPrivate.value })
 }
 
 /** The slice may have been capped at half the amount, far under what the transactions asked for. */
@@ -474,8 +489,8 @@ function quoteShortfall(quote: bigint): string | null {
 
 /** The GUARANTEED floor must cover the ceilings: the half-of-the-deposit cap ships less than the target while the
  *  target still counts them. */
-function privateSliceShortfall(state: TokenState, minFuelOutput: bigint): string | null {
-	if (!isPrivate.value) return null
+function privateSliceShortfall(state: TokenState, minFuelOutput: bigint, isPrivateSend: boolean): string | null {
+	if (!isPrivateSend) return null
 	const ceilings = gasShare.ceilingsFor(state)
 	return ceilings === null || minFuelOutput >= ceilings ? null : PRIVATE_SLICE_SHORT
 }
@@ -1200,7 +1215,7 @@ function tokenOnlyStoodDown(target: SendPlan, repriced: boolean, shown: bigint |
  *  longer covers the ceilings. */
 function privateSliceStoodDown(state: TokenState, minFuelOutput: bigint, repriced: boolean): string | null {
 	if (!repriced) return "Aztec's network fees could not be re-read just now, so the gas slice was not confirmed. Try again in a moment."
-	const short = privateSliceShortfall(state, minFuelOutput)
+	const short = privateSliceShortfall(state, minFuelOutput, isPrivate.value)
 	return short === null
 		? null
 		: "Aztec's network fees moved while you were on the review: the gas slice no longer covers what a private claim sets aside."
@@ -1545,6 +1560,52 @@ function applyPrefill(p: EthereumPrefill): void {
 	isPrivate.value = p.isPrivate
 }
 
+/** The send a delivered outcome's Continue would start, while its panel is on screen. */
+const deliveredPrefill = computed(() => {
+	const v = view.value
+	return v.kind === "outcome" && outcomeVariant(v.record, now.value) === "delivered" ? ethereumPrefillOf(v.record) : null
+})
+// Read from the bridge's L1 whatever chain the wallet is on: after a send from a source chain it is usually there.
+const bridgeL1 = () => readClientFor(NETWORK.l1ChainId)
+const continueFuel = useFuelQuote({ pub: bridgeL1 })
+const continueToken = shallowRef<ResolvedToken | null>(null)
+watch(
+	[() => deliveredPrefill.value?.token, () => catalog.tokens.value],
+	async ([address, tokens]) => {
+		continueToken.value = null
+		const row = address ? tokens.find((t) => t.address.toLowerCase() === address) : undefined
+		const pub = bridgeL1()
+		if (!row || !pub) return
+		try {
+			const token = await selection.resolve(row, pub)
+			if (deliveredPrefill.value?.token !== address) return
+			continueToken.value = token
+			void continueFuel.quote(token.address, probeAmountOf(token))
+		} catch {
+			// Unread, the panel leaves its "Lands as" line out; the amount step reads the token again.
+		}
+	},
+	{ immediate: true },
+)
+const continueQuote = computed(() => landsAs(deliveredPrefill.value, continueToken.value, continueFuel.quoted.value))
+
+/** What a delivered send's continuation lands as, sized as its amount step will size it; undefined until its token
+ *  and gas venue are read, or when the step would refuse its gas slice. */
+function landsAs(p: EthereumPrefill | null, token: ResolvedToken | null, fuel: QuotedFuel | null): OutcomeFigures["continueQuote"] {
+	if (p?.amount === undefined || !token) return undefined
+	if (p.intent === "token") return { amount: formatAmount(p.amount, token.decimals), symbol: token.symbol }
+	if (!fuel || fuel.token !== token.address || fuel.probeAmount !== probeAmountOf(token)) return undefined
+	try {
+		const { plan } = gasPlanFor({ token, units: p.amount, outcome: fuel.outcome, intent: p.intent, isPrivate: p.isPrivate })
+		if (!plan) return undefined
+		const gas = formatCompact(plan.quote, 18)
+		if (p.intent === "gas") return { amount: gas, symbol: "FJ" }
+		return { amount: formatAmount(p.amount - plan.fuelAmount, token.decimals), symbol: token.symbol, gas: `${gas} FJ` }
+	} catch {
+		return undefined
+	}
+}
+
 function takeRequests(): void {
 	if (!takeable.value) return
 	const prefill = catalog.loading.value ? null : shell.takePrefill()
@@ -1569,6 +1630,7 @@ onBeforeUnmount(() => {
 	sendFlow.dispose()
 	gasShare.dispose()
 	routeQuote.dispose()
+	continueFuel.dispose()
 	gasHeld.dispose()
 	grant.dispose()
 	selection.dispose()
@@ -1600,7 +1662,7 @@ onBeforeUnmount(() => {
 	<CrossChainOutcome
 		v-else-if="view.kind === 'outcome'"
 		:record="view.record"
-		:figures="{ checkedAt: journal.runtime.value[view.record.id]?.checkedAt }"
+		:figures="{ checkedAt: journal.runtime.value[view.record.id]?.checkedAt, continueQuote }"
 		@continue="applyPrefill"
 		@dismiss="onNewSend"
 		@new-quote="resendFrom(view.record, true)"
