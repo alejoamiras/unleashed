@@ -10,6 +10,7 @@ import { ensurePermit2Allowance } from "../src/l1"
 import { predictPortal } from "../src/portal-address"
 import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
 import { sourceChain } from "../src/source-chains"
+import { retried } from "./retried"
 
 /** Minimal ERC20 surface the scripts touch. A superset per consumer is harmless — viem only
  *  encodes the functions actually called. */
@@ -229,17 +230,6 @@ const allowanceOf = async (l1: L1Ctx, token: Address, spender: Address, blockNum
 		args: [l1.account.address, spender],
 		...(blockNumber === undefined ? {} : { blockNumber }),
 	})) as bigint
-
-async function retried<T>(read: () => Promise<T>, attempts = 10, delayMs = 1_000): Promise<T> {
-	for (let attempt = 1; ; attempt++) {
-		try {
-			return await read()
-		} catch (e) {
-			if (attempt >= attempts) throw e
-			await new Promise((r) => setTimeout(r, delayMs))
-		}
-	}
-}
 
 export const lc = (v: unknown) => String(v).toLowerCase()
 

@@ -1430,6 +1430,12 @@ code or the chain.
      revoke that fails raises `AllowanceStillLive` with the original cause. The route is verified before the
      approval.
   4. (low) Docs called expiry a refund; reworded in `across-v4.ts` and above.
+- Round 2 (two medium, both in `fillGas`; the round 1 fixes held):
+  1. viem serves `getBlockNumber` from a cache as old as its polling interval, so the pinned block could predate the
+     approval the fill spends, and the cap simulation would fail without it. The head is read uncached, the pin is
+     never earlier than the approval's receipt block, and each probe retries a lagging backend.
+  2. A node that omits simulation logs made a cap deposit and an underfunded recovery compare equal. The cap's
+     outcome must now succeed and log the pool's own `FilledRelay`, or the fill is refused.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's

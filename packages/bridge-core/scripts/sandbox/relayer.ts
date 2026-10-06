@@ -25,7 +25,8 @@ import {
 	type WalletClient,
 } from "viem"
 import z from "zod"
-import { type AcrossRelayData, acrossRelayHash } from "../../src/crosschain-discovery"
+import { type AcrossRelayData, acrossRelayHash, FILLED_RELAY_TOPIC } from "../../src/crosschain-discovery"
+import { retried } from "../retried"
 
 /** `V3SpokePoolInterface.V3RelayData`, field for field. */
 const RELAY_DATA = {
@@ -185,9 +186,11 @@ const submitApproval = (dest: Destination, a: Approval): Promise<Hex> =>
 		chain: dest.wallet.chain,
 	})
 
-async function confirmApproval(dest: Destination, a: Approval, hash: Hex): Promise<void> {
+/** The approval's block. */
+async function confirmApproval(dest: Destination, a: Approval, hash: Hex): Promise<bigint> {
 	const receipt = await dest.public.waitForTransactionReceipt({ hash })
 	if (receipt.status !== "success") throw new Error(`approve(${a.spender}, ${a.amount}) on ${a.token} reverted`)
+	return receipt.blockNumber
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -219,36 +222,44 @@ export const TX_GAS_CAP = 16_777_216n
 
 /**
  * The gas a fill is sent with. A node's estimate is not enough: under Amsterdam's schedule LI.FI's receiver catches an
- * underfunded message and recovers the delivery to the user, so the estimate settles on that recovery. On one block's
- * state, the fill gets the smallest of 2×, 4×, … the estimate whose simulated outcome (status, then every log's
- * emitter, topics and data) equals the one at the cap, where nothing is underfunded. It is a simulation check: the
- * block the fill lands in can still differ.
+ * underfunded message and recovers the delivery to the user, so the estimate settles on that recovery. On the state of
+ * one block, never before `notBefore` (the approval the fill spends), the fill gets the smallest of 2×, 4×, … the
+ * estimate whose simulated outcome (status, then every log's emitter, topics and data) equals the one at the cap,
+ * where nothing is underfunded. It is a simulation check: the block the fill lands in can still differ.
  *
- * @throws when the fill fails in simulation even at the cap.
+ * @throws when the fill does not log the pool's `FilledRelay` in simulation even at the cap, a node's omitted logs
+ *   included.
  */
-export async function fillGas(dest: Destination, spokePool: Address, data: Hex): Promise<bigint> {
+export async function fillGas(dest: Destination, spokePool: Address, data: Hex, notBefore: bigint): Promise<bigint> {
 	const account = dest.wallet.account
-	const blockNumber = await dest.public.getBlockNumber()
+	// viem serves the head from a cache as old as its polling interval, which can predate the approval.
+	const head = await dest.public.getBlockNumber({ cacheTime: 0 })
+	const blockNumber = head > notBefore ? head : notBefore
+	// Each probe names `blockNumber`, which a load-balanced RPC's lagging backend refuses until it catches up.
 	const outcome = async (gas: bigint) => {
-		const [block] = await dest.public.simulateBlocks({ blockNumber, blocks: [{ calls: [{ account, to: spokePool, data, gas }] }] })
+		const blocks = [{ calls: [{ account, to: spokePool, data, gas }] }]
+		const [block] = await retried(() => dest.public.simulateBlocks({ blockNumber, blocks }))
 		const { status, logs = [] } = block.calls[0]
-		return `${status}:${logs.map((l) => `${l.address.toLowerCase()}/${l.topics.join("/")}/${l.data}`).join(",")}`
+		return {
+			fills: status === "success" && logs.some((l) => isAddressEqual(l.address, spokePool) && l.topics[0] === FILLED_RELAY_TOPIC),
+			key: `${status}:${logs.map((l) => `${l.address.toLowerCase()}/${l.topics.join("/")}/${l.data}`).join(",")}`,
+		}
 	}
 	const atCap = await outcome(TX_GAS_CAP)
-	if (!atCap.startsWith("success:")) throw new Error(`fillRelay on ${spokePool} fails in simulation even at the ${TX_GAS_CAP} gas cap`)
-	const estimate = await dest.public.estimateGas({ account, to: spokePool, data, blockNumber })
-	for (let gas = estimate * 2n; gas < TX_GAS_CAP; gas *= 2n) if ((await outcome(gas)) === atCap) return gas
+	if (!atCap.fills) throw new Error(`fillRelay on ${spokePool} logs no FilledRelay in simulation even at the ${TX_GAS_CAP} gas cap`)
+	const estimate = await retried(() => dest.public.estimateGas({ account, to: spokePool, data, blockNumber }))
+	for (let gas = estimate * 2n; gas < TX_GAS_CAP; gas *= 2n) if ((await outcome(gas)).key === atCap.key) return gas
 	return TX_GAS_CAP
 }
 
-async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRelayData, call: FillCall) {
+async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRelayData, call: FillCall, approvedAt: bigint) {
 	const account = dest.wallet.account
 	// viem's inference collapses this tuple argument to `never`; `AcrossRelayData` is `RELAY_DATA` field for field.
 	const args = [relay as never, call.repaymentChainId, pad(account.address, { size: 32 })] as const
 	let gas = call.gas
 	if (gas === undefined) {
 		await dest.public.simulateContract({ account, address: spokePool, abi: SPOKE_POOL_ABI, functionName: "fillRelay", args })
-		gas = await fillGas(dest, spokePool, encodeFunctionData({ abi: SPOKE_POOL_ABI, functionName: "fillRelay", args }))
+		gas = await fillGas(dest, spokePool, encodeFunctionData({ abi: SPOKE_POOL_ABI, functionName: "fillRelay", args }), approvedAt)
 	}
 	const hash = await dest.wallet.writeContract({
 		address: spokePool,
@@ -282,8 +293,7 @@ export async function sendFill(
 	const approved = await submitApproval(dest, approval)
 	let sent: Awaited<ReturnType<typeof fillOnce>>
 	try {
-		await confirmApproval(dest, approval, approved)
-		sent = await fillOnce(dest, spokePool, relay, call)
+		sent = await fillOnce(dest, spokePool, relay, call, await confirmApproval(dest, approval, approved))
 	} catch (e) {
 		await clearApproval(dest, approval, e)
 		throw e

@@ -3,7 +3,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, decodeFunctionData, type Hex, pad } from "viem"
 import { describe, expect, it, vi } from "vitest"
 import { ACROSS_V4_FACET_ABI } from "../src/across-v4"
-import type { AcrossRelayData } from "../src/crosschain-discovery"
+import { type AcrossRelayData, FILLED_RELAY_TOPIC } from "../src/crosschain-discovery"
 import type { L1Ctx } from "../src/flows"
 import { SWAP_TOKENS_SINGLE_V3_ABI } from "../src/lifi-abi"
 import { lifiBook } from "../src/lifi-addresses"
@@ -220,8 +220,10 @@ describe("the canary's gas ceilings", () => {
 			estimateFeesPerGas: async () => fees,
 			simulateContract: async () => ({}),
 			getBlockNumber: async () => 1n,
-			simulateBlocks: async () => [{ calls: [{ status: "success", logs: [] }] }],
-			waitForTransactionReceipt: async () => ({ status: "success" }),
+			simulateBlocks: async ({ blocks }: { blocks: { calls: { to: Address }[] }[] }) => [
+				{ calls: [{ status: "success", logs: [{ address: blocks[0].calls[0].to, topics: [FILLED_RELAY_TOPIC], data: "0x" }] }] },
+			],
+			waitForTransactionReceipt: async () => ({ status: "success", blockNumber: 1n }),
 		}
 		const relay: AcrossRelayData = {
 			depositor: pad(CANARY),
