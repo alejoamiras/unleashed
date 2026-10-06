@@ -22,6 +22,8 @@ const props = defineProps<{
 	setAside?: bigint | null
 	loading: boolean
 	error: string | null
+	/** The token figure is a route's estimate, not the exact split of what leaves the wallet. */
+	approx?: boolean
 }>()
 const emit = defineEmits<{ "update:txTarget": [target: number] }>()
 
@@ -29,7 +31,9 @@ const MAX_TX = 999
 
 /** The split the send is signed against, at full precision: a token remainder shown rounded is a
  *  different number from the one leaving the wallet. */
-const tokenArrives = computed(() => formatDisplayAmount(tokenRemainder(props.amount, props.gas), props.token.decimals))
+const tokenArrives = computed(
+	() => `${props.approx ? "≈ " : ""}${formatDisplayAmount(tokenRemainder(props.amount, props.gas), props.token.decimals)}`,
+)
 
 const sliceText = computed(() => (props.gas ? formatDisplayAmount(props.gas.fuelAmount, props.token.decimals) : "—"))
 

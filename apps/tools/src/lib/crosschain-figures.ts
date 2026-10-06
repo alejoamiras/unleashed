@@ -4,6 +4,9 @@
  * dollars. Pure: the amount step, the review and the fee ceiling read the same figures.
  */
 import type { CrossChainAsk, CrossChainRoute } from "@/composables/useCrossChainRoute"
+import { chainLabel, type Rail, railLabel } from "./chains"
+import { formatAmount } from "./format"
+import { IS_MAINNET, readChainOf } from "./network"
 
 /** A token send whose relay fee is more than this share of it is refused on mainnet and only warned about on testnet. */
 export const FEE_CEILING_BPS = 1000
@@ -92,6 +95,26 @@ export function waitText(seconds: number): string {
 	}
 	const minutes = Math.max(1, Math.round(seconds / 60))
 	return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`
+}
+
+/** "≈ 0.49 USDC": a fee or a delivery in the source token, at two places unless smaller than that. */
+export function approxText(value: bigint, decimals: number, symbol: string): string {
+	return `≈ ${formatAmount(value, decimals)} ${symbol}`
+}
+
+/** "≈ 0.49 USDC · 9.8 %"; a gas-only send's fee is a cost of the gas, not a share of a token, so it has no share. */
+export function feeTotalText(f: CrossChainFigures, decimals: number, symbol: string, intent: CrossChainAsk["intent"]): string {
+	const total = approxText(f.relayFee, decimals, symbol)
+	return intent === "gas" ? total : `${total} · ${feeShareText(f.feeBps)}`
+}
+
+/** The two lines every cross-chain fee breaks into: the rail's cut of the amount, and the source chain's own fee. */
+export function feeLineLabels(srcChainId: number, rail: Rail): { relay: string; network: string } {
+	const native = readChainOf(srcChainId)?.chain.nativeCurrency.symbol ?? "ETH"
+	return {
+		relay: `${railLabel(rail)} relay fee, taken from the amount`,
+		network: `Paid in ${IS_MAINNET ? "" : "test "}${native} on ${chainLabel(srcChainId)}`,
+	}
 }
 
 /** "0:42": a quote's remaining life, never negative. */

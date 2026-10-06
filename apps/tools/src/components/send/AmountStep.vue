@@ -3,7 +3,7 @@
 import { Button, Icon } from "@unleashed/design"
 import { computed, onScopeDispose, ref, watch } from "vue"
 import { PHONE_QUERY, useMediaQuery } from "@/composables/useMediaQuery"
-import { formatDisplayAmount, parseAmountStrict, toDecimalString } from "@/lib/format"
+import { formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString } from "@/lib/format"
 import {
 	type AmountToken,
 	type Direction,
@@ -16,12 +16,29 @@ import {
 } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { safeDisplay } from "@/lib/token-display"
+import type { CrossChainNotice } from "@/composables/useCrossChainSend"
+import type { Rail } from "@/lib/chains"
+import { approxText, type CrossChainFigures, type FeeCeiling, FEE_CEILING_BPS, feeShareText } from "@/lib/crosschain-figures"
 
 /** Components */
 import ChoiceCards from "./ChoiceCards.vue"
+import CrossChainFees from "./CrossChainFees.vue"
+import CrossChainState from "./CrossChainState.vue"
 import GasBreakdown from "./GasBreakdown.vue"
+import StateNotice from "./StateNotice.vue"
 
 export type RouteKind = "route" | "identity" | "no-route" | "unavailable"
+
+/** What a cross-chain route says about this amount: its figures in the source token, and why it may not go. */
+export interface CrossChainAmount {
+	srcChainId: number
+	rail: Rail
+	figures: CrossChainFigures | null
+	ceiling: FeeCeiling | null
+	notice: CrossChainNotice | null
+	/** Milliseconds before the quote is asked again; null while there is none. */
+	expiresIn: number | null
+}
 
 const props = defineProps<{
 	direction: Direction
@@ -45,6 +62,8 @@ const props = defineProps<{
 	blockedReason?: string | null
 	/** Why `token` alone cannot continue (the account holds no gas to claim with): its card says so, and Continue stays off while it is the choice. */
 	tokenOnlyBlocked?: string | null
+	/** Set for a send that starts on another chain: the route's figures replace the Ethereum-origin ones. */
+	crossChain?: CrossChainAmount | null
 }>()
 const emit = defineEmits<{
 	"update:intent": [intent: SendIntent]
@@ -53,6 +72,8 @@ const emit = defineEmits<{
 	"update:txTarget": [target: number]
 	/** This step owns the field's validity; the wizard gates the review on what it reports here. */
 	"update:valid": [valid: boolean]
+	/** Quote the route again. */
+	retry: []
 	back: []
 	next: []
 }>()
@@ -157,8 +178,14 @@ function toggleGas(): void {
 	if (!breakdownHeld.value) gasOpen.value = !gasOpen.value
 }
 
+/** A cross-chain route that may go: priced, refused by nothing, and not over a ceiling that blocks. */
+const crossChainOk = computed(() => {
+	const x = props.crossChain
+	return !x || (x.figures !== null && x.notice === null && !x.ceiling?.blocks)
+})
+
 const canContinue = computed(() => {
-	if (props.blockedReason || props.resolving) return false
+	if (props.blockedReason || props.resolving || !crossChainOk.value) return false
 	if (!isExit.value && props.intent === "token" && props.tokenOnlyBlocked) return false
 	if (amountError.value !== null || parsed.value === null || parsed.value === 0n) return false
 	return !showGas.value || props.gas !== null
@@ -166,14 +193,48 @@ const canContinue = computed(() => {
 
 watch(canContinue, (valid) => emit("update:valid", valid), { immediate: true })
 
+const symbolText = computed(() => safeDisplay(props.token.symbol))
+const figures = computed(() => props.crossChain?.figures ?? null)
+
+/** What lands on Aztec: the token less the relay fee and the slice, or the gas a gas-only send buys. */
+const crossChainArrives = computed(() => {
+	const f = figures.value
+	if (!f) return { text: "—", sub: "" }
+	if (props.intent === "gas") return { text: f.gasExpected === null ? "—" : `≈ ${formatCompact(f.gasExpected, 18)} FJ`, sub: "as gas" }
+	return { text: approxText(f.tokenArrives ?? 0n, props.token.decimals, symbolText.value), sub: "" }
+})
+
+/** A gas-only send is never refused for its fee, only told when the fee outweighs the gas. */
+const feeOverGas = computed(() => {
+	const f = figures.value
+	if (!f || props.intent !== "gas" || f.relayFee <= f.delivered) return null
+	return `Fees ${approxText(f.relayFee, props.token.decimals, symbolText.value)}, more than the gas itself.`
+})
+
+const ceilingBox = computed(() => {
+	const c = props.crossChain?.ceiling
+	const f = figures.value
+	if (!c?.over || !f || props.intent === "gas") return null
+	const fee = approxText(f.relayFee, props.token.decimals, symbolText.value)
+	const minimum = formatDisplayAmount(c.minimum, props.token.decimals)
+	return {
+		blocks: c.blocks,
+		title: `Fees ${fee} are ${feeShareText(f.feeBps)} of this send, over the ${FEE_CEILING_BPS / 100} % limit.`,
+		minimum,
+		raw: toDecimalString(c.minimum, props.token.decimals),
+	}
+})
+
 /** What arrives privately, for the veil line: a deposit's token part, once its split is known. A gas-only
- *  send arrives as public gas, so it has none. */
+ *  send arrives as public gas, so it has none; a cross-chain one arrives less the rail's fee. */
 const veiled = computed(() => {
 	if (isExit.value || !props.isPrivate || props.intent === "gas") return null
+	const crossed = figures.value?.tokenArrives
+	if (props.crossChain) return crossed ? `${formatDisplayAmount(crossed, props.token.decimals)} ${symbolText.value}` : null
 	if (props.intent === "token+gas" && !props.gas) return null
 	if (!parsed.value) return null
 	const rest = tokenRemainder(parsed.value, props.intent === "token" ? null : props.gas)
-	return rest > 0n ? `${formatDisplayAmount(rest, props.token.decimals)} ${safeDisplay(props.token.symbol)}` : null
+	return rest > 0n ? `${formatDisplayAmount(rest, props.token.decimals)} ${symbolText.value}` : null
 })
 
 /** Exact, never cut: the balance line fills the field with this very number (ungrouped, in `onUseAll`). */
@@ -220,7 +281,7 @@ function onUseAll(): void {
 			</p>
 		</div>
 
-		<div class="amount">
+		<div class="amount" :class="{ 'with-arrives': crossChain }">
 			<!-- The field names itself; this is the phone's visible caption for it. -->
 			<span class="amount-label" aria-hidden="true">Amount</span>
 			<label
@@ -265,6 +326,10 @@ function onUseAll(): void {
 					<span class="balance-k">Balance</span> {{ balanceText }} <span class="balance-unit">{{ token.symbol }}</span>
 				</span>
 			</button>
+			<p v-if="crossChain" class="arrives" :data-testid="TESTIDS.sendXcArrives">
+				Arrives on Aztec <span class="arrives-figure">{{ crossChainArrives.text }}</span>
+				<template v-if="crossChainArrives.sub"> {{ crossChainArrives.sub }}</template>
+			</p>
 			<p v-if="shownError" :id="AMOUNT_ERROR_ID" class="err" aria-live="polite" :data-testid="TESTIDS.sendAmountError">
 				<Icon name="square-alert" :size="12" />{{ shownError }}
 			</p>
@@ -275,7 +340,7 @@ function onUseAll(): void {
 			v-show="!phone || breakdownOpen"
 			:id="GAS_BREAKDOWN_ID"
 			:token="token"
-			:amount="parsed ?? 0n"
+			:amount="figures?.delivered ?? parsed ?? 0n"
 			:intent="intent"
 			:gas="gas"
 			:tx-target="txTarget"
@@ -283,8 +348,45 @@ function onUseAll(): void {
 			:set-aside="gasSetAside"
 			:loading="routeLoading"
 			:error="shownGasError"
+			:approx="Boolean(crossChain)"
 			@update:tx-target="emit('update:txTarget', $event)"
 		/>
+
+		<template v-if="crossChain">
+			<CrossChainState
+				v-if="crossChain.notice"
+				:state="crossChain.notice"
+				:src-chain-id="crossChain.srcChainId"
+				:send-text="`${formatDisplayAmount(parsed ?? 0n, token.decimals)} ${symbolText}`"
+				@act="emit('retry')"
+			/>
+			<CrossChainFees
+				v-else
+				:figures="crossChain.figures"
+				:decimals="token.decimals"
+				:symbol="symbolText"
+				:src-chain-id="crossChain.srcChainId"
+				:rail="crossChain.rail"
+				:intent="intent"
+				:expires-in="crossChain.expiresIn"
+			/>
+			<p v-if="feeOverGas" class="over-gas ul-notch" :data-testid="TESTIDS.sendXcGasOverFee">
+				<Icon name="warning-diamond" :size="24" /><span>{{ feeOverGas }}</span>
+			</p>
+			<StateNotice
+				v-if="ceilingBox"
+				:tone="ceilingBox.blocks ? 'lost' : 'attention'"
+				icon="square-alert"
+				:title="ceilingBox.title"
+				:action="ceilingBox.blocks ? `Use ${ceilingBox.minimum} ${symbolText}` : undefined"
+				:action-testid="TESTIDS.sendXcUseMinimum"
+				:data-testid="TESTIDS.sendXcCeiling"
+				:data-blocks="ceilingBox.blocks || undefined"
+				@act="emit('update:amount', ceilingBox.raw)"
+			>
+				<template v-if="ceilingBox.blocks" #default>Send at least ≈ {{ ceilingBox.minimum }} {{ symbolText }}.</template>
+			</StateNotice>
+		</template>
 
 		<div class="privacy ul-notch" :class="{ on: isPrivate }">
 			<div class="privacy-row">
@@ -337,6 +439,42 @@ function onUseAll(): void {
 	grid-template-columns: minmax(0, 1fr);
 	grid-template-areas: "field" "balance";
 	gap: 8px;
+}
+
+.amount.with-arrives {
+	grid-template-columns: minmax(0, 1fr) auto;
+	grid-template-areas: "field field" "arrives balance";
+	align-items: baseline;
+	column-gap: 16px;
+}
+
+.arrives {
+	grid-area: arrives;
+	margin: 0;
+	font: 400 14px/1.4 var(--ul-font-body);
+	color: var(--ul-ink-2);
+}
+
+.arrives-figure {
+	font-family: var(--ul-font-mono);
+	color: var(--ul-ink);
+}
+
+.over-gas {
+	--ul-fill: var(--ul-attention-bg);
+	--ul-notch: var(--ul-notch-2);
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	margin: 0;
+	padding: 12px 14px;
+	font: 700 14px/1.45 var(--ul-font-body);
+	color: var(--ul-attention);
+}
+
+.over-gas > :first-child {
+	flex: none;
+	margin-top: 1px;
 }
 
 .amount-label {
@@ -581,11 +719,16 @@ function onUseAll(): void {
 		gap: 14px;
 	}
 
-	.amount {
+	.amount,
+	.amount.with-arrives {
 		grid-template-columns: auto minmax(0, 1fr);
 		grid-template-areas: "label balance" "field field";
 		align-items: baseline;
 		gap: 6px 12px;
+	}
+
+	.amount.with-arrives {
+		grid-template-areas: "label balance" "field field" "arrives arrives";
 	}
 
 	.amount-label {

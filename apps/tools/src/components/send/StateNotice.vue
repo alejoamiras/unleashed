@@ -12,6 +12,8 @@ const props = defineProps<{
 	title: string
 	action?: string
 	actionTestid?: string
+	/** A glyph before the action's words. */
+	actionIcon?: IconName
 }>()
 const emit = defineEmits<{ act: [] }>()
 </script>
@@ -21,8 +23,10 @@ const emit = defineEmits<{ act: [] }>()
 		<span class="glyph"><Icon :name="icon" :size="24" /></span>
 		<span class="body">
 			<strong class="title">{{ title }}</strong>
-			<span><slot /></span>
-			<button v-if="action" type="button" class="action ul-notch" :data-testid="actionTestid" @click="emit('act')">{{ action }}</button>
+			<span v-if="$slots.default"><slot /></span>
+			<button v-if="action" type="button" class="action ul-notch" :data-testid="actionTestid" @click="emit('act')">
+				<Icon v-if="actionIcon" :name="actionIcon" :size="12" />{{ action }}
+			</button>
 		</span>
 	</div>
 </template>
@@ -70,6 +74,7 @@ const emit = defineEmits<{ act: [] }>()
 	align-self: flex-start;
 	display: inline-flex;
 	align-items: center;
+	gap: 8px;
 	min-height: 36px;
 	margin-top: 4px;
 	padding: 0 12px;

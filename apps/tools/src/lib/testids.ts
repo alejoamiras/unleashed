@@ -290,6 +290,26 @@ export const TESTIDS = {
 
 	// Cross-chain · amount and review
 	sendXcFees: "tl-send-xc-fees",
+	sendXcFeeTotal: "tl-send-xc-fee-total",
+	sendXcQuoteAge: "tl-send-xc-quote-age",
+	sendXcArrives: "tl-send-xc-arrives",
+	sendXcGasOverFee: "tl-send-xc-gas-over-fee",
+	sendXcCeiling: "tl-send-xc-ceiling",
+	sendXcUseMinimum: "tl-send-xc-use-minimum",
+	sendXcNotice: "tl-send-xc-notice",
+	sendXcRetry: "tl-send-xc-retry",
+	sendXcRefresh: "tl-send-xc-refresh",
+	sendXcChangeWallet: "tl-send-xc-change-wallet",
+	sendXcReview: "tl-send-xc-review",
+	sendXcTestnetNotice: "tl-send-xc-testnet-notice",
+	sendXcLimits: "tl-send-xc-limits",
+	sendXcRouteLine: "tl-send-xc-route-line",
+	sendXcLifi: "tl-send-xc-lifi",
+	sendXcYouSign: "tl-send-xc-you-sign",
+	sendXcFallback: "tl-send-xc-fallback",
+	sendXcRefund: "tl-send-xc-refund",
+	sendXcQuoteBand: "tl-send-xc-quote-band",
+	sendReviewNoGas: "tl-send-review-no-gas",
 
 	// Cross-chain · stepper and receipt
 	stepperXcBridge: "tl-stepper-xc-bridge",
