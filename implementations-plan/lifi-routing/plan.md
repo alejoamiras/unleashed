@@ -1313,7 +1313,7 @@ the decoder's `maxPull` rule follow the same figure (`fuel.crossChainSlippageBps
 
 **D44 Arc 2 Codex loop (`gpt-6.1-sol` at `high`, over the arc 2 diff).** Every finding was verified against the
 code and accepted. Round 3 still raised two material findings, so the loop reached the plan's hard stop and went to
-the owner, who chose "Run round 4" in the same session.
+the owner, who chose "Run round 4" in the same session. Round 4 raised two more, fixed, and went back to the owner.
 - Round 1 (one high, five medium, one low):
   1. (high) A replaced source bridge facet only warned, although it holds the user's approved input before any
      check of ours runs. `verify:l1` now fails on bridge-facet drift; D4's warning stays for fuel-swap selectors,
@@ -1338,11 +1338,18 @@ the owner, who chose "Run round 4" in the same session.
 - Round 3 (two medium):
   1. A calldata substring did not authenticate a reverted call. A call to the source Diamond must decode under the
      rail's facet ABI to `BridgeData.transactionId == lifiTxId`; a call to any other target falls back to the scan.
-     **Deviation from Codex's smallest fix:** a transaction the sender addresses to itself (an EIP-7702 batch) still
-     counts when it carries the id as one 32-byte word. Its inner calls are not decoded, only the sender's own key
-     can produce one, and refusing it would leave a reverted batched transfer `pending` with no path to `not-sent`.
+     I first kept a self-addressed transaction carrying the id as one 32-byte word, for liveness; round 4 rejected
+     that.
   2. The approval's confirmation sat outside the cleanup guard. Submit and confirm are split; everything after a
      submitted approval either revokes or raises `AllowanceStillLive`.
+- Round 4 (owner-approved past the hard stop; one medium, one low):
+  1. Addressing the sender's own account does not authenticate the inner call: a self-addressed batch can hand the
+     public id to an unrelated helper and revert. A self-addressed transaction now counts only when it decodes as
+     an ERC-7821 / ERC-7579 batch-mode `execute` or an `executeBatch`, and one of its calls targets the Diamond with
+     the decoded id. Any other encoding stays `pending`. Codex: "A terminal answer without that evidence is the
+     weakness, even when rejecting it sacrifices liveness."
+  2. (low) The relayer's comments and the filler's "nothing sent" output claimed no transaction where an approval
+     and its revoke may have been sent. Reworded.
 
 Rejected: none. Accepted residue:
 - An OP-stack L1 data fee falls outside `gas × maxFeePerGas`; Codex agreed it "remains separate".

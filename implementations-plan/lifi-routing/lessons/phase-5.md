@@ -105,9 +105,14 @@ findings and the one deviation are in the plan's ledger (D44).
   spend its own revoke's budget. Fixed.
 - **Round 3:** "Two MATERIAL gaps remain". A calldata substring is not proof that a reverted call is the
   transfer, and the approval's confirmation sat outside the cleanup guard. Fixed (the batch shape deviates from
-  Codex's fix; see D44). On the fix commit: unit 689 passed, `test:integration` 8 files and 47/47, no `/dev/shm`
+  Codex's fix; see D44, reversed in round 4). On the fix commit: unit 689 passed, `test:integration` 8 files and 47/47, no `/dev/shm`
   segment left behind.
 - **The loop hit the plan's hard stop after three rounds without converging.** Surfaced to the owner, who chose
-  to run round 4 in the same session. Pattern: each round's fix to a reverted-receipt rule opened a narrower hole one layer down. Sender,
+  to run round 4 in the same session.
+- **Round 4:** "the batch exception still permits false `not-sent`; approval-confirmation cleanup is fixed". A
+  self-addressed batch now counts only through a decoded inner Diamond call carrying the id (ERC-7821 / ERC-7579
+  batch `execute`, or `executeBatch`). Separately, "nothing sent" was removed wherever an approval and its revoke
+  may have gone out. Three mutants of the batch check (substring, dropped `executeBatch`, any target) each fail the
+  test. Surfaced to the owner again. Pattern: each round's fix to a reverted-receipt rule opened a narrower hole one layer down. Sender,
   then a substring, then a decoded target. The lesson: authenticate a negative outcome (`not-sent`) as strictly as
   a positive one, by decoded call target and id from the start, never by a weaker proxy.
