@@ -4,7 +4,7 @@ import { TestERC20Abi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, keccak256 } from "viem"
 import type { L1Ctx } from "../../src/flows"
 import { evmArtifact } from "../script-artifacts"
-import { lc, MOCK_RATE_NUM, type SpecKey, SPECS, type TokenSpec } from "./constants"
+import { lc, MOCK_RATE_NUM, type SpecKey, SPECS, SWAPPER_FJ_PER_WHOLE_TOKEN, type TokenSpec } from "./constants"
 import { type CanonicalName, readVendored } from "./refresh-canonical-bytecode"
 
 /** Permit2 and Multicall3 are canonical singletons nobody can redeploy at their real address, so the
@@ -103,6 +103,11 @@ export interface L1Deployment {
 	/** The `DepositRouter` beside the old router, and its `SWAP_TARGET`; set once the generation exists. */
 	depositRouter?: Address
 	fuelSwapper?: Address
+}
+
+/** Gives `token` a rate at the deposit router's fuel swapper, so a send of it can buy gas (NORT never gets one). */
+export async function setFuelRate(l1: L1Ctx, swapper: Address, token: Address, rate = SWAPPER_FJ_PER_WHOLE_TOKEN): Promise<void> {
+	await writeL1(l1, swapper, evmArtifact("TestnetFuelSwapper").abi, "setRate", [token, rate])
 }
 
 /** Lets discovery find a route for `token` through the facade (NORT is deliberately never listed). */

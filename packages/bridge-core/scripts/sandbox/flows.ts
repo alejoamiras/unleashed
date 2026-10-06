@@ -12,11 +12,10 @@ import { exitViaHub, type HubExitParams, hubExitsPaused, hubTokenFor, preflightH
 import type { JournalTokenBlock } from "../../src/journal"
 import type { ManifestToken } from "../../src/manifest-v2"
 import { deriveBridgeSecret, PRIVATE_FPC_ADDRESS, PRIVATE_HUB_CLAIM_GAS } from "../../src/private-fuel"
-import { discoverFuelRoute } from "../../src/route-discovery"
 import type { SendResult } from "../../src/send-flow"
 import { waitForL1ToL2Message } from "../generation"
 import { ensureRouterPermit2 } from "../script-l1"
-import { MIN_FJ, MOCK_RATE_NUM, MULTICALL3, PERMIT2, SANDBOX_ETH_FJ, SANDBOX_TIER, ZERO_L1 } from "./constants"
+import { MIN_FJ, PERMIT2, ZERO_L1 } from "./constants"
 import {
 	balanceOf,
 	claim,
@@ -28,8 +27,9 @@ import {
 	type FeeMode,
 	fpcClaimFee,
 	fuelClaimFee,
+	fuelLeg,
+	fuelSwapperOf,
 	mintPrivateGasNote,
-	mockRoute,
 	privateCreditFee,
 	privateCreditOf,
 	privateExitFee,
@@ -41,7 +41,7 @@ import {
 	type SmokeContext,
 	tokenBlockOf,
 } from "./context"
-import { erc20BalanceOf, freshToken, mint, mintFeeAsset, writeL1 } from "./l1"
+import { erc20BalanceOf, freshToken, mint, mintFeeAsset, setFuelRate, writeL1 } from "./l1"
 import { withBlockHeartbeat } from "./l2"
 
 // ─── Deposits ────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ export async function flowRelayedPrivateDeposit(s: SmokeContext, token: Manifest
 	return `wrong recipient rejected, then ${outcome.path} submitted by the relayer credited the actor`
 }
 
-/** The slice has to buy enough Fee Juice to pay the claim it funds, which the mock's fixed rate
+/** The slice has to buy enough Fee Juice to pay the claim it funds, which the swapper's fixed rate
  *  makes exact: 40 whole 6-decimal units → 4×10^19 FJ-wei. */
 export const TOKEN_PLUS_GAS_FUEL_UNITS = 40n
 export const GAS_ONLY_AMOUNT = 20n * MIN_FJ
@@ -155,21 +155,13 @@ export async function flowTokenPlusGas(s: SmokeContext, token: ManifestToken, l2
 	const total = 100n * unit
 	const fuelAmount = TOKEN_PLUS_GAS_FUEL_UNITS * unit
 	await mint(s.l1, token.erc20 as Address, s.l1.account.address, total)
-	const route = mockRoute(token.erc20 as Address, s.clients.deployment.feeJuice, s.clients.deployment.tokens.weth)
 	const res = await send(s, s.l1, {
 		intent: "token+gas",
 		erc20: token.erc20 as Address,
 		amount: total,
 		aztecRecipient: s.l2.from.toString() as Hex,
 		isPrivate: false,
-		gas: {
-			fuelAmount,
-			fuelRecipient: s.l2.from.toString() as Hex,
-			// The mock's rate is fixed, so the exact output IS the floor — nothing here is a guess.
-			minFuelOutput: fuelAmount * MOCK_RATE_NUM,
-			path: route.path,
-			zeroForOnes: route.zeroForOnes,
-		},
+		gas: { fuelAmount, fuelRecipient: s.l2.from.toString() as Hex, ...(await fuelLeg(s, token.erc20 as Address, fuelAmount)) },
 	})
 	await waitForL1ToL2Message(s.l2.node, res.fuelMessageHashHex as string, { forceBlock: s.l2.forceBlock })
 	const before = await balanceOf(l2Token, s.l2.from, "public")
@@ -196,7 +188,7 @@ export async function flowGasOnly(s: SmokeContext): Promise<string> {
 		amount,
 		aztecRecipient: s.l2.from.toString() as Hex,
 		isPrivate: false,
-		gas: { fuelAmount: amount, fuelRecipient: s.l2.from.toString() as Hex, minFuelOutput: amount, path: [], zeroForOnes: [] },
+		gas: { fuelAmount: amount, fuelRecipient: s.l2.from.toString() as Hex, minFuelOutput: amount, swapData: "0x" },
 	})
 	await waitForL1ToL2Message(s.l2.node, res.fuelMessageHashHex as string, { forceBlock: s.l2.forceBlock })
 	const before = await balanceOf(s.feeJuiceL2, s.l2.from, "public")
@@ -209,7 +201,7 @@ export async function flowGasOnly(s: SmokeContext): Promise<string> {
 		"the public Fee Juice after the claim",
 	)
 	const gained = after - before
-	return `bridge() into the FeeJuicePortal, +${gained} FJ-wei claimed as fee juice`
+	return `fuel-only bridgeWithPermit into the FeeJuicePortal, +${gained} FJ-wei claimed as fee juice`
 }
 
 // ─── Private gas held at the PrivateFPC ──────────────────────────────────────
@@ -433,40 +425,35 @@ export async function flowPortalOnlyToken(s: SmokeContext, pxo: ManifestToken): 
 	return `portal existed, hub did not know it; the claim took ${outcome.path}`
 }
 
-/** NORT is never allow-listed on the facade, so every candidate hop reverts — exactly the shape a
- *  token with no pool produces on the real quoter. */
-export async function flowNoRoute(s: SmokeContext, nort: Address, quoter: Address = s.clients.deployment.quoter): Promise<string> {
-	const outcome = await discoverFuelRoute({
-		client: s.l1.pub as never,
-		quoter,
-		multicall3: MULTICALL3,
-		token: nort,
-		feeAsset: s.clients.deployment.feeJuice,
-		weth: s.clients.deployment.tokens.weth,
-		feeJuice: s.clients.deployment.feeJuice,
-		tiers: [SANDBOX_TIER],
-		ethFj: SANDBOX_ETH_FJ,
-		probeAmount: 10n ** 18n,
-	})
-	if (outcome.kind !== "no-route") throw new Error(`expected no-route for NORT, got ${outcome.kind}`)
-	// The refusal is the whole point: nothing was signed, so no Permit2 nonce and no L1 tx exist. The
-	// floor is a real one, so the empty route — not a zero floor — is what the send refuses.
-	let refused = ""
+const failure = async (run: () => Promise<unknown>): Promise<string> => {
 	try {
-		await send(s, s.l1, {
+		await run()
+	} catch (e) {
+		return e instanceof Error ? e.message : String(e)
+	}
+	return ""
+}
+
+/** NORT never gets a rate at the fuel swapper, so its gas leg has no quote — exactly the shape a token
+ *  no venue prices produces — and a send without one is refused before anything is signed. */
+export async function flowNoRoute(s: SmokeContext, nort: Address): Promise<string> {
+	const unquoted = await failure(() => fuelLeg(s, nort, 10n ** 18n))
+	if (!/no fuel quote/.test(unquoted)) throw new Error(`expected the swapper to refuse NORT, got "${unquoted.slice(0, 120)}"`)
+	// The refusal is the whole point: nothing was signed, so no Permit2 nonce and no L1 tx exist. The
+	// floor is a real one, so the missing quote — not a zero floor — is what the send refuses.
+	const refused = await failure(() =>
+		send(s, s.l1, {
 			intent: "token+gas",
 			erc20: nort,
 			amount: 2n * 10n ** 18n,
 			aztecRecipient: s.l2.from.toString() as Hex,
 			isPrivate: false,
-			gas: { fuelAmount: 10n ** 18n, fuelRecipient: s.l2.from.toString() as Hex, minFuelOutput: MIN_FJ, path: [], zeroForOnes: [] },
-		})
-	} catch (e) {
-		refused = e instanceof Error ? e.message : String(e)
-	}
-	if (!refused) throw new Error("a routeless token+gas send was signed and broadcast")
-	if (!/empty route/i.test(refused)) throw new Error(`the routeless send was refused for "${refused.slice(0, 120)}", not its empty route`)
-	return `discoverFuelRoute → no-route (tried ${outcome.tried}); the send refused its empty route before signing (${refused.slice(0, 60)}…)`
+			gas: { fuelAmount: 10n ** 18n, fuelRecipient: s.l2.from.toString() as Hex, minFuelOutput: MIN_FJ, swapData: "0x" },
+		}),
+	)
+	if (!refused) throw new Error("a quoteless token+gas send was signed and broadcast")
+	if (!/swapData/.test(refused)) throw new Error(`the quoteless send was refused for "${refused.slice(0, 120)}", not its missing quote`)
+	return `no-route: the swapper has no rate for NORT; the send refused its missing quote before signing (${refused.slice(0, 60)}…)`
 }
 
 // ─── Rejected registration under each fee mode ───────────────────────────────
@@ -485,8 +472,8 @@ async function fundedSendFor(
 	if (mode === "sponsored") {
 		return send(s, s.l1, { intent: "token", erc20, amount: total, aztecRecipient: s.l2.from.toString() as Hex, isPrivate: false })
 	}
-	const route = mockRoute(erc20, s.clients.deployment.feeJuice, s.clients.deployment.tokens.weth)
 	const toFpc = mode === "private-fpc"
+	await setFuelRate(s.l1, fuelSwapperOf(s), erc20)
 	return send(s, s.l1, {
 		intent: "token+gas",
 		erc20,
@@ -496,9 +483,7 @@ async function fundedSendFor(
 		gas: {
 			fuelAmount,
 			fuelRecipient: (toFpc ? PRIVATE_FPC_ADDRESS : s.l2.from.toString()) as Hex,
-			minFuelOutput: fuelAmount * MOCK_RATE_NUM,
-			path: route.path,
-			zeroForOnes: route.zeroForOnes,
+			...(await fuelLeg(s, erc20, fuelAmount)),
 			// The FPC rebuilds this secret from the claimer inside `mint_and_pay_fee`; a random one
 			// would strand the Fee Juice at the FPC forever.
 			fuelSecret: toFpc ? deriveBridgeSecret(bridgeSalt, s.l2.from) : undefined,

@@ -1,8 +1,8 @@
 /**
- * LIVE-testnet fueled-send validation: drives the router's fueled entrypoint against the live pools,
- * then proves the headline claim on Aztec — a fresh account's hub claim PAYS FOR ITSELF out of the
- * Fee Juice the same send bridged, for both the public and the private-FPC fuel lanes. The fees it
- * observes are the manifest's `bridge.l1.swap.minFuelFj` and `fjPerTx` calibration.
+ * LIVE-testnet fueled-send validation: drives the deposit router's `bridgeWithPermit` with the fuel
+ * swapper's quote, then proves the headline claim on Aztec — a fresh account's hub claim PAYS FOR ITSELF
+ * out of the Fee Juice the same send bridged, for both the public and the private-FPC fuel lanes. The
+ * fees it observes are the manifest's `bridge.l1.fuel.minFuelFj` and `fjPerTx` calibration.
  *
  * Nothing is deployed: the portal is the factory's clone for the token, the L2 side is the
  * manifest's hub and the token that hub derives, and only the throwaway L2 account is created
@@ -41,7 +41,7 @@ import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
 import { feeJuiceFor } from "./fee-juice-l2"
 import { deployAccountIfAbsent, freshSchnorrAccount, registerHub, registerHubToken, sponsoredFpcFee } from "./script-l2"
-import { claimTokenBlock, planFuelLeg, requireSwap, selectToken, sendGenerationOf } from "./script-send"
+import { claimTokenBlock, planFuelLeg, requireFuel, selectToken, sendGenerationOf } from "./script-send"
 import {
 	createL1Clients,
 	createL2Wallet,
@@ -64,7 +64,7 @@ const CONFIG = loadManifestV2FromConfigArg(process.argv, {
 	fallbackPath: join(here, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json"),
 })
 const BRIDGE = requireBridge(CONFIG)
-const SWAP = requireSwap(BRIDGE)
+requireFuel(BRIDGE)
 const TOKEN = selectToken(BRIDGE, process.argv)
 const GENERATION = sendGenerationOf(CONFIG, BRIDGE)
 
@@ -152,7 +152,7 @@ const feeCeiling = (committedMaxFees?: GasFees, registered = false): bigint | un
 		: undefined
 
 async function sendVariant(ctx: VariantCtx, isPrivate: boolean, viaFpc: boolean, bridgeSalt?: Fr): Promise<SendResult> {
-	const fuel = await planFuelLeg(ctx.l1.pub, SWAP, GENERATION.feeAsset, TOKEN.erc20 as Address, FUEL_SLICE)
+	const fuel = await planFuelLeg(ctx.l1.pub, CONFIG, TOKEN.erc20 as Address, FUEL_SLICE)
 	console.log(`quote: ${FUEL_SLICE} ${TOKEN.displaySymbol}-units → ${fuel.quote} FJ-wei (floor ${fuel.minFuelOutput}) (${ctx.mins()})`)
 	return runSend(
 		ctx.l1,
@@ -168,8 +168,7 @@ async function sendVariant(ctx: VariantCtx, isPrivate: boolean, viaFpc: boolean,
 				fuelAmount: FUEL_SLICE,
 				fuelRecipient: (viaFpc ? PRIVATE_FPC_ADDRESS : ctx.from.toString()) as `0x${string}`,
 				minFuelOutput: fuel.minFuelOutput,
-				path: fuel.path,
-				zeroForOnes: fuel.zeroForOnes,
+				swapData: fuel.swapData,
 				fuelSecret: bridgeSalt ? deriveBridgeSecret(bridgeSalt, ctx.from) : undefined,
 			},
 			nonce: rndNonce(),
@@ -234,7 +233,7 @@ function printCalibration(runs: VariantRun[], mins: () => string): void {
 	const plain = worstOf(runs.filter((r) => r.path === "claim").map((r) => r.actualFee))
 	const registering = worstOf(runs.filter((r) => r.path !== "claim").map((r) => r.actualFee))
 	const fjPerTx = plain ?? worstActual
-	console.log(`fjPerTx calibration  : ${fjPerTx} — set bridge.l1.swap.fjPerTx${plain === undefined ? " (no plain claim ran)" : ""}`)
+	console.log(`fjPerTx calibration  : ${fjPerTx} — set bridge.l1.fuel.fjPerTx${plain === undefined ? " (no plain claim ran)" : ""}`)
 	if (plain !== undefined && registering !== undefined && registering > plain) {
 		console.log(`fjRegister hint      : ${registering - plain} (the first claim's registration surcharge)`)
 	}

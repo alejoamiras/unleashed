@@ -9,7 +9,7 @@ import type { CrossChainDiscoveryContext, DiscoveryChainReads, DiscoveryReads } 
 import type { L1Ctx } from "../../src/flows"
 import { evmArtifact } from "../script-artifacts"
 import { createL1Clients } from "../script-bootstrap"
-import { CHAIN_ID, lc, PERMIT2, SOURCE_CHAIN_ID, sandboxChain, sandboxSourceChain, ZERO_L1 } from "./constants"
+import { CHAIN_ID, lc, PERMIT2, SOURCE_CHAIN_ID, SWAPPER_FJ_PER_WHOLE_TOKEN, sandboxChain, sandboxSourceChain, ZERO_L1 } from "./constants"
 import { lifiArtifactPath } from "./forge"
 import type { SandboxHandle } from "./handle"
 import { deployEvm, mint, mintFeeAsset, writeL1 } from "./l1"
@@ -18,8 +18,6 @@ import { type FillWallet, type Relayer, type RelayMode, startRelayer } from "./r
 /** Arachnid's deterministic deployer, which anvil installs at genesis. */
 export const CREATE2_DEPLOYER: Address = "0x4e59b44847b379578588920cA78FbF26c0B4956C"
 
-/** The swapper's rate for every fixture token: one whole Fee Juice per whole token, the old mock venue's rate. */
-export const SWAPPER_FJ_PER_WHOLE_TOKEN = 10n ** 18n
 const SWAPPER_INVENTORY = 10n ** 30n
 
 export interface CrossChainDeployment {

@@ -5,11 +5,13 @@
  * is written into the call's `_minAmountOut`, so the facet checks the floor the router checks (LI.FI's own
  * `toAmountMin` can never equal it: the floor never drops below the claim minimum). I/O is injected.
  */
-import { type Address, concat, encodeFunctionData, type Hex, numberToHex, pad, size, slice, zeroHash } from "viem"
+import { type Address, concat, encodeFunctionData, type Hex, numberToHex, pad, parseAbi, size, slice, zeroHash } from "viem"
 import { signedMinFuelOutput } from "./gas-share"
 import { FUEL_SWAP_SELECTORS, SWAP_TOKENS_SINGLE_V3_ABI } from "./lifi-abi"
+import { lifiBook } from "./lifi-addresses"
 import { LIFI_INTEGRATOR, type LifiClient, type LifiQuote, type LifiRefusal, lifiSameChainQuote } from "./lifi-api"
 import { LIFI_ALLOW_EXCHANGES } from "./lifi-gas"
+import type { ManifestV2 } from "./manifest-v2"
 
 /**
  * Both pinned functions open with `(bytes32, string, string, address _receiver, uint256 _minAmountOut, …)`, so the two
@@ -38,6 +40,8 @@ export type FuelQuote = (FuelQuoteBase & { provider: "lifi"; tool: string }) | (
 export interface FuelProbe {
 	probeIn: bigint
 	probeOut: bigint
+	/** LI.FI's venue for the probe; display only, the quote at the slice names its own. */
+	tool?: string
 }
 
 export type FuelQuoteRefusal =
@@ -151,7 +155,7 @@ export function lifiFuelProvider(o: LifiFuelProviderOptions): FuelQuoteProvider 
 	return {
 		async probe(token, probeIn) {
 			const res = await lifiQuoteChecked(o, token, probeIn)
-			return res.ok ? { ok: true, probe: { probeIn, probeOut: res.quote.estimate.toAmount } } : res
+			return res.ok ? { ok: true, probe: { probeIn, probeOut: res.quote.estimate.toAmount, tool: res.quote.tool } } : res
 		},
 		async quote(token, amountIn) {
 			const res = await lifiQuoteChecked(o, token, amountIn)
@@ -226,4 +230,47 @@ export function testnetSwapperFuelProvider(o: TestnetSwapperProviderOptions): Fu
 			return { ok: true, quote: { provider: "testnetSwapper", swapData, amountIn, expectedOut: res.out, minOut: floor } }
 		},
 	}
+}
+
+/** `TestnetFuelSwapper.quote`, the one read its provider makes. */
+export const FUEL_SWAPPER_QUOTE_ABI = parseAbi(["function quote(address token, uint256 amountIn) view returns (uint256)"])
+
+/** The Ethereum read a manifest's providers make (a viem public client's `readContract`). */
+export interface FuelQuoteReads {
+	readContract(args: {
+		address: Address
+		abi: typeof FUEL_SWAPPER_QUOTE_ABI
+		functionName: "quote"
+		args: readonly [Address, bigint]
+	}): Promise<unknown>
+}
+
+/**
+ * The provider a manifest's deposit router swaps through, floored by its `l1.fuel` budgets: the pinned
+ * `TestnetFuelSwapper` wherever one is listed, otherwise LI.FI on the manifest's L1 through `o.lifi`.
+ * Undefined for a bridge without a deposit router, or on LI.FI without a client.
+ */
+export function manifestFuelProvider(
+	m: ManifestV2,
+	reads: FuelQuoteReads,
+	o: { lifi?: LifiClient; transactionId?: Hex } = {},
+): FuelQuoteProvider | undefined {
+	const l1 = m.bridge?.l1
+	if (!l1?.depositRouter || !l1.fuel) return undefined
+	const policy = { slippageBps: l1.fuel.slippageBps, minFuelFj: BigInt(l1.fuel.minFuelFj) }
+	const router = l1.depositRouter as Address
+	const feeAsset = m.feeJuice.asset as Address
+	const swapper = l1.fuelSwapper as Address | undefined
+	if (swapper) {
+		const quote = async (token: Address, amountIn: bigint) =>
+			(await reads.readContract({
+				address: swapper,
+				abi: FUEL_SWAPPER_QUOTE_ABI,
+				functionName: "quote",
+				args: [token, amountIn],
+			})) as bigint
+		return testnetSwapperFuelProvider({ reader: { quote }, swapper, router, feeAsset, transactionId: o.transactionId, ...policy })
+	}
+	if (!o.lifi) return undefined
+	return lifiFuelProvider({ client: o.lifi, chainId: m.l1ChainId, diamond: lifiBook(m.l1ChainId).diamond, router, feeAsset, ...policy })
 }

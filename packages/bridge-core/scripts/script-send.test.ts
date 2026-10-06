@@ -1,12 +1,10 @@
-import type { Address, PublicClient } from "viem"
+import { type Address, decodeFunctionData } from "viem"
 import { describe, expect, it, vi } from "vitest"
 import type { JournalTokenBlock } from "../src/journal"
-import type { BridgeBlock, ManifestToken } from "../src/manifest-v2"
+import { SWAP_TOKENS_SINGLE_V3_ABI } from "../src/lifi-abi"
+import type { BridgeBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import { predictPortal } from "../src/portal-address"
-import { claimTokenBlock, planFuelLeg, selectToken, type SwapBlock } from "./script-send"
-
-const { discoverFuelRoute } = vi.hoisted(() => ({ discoverFuelRoute: vi.fn() }))
-vi.mock("../src/route-discovery", () => ({ discoverFuelRoute }))
+import { claimTokenBlock, planFuelLeg, selectToken } from "./script-send"
 
 const addr = (byte: string) => `0x${byte.repeat(20)}` as Address
 const word = (byte: string) => `0x${byte.repeat(32)}`
@@ -29,19 +27,8 @@ const tokenAt = (erc20: Address, symbol: string): ManifestToken => ({
 	source: "canonical",
 })
 
-const swap: SwapBlock = {
-	poolManager: addr("a1"),
-	quoter: addr("a2"),
-	multicall3: addr("a3"),
-	weth: addr("a4"),
-	feeJuice: addr("a5"),
-	tiers: [{ fee: 3000, tickSpacing: 60 }],
-	ethFj: { fee: 987, tickSpacing: 10 },
-	slippageBps: 300,
-	minFuelFj: "1",
-	fjPerTx: "1",
-	fjRegister: "1",
-}
+const DEPOSIT_ROUTER = addr("c1")
+const SWAPPER = addr("c2")
 
 const bridge: BridgeBlock = {
 	l1: {
@@ -53,7 +40,9 @@ const bridge: BridgeBlock = {
 		permit2: addr("b4"),
 		swapTarget: addr("b5"),
 		feeJuicePortal: addr("b6"),
-		swap,
+		depositRouter: DEPOSIT_ROUTER,
+		fuelSwapper: SWAPPER,
+		fuel: { slippageBps: 300, crossChainSlippageBps: 100, minFuelFj: "10", fjPerTx: "1", fjRegister: "1" },
 	},
 	l2: {
 		hub: { address: word("22"), salt: word("33"), constructorArtifact: "BridgeHub", constructorArgs: [] },
@@ -100,15 +89,29 @@ describe("claimTokenBlock", () => {
 })
 
 describe("planFuelLeg", () => {
-	const pub = {} as PublicClient
+	const manifest = { l1ChainId: 31337, feeJuice: { asset: FEE_ASSET }, bridge } as unknown as ManifestV2
 
 	it("refuses the fee asset itself — its gas leg belongs to the direct lane", async () => {
-		discoverFuelRoute.mockResolvedValueOnce({ kind: "identity" })
-		await expect(planFuelLeg(pub, swap, FEE_ASSET, FEE_ASSET, 1n)).rejects.toThrow(/IS the fee asset/)
+		const pub = { readContract: vi.fn() }
+		await expect(planFuelLeg(pub, manifest, FEE_ASSET, 1n)).rejects.toThrow(/IS the fee asset/)
+		expect(pub.readContract).not.toHaveBeenCalled()
 	})
 
-	it("refuses a token with no route rather than sending an unfueled claim", async () => {
-		discoverFuelRoute.mockResolvedValueOnce({ kind: "no-route", tried: 3 })
-		await expect(planFuelLeg(pub, swap, FEE_ASSET, ERC20, 1n)).rejects.toThrow(/no fuel route for 0x4d/)
+	it("quotes the swapper at the slice and signs the floored call the router hands it", async () => {
+		const pub = { readContract: vi.fn(async () => 1_000n) }
+		const plan = await planFuelLeg(pub, manifest, ERC20, 5n)
+		expect(pub.readContract).toHaveBeenCalledWith(
+			expect.objectContaining({ address: SWAPPER, functionName: "quote", args: [ERC20, 5n] }),
+		)
+		expect(plan.quote).toBe(1_000n)
+		expect(plan.minFuelOutput).toBe(970n)
+		const call = decodeFunctionData({ abi: SWAP_TOKENS_SINGLE_V3_ABI, data: plan.swapData })
+		expect(String(call.args[3]).toLowerCase()).toBe(DEPOSIT_ROUTER)
+		expect(call.args[4]).toBe(970n)
+	})
+
+	it("refuses a token the swapper has no rate for rather than sending an unfueled claim", async () => {
+		const pub = { readContract: vi.fn(async () => Promise.reject(new Error("NoRate"))) }
+		await expect(planFuelLeg(pub, manifest, ERC20, 1n)).rejects.toThrow(/no fuel quote for 0x4d.*provider/)
 	})
 })

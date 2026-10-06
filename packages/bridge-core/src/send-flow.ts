@@ -1,8 +1,8 @@
 /**
- * The L1 leg of a send through the router, for every intent: a token (with or without a gas slice)
- * into its factory clone, or gas only. The portal is never taken from a caller — it is the factory's
- * CREATE2 for the token, exactly what the router will re-derive and refuse to deviate from — and the
- * first send of a token creates the clone inside the same transaction.
+ * The L1 leg of an Ethereum-origin send through the deposit router's `bridgeWithPermit`, for every
+ * intent: a token (with or without a gas slice) into its factory clone, or gas only. The portal is
+ * never taken from a caller: the router derives the token's clone itself, and the first send of a
+ * token creates it inside the same transaction.
  *
  * After the receipt the factory's frozen registration is read back: the words and decimals it
  * committed are what the hub derives the L2 token from, so they, not the app's pre-send preview,
@@ -11,33 +11,40 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { type Abi, type Address, type Hex, parseEventLogs } from "viem"
+import { FEE_JUICE_ADDRESS } from "@aztec-labs/constants"
+import { type Address, type Hex, pad, toHex } from "viem"
 import { deriveTokenClaimSecret } from "./claim-secret"
+import {
+	type DepositedFacts,
+	type DepositExpectation,
+	type DepositLogContext,
+	type InboxContext,
+	readRouterDeposit,
+} from "./crosschain-discovery"
+import { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
 import { PORTAL_FACTORY_ABI } from "./factory-abi"
 import { type Registration, readRegistration } from "./factory-registry"
-import { deriveHubTokenInstance } from "./hub-token"
 import type { L1Ctx } from "./flows"
+import { deriveHubTokenInstance } from "./hub-token"
 import type { JournalTokenBlock } from "./journal"
-import { type BridgeWitness, bridgeWitnessPermitTypedData, hashRoute, type PoolKey } from "./l1"
+import { depositWitness, depositWitnessPermitTypedData } from "./l1"
+import type { RouterIntent } from "./lifi-decode"
 import { predictPortal } from "./portal-address"
 import { fromWord } from "./register-hash"
 
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address
 
 export type SendStage = "signing" | "sending" | "confirming" | "done"
 
 export interface SendGeneration {
+	/** The deposit router: Permit2's spender and the emitter of `Deposited`. */
 	router: Address
-	routerAbi: Abi
 	permit2: Address
 	factory: Address
 	implementation: Address
 	feeJuicePortal: Address
 	/** The FeeJuice ERC-20 — the token whose gas slice needs no swap. */
 	feeAsset: Address
-	/** The router's current swap target (witness-bound; a rotation voids the signature). */
-	swapTarget: Address
 	chainId: number
 	/** The L2 hub + the Token class it instantiates — what the L2 token address derives from. */
 	hub: string
@@ -45,13 +52,13 @@ export interface SendGeneration {
 }
 
 export interface SendGasLeg {
+	/** The slice of `amount` that buys Fee Juice; all of it for gas only. */
 	fuelAmount: bigint
 	fuelRecipient: Hex
-	/** The signed floor: `max(quote × (1 − s), minFuelFj)`. */
+	/** The signed floor, which `swapData` carries as its `_minAmountOut`. */
 	minFuelOutput: bigint
-	/** Empty for the fee asset (identity swap). */
-	path: PoolKey[]
-	zeroForOnes: boolean[]
+	/** A fuel quote's call bytes for the slice; `0x` for the fee asset, which needs no swap. */
+	swapData: Hex
 	/** Private gas only — `deriveBridgeSecret(salt, claimer)`; the FPC claimer rebuilds it. */
 	fuelSecret?: Fr
 }
@@ -100,19 +107,67 @@ export interface SendRecoveryHooks {
 	onConfirmed?: (r: SendResult) => void
 }
 
-/** The portal the router will accept for this intent. Gas-only has none; the fee asset's gas-only goes straight to the FeeJuicePortal. */
-export function sendPortalFor(g: SendGeneration, p: Pick<SendParams, "intent" | "erc20" | "isPrivate">): Address {
-	if (p.intent === "gas") {
-		return p.erc20.toLowerCase() === g.feeAsset.toLowerCase() && !p.isPrivate ? g.feeJuicePortal : ZERO_ADDRESS
+type ReadContract = Pick<L1Ctx["pub"], "readContract">
+
+/**
+ * The Inbox a send's leaves are recomputed against: the one the factory froze at construction, with
+ * its rollup version, in the pinned Aztec line's `MessageSent` shape. The FeeJuicePortal's messages
+ * are recorded under the protocol's Fee Juice address, which these lines seed at genesis.
+ */
+export async function readSendInbox(pub: ReadContract, g: SendGeneration): Promise<InboxContext> {
+	const read = (functionName: "INBOX" | "ROLLUP_VERSION") =>
+		pub.readContract({ address: g.factory, abi: PORTAL_FACTORY_ABI, functionName, args: [] } as never) as Promise<unknown>
+	const [address, rollupVersion] = await Promise.all([read("INBOX"), read("ROLLUP_VERSION")])
+	const feeJuice = toHex(FEE_JUICE_ADDRESS)
+	return {
+		address: address as Address,
+		shape: "artifact",
+		rollupVersion: rollupVersion as bigint,
+		l2Hub: g.hub as Hex,
+		feeJuice: { l2: pad(feeJuice, { size: 32 }), l1Sender: pad(feeJuice, { size: 20 }) as Address },
 	}
-	return predictPortal(g.factory, g.implementation, p.erc20) as Address
 }
 
-/** Which router entrypoint an intent takes. The fee asset's public gas-only is a plain `bridge()` into the FeeJuicePortal. */
-export function sendEntrypoint(g: SendGeneration, p: Pick<SendParams, "intent" | "erc20" | "isPrivate">): "bridge" | "bridgeWithFuel" {
-	if (p.intent === "token") return "bridge"
-	if (p.intent === "gas" && p.erc20.toLowerCase() === g.feeAsset.toLowerCase() && !p.isPrivate) return "bridge"
-	return "bridgeWithFuel"
+/** The addresses that authenticate a send's `Deposited`: the router, the FeeJuicePortal and, with a
+ *  token leg, the token's derived clone. */
+export function sendLogContext(g: SendGeneration, inbox: InboxContext, x: DepositExpectation): DepositLogContext {
+	return {
+		router: g.router,
+		feeJuicePortal: g.feeJuicePortal,
+		...(x.token ? { tokenPortal: predictPortal(g.factory, g.implementation, x.token.erc20) as Address } : {}),
+		inbox,
+	}
+}
+
+/** The leaves the L2 claims consume, in the result's shape. */
+export function sendLeavesOf(facts: DepositedFacts): Partial<SendResult> {
+	return {
+		...(facts.token ? { tokenLeafIndex: BigInt(facts.token.leafIndex), tokenMessageHashHex: facts.token.messageHash } : {}),
+		...(facts.fuel
+			? {
+					fuelLeafIndex: BigInt(facts.fuel.leafIndex),
+					fuelMessageHashHex: facts.fuel.messageHash,
+					fuelReceived: BigInt(facts.fuel.received),
+				}
+			: {}),
+	}
+}
+
+/**
+ * The leaves a landed send produced, from its receipt alone — what a journal recovers after a crash
+ * between the signature and the confirmation. Only the router's `Deposited` for `expected` counts,
+ * each leg authenticated by its portal's event and a recomputed Inbox leaf; a first-time deposit's
+ * register leaf is never mistaken for it. Throws `ScanIncomplete` when the receipt does not carry
+ * exactly that deposit.
+ */
+export async function readSendReceiptLeaves(
+	g: SendGeneration,
+	inbox: InboxContext,
+	expected: DepositExpectation,
+	txHash: Hex,
+	logs: Parameters<typeof readRouterDeposit>[0],
+): Promise<Partial<SendResult>> {
+	return sendLeavesOf(await readRouterDeposit(logs, txHash, sendLogContext(g, inbox, expected), expected))
 }
 
 async function registrationToBlock(g: SendGeneration, erc20: Address, r: Registration): Promise<JournalTokenBlock> {
@@ -136,9 +191,6 @@ async function tokenSecrets(p: SendParams): Promise<{ claimValue: Fr; secretHash
 	if (p.isPrivate && !p.claimSalt) {
 		throw new Error("runSend: a private token leg requires claimSalt (recipient-committed) — a random secret strands the deposit")
 	}
-	if (!(await AztecAddress.fromStringUnsafe(p.aztecRecipient).isValid())) {
-		throw new Error("runSend: aztecRecipient is not a valid Aztec address — refusing to deposit")
-	}
 	const claimValue = p.isPrivate ? (p.claimSalt as Fr) : Fr.random()
 	const secret = p.isPrivate ? deriveTokenClaimSecret(p.claimSalt as Fr, AztecAddress.fromStringUnsafe(p.aztecRecipient)) : claimValue
 	return { claimValue, secretHash: (await computeSecretHash(secret)).toString() as Hex }
@@ -153,40 +205,33 @@ async function fuelSecrets(p: SendParams): Promise<{ secret: Fr; secretHash: Hex
 	return { secret, secretHash: (await computeSecretHash(secret)).toString() as Hex }
 }
 
-/** A private recipient is committed through the secret hash and never published — the router's
- *  indexed event would leak it. Direct gas has no token leg, so the gas recipient is the only one. */
-function witnessRecipient(p: SendParams, direct: boolean, tok?: { secretHash: Hex }): Hex {
-	if (direct) return p.gas?.fuelRecipient ?? ZERO_BYTES32
-	return p.isPrivate || !tok ? ZERO_BYTES32 : p.aztecRecipient
+/**
+ * The router's intent for a send. A private recipient is committed through the secret hash and never
+ * published (the router's event would leak it), and gas only has no token recipient: its zero token
+ * secret is what makes the router take the fuel-only shape.
+ */
+export function sendIntentOf(p: SendParams, tokenSecretHash?: Hex, fuelSecretHash?: Hex): RouterIntent {
+	return {
+		token: p.erc20,
+		aztecRecipient: p.intent === "gas" || p.isPrivate ? ZERO_BYTES32 : p.aztecRecipient,
+		tokenSecretHash: tokenSecretHash ?? ZERO_BYTES32,
+		isPrivate: p.isPrivate,
+		fuelSlice: p.gas?.fuelAmount ?? 0n,
+		fuelRecipient: p.gas?.fuelRecipient ?? ZERO_BYTES32,
+		fuelSecretHash: fuelSecretHash ?? ZERO_BYTES32,
+		minFuelOutput: p.gas?.minFuelOutput ?? 0n,
+	}
 }
 
-function buildWitness(
-	g: SendGeneration,
-	p: SendParams,
-	portal: Address,
-	entry: "bridge" | "bridgeWithFuel",
-	tok?: { secretHash: Hex },
-	fuel?: { secretHash: Hex },
-): BridgeWitness {
-	// The fee asset's public gas-only rides the plain `bridge()` entrypoint, which knows no fuel leg
-	// at all: the router hashes every fuel field as zero and takes the gas recipient and secret as the
-	// TOKEN ones. A witness built the other way is rejected by Permit2, and a deposit that somehow
-	// landed would mint Fee Juice to L2 address zero behind an unopenable secret.
-	const direct = entry === "bridge" && p.intent === "gas"
-	const gasLeg = direct ? undefined : p.gas
+/** What the send's `Deposited` must carry: each leg paid to the recipient this send named for it. */
+function sendExpectation(g: SendGeneration, p: SendParams, tokenSecretHash?: Hex, fuelSecretHash?: Hex): DepositExpectation {
+	const gas = p.gas
 	return {
-		tokenPortal: portal,
-		bridgeToken: p.erc20,
-		totalAmount: p.amount,
-		fuelAmount: gasLeg?.fuelAmount ?? 0n,
-		aztecRecipient: witnessRecipient(p, direct, tok),
-		fuelRecipient: gasLeg?.fuelRecipient ?? ZERO_BYTES32,
-		tokenSecretHash: (direct ? fuel : tok)?.secretHash ?? ZERO_BYTES32,
-		fuelSecretHash: direct ? ZERO_BYTES32 : (fuel?.secretHash ?? ZERO_BYTES32),
-		minFuelOutput: gasLeg?.minFuelOutput ?? 0n,
-		routeHash: gasLeg ? hashRoute(gasLeg.path, gasLeg.zeroForOnes) : ZERO_BYTES32,
+		l1ChainId: g.chainId,
 		isPrivate: p.isPrivate,
-		swapTarget: g.swapTarget,
+		recipient: p.intent === "gas" && gas ? gas.fuelRecipient : p.aztecRecipient,
+		...(tokenSecretHash ? { token: { erc20: p.erc20, secretHash: tokenSecretHash } } : {}),
+		...(gas && fuelSecretHash ? { fuel: { secretHash: fuelSecretHash, recipient: gas.fuelRecipient } } : {}),
 	}
 }
 
@@ -208,9 +253,9 @@ async function assertRecipients(p: SendParams): Promise<void> {
 	if (p.intent !== "gas") await assertAztecRecipient("token", p.aztecRecipient)
 	if (p.gas) await assertAztecRecipient("gas", p.gas.fuelRecipient)
 	if (p.gas && p.gas.minFuelOutput <= 0n) throw new Error("runSend: a gas leg needs a positive minFuelOutput")
-	if (p.gas && p.gas.path.length !== p.gas.zeroForOnes.length) throw new Error("runSend: route path and zeroForOnes differ in length")
 }
 
+/** The shapes the router refuses, refused before anything is signed. */
 async function assertIntent(g: SendGeneration, p: SendParams): Promise<void> {
 	await assertRecipients(p)
 	if (p.intent === "token" && p.gas) throw new Error("runSend: a token-only send carries no gas leg")
@@ -219,9 +264,11 @@ async function assertIntent(g: SendGeneration, p: SendParams): Promise<void> {
 	if (p.intent === "token+gas" && p.gas && (p.gas.fuelAmount <= 0n || p.gas.fuelAmount >= p.amount)) {
 		throw new Error("runSend: token+gas needs 0 < fuelAmount < amount")
 	}
-	const identity = p.gas !== undefined && p.gas.path.length === 0
-	if (identity && p.erc20.toLowerCase() !== g.feeAsset.toLowerCase())
-		throw new Error("runSend: an empty route is only the fee asset's identity swap")
+	if (!p.gas) return
+	const identity = p.erc20.toLowerCase() === g.feeAsset.toLowerCase()
+	if (identity && p.gas.swapData !== "0x") throw new Error("runSend: the fee asset's gas leg needs no swap, so it carries no swapData")
+	if (!identity && p.gas.swapData === "0x")
+		throw new Error("runSend: a gas leg for any token but the fee asset needs a fuel quote's swapData")
 }
 
 /** Executes the L1 leg; the L2 claim runs separately against the returned facts. */
@@ -233,8 +280,6 @@ export async function runSend(
 	recovery?: SendRecoveryHooks,
 ): Promise<SendResult> {
 	await assertIntent(g, p)
-	const portal = sendPortalFor(g, p)
-	const entry = sendEntrypoint(g, p)
 	const tok = await tokenSecrets(p)
 	const fuel = await fuelSecrets(p)
 	recovery?.onSecrets?.({
@@ -245,53 +290,23 @@ export async function runSend(
 		isPrivate: p.isPrivate,
 	})
 
-	const witness = buildWitness(g, p, portal, entry, tok, fuel)
-	const typedData = bridgeWitnessPermitTypedData(
+	const intent = sendIntentOf(p, tok?.secretHash, fuel?.secretHash)
+	const swapData = p.gas?.swapData ?? "0x"
+	const typedData = depositWitnessPermitTypedData(
 		{ permitted: { token: p.erc20, amount: p.amount }, spender: g.router, nonce: p.nonce, deadline: p.deadline },
-		witness,
+		depositWitness(intent, swapData),
 		g.permit2,
 		g.chainId,
 	)
 	onStage?.("signing")
 	const signature = await l1.wallet.signTypedData({ account: l1.account, ...typedData } as never)
-	const permit = { nonce: p.nonce, deadline: p.deadline, signature }
 
 	onStage?.("sending")
-	const args =
-		entry === "bridge"
-			? [
-					{
-						tokenPortal: portal,
-						bridgeToken: p.erc20,
-						amount: p.amount,
-						aztecRecipient: witness.aztecRecipient,
-						secretHash: witness.tokenSecretHash,
-						isPrivate: p.isPrivate,
-					},
-					permit,
-				]
-			: [
-					{
-						tokenPortal: portal,
-						bridgeToken: p.erc20,
-						totalAmount: p.amount,
-						fuelAmount: witness.fuelAmount,
-						aztecRecipient: witness.aztecRecipient,
-						fuelRecipient: witness.fuelRecipient,
-						tokenSecretHash: witness.tokenSecretHash,
-						fuelSecretHash: witness.fuelSecretHash,
-						minFuelOutput: witness.minFuelOutput,
-						path: p.gas?.path ?? [],
-						zeroForOnes: p.gas?.zeroForOnes ?? [],
-						isPrivate: p.isPrivate,
-					},
-					permit,
-				]
 	const txHash = await l1.wallet.writeContract({
 		address: g.router,
-		abi: g.routerAbi,
-		functionName: entry,
-		args,
+		abi: DEPOSIT_ROUTER_ABI,
+		functionName: "bridgeWithPermit",
+		args: [intent, swapData, p.amount, { nonce: p.nonce, deadline: p.deadline, signature }],
 		account: l1.account,
 		chain: l1.wallet.chain,
 	} as never)
@@ -299,88 +314,23 @@ export async function runSend(
 
 	onStage?.("confirming")
 	const receipt = await l1.pub.waitForTransactionReceipt({ hash: txHash })
-	if (receipt.status !== "success") throw new Error(`${entry}() REVERTED (${txHash}) — no funds moved; inspect the tx and retry`)
-	const result = await readSendResult(l1, g, p, entry, txHash, receipt.logs, tok, fuel)
+	if (receipt.status !== "success") throw new Error(`bridgeWithPermit() REVERTED (${txHash}) — no funds moved; inspect the tx and retry`)
+	const expected = sendExpectation(g, p, tok?.secretHash, fuel?.secretHash)
+	const leaves = await readSendReceiptLeaves(g, await readSendInbox(l1.pub, g), expected, txHash, receipt.logs)
+	const result = await readSendResult(l1, g, p, { txHash, ...leaves }, tok, fuel)
 	recovery?.onConfirmed?.(result)
 	onStage?.("done")
 	return result
-}
-
-type Logs = Parameters<typeof parseEventLogs>[0]["logs"]
-
-/**
- * The router's one event of the given name. Only logs the ROUTER emitted count: the token being
- * bridged runs arbitrary code inside the Permit2 pull, before the router emits, and a hostile one
- * can emit a same-signature event carrying a leaf index nothing will ever prove.
- */
-function routerEvent<T>(g: SendGeneration, eventName: "Bridge" | "BridgeWithFuel", txHash: Hex, logs: Logs): T {
-	const own = logs.filter((l) => l.address.toLowerCase() === g.router.toLowerCase())
-	const events = parseEventLogs({ abi: g.routerAbi, eventName, logs: own })
-	if (events.length !== 1) throw new Error(`the router emitted ${events.length} ${eventName} events in ${txHash}, expected exactly one`)
-	return events[0] as T
-}
-
-/** The event carried no amount and no signed amount stood behind it, so nothing says what landed. */
-export class MissingBridgeAmountError extends Error {
-	constructor(txHash: Hex) {
-		super(`Bridge event in ${txHash} decoded without an amount — refusing to record a gas leg of unknown size`)
-		this.name = "MissingBridgeAmountError"
-	}
-}
-
-/** What `readLeaves` needs of a send. A receipt-only recovery has the intent but no signed amount. */
-type LeafParams = Pick<SendParams, "intent"> & { amount?: bigint }
-
-/** The leaf indices + message keys the L2 claims consume, read from the router's event — never guessed from order. */
-function readLeaves(g: SendGeneration, p: LeafParams, entry: "bridge" | "bridgeWithFuel", txHash: Hex, logs: Logs): Partial<SendResult> {
-	if (entry === "bridge") {
-		const ev = routerEvent<{ args?: { index?: bigint; key?: Hex; amount?: bigint } }>(g, "Bridge", txHash, logs)
-		if (ev.args?.index === undefined || ev.args.key === undefined)
-			throw new Error(`Bridge event in ${txHash} decoded without index/key`)
-		if (p.intent !== "gas") return { tokenLeafIndex: ev.args.index, tokenMessageHashHex: ev.args.key }
-		// The fee asset sent straight into the FeeJuicePortal IS the gas leg; the event's amount is
-		// what landed, which a recovery reading the receipt alone still has.
-		const received = ev.args.amount ?? p.amount
-		if (received === undefined) throw new MissingBridgeAmountError(txHash)
-		return { fuelLeafIndex: ev.args.index, fuelMessageHashHex: ev.args.key, fuelReceived: received }
-	}
-	const ev = routerEvent<{ args?: { tokenKey?: Hex; tokenIndex?: bigint; fuelKey?: Hex; fuelIndex?: bigint; fuelAmount?: bigint } }>(
-		g,
-		"BridgeWithFuel",
-		txHash,
-		logs,
-	)
-	if (ev.args?.fuelIndex === undefined || ev.args.fuelKey === undefined)
-		throw new Error(`BridgeWithFuel event in ${txHash} decoded without fuelIndex/fuelKey`)
-	const fuelLeg = { fuelLeafIndex: ev.args.fuelIndex, fuelMessageHashHex: ev.args.fuelKey, fuelReceived: ev.args.fuelAmount ?? 0n }
-	return p.intent === "gas" ? fuelLeg : { ...fuelLeg, tokenLeafIndex: ev.args.tokenIndex, tokenMessageHashHex: ev.args.tokenKey }
-}
-
-/**
- * The leaves a landed send produced, from its receipt alone — what a journal recovers after a
- * crash between the signature and the confirmation. A first-time deposit's receipt also carries the
- * factory's register leaf, so the Inbox events are never read directly: only the router's own
- * event names the deposit's leaf.
- */
-export function readSendReceiptLeaves(g: SendGeneration, intent: SendParams["intent"], txHash: Hex, logs: Logs): Partial<SendResult> {
-	const own = logs.filter((l) => l.address.toLowerCase() === g.router.toLowerCase())
-	const fueled = parseEventLogs({ abi: g.routerAbi, eventName: "BridgeWithFuel", logs: own }).length > 0
-	// The receipt is the whole input here: there is no signed amount to fall back on, so an event
-	// that decodes without one fails rather than recording a gas-only recovery as having received 0.
-	return readLeaves(g, { intent }, fueled ? "bridgeWithFuel" : "bridge", txHash, logs)
 }
 
 async function readSendResult(
 	l1: L1Ctx,
 	g: SendGeneration,
 	p: SendParams,
-	entry: "bridge" | "bridgeWithFuel",
-	txHash: Hex,
-	logs: Logs,
+	out: SendResult,
 	tok?: { claimValue: Fr; secretHash: Hex },
 	fuel?: { secret: Fr; secretHash: Hex },
 ): Promise<SendResult> {
-	const out: SendResult = { txHash, ...readLeaves(g, p, entry, txHash, logs) }
 	if (tok) {
 		out.tokenClaimValueHex = tok.claimValue.toString()
 		out.tokenSecretHashHex = tok.secretHash
@@ -392,7 +342,7 @@ async function readSendResult(
 	if (p.intent !== "gas") {
 		const reg = await readRegistration(l1.pub as never, g.factory, p.erc20)
 		if (!reg)
-			throw new Error(`the factory has no registration for ${p.erc20} after ${txHash} — the router should have created the clone`)
+			throw new Error(`the factory has no registration for ${p.erc20} after ${out.txHash} — the router should have created the clone`)
 		out.token = await registrationToBlock(g, p.erc20, reg)
 	}
 	return out
