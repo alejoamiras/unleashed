@@ -100,11 +100,41 @@ pre-fills an Ethereum-origin send. Every state a board does not draw is a propos
    no `claimTxHash` when its stepper showed it arrived. That code is not cross-chain, and the cell passed in the
    runs before and after, so it is a flake.
 
+## Fix round
+
+Two fresh reviewers compared the shots with the signed boards. Their lists were the spec for this round. Every
+row classed `fix` was fixed, or is listed in the report with the reason it was not.
+- **Evidence was the first defect.**
+  - The boards had rendered in fallback fonts. Their stylesheet answers a `fonts.googleapis.com` request, so a
+    relative font URL resolved against that origin; the URLs are now absolute, and the renderer refuses a page
+    whose A′ fonts did not load.
+  - The full-page 390 captures painted the fixed action bar mid-page. Phone shots are now 390×844 viewport
+    captures, a taller page adding scrolled ones.
+  - The harness had hidden or changed what the wizard shows: no review band, a stepper where the receipt opens,
+    no foreground record, hashes too short to link, no `bridging-late` step, quoted terms where testnet only
+    builds fixed ones, a 406/410 mismatch. It now does what the wizard does in each case.
+- **Fixed terms dropped A10's cap.** `limits` is null on fixed terms, so nothing bounded a send that only a
+  ~30 USDC filler can fill. `SELF_BUILT_MAX_WHOLE_TOKENS` (8, Across's testnet `maxDeposit`) restores it, and
+  a larger send is refused as no route.
+- **Never remove a feature to match a board.** The app chrome, "+ Add USDC to wallet", the Activity footer
+  line, the backup control on in-flight cards, the Clear and tx-link rows, the "Testnet build only" caption
+  and the mint strip go to the owner instead.
+- **Workers in one worktree.** Three workers split the rows by file. Two rows touched a file another worker
+  owned, so their owners took patches (the approval hash, the outcome log's links), and two (`RecordChips`,
+  `DockStrip`) were left for the parent. A worker that hits its turn limit resumes with a message naming what
+  is uncommitted.
+- **The approval is a journaled fact now.** `approveTxHash` on a cross-chain record draws the Approve row and
+  its link after a reload. `observedRows` skips it, or the log would print the hash twice.
+- **D46 leaves signed copy false.** Five strings still name "Across's test relayer". Replacement copy is
+  proposed in the report and is not applied.
+
 ## Gate
 
+On the fix round's final code, one gate at a time:
 - `contracts/` is untouched by this phase; forge was not run.
 - `bun run lint && bun run typecheck:all && bun run test:all`: Biome clean, complexity baseline OK; design 242
-  passed; bridge-core 73 files, 688 passed and 11 skipped; tools 125 files, 1753 passed.
-- `bun run audit:tools`: 1753 passed, complexity baseline OK, every committed address matches its rebuilt
+  passed; bridge-core 73 files, 688 passed and 11 skipped; tools 126 files, 1739 passed. The tools count fell
+  from 1753 when the dead gas-hint helpers and their tests left `send-model`.
+- `bun run audit:tools`: 1739 passed, complexity baseline OK, every committed address matches its rebuilt
   instance, the build succeeds.
 - `bun run e2e:tools`: 70 passed. No page object needed a change: no spec drives a cross-chain send.
