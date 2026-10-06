@@ -6,7 +6,7 @@
  */
 import { type CrossChainDepositRecord, type CrossChainOutcome, deriveSendDepositStage, outcomeFinality } from "@unleashed/bridge-core"
 import type { BridgeStep, RecordRuntime } from "@/composables/useBridgeJournal"
-import { MANIFEST } from "@/contracts/bridge-generation"
+import { sourceTokenOf } from "@/composables/useSourceChain"
 import {
 	type BridgePhase,
 	isFailedAttention,
@@ -42,10 +42,7 @@ const short = (hash: string): string => trimTxHash(safeAddressText(hash), 6, 4)
 /** This build's routing entry for the source token, else the record's token block: a rail delivers the asset
  *  it takes, and every catalogued source keeps Ethereum's decimals for it. */
 function sourceToken(rec: CrossChainDepositRecord): TokenWords | undefined {
-	const address = rec.route.srcToken.toLowerCase()
-	const listed = MANIFEST.bridge?.routing?.sources
-		.find((s) => s.chainId === rec.route.srcChainId)
-		?.tokens.find((t) => t.address.toLowerCase() === address)
+	const listed = sourceTokenOf({ chainId: rec.route.srcChainId, address: rec.route.srcToken })?.token
 	if (listed) return { symbol: safeDisplay(listed.symbol), decimals: listed.decimals }
 	return rec.token && { symbol: safeDisplay(rec.token.displaySymbol), decimals: rec.token.decimals }
 }

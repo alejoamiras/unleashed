@@ -13,11 +13,11 @@ import {
 } from "@unleashed/bridge-core"
 import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import type { EthereumPrefill } from "@/composables/useShell"
-import { MANIFEST } from "@/contracts/bridge-generation"
+import { sourceTokenOf } from "@/composables/useSourceChain"
 import { chainLabel, railLabel } from "@/lib/chains"
 import { crossChainPhases, crossChainUnconfirmed, etaRange } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
-import { IS_MAINNET, sourcesOf } from "@/lib/network"
+import { IS_MAINNET } from "@/lib/network"
 import { safeAddressText, safeDisplay } from "@/lib/token-display"
 
 /** Where a cross-chain record stands while it is not a plain deposit; `finalizing` is any outcome
@@ -87,18 +87,6 @@ export function phaseDetail(phase: CrossChainPhase, visibility: string): string 
 	}
 }
 
-type RoutingToken = ReturnType<typeof sourcesOf>[number]["tokens"][number]
-
-let registry: ReturnType<typeof sourcesOf> | undefined
-function registryTokens(chainId: number): readonly RoutingToken[] {
-	try {
-		registry ??= sourcesOf(MANIFEST)
-	} catch {
-		registry = []
-	}
-	return registry.find((s) => s.chainId === chainId)?.tokens ?? []
-}
-
 /** The asset a cross-chain record moves, named as its source token: the registry's entry first, the
  *  record's own token block after it (same asset, same decimals on both ends of a rail). */
 export interface CrossChainAsset {
@@ -109,8 +97,7 @@ export interface CrossChainAsset {
 }
 
 export function crossChainAsset(rec: CrossChainDepositRecord): CrossChainAsset {
-	const src = rec.route.srcToken.toLowerCase()
-	const listed = registryTokens(rec.route.srcChainId).find((t) => t.address.toLowerCase() === src)
+	const listed = sourceTokenOf({ chainId: rec.route.srcChainId, address: rec.route.srcToken })?.token
 	const token = "token" in rec ? rec.token : undefined
 	const ethereum = token?.erc20 ?? listed?.destToken
 	return {

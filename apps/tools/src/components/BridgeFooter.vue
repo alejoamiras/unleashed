@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { lifiBook } from "@unleashed/bridge-core"
 import { computed } from "vue"
-import { FUEL_PORTAL, GENERATION, HUB, MANIFEST } from "@/contracts/bridge-generation"
+import { appSources } from "@/composables/useSourceChain"
+import { FUEL_PORTAL, GENERATION, HUB } from "@/contracts/bridge-generation"
 import { chainAddressUrl, chainLabel } from "@/lib/chains"
 import { explorerAddressUrl } from "@/lib/explorer"
-import { IS_MAINNET, NETWORK, sourcesOf } from "@/lib/network"
+import { IS_MAINNET, NETWORK } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
 
 /**
@@ -28,14 +29,10 @@ function lifiDiamond(chainId: number): string {
 }
 
 function sourceGroups(): ContractGroup[] {
-	try {
-		return sourcesOf(MANIFEST).map((s) => ({
-			chain: chainLabel(s.chainId),
-			links: [{ name: "LI.FI", href: chainAddressUrl(s.chainId, lifiDiamond(s.chainId)) }],
-		}))
-	} catch {
-		return []
-	}
+	return appSources().map((s) => ({
+		chain: chainLabel(s.chainId),
+		links: [{ name: "LI.FI", href: chainAddressUrl(s.chainId, lifiDiamond(s.chainId)) }],
+	}))
 }
 
 function bridgeGroups(): ContractGroup[] {
