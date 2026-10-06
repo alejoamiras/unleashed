@@ -69,9 +69,9 @@ describe("BridgePhaseRail", () => {
 		expect(sync.text()).not.toMatch(/usually 1-4 min/)
 		expect(w.find('[role="progressbar"]').exists()).toBe(false)
 		expect(w.text()).not.toContain("102 / 103")
-		// Pending phases that wait on the chain show their short estimate.
+		// Pending phases show their short estimate; the claim's is the signature it waits on, in words.
 		expect(w.get(`${sel(TESTIDS.stepperPhase)}[data-phase="confirm"] .time`).text()).toBe("~1–2 min")
-		expect(w.find(`${sel(TESTIDS.stepperPhase)}[data-phase="claim"] .time`).exists()).toBe(false)
+		expect(w.get(`${sel(TESTIDS.stepperPhase)}[data-phase="claim"] .time.words`).text()).toBe("your signature + a few sec")
 		w.unmount()
 	})
 

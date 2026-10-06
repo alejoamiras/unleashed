@@ -429,8 +429,16 @@ function proveProgress(rt: RecordRuntime): Partial<Record<string, BridgePhase["p
 
 type Estimates = Partial<Record<BridgePhase["key"], string>>
 
-/** Pending phases that wait on the chain; a phase that waits on the user's signature gets none. */
-const DEPOSIT_ESTIMATES: Estimates = { deposit: "~1 min", sync: "~1–4 min", confirm: "~1–2 min" }
+/** Pending phases' hints: the chain's wait, or the user's signature for a phase that waits on one. */
+const DEPOSIT_ESTIMATES: Estimates = {
+	deposit: "~1 min",
+	sync: "~1–4 min",
+	register: "your signature + a few sec",
+	claim: "your signature + a few sec",
+	confirm: "~1–2 min",
+}
+/** Pending phases whose hint is the user's signature, set in words rather than as a duration. */
+const SIGNED_PHASES = new Set<BridgePhase["key"]>(["register", "claim"])
 const WITHDRAW_ESTIMATES: Estimates = { prove: "tens of min", confirm: "~2 min" }
 
 function buildPhases(
@@ -454,7 +462,13 @@ function buildPhases(
 		if (i === activeIndex) return activePhase(key, { labels, prompts, etas, progress, rt, failed, landedConfirm })
 		// A failed run is going nowhere until the user acts: no pending phase promises a duration.
 		const estimate = failed ? undefined : estimates[key]
-		return { key, label: labels[key], state: "pending" as const, ...(estimate ? { estimate } : {}) }
+		return {
+			key,
+			label: labels[key],
+			state: "pending" as const,
+			...(estimate ? { estimate } : {}),
+			...(estimate && SIGNED_PHASES.has(key) ? { signs: true } : {}),
+		}
 	})
 }
 

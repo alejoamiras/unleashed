@@ -166,16 +166,17 @@ describe("stepperPhases - determinate progress + ETA (only where real targets ex
 		expect(live?.detail).toBe("2 checkpoints until your funds arrive")
 	})
 
-	it("pending phases that wait on the chain carry a short estimate; signature phases and the live phase carry none", () => {
+	it("pending phases carry a short estimate, a claim the signature it waits on; the live phase carries none", () => {
 		const phases = stepperPhases(dep({ depositTxHash: "0xt" }))
 		expect(Object.fromEntries(phases.map((p) => [p.key, p.estimate]))).toEqual({
 			seal: undefined,
 			sign: undefined,
 			deposit: undefined,
 			sync: "~1–4 min",
-			claim: undefined,
+			claim: "your signature + a few sec",
 			confirm: "~1–2 min",
 		})
+		expect(phases.find((p) => p.key === "claim")?.signs).toBe(true)
 		expect(stepperPhases(dep({ isPrivate: false })).find((p) => p.key === "deposit")?.estimate).toBe("~1 min")
 		const exit = stepperPhases(wd({ exitTxHash: undefined }))
 		expect(exit.map((p) => p.estimate)).toEqual([undefined, "tens of min", undefined, "~2 min"])
