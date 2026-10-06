@@ -159,6 +159,8 @@ export interface RecordRuntime {
 	 *  the view lights only while it equals the record's CURRENT claimTxHash, so a dropped/replaced
 	 *  claim (any tab) can never inherit a previous claim's mint dot. */
 	confirmLandedTxHash?: string
+	/** When discovery last finished reading the chains for a cross-chain record (ms). Display-only. */
+	checkedAt?: number
 	/** What this tab saw happen to the record, oldest first: a fixed phrase per step change and a row
 	 *  per transaction hash that appeared. Never a note, a step detail or an error; never persisted,
 	 *  so a page reload starts it empty. */
@@ -973,6 +975,11 @@ function setStep(id: string, step?: BridgeStep, stepDetail?: string): void {
 export function setRecordStep(id: string, step?: BridgeStep, stepDetail?: string): void {
 	if (id === "") throw new Error("setRecordStep: narrating a step before the record exists")
 	setStep(id, step, stepDetail)
+}
+
+/** Display-only: discovery finished a read of the chains for `id` at `at`. */
+export function markRecordChecked(id: string, at: number): void {
+	setRuntime(id, { checkedAt: at })
 }
 
 /** Display-only APPROVE outcome - written when a real approval tx lands. */

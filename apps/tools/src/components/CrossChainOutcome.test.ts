@@ -61,7 +61,7 @@ describe("CrossChainOutcome", () => {
 		expect(notSent.emitted("change-send")).toHaveLength(1)
 	})
 
-	it("stalled: a bridging send past twice its usual time, with its clock, LI.FI's trail and the last read", () => {
+	it("stalled: a bridging send past twice its usual time, with its clock, LI.FI's trail and the last read", async () => {
 		now.value = XC_CREATED + 24 * 60_000 + 10_000
 		const w = panel(xcRecord({}, { transport: XC_TRANSPORT }), { checkedAt: now.value - 5_000 })
 		expect(w.get("h2").text()).toBe("Bridging is taking longer than usual")
@@ -69,6 +69,8 @@ describe("CrossChainOutcome", () => {
 		expect(cards(w)[0]).toBe("Your USDC left Base Sepolia 24 minutes ago. Across hasn’t delivered it to Ethereum · Sepolia yet.")
 		expect(w.get(sel(TESTIDS.xcOutcomeTrack)).attributes("href")).toBe(`https://scan.li.fi/tx/${XC_SRC_TX}`)
 		expect(w.get(".aside").text()).toBe("Last checked a few seconds ago.")
+		await w.setProps({ figures: { checkedAt: now.value - 3 * 60_000 } })
+		expect(w.get(".aside").text()).toBe("Last checked 3 min ago.")
 	})
 
 	it("renders nothing while the stepper is still the right surface", () => {

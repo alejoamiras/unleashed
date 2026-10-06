@@ -27,6 +27,7 @@ import {
 	currentCrossChainRecord,
 	flagRecordError,
 	isSessionLive,
+	markRecordChecked,
 	setRecordStep,
 	storedCrossChainRecords,
 	updateCrossChainRecord,
@@ -101,6 +102,7 @@ export async function watchRound(id: string, deps: CrossChainWatchDeps): Promise
 		log("discovery incomplete", id, d.reason)
 		return "again"
 	}
+	markRecordChecked(id, deps.now())
 	// Computed from the copy the write merges into: the claim lanes may have written since this run read.
 	const written = updateCrossChainRecord(id, (current) => discoveryPatch(current, d, deps.now()) ?? {})
 	// The flow flags a send the wallet took without answering; once discovery finds it, it is in flight again.

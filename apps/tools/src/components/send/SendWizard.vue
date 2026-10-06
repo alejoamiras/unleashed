@@ -1588,6 +1588,7 @@ onBeforeUnmount(() => {
 	<CrossChainOutcome
 		v-else-if="view.kind === 'outcome'"
 		:record="view.record"
+		:figures="{ checkedAt: journal.runtime.value[view.record.id]?.checkedAt }"
 		@continue="applyPrefill"
 		@dismiss="onNewSend"
 		@new-quote="resendFrom(view.record, true)"

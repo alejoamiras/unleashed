@@ -134,16 +134,19 @@ describe("the cross-chain watcher", () => {
 		const w = watchDeps([proven, proven, deposited((OUT - OUT / 10n).toString())])
 		let now = (currentCrossChainRecord(id)?.createdAt ?? 0) + 60_000
 		const steps: unknown[] = []
+		const checks: unknown[] = []
 		const journal = useBridgeJournal()
 		await watchCrossChain(id, {
 			...w.deps,
 			now: () => now,
 			wait: async () => {
 				steps.push(journal.runtime.value[id]?.step)
+				checks.push(journal.runtime.value[id]?.checkedAt)
 				now += 10 * 60_000
 			},
 		})
 		expect(steps).toEqual(["bridging", "bridging-late"])
+		expect(checks).toEqual([now - 20 * 60_000, now - 10 * 60_000])
 		expect(journal.runtime.value[id]?.step).toBeUndefined()
 		expect(journal.runtime.value[id]?.log?.map((row) => row.text).slice(3)).toEqual([
 			"Base Sepolia confirmed 0x0000…0001",
