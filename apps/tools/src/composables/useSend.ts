@@ -56,7 +56,7 @@ import { NETWORK } from "@/lib/network"
 import type { GasLegPlan, GrantOutcome, SendPlan } from "@/lib/send-model"
 import { fuelRecipientFor } from "@/lib/fuel-target"
 import { normalizeError } from "@/lib/errors"
-import { humanizeWalletError } from "@/lib/wallet-errors"
+import { humanizeWalletError, sendFailureCopy } from "@/lib/wallet-errors"
 import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
 import { appWatchDeps } from "./crosschain-deposit-flow"
@@ -722,20 +722,6 @@ function settleFailedSend(id: string, ctx: RunCtx, e: unknown): void {
 	} catch (cleanup) {
 		log("failed-send bookkeeping threw", cleanup instanceof Error ? cleanup.message : String(cleanup))
 	}
-}
-
-/** The wallet's own refusal reads as its one line, and the two structured envelope categories get
- *  their own copy; anything else keeps its message, humanized. */
-function sendFailureCopy(e: unknown): string {
-	const normalized = normalizeError(e)
-	if (
-		normalized.category === "user-rejected" ||
-		normalized.category === "contract-not-registered" ||
-		normalized.category === "chain-desync"
-	) {
-		return normalized.message
-	}
-	return humanizeWalletError(e instanceof Error ? e.message : String(e))
 }
 
 const l1ApprovalCtx = (actors: SendActors) => ({ publicClient: actors.l1.publicClient, wallet: actors.wallet, from: actors.from }) as never

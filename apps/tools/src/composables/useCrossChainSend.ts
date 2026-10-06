@@ -24,7 +24,8 @@ import {
 	type SendPlan,
 } from "@/lib/send-model"
 import { useNow } from "@/lib/clock"
-import { sendCrossChain, walletOnChain } from "./crosschain-deposit-flow"
+import { sendFailureCopy } from "@/lib/wallet-errors"
+import { ACCOUNT_SWITCHED, ROUTE_EXPIRED, ROUTE_REFUSED, sendCrossChain, walletOnChain } from "./crosschain-deposit-flow"
 import {
 	appRouteDeps,
 	type CrossChainAsk,
@@ -53,6 +54,13 @@ export type CrossChainNotice =
 	| { kind: "unavailable" }
 	/** A read the quote needs failed; trying again may work. */
 	| { kind: "failed"; message: string }
+
+/** What stopped a send before the wallet was asked: the quote aged out, the decoder refused it, or the wallet now
+ *  answers as another account than the one it was priced for. */
+export type CrossChainRefusal = "expired" | "refused" | "account"
+
+/** How a send ended: the record it filed, a refusal the review names, or a failure worded for the user. */
+export type CrossChainSendResult = { id: string } | { refused: CrossChainRefusal } | { error: string }
 
 export interface CrossChainSendDeps {
 	/** The picked row; null, or a row the registry does not offer, leaves the branch idle. */
@@ -97,7 +105,8 @@ export interface UseCrossChainSendHandle {
 	/** The deposit as the journal files it: the route's delivery to the router, net of nothing yet. */
 	planOf: (route: CrossChainRoute, ask: CrossChainAsk) => SendPlan | null
 	requote: () => void
-	send: (quoted: QuotedRoute, route: CrossChainRoute, token: ResolvedToken, client: WalletClient) => Promise<string>
+	/** Never rejects: every failure comes back as a result. */
+	send: (quoted: QuotedRoute, route: CrossChainRoute, token: ResolvedToken, client: WalletClient) => Promise<CrossChainSendResult>
 	dispose: () => void
 }
 
@@ -180,19 +189,31 @@ function gasErrorOf(r: CrossChainRoute | null, a: CrossChainAsk | undefined, sta
 	return ceilings !== null && g.minFuelOutput < ceilings ? PRIVATE_SLICE_SHORT : null
 }
 
+const REFUSALS: Record<string, CrossChainRefusal> = {
+	[ROUTE_EXPIRED]: "expired",
+	[ROUTE_REFUSED]: "refused",
+	[ACCOUNT_SWITCHED]: "account",
+}
+
 async function sendOn(
 	sources: readonly AppSource[],
 	q: QuotedRoute,
 	r: CrossChainRoute,
 	token: ResolvedToken,
 	client: WalletClient,
-): Promise<string> {
+): Promise<CrossChainSendResult> {
 	const source = sources.find((s) => s.chainId === q.ask.srcChainId)
 	const sourceReads = readClientFor(q.ask.srcChainId)
 	const ethereum = readClientFor(NETWORK.l1ChainId)
-	if (!source || !sourceReads || !ethereum) throw new Error("This build cannot read that network, so nothing was sent.")
-	const wallet = walletOnChain(client, q.ask.user, source.chain)
-	return sendCrossChain({ ask: q.ask, route: r, token, quotedAt: q.at }, wallet, { source: sourceReads, ethereum })
+	if (!source || !sourceReads || !ethereum) return { error: "This build cannot read that network, so nothing was sent." }
+	// The client's own account, not the ask's: a wallet that moved to another account must fail the account check.
+	const wallet = walletOnChain(client, client.account?.address ?? q.ask.user, source.chain)
+	try {
+		return { id: await sendCrossChain({ ask: q.ask, route: r, token, quotedAt: q.at }, wallet, { source: sourceReads, ethereum }) }
+	} catch (e) {
+		const refused = e instanceof Error ? REFUSALS[e.message] : undefined
+		return refused ? { refused } : { error: sendFailureCopy(e) }
+	}
 }
 
 type SourceEntry = ReturnType<typeof sourceTokenOf>

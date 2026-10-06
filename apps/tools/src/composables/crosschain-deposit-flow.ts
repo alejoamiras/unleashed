@@ -43,6 +43,7 @@ const log = (...args: unknown[]) => console.log("[bridge:crosschain]", ...args)
 
 export const ROUTE_EXPIRED = "This route's price is more than a minute old — review it again. Nothing was sent."
 export const ROUTE_REFUSED = "This route failed its safety check, so the deposit was not sent."
+export const ACCOUNT_SWITCHED = "Your Ethereum wallet switched accounts since this route was priced — review it again. Nothing was sent."
 
 export interface CrossChainSend {
 	ask: CrossChainAsk
@@ -167,7 +168,7 @@ export function crossChainRecordOf(s: CrossChainSend, heads: { source: bigint; e
 /** The wallet must sign on the route's chain, as the account the route names as depositor and refund address. */
 async function assertSource(wallet: CrossChainWallet, ask: CrossChainAsk): Promise<void> {
 	if (wallet.account.toLowerCase() !== ask.user.toLowerCase()) {
-		throw new Error("Your Ethereum wallet switched accounts since this route was priced — review it again. Nothing was sent.")
+		throw new Error(ACCOUNT_SWITCHED)
 	}
 	const live = await wallet.chainId()
 	if (live !== ask.srcChainId) {
