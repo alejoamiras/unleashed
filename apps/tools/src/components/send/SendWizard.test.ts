@@ -2,7 +2,7 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { computed, ref, shallowRef } from "vue"
 import type { GrantOutcome, ResolvedToken, SelectableToken, TokenBalances } from "@/lib/send-model"
-import { XC_SENDER, XC_SOURCE, XC_SRC_TX, xcRecord } from "@/test/crosschain-record"
+import { XC_SENDER, XC_SOURCE, XC_SRC_TX, XC_TRANSPORT, xcRecord } from "@/test/crosschain-record"
 
 // A stale mounted wizard still watches the shared journal refs and would adopt the next test's
 // record — unmount between cases.
@@ -365,7 +365,7 @@ const stubs = {
 		"crossChain",
 	]),
 	CrossChainReview: stub("CrossChainReview", ["plan", "ask", "expiresIn", "state", "walletChainId", "busy", "error"]),
-	CrossChainOutcome: stub("CrossChainOutcome", ["record"]),
+	CrossChainOutcome: { name: "CrossChainOutcome", props: ["record"], template: `<div><slot name="log" /></div>` },
 	ReviewStep: stub("ReviewStep", [
 		"plan",
 		"portalVerified",
@@ -1889,6 +1889,20 @@ describe("SendWizard", () => {
 		await flushPromises()
 		expect(releaseForeground).toHaveBeenCalledWith("xc-1")
 		expect(w.findComponent({ name: "TokenStep" }).exists()).toBe(true)
+	})
+
+	it("a stalled cross-chain send keeps this session's log under its outcome panel", async () => {
+		const w = await wizard()
+		const review = await atCrossChainReview(w)
+		l1ChainId.value = XC_SOURCE
+		crossChainRecords.value = [xcRecord({ id: "xc-1" })]
+		review.vm.$emit("confirm")
+		await flushPromises()
+		journalRuntime.value = { "xc-1": { log: [{ seq: 1, at: 0, text: "LI.FI handed it to Across" }] } }
+		crossChainRecords.value = [xcRecord({ id: "xc-1", createdAt: Date.now() - 3_600_000 }, { transport: XC_TRANSPORT })]
+		await flushPromises()
+		const outcome = w.findComponent({ name: "CrossChainOutcome" })
+		expect(outcome.get(`[data-testid="${TESTIDS.stepperLog}"]`).text()).toContain("LI.FI handed it to Across")
 	})
 
 	it("an expired quote on the review is asked again and the answer frozen in its place", async () => {

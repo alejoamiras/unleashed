@@ -25,6 +25,7 @@ import { readHubBinding } from "@/contracts/hub-binding"
 /** Components */
 import BridgeReceipt, { type ReceiptSnapshot } from "@/components/BridgeReceipt.vue"
 import BridgeStepper from "@/components/BridgeStepper.vue"
+import BridgeLog from "@/components/BridgeLog.vue"
 import CrossChainOutcome from "@/components/CrossChainOutcome.vue"
 import AmountStep, { type CrossChainAmount } from "./AmountStep.vue"
 import CrossChainReview from "./CrossChainReview.vue"
@@ -1589,7 +1590,11 @@ onBeforeUnmount(() => {
 		@dismiss="onNewSend"
 		@new-quote="resendFrom(view.record, true)"
 		@change-send="resendFrom(view.record, false)"
-	/>
+	>
+		<template v-if="journal.runtime.value[view.record.id]?.log?.length" #log>
+			<BridgeLog :rows="journal.runtime.value[view.record.id]?.log ?? []" :started-at="view.record.createdAt" />
+		</template>
+	</CrossChainOutcome>
 	<BridgeReceipt
 		v-else-if="view.kind === 'receipt'"
 		:snapshot="view.snapshot"

@@ -17,6 +17,7 @@ import type { Direction } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 
 /** Components */
+import BridgeLog from "./BridgeLog.vue"
 import BridgePhaseRail from "./BridgePhaseRail.vue"
 import DirectionSegment from "./send/DirectionSegment.vue"
 
@@ -118,9 +119,6 @@ const elapsed = computed(() => formatClock((props.record.completedAt ?? now.valu
 /** The permission prompt has no record yet, so nothing to log. The region mounts before its first
  *  row, since a live region added together with its content is not announced. */
 const hasLog = computed(() => props.runtime === undefined)
-/** The well is a notch host, which cannot scroll, so it shows only the latest rows. */
-const LOG_ROWS = 8
-const logRows = computed(() => (rt.value.log ?? []).slice(-LOG_ROWS))
 const logTitleId = useId()
 </script>
 
@@ -184,12 +182,7 @@ const logTitleId = useId()
 				/>
 				<div v-if="hasLog" class="log-panel">
 					<p :id="logTitleId" class="log-title">Log <span class="log-sub">· what actually happened</span></p>
-					<div class="log ul-notch" role="log" :aria-labelledby="logTitleId" :data-testid="TESTIDS.stepperLog">
-						<p v-for="(row, i) in logRows" :key="row.seq" class="row" :class="{ last: i === logRows.length - 1 }">
-							<span class="at">{{ formatClock(row.at - clockStart) }}</span>
-							<span class="text">{{ row.text }}<span v-if="i === logRows.length - 1" class="cursor" aria-hidden="true">_</span></span>
-						</p>
-					</div>
+					<BridgeLog :rows="rt.log ?? []" :started-at="clockStart" :labelledby="logTitleId" />
 				</div>
 			</div>
 		</div>
@@ -336,46 +329,6 @@ const logTitleId = useId()
 .log-sub {
 	font-weight: 400;
 	color: var(--ul-ink-3);
-}
-
-.log {
-	--ul-fill: var(--ul-field);
-	--ul-notch: var(--ul-notch-2);
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	padding: 14px 16px;
-	font: 400 12.5px/1.5 var(--ul-font-mono);
-}
-
-/* Before the first row the region stays mounted for assistive tech but draws nothing. */
-.log:empty {
-	padding: 0;
-}
-
-.row {
-	display: flex;
-	gap: 14px;
-	margin: 0;
-	color: var(--ul-ink-2);
-}
-
-.row.last {
-	color: var(--ul-ink);
-}
-
-.at {
-	flex: none;
-	color: var(--ul-ink-3);
-}
-
-.text {
-	min-width: 0;
-	overflow-wrap: anywhere;
-}
-
-.cursor {
-	color: var(--ul-accent-text);
 }
 
 /* The card's own bottom steps, so a plain background would square its corners. */
