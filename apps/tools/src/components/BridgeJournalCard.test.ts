@@ -222,12 +222,12 @@ describe("BridgeJournalCard", () => {
 		expect(token.get(".dir").text()).toBe("Ethereum · Sepolia → Aztec")
 	})
 
-	it("a token send's gas chip says its Fee Juice is before claim fees once the amount is known", () => {
-		const fuel = { amount: "1", secret: "0x1", secretHashHex: "0x2", minOutput: "1" }
-		const fueled = (received?: string) =>
-			({ ...deposit({ leafIndex: "7" }), schema: 2, fuel: { ...fuel, received } }) as unknown as BridgeJournalRecord
-		expect(mountCard(fueled((3n * UNIT).toString())).text()).toContain("+ 3.00 FJ before claim fees")
-		expect(mountCard(fueled()).text()).toContain("+ FJ gas")
+	it("an arrived token send's gas chip says its Fee Juice is before claim fees; a send still running has none", () => {
+		const fuel = { amount: "1", secret: "0x1", secretHashHex: "0x2", minOutput: "1", received: (230n * UNIT).toString() }
+		const fueled = (over: { claimTxHash?: string; completedAt?: number }) =>
+			({ ...deposit({ leafIndex: "7", ...over }), schema: 2, fuel }) as unknown as BridgeJournalRecord
+		expect(mountCard(fueled({ claimTxHash: `0x${"c".repeat(64)}`, completedAt: 2 })).text()).toContain("+ ≈ 230 FJ before claim fees")
+		expect(mountCard(fueled({})).text()).not.toContain("FJ before claim fees")
 	})
 
 	it("a running withdraw in proving says the page can be left, under a Proving chip", () => {

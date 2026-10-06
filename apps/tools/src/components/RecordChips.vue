@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { type AnyJournalRecord, type DepositJournalRecord, assetKindOf } from "@unleashed/bridge-core"
-import { type IconName, Tag } from "@unleashed/design"
+import { Tag } from "@unleashed/design"
 import { computed } from "vue"
 import type { RecordStatus } from "@/lib/activity"
 import { GROSS_QUALIFIER } from "@/lib/asset-label"
 import { type CrossChainTone, sendView } from "@/lib/crosschain-activity"
-import { formatStoredAmount } from "@/lib/format"
+import { formatCompact } from "@/lib/format"
 
-/** A record's chips: visibility, the gas that rides along, and its status. Every chip carries an
- *  icon and a word, so colour never carries the status alone. */
+/** A record's chips: visibility, the gas an arrived send brought, and its status. The status is a word, so colour
+ *  never carries it alone. */
 const props = defineProps<{
 	record: AnyJournalRecord
 	status: RecordStatus
@@ -20,19 +20,19 @@ const props = defineProps<{
 
 type ChipTone = "warn" | "ink" | "carrier" | "lost" | "private" | "neutral"
 
-const STATUS: Record<RecordStatus, { tone: ChipTone; icon?: IconName }> = {
-	"needs-you": { tone: "warn" },
-	running: { tone: "ink", icon: "hourglass" },
-	done: { tone: "carrier" },
-	lost: { tone: "lost" },
+const STATUS: Record<RecordStatus, ChipTone> = {
+	"needs-you": "warn",
+	running: "ink",
+	done: "carrier",
+	lost: "lost",
 }
 
-const PHASE: Record<CrossChainTone, { tone: ChipTone; icon?: IconName }> = {
-	run: { tone: "private", icon: "hourglass" },
-	wait: { tone: "neutral", icon: "hourglass" },
-	need: { tone: "warn" },
-	lost: { tone: "lost" },
-	ended: { tone: "ink", icon: "close" },
+const PHASE: Record<CrossChainTone, ChipTone> = {
+	run: "private",
+	wait: "neutral",
+	need: "warn",
+	lost: "lost",
+	ended: "ink",
 }
 
 const statusWord = computed(() => {
@@ -43,14 +43,13 @@ const statusWord = computed(() => {
 })
 const look = computed(() => (props.chip ? PHASE[props.chip.tone] : STATUS[props.status]))
 
-/** A token send's gas slice; a gas-only record is Fee Juice already, so its amount says it all. */
+/** An arrived token send's gas; a gas-only record is Fee Juice already, so its amount says it all. */
 const gas = computed(() => {
 	const r = sendView(props.record)
-	if (r.direction !== "deposit" || assetKindOf(r) === "fee-juice") return null
-	const fuel = (r as DepositJournalRecord).fuel
-	if (!fuel) return null
-	const label = r.isPrivate ? "Private FJ" : "FJ"
-	return fuel.received ? `+ ${formatStoredAmount(fuel.received, 18)} ${label} ${GROSS_QUALIFIER}` : `+ ${label} gas`
+	if (props.status !== "done" || r.direction !== "deposit" || assetKindOf(r) === "fee-juice") return null
+	const received = (r as DepositJournalRecord).fuel?.received
+	if (!received || !/^\d+$/.test(received)) return null
+	return `+ ≈ ${formatCompact(BigInt(received), 18, 0)} ${r.isPrivate ? "Private FJ" : "FJ"} ${GROSS_QUALIFIER}`
 })
 </script>
 
@@ -58,8 +57,15 @@ const gas = computed(() => {
 	<Tag size="small" :tone="record.isPrivate ? 'private' : 'neutral'" :icon="record.isPrivate ? 'eye-off' : 'eye'">{{
 		record.isPrivate ? "Private" : "Public"
 	}}</Tag>
-	<Tag v-if="gas" size="small" tone="ink" icon="zap">{{ gas }}</Tag>
-	<Tag size="small" :tone="look.tone" :icon="look.icon" :data-status-chip="status" :data-chip-tone="chip?.tone">{{
+	<Tag v-if="gas" class="gas" size="small" tone="ink" icon="zap">{{ gas }}</Tag>
+	<Tag size="small" :tone="look" :icon="null" :data-status-chip="status" :data-chip-tone="chip?.tone">{{
 		statusWord
 	}}</Tag>
 </template>
+
+<style scoped>
+.gas {
+	--ul-fill: var(--ul-ink);
+	color: var(--ul-bg);
+}
+</style>
