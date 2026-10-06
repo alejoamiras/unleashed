@@ -78,13 +78,16 @@ function pick(): void {
 </template>
 
 <style scoped>
+/* Mark, then the symbol line over the sub line, the balance on the symbol line. */
 .tile {
 	--ul-fill: transparent;
 	--ul-notch: var(--ul-notch-2);
-	display: flex;
+	display: grid;
 	flex: none;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-content: center;
 	align-items: center;
-	gap: 12px;
+	gap: 4px 12px;
 	width: 100%;
 	min-height: 56px;
 	padding: 0 12px;
@@ -122,15 +125,16 @@ function pick(): void {
 	cursor: default;
 }
 
+.tile > :first-child {
+	grid-row: 1 / 3;
+}
+
 .ident {
-	display: flex;
-	flex: 1;
-	flex-direction: column;
-	gap: 4px;
-	min-width: 0;
+	display: contents;
 }
 
 .line {
+	grid-column: 2;
 	display: flex;
 	align-items: center;
 	gap: 8px;
@@ -165,6 +169,7 @@ function pick(): void {
 }
 
 .sub {
+	grid-column: 2;
 	font: 400 12.5px/1.3 var(--ul-font-body);
 	color: var(--ul-ink-2);
 	overflow: hidden;
@@ -181,7 +186,8 @@ function pick(): void {
 }
 
 .balance {
-	flex: none;
+	grid-column: 3;
+	grid-row: 1;
 	font: 400 15px/1 var(--ul-font-mono);
 	white-space: nowrap;
 }
