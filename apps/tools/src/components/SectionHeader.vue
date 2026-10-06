@@ -19,10 +19,11 @@ defineProps<{ title: string; subline: string }>()
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex-wrap: wrap;
 	gap: 16px;
 	position: relative;
 	min-height: 72px;
-	padding: 0 36px;
+	padding: 12px 36px;
 }
 
 /* Drawn over the header's last 2px, so the perforation never moves the layout between themes. */
@@ -34,7 +35,9 @@ defineProps<{ title: string; subline: string }>()
 	pointer-events: none;
 }
 
+/* Chips that leave the title under 300px wrap below it rather than squeeze it. */
 .titles {
+	flex: 1 1 300px;
 	min-width: 0;
 }
 
@@ -66,6 +69,7 @@ h1 {
 	}
 
 	.titles {
+		flex: none;
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
