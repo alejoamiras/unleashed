@@ -51,9 +51,16 @@ if (build.chainId !== target.walletChainId) problems.push(`build.json chainId=${
 if (build.manifestDigest !== digest) {
 	problems.push(`build.json manifestDigest=${build.manifestDigest} != sha256(${target.manifestFile})=${digest}`)
 }
+// The origins the browser may reach are the target's, exactly: one missing is a silent runtime failure, one extra
+// is reach the target was never given.
+const headers = readFileSync(join(dist, "_headers"), "utf8")
+const connectSrc = /connect-src ([^;\n]*)/.exec(headers)?.[1]?.trim()
+if (connectSrc !== target.cspConnectSrc) problems.push(`_headers connect-src="${connectSrc}" != the target's "${target.cspConnectSrc}"`)
 
 if (problems.length > 0) {
 	console.error(`✗ build-target verification FAILED for ${key}:\n  ${problems.join("\n  ")}`)
 	process.exit(1)
 }
-console.log(`✓ ${dist}/build.json matches target ${key} (chainId ${build.chainId}; ${target.manifestFile} digest verified)`)
+console.log(
+	`✓ ${dist}/build.json matches target ${key} (chainId ${build.chainId}; ${target.manifestFile} digest verified; connect-src ${connectSrc})`,
+)

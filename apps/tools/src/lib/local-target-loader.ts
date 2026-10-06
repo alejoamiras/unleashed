@@ -4,7 +4,7 @@
  * config-eval time and by `verify-build-target.ts`; never imported by the app bundle.
  */
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { type LocalTargetConfig, localTarget, type ToolsTarget } from "./network-targets"
 
@@ -16,10 +16,19 @@ const TOKEN_LIST_FIXTURES = ["token-list.json", "token-list-hostile.json"].map(
 const sha256Of = (file: URL) => createHash("sha256").update(readFileSync(file)).digest("hex")
 
 interface Handle {
+	anvilUrl: string
 	nodeUrl: string
 	rollupVersion: number
 	walletChainId: number
 	l1ChainId: number
+	/** Absent on a handle from before the sandbox's cross-chain half. */
+	crossChain?: { sourceUrl: string; sourceChainId: number }
+}
+
+/** The loopback Across API a held sandbox serves; `sandbox:up` writes it, a one-shot run does not. */
+function relayApiUrl(artifactsDir: string): string | undefined {
+	const file = join(artifactsDir, "relay-api.json")
+	return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { url: string }).url : undefined
 }
 
 export interface LocalRun {
@@ -47,7 +56,11 @@ export function loadLocalRun(artifactsDir: string, opts: LocalRunOptions = {}): 
 		host: opts.host ?? "127.0.0.1",
 		webWalletUrls: opts.webWalletUrls ?? [],
 		tokenListSha256: TOKEN_LIST_FIXTURES.map(sha256Of),
+		l1RpcUrl: handle.anvilUrl,
+		...(handle.crossChain ? { source: { chainId: handle.crossChain.sourceChainId, rpcUrl: handle.crossChain.sourceUrl } } : {}),
 	}
+	const acrossApiUrl = relayApiUrl(artifactsDir)
+	if (acrossApiUrl) config.acrossApiUrl = acrossApiUrl
 	return {
 		target: localTarget(config),
 		config,
