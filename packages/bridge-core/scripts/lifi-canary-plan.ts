@@ -144,13 +144,23 @@ export function assertGasHeadroom(row: CanaryRow, burned: GasBurn, perRow: GasPe
 	if (over("ethereum")) refuse(`${row.kind}: ${burned.ethereum} wei burned on Ethereum leaves no room under ${caps.gasWei.ethereum}`)
 }
 
+const APPROVE_SELECTOR = "0x095ea7b3"
+
+/** The amount of an ERC-20 `approve(spender, amount)` call; `undefined` for any other calldata. */
+function approvedAmount(data: Hex): bigint | undefined {
+	if (data.length < 138 || data.slice(0, 10).toLowerCase() !== APPROVE_SELECTOR) return undefined
+	return BigInt(`0x${data.slice(74, 138)}`)
+}
+
 /**
  * What one chain's sends may still burn within a row, in wei: its cap less what the run burned before the row. Each
  * send is charged its worst case before it exists, so a fee spike or a high estimate refuses the send instead of
- * passing the cap mid-row.
+ * passing the cap mid-row. A non-zero `approve` also holds its worst case back for the `approve(_, 0)` that revokes
+ * it, so a send the budget refuses after an approval never strands a live allowance.
  */
 export class GasBudget {
 	#left: bigint
+	#reserved = 0n
 
 	constructor(
 		readonly chain: GasChain,
@@ -159,15 +169,28 @@ export class GasBudget {
 		this.#left = left
 	}
 
+	/** What a send may still be charged, the revocation reserve excluded. */
 	get left(): bigint {
 		return this.#left
 	}
 
-	/** @throws CanaryRefusal when `worstWei` exceeds what is left; charges it otherwise. */
-	charge(worstWei: bigint, what: string): void {
-		if (worstWei > this.#left)
-			refuse(`${what} may burn ${worstWei} wei on ${CHAIN_LABEL[this.chain]}, over the ${this.#left} wei its cap has left`)
-		this.#left -= worstWei
+	/**
+	 * Charges `worstWei` for the send whose calldata is `data`: a revoke draws on the reserve first, a non-zero approve
+	 * is charged twice, once for itself and once into the reserve.
+	 *
+	 * @throws CanaryRefusal when the charge exceeds what is left.
+	 */
+	charge(worstWei: bigint, what: string, data: Hex): void {
+		const approved = approvedAmount(data)
+		const fromReserve = approved === 0n ? (worstWei < this.#reserved ? worstWei : this.#reserved) : 0n
+		const reserve = approved ? worstWei : 0n
+		const owed = worstWei - fromReserve + reserve
+		if (owed > this.#left) {
+			const held = reserve > 0n ? " (and as much again to revoke it)" : ""
+			refuse(`${what} may burn ${worstWei} wei${held} on ${CHAIN_LABEL[this.chain]}, over the ${this.#left} wei its cap has left`)
+		}
+		this.#left -= owed
+		this.#reserved += reserve - fromReserve
 	}
 }
 

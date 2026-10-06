@@ -15,6 +15,7 @@ import { type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts"
 import { lifiBook } from "../src/lifi-addresses"
 import { PLAN_PINNED_CANARY_SIGNERS } from "./live-intent"
 import {
+	AllowanceStillLive,
 	type Destination,
 	depositsIn,
 	FILL_STATUS,
@@ -157,8 +158,8 @@ async function assertFillable(deps: FillDeps, d: SourceDeposit): Promise<void> {
  * reverted, or holds no single `FundsDeposited` from `sourceSpokePool` bound for the destination chain; the
  * destination pool hashes the relay differently; the fill deadline is within `deadlineMarginS` of the destination's
  * head; another relayer's exclusivity window is open; or the account cannot pay `outputAmount`. Approves the pool for
- * exactly `outputAmount` (cleared again if the fill does not land). A relay already filled, by anyone, before or
- * during the call, is success with nothing sent.
+ * exactly `outputAmount` (cleared again if the fill does not land; a failed clear throws {@link AllowanceStillLive}).
+ * A relay already filled, by anyone, before or during the call, is otherwise success with nothing sent.
  */
 export async function fillSourceDeposit(deps: FillDeps, srcTxHash: Hex): Promise<FillResult> {
 	if (!isTxHash(srcTxHash)) throw new FillRefused("not-a-hash", `${String(srcTxHash).slice(0, 80)} is not a 32-byte transaction hash`)
@@ -176,8 +177,9 @@ export async function fillSourceDeposit(deps: FillDeps, srcTxHash: Hex): Promise
 		if (r.status !== "success") throw new FillRefused("fill-reverted", `the fill ${r.hash} reverted`)
 		return { fillTxHash: r.hash, relayHash, alreadyFilled: false }
 	} catch (e) {
-		// Another relayer may have filled between the status read and our send: the deposit is filled all the same.
-		if (await isFilled(deps, relayHash)) return filled
+		// Another relayer may have filled between the status read and our send: the deposit is filled all the same,
+		// unless our own approval is still live.
+		if (!(e instanceof AllowanceStillLive) && (await isFilled(deps, relayHash))) return filled
 		throw e
 	}
 }

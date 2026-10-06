@@ -656,7 +656,7 @@ async function discoveryContext(ctx: RowCtx): Promise<CrossChainDiscoveryContext
 /** `l1` with every send it makes bounded by `budget`, and the terms it charges, for a send made through another wallet. */
 export function boundedSigner(l1: L1Ctx, budget: GasBudget, label: string): { l1: L1Ctx; terms: GasTermsFor } {
 	const terms = boundedGasTerms(l1.pub as unknown as GasPricing, (worstWei, r) =>
-		budget.charge(worstWei, `${label}: a send to ${r.to ?? "a new contract"}`),
+		budget.charge(worstWei, `${label}: a send to ${r.to ?? "a new contract"}`, r.data),
 	)
 	return { l1: { ...l1, wallet: withGasTerms(l1.wallet, terms) }, terms }
 }

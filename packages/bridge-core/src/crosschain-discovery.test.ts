@@ -222,6 +222,7 @@ interface Tx {
 	logs: RawLog[]
 	status?: "success" | "reverted"
 	from?: Address
+	input?: Hex
 }
 
 interface ChainOptions {
@@ -281,6 +282,12 @@ function chain(o: ChainOptions): DiscoveryChainReads & { fillReads: unknown[] } 
 				blockHash: hashOf(tx.block),
 				logs,
 			}
+		},
+		getTransaction: async ({ hash }) => {
+			reads++
+			const tx = o.txs.find((t) => eq(t.hash, hash))
+			if (!tx) throw new Error(`no transaction ${hash}`)
+			return { input: tx.input ?? "0x" }
 		},
 		readContract: async (args) => {
 			fillReads.push(args)
@@ -516,8 +523,10 @@ describe("discoverCrossChain", () => {
 		})
 	})
 
-	it("not-sent comes only from a reverted source receipt of the record's signer, final once that block is finalized; absence is pending", async () => {
-		const reverted: Tx = { hash: SRC_TX, block: SRC_BLOCK, logs: [], status: "reverted" }
+	it("not-sent comes only from a reverted source transaction of the record's signer for its LI.FI id, final once that block is finalized; absence is pending", async () => {
+		// The id off the word grid, where an EIP-7702 batch nests the Diamond call.
+		const input: Hex = `0x12345678${"00".repeat(36)}${PUBLIC.transactionId.slice(2)}`
+		const reverted: Tx = { hash: SRC_TX, block: SRC_BLOCK, logs: [], status: "reverted", input }
 		const final = await discover(record(), reads([reverted], []))
 		expect(final).toMatchObject({
 			verdict: "not-sent",
@@ -530,6 +539,32 @@ describe("discoverCrossChain", () => {
 
 		expect((await discover(record(), reads([{ ...reverted, from: ATTACKER }], []))).verdict).toBe("pending")
 		expect((await discover(record(), reads([], []))).verdict).toBe("pending")
+
+		// The recorded hash names another reverted transaction of the same sender: the transfer itself landed elsewhere.
+		const unrelated: Tx = { ...reverted, input: `0x12345678${"00".repeat(68)}` }
+		const landed: Tx = { hash: label("landed"), block: SRC_BLOCK, logs: ROUTED.source.logs }
+		const d = await discover(record(), reads([unrelated, landed], [fillTx(ROUTED.destination.logs)]))
+		expect(d).toMatchObject({ verdict: "deposited", srcTxHash: landed.hash })
+
+		// The recorded attempt reverted and the same calldata was resent: the transfer that went through decides.
+		const resent = await discover(record(), reads([reverted, landed], [fillTx(ROUTED.destination.logs)]))
+		expect(resent).toMatchObject({ verdict: "deposited", srcTxHash: landed.hash })
+	})
+
+	it("a recorded hash viem finds no receipt for falls back to the scan; any other receipt failure is incomplete", async () => {
+		const replacement: Tx = { hash: label("replacement"), block: SRC_BLOCK, logs: ROUTED.source.logs }
+		const failing = (name: string) => {
+			const r = reads([replacement], [fillTx(ROUTED.destination.logs)])
+			const receipt = r.source.getTransactionReceipt
+			r.source.getTransactionReceipt = async (args) => {
+				if (eq(args.hash, SRC_TX)) throw Object.assign(new Error(`${name} for ${args.hash}`), { name })
+				return receipt(args)
+			}
+			return r
+		}
+		const replaced = await discover(record(), failing("TransactionReceiptNotFoundError"))
+		expect(replaced).toMatchObject({ verdict: "deposited", srcTxHash: replacement.hash })
+		expect(verdictOf(await discover(record(), failing("HttpRequestError")))).toBe(`incomplete: HttpRequestError for ${SRC_TX}`)
 	})
 
 	it("a decoy before the real fill is an extra deposit, never the intended one", async () => {

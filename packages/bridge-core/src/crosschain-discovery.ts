@@ -88,7 +88,9 @@ export interface DiscoveryChainReads extends ChainHeadClient {
 		fromBlock: bigint
 		toBlock: bigint
 	}): Promise<readonly DiscoveryLog[]>
+	/** `null`, or viem's `TransactionReceiptNotFoundError`, when the node has no receipt for `hash`. */
 	getTransactionReceipt(args: { hash: Hex }): Promise<DiscoveryReceipt | null>
+	getTransaction(args: { hash: Hex }): Promise<{ input: Hex }>
 	readContract(args: {
 		address: Address
 		abi: Abi
@@ -424,14 +426,45 @@ function scanStart(from: string, latest: bigint): bigint {
 	return BigInt(from)
 }
 
+/** The node has no receipt for `hash` (a replaced or dropped transaction). Matched by name, since a second viem
+ *  copy defeats `instanceof`; every other failure stays a failed read. */
+async function receiptOrNull(client: DiscoveryChainReads, hash: Hex): Promise<DiscoveryReceipt | null> {
+	try {
+		return await client.getTransactionReceipt({ hash })
+	} catch (e) {
+		if (e instanceof Error && e.name === "TransactionReceiptNotFoundError") return null
+		throw e
+	}
+}
+
+/** Whether `data` holds all 32 bytes of `id` at a byte boundary, at any depth of nesting. */
+function carriesWord(data: Hex, id: Hex): boolean {
+	if (!/^0x[0-9a-fA-F]{64}$/.test(id)) return false
+	const hay = data.toLowerCase()
+	const needle = id.slice(2).toLowerCase()
+	for (let i = hay.indexOf(needle, 2); i >= 0; i = hay.indexOf(needle, i + 1)) if (i % 2 === 0) return true
+	return false
+}
+
+/**
+ * A reverted receipt has no logs to authenticate. It is this record's when the record's sender signed it and its
+ * calldata carries the record's `lifiTxId`, the `BridgeData.transactionId` the route sets, whether the transaction
+ * calls the Diamond directly or batches through an EIP-7702 account; any other reverted transaction of the sender's
+ * is not this transfer, which may still have landed under another hash.
+ */
+async function revertedIsOurs(c: Ctx, client: DiscoveryChainReads, receipt: DiscoveryReceipt): Promise<boolean> {
+	if (!hexEq(receipt.from, c.rec.route.srcSender)) return false
+	const tx = await c.read(() => client.getTransaction({ hash: receipt.transactionHash }))
+	return carriesWord(tx.input, c.rec.route.lifiTxId as Hex)
+}
+
 async function fromRecordedHash(c: Ctx, client: DiscoveryChainReads, hash: Hex): Promise<SourceFacts | undefined> {
 	const chainId = c.rec.route.srcChainId
-	const receipt = await c.read(() => client.getTransactionReceipt({ hash }))
+	const receipt = await c.read(() => receiptOrNull(client, hash))
 	if (!receipt) return undefined
 	await assertCanonical(client, c.read, receipt)
 	if (receipt.status === "reverted") {
-		// A failed receipt has no logs to authenticate; its signer is what binds it to this record.
-		if (!hexEq(receipt.from, c.rec.route.srcSender)) return undefined
+		if (!(await revertedIsOurs(c, client, receipt))) return undefined
 		const finalized = await c.read(() => client.getBlock({ blockTag: "finalized" }))
 		return {
 			kind: "reverted",
@@ -475,7 +508,9 @@ async function fromTransferScan(c: Ctx, client: DiscoveryChainReads, latest: big
 async function readSource(c: Ctx, client: DiscoveryChainReads): Promise<SourceFacts> {
 	const scan = await openChainScan(client, c.rec.route.srcChainId, c.read, epochOf(client))
 	const recorded = c.rec.route.srcTxHash ? await fromRecordedHash(c, client, c.rec.route.srcTxHash) : undefined
-	const facts = recorded ?? (await fromTransferScan(c, client, scan.latest))
+	// A reverted attempt can be resent with the same calldata, so a transfer that went through outranks it.
+	const scanned = recorded?.kind === "sent" ? undefined : await fromTransferScan(c, client, scan.latest)
+	const facts = scanned?.kind === "sent" || !recorded ? (scanned as SourceFacts) : recorded
 	await scan.close()
 	return facts
 }

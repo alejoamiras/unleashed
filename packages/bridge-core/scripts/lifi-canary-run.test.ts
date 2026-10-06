@@ -1,7 +1,8 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { decodeFunctionData, type Hex } from "viem"
+import { type Address, decodeFunctionData, type Hex, pad } from "viem"
 import { describe, expect, it, vi } from "vitest"
+import type { AcrossRelayData } from "../src/crosschain-discovery"
 import type { L1Ctx } from "../src/flows"
 import { SWAP_TOKENS_SINGLE_V3_ABI } from "../src/lifi-abi"
 import { lifiBook } from "../src/lifi-addresses"
@@ -16,9 +17,10 @@ import {
 	verifiedRoute,
 } from "./lifi-canary-build"
 import { ethereumChain, FJ_PER_UNIT, fakeAcross, NOW_S, routedManifest, sourceChain } from "./lifi-canary-fixture"
-import { type CanaryCaps, canaryBindings, formatCanaryRecord, GasBudget, planCanaryRows } from "./lifi-canary-plan"
+import { type CanaryCaps, CanaryRefusal, canaryBindings, formatCanaryRecord, GasBudget, planCanaryRows } from "./lifi-canary-plan"
 import { boundedSigner, type CanaryDeps, runCanary, runLiveRows } from "./lifi-canary-run"
 import { canaryEdge } from "./lifi-canary-testnet"
+import { AllowanceStillLive, type Destination, sendFill } from "./sandbox/relayer"
 import { ERC20_MIN_ABI } from "./script-l1"
 
 const CANARY = `0x${"ca".repeat(20)}` as const
@@ -169,10 +171,11 @@ describe("the canary's gas ceilings", () => {
 			pub: { estimateGas: vi.fn(async () => 80_000n), estimateFeesPerGas: vi.fn(async () => fees) },
 			wallet,
 		} as unknown as L1Ctx
-		const budget = new GasBudget("source", 10n ** 15n)
+		const budget = new GasBudget("source", 14n * 10n ** 14n)
 		const bounded = boundedSigner(l1, budget, "crosschain-public").l1.wallet
 
-		// 80,000 estimated + a quarter = 100,000 gas at 4 gwei: a worst case of 4 × 10^14 wei per send.
+		// 80,000 estimated + a quarter = 100,000 gas at 4 gwei: a worst case of 4 × 10^14 wei per send, which the
+		// approval also holds back for its revoke.
 		await bounded.sendTransaction({ to: CANARY, data: "0x1234", account: CANARY } as never)
 		await bounded.writeContract({ address: CANARY, abi: ERC20_MIN_ABI, functionName: "approve", args: [CANARY, 1n] } as never)
 		const terms = { gas: 100_000n, ...fees }
@@ -186,6 +189,61 @@ describe("the canary's gas ceilings", () => {
 			/crosschain-public: a send to .* may burn 1000000000000000 wei on the source chain, over the 200000000000000 wei/,
 		)
 		expect(wallet.sendTransaction).toHaveBeenCalledTimes(1)
+	})
+
+	it("hold back each approval's revoke, so a fill the budget refuses still clears its allowance", async () => {
+		const fees = { maxFeePerGas: GWEI, maxPriorityFeePerGas: GWEI }
+		const token: Address = `0x${"70".repeat(20)}`
+		let allowance = 0n
+		let revokeFails = false
+		const writeContract = vi.fn(async (w: { functionName: string; args: readonly unknown[] }) => {
+			if (w.functionName === "approve" && revokeFails && w.args[1] === 0n) throw new Error("rpc down")
+			if (w.functionName === "approve") allowance = w.args[1] as bigint
+			return `0x${"01".repeat(32)}` as Hex
+		})
+		const wallet = { account: { address: CANARY }, chain: undefined, writeContract }
+		const pub = {
+			estimateGas: async () => 80_000n,
+			estimateFeesPerGas: async () => fees,
+			simulateContract: async () => ({}),
+			waitForTransactionReceipt: async () => ({ status: "success" }),
+		}
+		const relay: AcrossRelayData = {
+			depositor: pad(CANARY),
+			recipient: pad(CANARY),
+			exclusiveRelayer: pad("0x00"),
+			inputToken: pad(token),
+			outputToken: pad(token),
+			inputAmount: 5n,
+			outputAmount: 5n,
+			originChainId: 84532n,
+			depositId: 1n,
+			fillDeadline: 0,
+			exclusivityDeadline: 0,
+			message: "0x",
+		}
+		const fill = (left: bigint) => {
+			const l1 = { account: wallet.account, pub, wallet } as unknown as L1Ctx
+			const signer = boundedSigner(l1, new GasBudget("ethereum", left), "crosschain-recovery").l1
+			return sendFill({ public: pub, wallet: signer.wallet } as unknown as Destination, CANARY, relay, { repaymentChainId: 84532n })
+		}
+
+		// 100,000 gas at 1 gwei: 10^14 wei per send. An approval that cannot also hold its revoke is never sent.
+		await expect(fill(10n ** 14n)).rejects.toThrow(/may burn 100000000000000 wei \(and as much again to revoke it\) on Ethereum/)
+		expect(writeContract).not.toHaveBeenCalled()
+
+		// The approval and its held-back revoke take the whole budget: the fill is refused, the revoke still goes out.
+		await expect(fill(2n * 10n ** 14n)).rejects.toThrow(/may burn 100000000000000 wei on Ethereum, over the 0 wei its cap has left/)
+		expect(writeContract.mock.calls.map(([w]) => [w.functionName, w.args[1]])).toEqual([
+			["approve", 5n],
+			["approve", 0n],
+		])
+		expect(allowance).toBe(0n)
+
+		revokeFails = true
+		const live = await fill(2n * 10n ** 14n).catch((e: unknown) => e)
+		expect(live).toBeInstanceOf(AllowanceStillLive)
+		expect(live).toMatchObject({ message: expect.stringMatching(/still holds a live allowance/), cause: expect.any(CanaryRefusal) })
 	})
 
 	it("reconcile the gas burned against the caps after every row, the last included", async () => {

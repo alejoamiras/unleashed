@@ -180,10 +180,55 @@ async function approveExactly(dest: Destination, token: Address, spender: Addres
 	if (receipt.status !== "success") throw new Error(`approve(${spender}, ${amount}) on ${token} reverted`)
 }
 
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const firstLine = (e: unknown) => errorText(e).split("\n")[0]
+
+/** An approval a failed fill could not clear: the pool still holds it. `cause` is the fill's own failure. */
+export class AllowanceStillLive extends Error {
+	constructor(spender: Address, token: Address, clearing: unknown, fill: unknown) {
+		super(
+			`the fill failed (${firstLine(fill)}) and clearing its approval failed (${firstLine(clearing)}): ${spender} still holds a live allowance over ${token}`,
+			{ cause: fill },
+		)
+		this.name = "AllowanceStillLive"
+	}
+}
+
+/** Clears the approval of a fill that did not land. @throws AllowanceStillLive when the clear fails too. */
+async function clearApproval(dest: Destination, token: Address, spender: Address, fill: unknown): Promise<void> {
+	try {
+		await approveExactly(dest, token, spender, 0n)
+	} catch (e) {
+		throw new AllowanceStillLive(spender, token, e, fill)
+	}
+}
+
+async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRelayData, call: FillCall) {
+	const account = dest.wallet.account
+	// viem's inference collapses this tuple argument to `never`; `AcrossRelayData` is `RELAY_DATA` field for field.
+	const args = [relay as never, call.repaymentChainId, pad(account.address, { size: 32 })] as const
+	if (call.gas === undefined) {
+		await dest.public.simulateContract({ account, address: spokePool, abi: SPOKE_POOL_ABI, functionName: "fillRelay", args })
+	}
+	const hash = await dest.wallet.writeContract({
+		address: spokePool,
+		abi: SPOKE_POOL_ABI,
+		functionName: "fillRelay",
+		args,
+		account,
+		chain: dest.wallet.chain,
+		...(call.gas === undefined ? {} : { gas: call.gas }),
+	})
+	const { status } = await dest.public.waitForTransactionReceipt({ hash })
+	return { hash, status }
+}
+
 /**
  * Approves `spokePool` for exactly `relay.outputAmount` of its output token and sends `fillRelay` from the wallet's
  * account, which is also the logged relayer. Without explicit gas the fill is simulated first, so a fill that would
  * revert throws before anything is sent. A fill that does not land clears the approval again.
+ *
+ * @throws the fill's own error once its approval is cleared, or {@link AllowanceStillLive} when the clear fails too.
  */
 export async function sendFill(
 	dest: Destination,
@@ -191,31 +236,17 @@ export async function sendFill(
 	relay: AcrossRelayData,
 	call: FillCall,
 ): Promise<{ hash: Hex; status: "success" | "reverted" }> {
-	const account = dest.wallet.account
 	const token = wordAddress(relay.outputToken)
-	// viem's inference collapses this tuple argument to `never`; `AcrossRelayData` is `RELAY_DATA` field for field.
-	const args = [relay as never, call.repaymentChainId, pad(account.address, { size: 32 })] as const
 	await approveExactly(dest, token, spokePool, relay.outputAmount)
+	let sent: Awaited<ReturnType<typeof fillOnce>>
 	try {
-		if (call.gas === undefined) {
-			await dest.public.simulateContract({ account, address: spokePool, abi: SPOKE_POOL_ABI, functionName: "fillRelay", args })
-		}
-		const hash = await dest.wallet.writeContract({
-			address: spokePool,
-			abi: SPOKE_POOL_ABI,
-			functionName: "fillRelay",
-			args,
-			account,
-			chain: dest.wallet.chain,
-			...(call.gas === undefined ? {} : { gas: call.gas }),
-		})
-		const { status } = await dest.public.waitForTransactionReceipt({ hash })
-		if (status !== "success") await approveExactly(dest, token, spokePool, 0n)
-		return { hash, status }
+		sent = await fillOnce(dest, spokePool, relay, call)
 	} catch (e) {
-		await approveExactly(dest, token, spokePool, 0n)
+		await clearApproval(dest, token, spokePool, e)
 		throw e
 	}
+	if (sent.status !== "success") await clearApproval(dest, token, spokePool, new Error(`the fill ${sent.hash} reverted`))
+	return sent
 }
 
 // ─── The sandbox relay loop ──────────────────────────────────────────────────
@@ -257,7 +288,6 @@ export interface Relayer {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 class RelayLoop implements Relayer {
 	private current: RelayMode
