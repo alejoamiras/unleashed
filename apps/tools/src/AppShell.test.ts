@@ -80,24 +80,22 @@ describe("AppShell", () => {
 		expect(w.find(sel(TESTIDS.activityView)).exists()).toBe(false)
 	})
 
-	it("the bridge footer shows only on Send while the wizard is on a form step", async () => {
+	it("the bridge footer lists the contracts on Activity and beside the stepper, and only its warning on the form", async () => {
 		const w = shell()
-		const footer = () => w.find(sel("footer-bridge")).exists()
-		expect(footer()).toBe(false)
+		const footer = () => {
+			const f = w.find(sel("footer-bridge"))
+			return f.exists() ? f.attributes("contracts") : null
+		}
+		expect(footer()).toBe("true")
 		useShell().bridgeForm.value = true
 		await nextTick()
-		expect(footer()).toBe(true)
-		for (const other of ["activity", "drip"] as const) {
-			useShell().goTo(other)
-			await nextTick()
-			expect(footer()).toBe(false)
-		}
-		useShell().goTo("send")
+		expect(footer()).toBe("false")
+		useShell().goTo("activity")
 		await nextTick()
-		expect(footer()).toBe(true)
-		useShell().bridgeForm.value = false
+		expect(footer()).toBe("true")
+		useShell().goTo("drip")
 		await nextTick()
-		expect(footer()).toBe(false)
+		expect(footer()).toBeNull()
 	})
 
 	it("the faucet has the Aztec chip alone and no shell footer (its view mounts its own); Activity keeps the bridge chips", async () => {

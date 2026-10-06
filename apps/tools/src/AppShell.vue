@@ -108,8 +108,9 @@ const MARK_INK =
 			</div>
 
 			<div class="foot">
-				<!-- SendView is v-shown, so its form flag outlives a switch to another section. -->
-				<BridgeFooter v-if="section === 'send' && bridgeForm" />
+				<!-- SendView is v-shown, so its form flag outlives a switch to another section. The form keeps
+				     the real-funds line alone; the stepper, the receipt and Activity list the contracts too. -->
+				<BridgeFooter v-if="section === 'send' || section === 'activity'" :contracts="section === 'activity' || !bridgeForm" />
 			</div>
 		</main>
 
