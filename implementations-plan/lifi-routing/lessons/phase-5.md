@@ -113,6 +113,9 @@ findings and the one deviation are in the plan's ledger (D44).
   self-addressed batch now counts only through a decoded inner Diamond call carrying the id (ERC-7821 / ERC-7579
   batch `execute`, or `executeBatch`). Separately, "nothing sent" was removed wherever an approval and its revoke
   may have gone out. Three mutants of the batch check (substring, dropped `executeBatch`, any target) each fail the
-  test. Surfaced to the owner again. Pattern: each round's fix to a reverted-receipt rule opened a narrower hole one layer down. Sender,
+  test. Surfaced to the owner again, who answered "Keep going, set the limit at 8."
+- **Round 5:** "Batch decoding is fixed; one medium attribution bug and one remaining low comment defect remain".
+  `alreadyFilled` cannot tell a relayer's fill from the canary's own whose receipt wait failed, so the canary now
+  attributes the fill by its signer. Pattern: each round's fix to a reverted-receipt rule opened a narrower hole one layer down. Sender,
   then a substring, then a decoded target. The lesson: authenticate a negative outcome (`not-sent`) as strictly as
   a positive one, by decoded call target and id from the start, never by a weaker proxy.

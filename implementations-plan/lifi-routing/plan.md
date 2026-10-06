@@ -1313,7 +1313,8 @@ the decoder's `maxPull` rule follow the same figure (`fuel.crossChainSlippageBps
 
 **D44 Arc 2 Codex loop (`gpt-6.1-sol` at `high`, over the arc 2 diff).** Every finding was verified against the
 code and accepted. Round 3 still raised two material findings, so the loop reached the plan's hard stop and went to
-the owner, who chose "Run round 4" in the same session. Round 4 raised two more, fixed, and went back to the owner.
+the owner, who chose "Run round 4" in the same session. Round 4 raised two more, fixed, and went back to the owner:
+*"Keep going, set the limit at 8."* The arc 2 loop's hard stop is therefore round 8, for this loop only.
 - Round 1 (one high, five medium, one low):
   1. (high) A replaced source bridge facet only warned, although it holds the user's approved input before any
      check of ours runs. `verify:l1` now fails on bridge-facet drift; D4's warning stays for fuel-swap selectors,
@@ -1350,6 +1351,13 @@ the owner, who chose "Run round 4" in the same session. Round 4 raised two more,
      weakness, even when rejecting it sacrifices liveness."
   2. (low) The relayer's comments and the filler's "nothing sent" output claimed no transaction where an approval
      and its revoke may have been sent. Reworded.
+- Round 5 (one medium, one low):
+  1. The canary labelled a fill `organic` whenever the filler reported `alreadyFilled`. A fill of its own that mined
+     while its receipt wait failed reads exactly so, which would falsely evidence relayer liveness (and fail the
+     recovery row's balance check). The canary now attributes the fill discovery authenticated by its signer (the
+     canary is an EOA), and a confirmed self-fill must be that transaction. The filler's output no longer claims
+     whose fill it found.
+  2. (low) `FillResult.fillTxHash`'s comment still said "nothing was sent". Reworded.
 
 Rejected: none. Accepted residue:
 - An OP-stack L1 data fee falls outside `gas × maxFeePerGas`; Codex agreed it "remains separate".
