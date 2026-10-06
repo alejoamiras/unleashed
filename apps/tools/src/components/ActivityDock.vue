@@ -19,6 +19,7 @@ import { switchActiveAccount } from "@/composables/useWalletConnection"
 /** Utils */
 import { computed, nextTick, ref, watch } from "vue"
 import type { ActivityAction } from "@/lib/activity"
+import { ethereumPrefillOf } from "@/lib/crosschain-activity"
 import { userMessage } from "@/lib/errors"
 import { TESTIDS } from "@/lib/testids"
 
@@ -63,7 +64,8 @@ const groups = computed(() => {
 	return [
 		{ key: "needs-you", title: "Needs you", rows: g.needsYou },
 		{ key: "running", title: "Running", rows: g.running },
-		{ key: "done", title: "Done", rows: g.done },
+		// A send that ended without arriving makes the group read as ended, not done.
+		{ key: "done", title: g.done.some((r) => r.word) ? "Ended" : "Done", rows: g.done },
 		{ key: "other-account", title: "Other account", rows: g.otherAccount },
 	].filter((x) => x.rows.length > 0)
 })
@@ -119,10 +121,20 @@ async function claimGas(id: string): Promise<void> {
 	}
 }
 
+/** The card's Continue from Ethereum, from the row; the wizard takes the prefill from the shell. */
+function continueFrom(id: string): void {
+	const rec = journal.crossChainRecords.value.find((r) => r.id === id)
+	const prefill = rec ? ethereumPrefillOf(rec) : null
+	if (!prefill) return void shell.openActivity(id)
+	if (narrow.value) void hide()
+	shell.continueFromEthereum(prefill)
+}
+
 function act(id: string, action: Exclude<ActivityAction, null>): void {
 	const row = props.feed.rows.value.find((r) => r.id === id)
 	if (!row) return
 	if (action === "claim-gas") return void claimGas(id)
+	if (action === "continue") return void continueFrom(id)
 	if (action === "switch") {
 		if (!opsBusy.value && row.switchTarget) switchActiveAccount(row.switchTarget)
 		return
@@ -165,7 +177,7 @@ function acting(row: ActivityRowModel): boolean {
 		</div>
 		<div class="groups">
 			<EmptyChannel v-if="total === 0">Bridges you background or lose track of land here.</EmptyChannel>
-			<section v-for="g in groups" :key="g.key" class="group" :data-testid="TESTIDS.dockGroup" :data-group="g.key">
+			<section v-for="g in groups" :key="g.key" class="group" :class="{ ended: g.title === 'Ended' }" :data-testid="TESTIDS.dockGroup" :data-group="g.key">
 				<h3>{{ g.title }} · {{ g.rows.length }}</h3>
 				<ul role="list">
 					<ActivityRow
@@ -279,6 +291,10 @@ function acting(row: ActivityRowModel): boolean {
 
 .group[data-group="done"] h3 {
 	color: var(--ul-carrier);
+}
+
+.group.ended h3 {
+	color: var(--ul-ink-2);
 }
 
 .group[data-group="other-account"] h3 {

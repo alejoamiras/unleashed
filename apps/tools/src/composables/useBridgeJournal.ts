@@ -2215,15 +2215,19 @@ export function resumeSessionWork(): void {
 	}
 }
 
+/** Every record either key holds, Ethereum-origin first: what every list reads. */
+export const listedRecords = computed<AnyJournalRecord[]>(() => [...records.value, ...crossChainRecords.value])
+
 /** Every record except the foregrounded one: while the wizard shows a record's stepper or receipt,
  *  that is its one surface, so no list renders it a second time. Records stay in storage. */
-export const visibleRecords = computed(() => records.value.filter((r) => r.id !== activeFlowId.value))
+export const visibleRecords = computed(() => listedRecords.value.filter((r) => r.id !== activeFlowId.value))
 
 export function useBridgeJournal() {
 	initJournal()
 	return {
 		records,
 		crossChainRecords,
+		listedRecords,
 		visibleRecords,
 		runtime,
 		lastCompleted,

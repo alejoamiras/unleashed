@@ -3,16 +3,24 @@
  * share. A persisted `blocked` or any runtime attention overrides completion; completion overrides a
  * stale busy runtime; ownership moves group and count, never status.
  */
-import { type BridgeJournalRecord, type DepositJournalRecord, assetKindOf } from "@unleashed/bridge-core"
+import {
+	type AnyJournalRecord,
+	type BridgeJournalRecord,
+	type DepositJournalRecord,
+	assetKindOf,
+	isCrossChainRecord,
+} from "@unleashed/bridge-core"
 import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
 import { type BridgePhase, isFailedAttention, stepperPhases } from "@/lib/bridge-steps"
+import { crossChainAsset, type CrossChainPhase, crossChainRoute, sendView } from "@/lib/crosschain-activity"
+import { formatStoredAmount } from "@/lib/format"
 import type { RecordState } from "@/lib/record-policy"
 
 /** The status chip's word and the card's edge colour. */
 export type RecordStatus = "lost" | "running" | "done" | "needs-you"
 export type ActivityGroup = "needs-you" | "running" | "done" | "other-account"
-export type ActivityAction = "claim" | "finish" | "retry" | "claim-gas" | "switch" | null
+export type ActivityAction = "claim" | "finish" | "retry" | "claim-gas" | "switch" | "continue" | null
 
 export interface Classified {
 	status: RecordStatus
@@ -43,19 +51,45 @@ function openAction(s: RecordState): ActivityAction {
 	return null
 }
 
+function failed(s: RecordState): boolean {
+	return s.blocked !== undefined || isFailedAttention(s.attention)
+}
+
 /** Persisted completion metadata is taken as stored here, never re-verified on-chain. */
-function statusOf(rec: BridgeJournalRecord, s: RecordState): RecordStatus {
-	if (s.blocked !== undefined || isFailedAttention(s.attention)) return "lost"
+function statusOf(rec: AnyJournalRecord, s: RecordState): RecordStatus {
+	if (failed(s)) return "lost"
 	if (rec.completedAt !== undefined || s.stage === "done") return "done"
 	return s.busy ? "running" : "needs-you"
 }
 
-function actionOf(rec: BridgeJournalRecord, s: RecordState): ActivityAction {
+function actionOf(rec: AnyJournalRecord, s: RecordState): ActivityAction {
 	if (rec.completedAt !== undefined || s.stage === "done") return doneAction(s)
 	return s.busy ? null : openAction(s)
 }
 
-export function classify(rec: BridgeJournalRecord, s: RecordState): Classified {
+/** A cross-chain phase owes a decision only once its funds sit in the Ethereum wallet; an ended one
+ *  lists with the arrivals, whatever its tone. */
+function classifyPhase(phase: CrossChainPhase): Classified {
+	switch (phase.kind) {
+		case "delivered":
+			return { status: "needs-you", group: "needs-you", rank: RANK["needs-you"], counts: true, action: "continue" }
+		case "not-sent":
+			return { status: "lost", group: "done", rank: RANK.done, counts: false, action: null }
+		case "expired":
+			return { status: "done", group: "done", rank: RANK.done, counts: false, action: null }
+		default:
+			return { status: "running", group: "running", rank: RANK.running, counts: false, action: null }
+	}
+}
+
+/** The cross-chain phase that words a record's status; a failure outranks it, as it outranks completion. */
+export function statusPhase(s: RecordState): CrossChainPhase | null {
+	return s.crossChain && !failed(s) ? s.crossChain : null
+}
+
+export function classify(rec: AnyJournalRecord, s: RecordState): Classified {
+	const phase = statusPhase(s)
+	if (phase) return classifyPhase(phase)
 	const status = statusOf(rec, s)
 	const group: ActivityGroup = status === "lost" ? "needs-you" : status === "needs-you" && s.ownedByOther ? "other-account" : status
 	return {
@@ -95,14 +129,16 @@ function livePhase(rec: BridgeJournalRecord, rt: RecordRuntime): BridgePhase | u
 	return phases.find((p) => p.state === "active" || p.state === "failed") ?? phases.findLast((p) => p.state === "done")
 }
 
-/** A running record's chip word: its live phase, with proving named as the activity it is. */
-export function runningWord(rec: BridgeJournalRecord, rt: RecordRuntime): string {
-	const live = livePhase(rec, rt)
+/** A running record's chip word: its live phase, with proving named as the activity it is. A
+ *  cross-chain record reaches the rail's mapper as itself, so the mapper can tell its phases apart. */
+export function runningWord(rec: AnyJournalRecord, rt: RecordRuntime): string {
+	const live = livePhase(rec as BridgeJournalRecord, rt)
 	if (!live) return "Running"
 	return live.key === "prove" ? "Proving" : live.label
 }
 
-export function routeWords(rec: BridgeJournalRecord): string {
+export function routeWords(rec: AnyJournalRecord): string {
+	if (isCrossChainRecord(rec)) return crossChainRoute(rec)
 	return rec.direction === "deposit" ? "ETH → Aztec" : "Aztec → ETH"
 }
 
@@ -113,13 +149,26 @@ function buysGas(rec: BridgeJournalRecord): boolean {
 }
 
 /** "private + gas" / "public": the visibility and whether a gas leg rides along, as words. */
-export function visibilityWords(rec: BridgeJournalRecord): string {
-	return `${rec.isPrivate ? "private" : "public"}${buysGas(rec) ? " + gas" : ""}`
+export function visibilityWords(rec: AnyJournalRecord): string {
+	return `${rec.isPrivate ? "private" : "public"}${buysGas(sendView(rec)) ? " + gas" : ""}`
 }
 
-/** Amount, symbol and qualifier for a row, read as every record surface reads them (`displayAmountOf`). */
-export function rowStrings(rec: BridgeJournalRecord): { amount: string; symbol: string; qualifier: string | null } {
-	const d = displayAmountOf(rec)
+export interface RowStrings {
+	amount: string
+	symbol: string
+	qualifier: string | null
+}
+
+/**
+ * Amount, symbol and qualifier for a row, read as every record surface reads them (`displayAmountOf`).
+ * A cross-chain record shows what it sent while `phase` holds, then what its deposit carries.
+ */
+export function rowStrings(rec: AnyJournalRecord, phase: CrossChainPhase | null = null): RowStrings {
+	if (phase && isCrossChainRecord(rec)) {
+		const asset = crossChainAsset(rec)
+		return { amount: formatStoredAmount(rec.route.srcAmount, asset.decimals), symbol: asset.symbol, qualifier: null }
+	}
+	const d = displayAmountOf(sendView(rec))
 	return { amount: displayAmountText(d), symbol: d.symbol, qualifier: amountQualifier(d) }
 }
 

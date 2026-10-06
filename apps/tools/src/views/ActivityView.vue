@@ -19,7 +19,7 @@ import { TESTIDS } from "@/lib/testids"
  */
 const shell = useShell()
 const journal = IS_PLACEHOLDER ? null : useBridgeJournal()
-const firstVisit = computed(() => (journal?.records.value.length ?? 0) === 0)
+const firstVisit = computed(() => (journal?.listedRecords.value.length ?? 0) === 0)
 </script>
 
 <template>

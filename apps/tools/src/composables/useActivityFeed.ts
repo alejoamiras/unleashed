@@ -1,4 +1,4 @@
-import type { BridgeJournalRecord } from "@unleashed/bridge-core"
+import { type AnyJournalRecord, isCrossChainRecord } from "@unleashed/bridge-core"
 import { computed } from "vue"
 import {
 	type ActivityAction,
@@ -11,10 +11,12 @@ import {
 	routeWords,
 	rowStrings,
 	runningWord,
+	statusPhase,
 	visibilityWords,
 } from "@/lib/activity"
 import { useNow } from "@/lib/clock"
-import { recordState } from "@/lib/record-policy"
+import { type CrossChainTone, phaseChip, phaseDetail } from "@/lib/crosschain-activity"
+import { type RecordState, recordState } from "@/lib/record-policy"
 import { useBridgeJournal } from "./useBridgeJournal"
 import { useBridgeWallet } from "./useBridgeWallet"
 
@@ -40,6 +42,25 @@ export interface ActivityRowModel {
 	route: string
 	visibility: string
 	age: string
+	/** A cross-chain phase's own word and tone, which replace the status's; null for any other row. */
+	word?: { text: string; tone: CrossChainTone } | null
+	/** Replaces visibility and age on the second line ("refund pending"); null for any other row. */
+	detail?: string | null
+	/** A line of its own under the route ("another deposit found"); null for any other row. */
+	note?: string | null
+}
+
+const ANOTHER_DEPOSIT = "another deposit found"
+
+/** The cross-chain parts of a row: what replaces the status word, the second line and the note. A
+ *  failed record keeps its status's word, as an Ethereum-origin one does. */
+function crossChainParts(rec: AnyJournalRecord, state: RecordState, visibility: string) {
+	if (!isCrossChainRecord(rec)) return {}
+	const note = !state.crossChain && (rec.route.extraDeposits?.length ?? 0) > 0 ? ANOTHER_DEPOSIT : null
+	const phase = statusPhase(state)
+	if (!phase) return { note }
+	const chip = phaseChip(phase)
+	return { word: { text: chip.word, tone: chip.tone }, detail: phaseDetail(phase, visibility), note }
 }
 
 /**
@@ -57,11 +78,12 @@ export function useActivityFeed() {
 	const rows = computed<ActivityRowModel[]>(() => {
 		const view = { status: wallet.status.value, selectedAccount: wallet.selectedAccount.value, accounts: wallet.accounts.value }
 		const at = now.value
-		const toRow = (rec: BridgeJournalRecord, foreground: boolean): ActivityRowModel => {
+		const toRow = (rec: AnyJournalRecord, foreground: boolean): ActivityRowModel => {
 			const rt = journal.runtime.value[rec.id] ?? {}
 			const state = recordState(rec, rt, view)
 			const c = classify(rec, state)
 			const action = foreground ? null : c.action
+			const visibility = visibilityWords(rec)
 			return {
 				id: rec.id,
 				createdAt: rec.createdAt,
@@ -73,14 +95,15 @@ export function useActivityFeed() {
 				counts: !foreground && c.counts,
 				switchTarget: action === "switch" ? state.switchTarget : null,
 				phase: runningWord(rec, rt),
-				...rowStrings(rec),
+				...rowStrings(rec, state.crossChain),
 				route: routeWords(rec),
-				visibility: visibilityWords(rec),
+				visibility,
 				age: ageWords(rec.createdAt, at),
+				...crossChainParts(rec, state, visibility),
 			}
 		}
 		const listed = journal.visibleRecords.value.map((rec) => toRow(rec, false))
-		const fg = journal.records.value.find((r) => r.id === journal.activeFlowId.value)
+		const fg = journal.listedRecords.value.find((r) => r.id === journal.activeFlowId.value)
 		return fg ? [...listed, toRow(fg, true)] : listed
 	})
 
@@ -88,7 +111,7 @@ export function useActivityFeed() {
 	const count = computed(() => needsYouCount(rows.value))
 	/** Ids the dock may open itself for: exactly the rows the badge counts. */
 	const autoOpenIds = computed(() => rows.value.filter((r) => r.counts).map((r) => r.id))
-	const liveIds = computed(() => new Set(journal.records.value.map((r) => r.id)))
+	const liveIds = computed(() => new Set(journal.listedRecords.value.map((r) => r.id)))
 
 	return { rows, grouped, count, autoOpenIds, liveIds }
 }

@@ -10,11 +10,11 @@ import { useBridgeWallet } from "@/composables/useBridgeWallet"
 import { useToast } from "@/composables/useToast"
 
 /** Utils */
-import { type BridgeJournalRecord, assetKindOf } from "@unleashed/bridge-core"
+import { assetKindOf } from "@unleashed/bridge-core"
 import { Button, Icon } from "@unleashed/design"
 import { computed, ref } from "vue"
-import { classify } from "@/lib/activity"
-import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
+import { classify, rowStrings } from "@/lib/activity"
+import { crossChainPhase, sendView } from "@/lib/crosschain-activity"
 import { recordState } from "@/lib/record-policy"
 import { TESTIDS } from "@/lib/testids"
 
@@ -53,11 +53,10 @@ async function onRestorePick(event: Event) {
 	restoring.value = true
 	try {
 		const rec = await backup.restoreFile(await file.text())
-		const d = displayAmountOf(rec)
-		const q = amountQualifier(d)
+		const { amount, symbol, qualifier: q } = rowStrings(rec, crossChainPhase(rec))
 		push({
 			kind: "ok",
-			text: `Restored: ${displayAmountText(d)} ${d.symbol}${q ? ` (${q})` : ""} ${rec.direction === "deposit" ? "to Aztec" : "to Ethereum"}.`,
+			text: `Restored: ${amount} ${symbol}${q ? ` (${q})` : ""} ${rec.direction === "deposit" ? "to Aztec" : "to Ethereum"}.`,
 		})
 	} catch (e) {
 		push({ kind: "error", text: e instanceof Error ? e.message : "Restore failed." })
@@ -69,8 +68,8 @@ async function onRestorePick(event: Event) {
 const wallet = useBridgeWallet()
 
 const sorted = computed(() => {
-	const all = props.source === "all" ? journal.records.value : journal.visibleRecords.value
-	const recs = props.kind ? all.filter((r) => assetKindOf(r) === props.kind) : all
+	const all = props.source === "all" ? journal.listedRecords.value : journal.visibleRecords.value
+	const recs = props.kind ? all.filter((r) => assetKindOf(sendView(r)) === props.kind) : all
 	const view = { status: wallet.status.value, selectedAccount: wallet.selectedAccount.value, accounts: wallet.accounts.value }
 	const rank = new Map(recs.map((r) => [r.id, classify(r, recordState(r, journal.runtime.value[r.id] ?? {}, view)).rank]))
 	return [...recs].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0) || b.createdAt - a.createdAt)

@@ -1,3 +1,4 @@
+import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { computed, nextTick, ref } from "vue"
@@ -7,10 +8,14 @@ import { __resetShellForTests, useShell } from "@/composables/useShell"
 import { groupRecords, needsYouCount } from "@/lib/activity"
 import { TESTIDS } from "@/lib/testids"
 import { rowModel } from "@/test/activity-row"
+import { xcRecord } from "@/test/crosschain-record"
 
 const runDepositClaim = vi.fn(async (_id: string) => {})
 const runWithdrawConsume = vi.fn(async (_id: string) => {})
-vi.mock("@/composables/useBridgeJournal", () => ({ useBridgeJournal: () => ({ runDepositClaim, runWithdrawConsume }) }))
+const crossChainRecords = ref<CrossChainDepositRecord[]>([])
+vi.mock("@/composables/useBridgeJournal", () => ({
+	useBridgeJournal: () => ({ runDepositClaim, runWithdrawConsume, crossChainRecords }),
+}))
 const opsBusy = ref(false)
 vi.mock("@/composables/useOpsInFlight", () => ({ useOpsInFlight: () => ({ busy: opsBusy }) }))
 const switchActiveAccount = vi.fn((_address: string) => true)
@@ -160,6 +165,34 @@ describe("ActivityDock", () => {
 		expect(groups.every((g) => g.find("ul[role='list'] > li").exists())).toBe(true)
 		expect(w.text()).not.toContain("Nothing on this channel yet")
 		expect(w.text()).toContain("3 records")
+	})
+
+	it("a send that ended without arriving makes the group read Ended; Continue hands the wizard its prefill", async () => {
+		useDockState().show()
+		const delivered = xcRecord({ id: "0xd" }, { outcome: "delivered-to-wallet", outcomeAmount: "4900000" })
+		crossChainRecords.value = [delivered]
+		rows.value = [
+			rowModel({ id: "0xd", action: "continue", detail: "in your Ethereum wallet", route: "Base Sepolia → Aztec" }),
+			rowModel({
+				id: "x",
+				group: "done",
+				status: "lost",
+				action: null,
+				word: { text: "Not sent", tone: "lost" },
+				detail: "nothing moved",
+			}),
+			rowModel({ id: "a", group: "done", action: null }),
+		]
+		const w = dock()
+		const groups = w.findAll(sel(TESTIDS.dockGroup))
+		expect(groups.map((g) => g.get("h3").text())).toEqual(["Needs you · 1", "Ended · 2"])
+		const [continueRow, notSent] = w.findAll(sel(TESTIDS.activityRow))
+		expect(notSent?.get(".side").text()).toBe("Not sent")
+		expect(continueRow?.get(sel(TESTIDS.activityRowAction)).text()).toBe("Continue")
+		await continueRow?.get(sel(TESTIDS.activityRowAction)).trigger("click")
+		expect(useShell().section.value).toBe("send")
+		expect(useShell().takePrefill()).toMatchObject({ amount: 4_900_000n, fromRecordId: "0xd" })
+		expect(runDepositClaim).not.toHaveBeenCalled()
 	})
 
 	it("a lost row sits first in Needs you; another account's rows trail in their own group", async () => {

@@ -1,4 +1,4 @@
-import type { BridgeJournalRecord, DepositJournalRecord } from "@unleashed/bridge-core"
+import type { BridgeJournalRecord, CrossChainDepositRecord, DepositJournalRecord } from "@unleashed/bridge-core"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { computed, ref } from "vue"
 import type { RecordRuntime } from "@/composables/useBridgeJournal"
@@ -7,7 +7,9 @@ const records = ref<BridgeJournalRecord[]>([])
 const activeFlowId = ref<string | null>(null)
 const runtime = ref<Record<string, RecordRuntime>>({})
 const visibleRecords = computed(() => records.value.filter((r) => r.id !== activeFlowId.value))
-vi.mock("@/composables/useBridgeJournal", () => ({ useBridgeJournal: () => ({ records, visibleRecords, runtime, activeFlowId }) }))
+vi.mock("@/composables/useBridgeJournal", () => ({
+	useBridgeJournal: () => ({ records, listedRecords: records, visibleRecords, runtime, activeFlowId }),
+}))
 vi.mock("@/composables/useBridgeWallet", () => ({
 	useBridgeWallet: () => ({
 		status: ref("connected"),
@@ -18,6 +20,7 @@ vi.mock("@/composables/useBridgeWallet", () => ({
 const now = ref(60 * 60_000)
 vi.mock("@/lib/clock", () => ({ useNow: () => now }))
 
+import { XC_CREATED, xcRecord } from "@/test/crosschain-record"
 import { useActivityFeed } from "./useActivityFeed"
 
 const DEPLOY = { chainId: 11155111, portal: "0xportal", bridge: "0xbridge" }
@@ -106,6 +109,37 @@ describe("useActivityFeed", () => {
 			amount: "3.00",
 			symbol: "FJ",
 		})
+	})
+
+	it("groups cross-chain sends by their phase: delivered needs you, bridging and finalizing run, the rest end", () => {
+		const done = { completedAt: XC_CREATED + 1 }
+		const xc = (id: string, over: Partial<CrossChainDepositRecord>, route: Partial<CrossChainDepositRecord["route"]> = {}) =>
+			xcRecord({ id, secretHashHex: id as `0x${string}`, ...over }, route) as unknown as BridgeJournalRecord
+		const extra = { txHash: `0x${"ee".repeat(32)}` as `0x${string}`, leafIndex: "8", amount: "1" }
+		records.value = [
+			xc("bridging", {}),
+			xc("finalizing", {}, { outcome: "expired-on-source" }),
+			xc("delivered", done, { outcome: "delivered-to-wallet", outcomeAmount: "4900000" }),
+			xc("not-sent", done, { outcome: "not-sent" }),
+			xc("expired", done, { outcome: "expired-on-source" }),
+			xc("arrived", { ...done, leafIndex: "7" }, { extraDeposits: [extra] }),
+		]
+		const feed = useActivityFeed()
+		const row = (id: string) => feed.rows.value.find((r) => r.id === id)
+		expect(feed.grouped.value.needsYou.map((r) => r.id)).toEqual(["delivered"])
+		expect(feed.grouped.value.running.map((r) => r.id).sort()).toEqual(["bridging", "finalizing"])
+		expect(feed.grouped.value.done.map((r) => r.id).sort()).toEqual(["arrived", "expired", "not-sent"])
+		expect(feed.count.value).toBe(1)
+		expect(row("delivered")).toMatchObject({ action: "continue", counts: true, detail: "in your Ethereum wallet", amount: "5.00" })
+		expect(row("bridging")).toMatchObject({ word: { text: "Bridging", tone: "run" }, route: "Base Sepolia → Aztec" })
+		expect(row("finalizing")).toMatchObject({
+			word: { text: "Finalizing", tone: "wait" },
+			detail: "waiting for Ethereum · Sepolia to finalize",
+		})
+		expect(row("not-sent")).toMatchObject({ status: "lost", word: { text: "Not sent", tone: "lost" }, detail: "nothing moved" })
+		expect(row("expired")).toMatchObject({ word: { text: "Expired", tone: "ended" }, detail: "refund pending" })
+		expect(row("arrived")).toMatchObject({ status: "done", note: "another deposit found", amount: "4.41" })
+		expect(row("arrived")?.word).toBeUndefined()
 	})
 
 	it("ages tick with the shared clock", () => {

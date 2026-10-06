@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /** Services */
 import {
+	type AnyJournalRecord,
 	type BridgeJournalRecord,
 	type DepositJournalRecord,
 	type WithdrawJournalRecord,
+	isCrossChainRecord,
 	isProvisionalRecordId,
 } from "@unleashed/bridge-core"
 import { Button, Icon, Tag } from "@unleashed/design"
@@ -13,11 +15,13 @@ import { computed, ref, watch } from "vue"
 import { useBridgeJournal } from "@/composables/useBridgeJournal"
 import { useBridgeWallet } from "@/composables/useBridgeWallet"
 import { useOpsInFlight } from "@/composables/useOpsInFlight"
+import { useShell } from "@/composables/useShell"
 import { switchActiveAccount } from "@/composables/useWalletConnection"
 
 /** Utils */
-import { ageWords, classify, routeWords, runningWord } from "@/lib/activity"
-import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
+import { ageWords, classify, routeWords, rowStrings, runningWord, statusPhase } from "@/lib/activity"
+import { chainLabel, chainTxUrl } from "@/lib/chains"
+import { phaseChip } from "@/lib/crosschain-activity"
 import { useNow } from "@/lib/clock"
 import { IS_MAINNET } from "@/lib/network"
 import { etherscanTxUrl, explorerTxUrl } from "@/lib/explorer"
@@ -29,10 +33,11 @@ import { claimFuelStandalone, overrideFuelClaim, reconcileFuelConsumed } from "@
 
 /** Components */
 import BridgePhaseRail from "./BridgePhaseRail.vue"
+import CrossChainCardBody from "./CrossChainCardBody.vue"
 import RecordChips from "./RecordChips.vue"
 
-const props = defineProps<{ record: BridgeJournalRecord }>()
-const emit = defineEmits<{ backup: [record: BridgeJournalRecord] }>()
+const props = defineProps<{ record: AnyJournalRecord }>()
+const emit = defineEmits<{ backup: [record: AnyJournalRecord] }>()
 
 const journal = useBridgeJournal()
 const exportable = computed(() => {
@@ -254,8 +259,30 @@ const guidance = computed<Segment[] | null>(() => {
 	return text ? marked(text) : null
 })
 
-/** Another account's card hides its rail, so it states any failure itself. */
-const railShown = computed(() => stage.value !== "done" && !state.value.ownedByOther)
+/** A cross-chain record, which reads through its own phases until its deposit lands. */
+const xc = computed(() => (isCrossChainRecord(props.record) ? props.record : null))
+const phase = computed(() => state.value.crossChain)
+/** The rail's mapper tells a cross-chain record apart by its own schema. */
+const railRecord = computed(() => props.record as BridgeJournalRecord)
+
+/** Another account's card hides its rail, so it states any failure itself. A cross-chain card keeps
+ *  its rail to the end: its segments are where it says how far the send got. */
+const railShown = computed(() => {
+	if (phase.value) return true
+	return (stage.value !== "done" || xc.value !== null) && !state.value.ownedByOther
+})
+
+const anotherDeposit = computed(() => {
+	const rec = xc.value
+	if (!rec || phase.value || !rec.route.extraDeposits?.length) return null
+	return `Another deposit for this send was found on ${chainLabel(rec.chainId)}. No action needed.`
+})
+const showReceipt = computed(() => xc.value !== null && phase.value === null && stage.value === "done" && !lost.value)
+const shell = useShell()
+const chip = computed(() => {
+	const shown = statusPhase(state.value)
+	return shown ? phaseChip(shown) : null
+})
 
 /** A blocked record's persisted reason, or a soft note (e.g. the 30-min "still confirming"). An
  *  attention's note renders in the rail's failed phase, so a parallel line here would double it. */
@@ -278,6 +305,8 @@ const summary = computed<{ label: string; took?: string } | null>(() => {
 
 const txLinks = computed(() => {
 	const links: { label: string; href: string }[] = []
+	const source = xc.value?.route
+	if (source?.srcTxHash) links.push({ label: "Send tx", href: chainTxUrl(source.srcChainId, source.srcTxHash) })
 	if (props.record.direction === "deposit") {
 		const rec = props.record as DepositJournalRecord
 		if (rec.depositTxHash) links.push({ label: "Deposit tx", href: etherscanTxUrl(rec.depositTxHash) })
@@ -291,11 +320,11 @@ const txLinks = computed(() => {
 	return links.filter((l) => l.href !== "")
 })
 
-const display = computed(() => displayAmountOf(props.record))
-const amount = computed(() => `${displayAmountText(display.value)} ${display.value.symbol}`)
+const strings = computed(() => rowStrings(props.record, phase.value))
+const amount = computed(() => `${strings.value.amount} ${strings.value.symbol}`)
 /** A gross amount's qualifier leads the route, beside the figure it qualifies. */
 const route = computed(() => {
-	const q = amountQualifier(display.value)
+	const q = strings.value.qualifier
 	return q ? `${q} · ${routeWords(props.record)}` : routeWords(props.record)
 })
 const running = computed(() => runningWord(props.record, rt.value))
@@ -331,7 +360,7 @@ function onDiscard() {
 		<header class="row">
 			<strong class="amt">{{ amount }}</strong>
 			<span class="dir">{{ route }}</span>
-			<RecordChips :record="record" :status="read.status" :running="running" />
+			<RecordChips :record="record" :status="read.status" :running="running" :chip="chip" />
 			<Tag
 				v-if="offerSwitch && acct"
 				size="small"
@@ -383,9 +412,10 @@ function onDiscard() {
 			<Icon name="info-box" :size="12" class="note-icon" /><span>{{ claimedByOtherLine }}</span>
 		</p>
 
-		<BridgePhaseRail v-if="railShown" :record="record" compact />
+		<BridgePhaseRail v-if="railShown" :record="railRecord" compact />
 
-		<div v-if="guidance" class="guide">
+		<CrossChainCardBody v-if="xc && phase" :record="xc" :phase="phase" :exportable="exportable" @backup="emit('backup', record)" />
+		<div v-else-if="guidance" class="guide">
 			<p class="stage" :class="{ act: read.counts }" :data-testid="TESTIDS.journalStage">
 				<template v-for="(part, i) in guidance" :key="i"
 					><strong v-if="typeof part !== 'string'">{{ part.strong }}</strong
@@ -410,95 +440,111 @@ function onDiscard() {
 			<Icon :name="lost ? 'square-alert' : 'warning-diamond'" :size="12" class="note-icon" /><span>{{ note }}</span>
 		</p>
 
-		<div v-if="summary || txLinks.length" class="summary">
-			<span v-if="summary" class="took"
-				>{{ summary.label }}{{ summary.took ? " " : "" }}<span v-if="summary.took" class="mono">{{ summary.took }}</span></span
-			>
-			<span v-if="txLinks.length" class="links">
-				<a
-					v-for="link in txLinks"
-					:key="link.href"
-					:href="link.href"
-					target="_blank"
-					rel="noopener noreferrer"
-					:data-testid="TESTIDS.journalTxLink"
-					>{{ link.label }}<Icon name="external-link" :size="12"
-				/></a>
-			</span>
-		</div>
-
-		<div class="actions">
-			<Button
-				v-if="showClaim && !offerSwitch"
-				size="small"
-				:variant="retrying ? 'secondary' : 'primary'"
-				class="card-btn"
-				:data-testid="TESTIDS.journalClaim"
-				@click="onAction"
-			>
-				<Icon v-if="retrying" name="reload" :size="12" />{{ retrying ? "Retry" : "Claim" }}
-			</Button>
-			<Button
-				v-if="showFinish"
-				size="small"
-				:variant="retrying ? 'secondary' : 'primary'"
-				class="card-btn"
-				:data-testid="TESTIDS.journalFinish"
-				@click="onAction"
-			>
-				<Icon v-if="retrying" name="reload" :size="12" />{{ retrying ? "Retry" : "Finish" }}
-			</Button>
-			<Button
-				v-if="showClaimWithoutFuel && !offerSwitch"
-				size="small"
-				variant="secondary"
-				class="card-btn"
-				:data-testid="TESTIDS.journalClaimWithoutFuel"
-				title="Claims your tokens with the gas you already hold on Aztec instead. The fuel stays claimable later — nothing is abandoned."
-				@click="onClaimWithoutFuel"
-			>
-				Claim without fuel
-			</Button>
-			<Button
-				v-if="idle && stage !== 'done'"
-				size="small"
-				:variant="discardArmed ? 'destructive' : 'quiet'"
-				class="card-btn"
-				:data-testid="discardArmed ? TESTIDS.journalDiscardConfirm : TESTIDS.journalDiscard"
-				@click="onDiscard"
-			>
-				<Icon v-if="discardArmed" name="close" :size="12" />{{ discardArmed ? "Confirm discard" : "Discard" }}
-			</Button>
-			<Button
-				v-if="stage === 'done'"
-				size="small"
-				variant="quiet"
-				class="card-btn"
-				:data-testid="TESTIDS.journalClear"
-				@click="journal.clearDone(record.id)"
-			>
-				Clear
-			</Button>
-			<button
-				v-else-if="exportable"
-				type="button"
-				class="backup ul-notch"
-				aria-label="Back up this bridge"
-				title="Download this bridge's recovery file — restores it on any browser with your Ethereum wallet."
-				:data-testid="TESTIDS.cardBackup"
-				@click="emit('backup', record)"
-			>
-				<Icon name="save" :size="24" />
-			</button>
-		</div>
-
-		<p v-if="discardArmed && stage !== 'done' && record.isPrivate && record.direction === 'deposit'" class="discard-warning">
-			<Icon name="square-alert" :size="12" class="note-icon" />
-			<span>
-				Discarding destroys the only copy of this claim's sealed recovery secret — the deposited funds become
-				unclaimable{{ IS_MAINNET ? " — these are real funds" : "" }}.
-			</span>
+		<p v-if="anotherDeposit" class="raised-note ul-notch" :data-testid="TESTIDS.journalXcAnotherDeposit">
+			<Icon name="info-box" :size="12" class="note-icon" /><span>{{ anotherDeposit }}</span>
 		</p>
+
+		<template v-if="!phase">
+			<div v-if="summary || txLinks.length" class="summary">
+				<span v-if="summary" class="took"
+					>{{ summary.label }}{{ summary.took ? " " : "" }}<span v-if="summary.took" class="mono">{{ summary.took }}</span></span
+				>
+				<span v-if="txLinks.length" class="links">
+					<a
+						v-for="link in txLinks"
+						:key="link.href"
+						:href="link.href"
+						target="_blank"
+						rel="noopener noreferrer"
+						:data-testid="TESTIDS.journalTxLink"
+						>{{ link.label }}<Icon name="external-link" :size="12"
+					/></a>
+				</span>
+			</div>
+
+			<div class="actions">
+				<Button
+					v-if="showClaim && !offerSwitch"
+					size="small"
+					:variant="retrying ? 'secondary' : 'primary'"
+					class="card-btn"
+					:data-testid="TESTIDS.journalClaim"
+					@click="onAction"
+				>
+					<Icon v-if="retrying" name="reload" :size="12" />{{ retrying ? "Retry" : "Claim" }}
+				</Button>
+				<Button
+					v-if="showFinish"
+					size="small"
+					:variant="retrying ? 'secondary' : 'primary'"
+					class="card-btn"
+					:data-testid="TESTIDS.journalFinish"
+					@click="onAction"
+				>
+					<Icon v-if="retrying" name="reload" :size="12" />{{ retrying ? "Retry" : "Finish" }}
+				</Button>
+				<Button
+					v-if="showClaimWithoutFuel && !offerSwitch"
+					size="small"
+					variant="secondary"
+					class="card-btn"
+					:data-testid="TESTIDS.journalClaimWithoutFuel"
+					title="Claims your tokens with the gas you already hold on Aztec instead. The fuel stays claimable later — nothing is abandoned."
+					@click="onClaimWithoutFuel"
+				>
+					Claim without fuel
+				</Button>
+				<Button
+					v-if="idle && stage !== 'done'"
+					size="small"
+					:variant="discardArmed ? 'destructive' : 'quiet'"
+					class="card-btn"
+					:data-testid="discardArmed ? TESTIDS.journalDiscardConfirm : TESTIDS.journalDiscard"
+					@click="onDiscard"
+				>
+					<Icon v-if="discardArmed" name="close" :size="12" />{{ discardArmed ? "Confirm discard" : "Discard" }}
+				</Button>
+				<Button
+					v-if="showReceipt"
+					size="small"
+					variant="secondary"
+					class="card-btn"
+					:data-testid="TESTIDS.journalXcReceipt"
+					@click="shell.showReceipt(record.id)"
+				>
+					Show receipt
+				</Button>
+				<Button
+					v-if="stage === 'done'"
+					size="small"
+					variant="quiet"
+					class="card-btn"
+					:data-testid="TESTIDS.journalClear"
+					@click="journal.clearDone(record.id)"
+				>
+					Clear
+				</Button>
+				<button
+					v-else-if="exportable"
+					type="button"
+					class="backup ul-notch"
+					aria-label="Back up this bridge"
+					title="Download this bridge's recovery file — restores it on any browser with your Ethereum wallet."
+					:data-testid="TESTIDS.cardBackup"
+					@click="emit('backup', record)"
+				>
+					<Icon name="save" :size="24" />
+				</button>
+			</div>
+
+			<p v-if="discardArmed && stage !== 'done' && record.isPrivate && record.direction === 'deposit'" class="discard-warning">
+				<Icon name="square-alert" :size="12" class="note-icon" />
+				<span>
+					Discarding destroys the only copy of this claim's sealed recovery secret — the deposited funds become
+					unclaimable{{ IS_MAINNET ? " — these are real funds" : "" }}.
+				</span>
+			</p>
+		</template>
 	</article>
 </template>
 
@@ -671,6 +717,18 @@ function onDiscard() {
 
 .discard-warning {
 	color: var(--ul-lost);
+}
+
+.raised-note {
+	--ul-fill: var(--ul-raised);
+	--ul-notch: var(--ul-notch-2);
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	margin: 0;
+	padding: 10px 12px;
+	font: 400 13.5px/1.45 var(--ul-font-body);
+	color: var(--ul-ink-2);
 }
 
 .guide {

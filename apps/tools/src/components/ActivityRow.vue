@@ -26,6 +26,7 @@ const LABELS: Record<Exclude<ActivityAction, null>, string> = {
 	retry: "Retry",
 	"claim-gas": "Claim gas",
 	switch: "Switch",
+	continue: "Continue",
 }
 
 const action = computed(() => props.row.action)
@@ -41,8 +42,12 @@ const filled = computed(() => props.row.group === "needs-you" && action.value !=
 const meta = computed(() => {
 	const r = props.row
 	if (r.foreground) return `${r.route} · this send`
+	if (r.detail) return `${r.route} · ${r.detail}`
 	return action.value ? `${r.route} · ${r.age}` : `${r.route} · ${r.visibility} · ${r.age}`
 })
+
+/** The qualifier and the note share the third line. */
+const extra = computed(() => [props.row.qualifier, props.row.note].filter(Boolean).join(" · "))
 
 const SIDE: Record<ActivityRowModel["status"], { word?: string; icon?: IconName }> = {
 	lost: { word: "Lost signal", icon: "square-alert" },
@@ -51,6 +56,7 @@ const SIDE: Record<ActivityRowModel["status"], { word?: string; icon?: IconName 
 	running: {},
 }
 const side = computed(() => {
+	if (props.row.word) return { word: props.row.word.text, icon: undefined }
 	const s = SIDE[props.row.status]
 	return { word: s.word ?? props.row.phase, icon: s.icon }
 })
@@ -59,7 +65,8 @@ const openLabel = computed(() => {
 	const r = props.row
 	const what = `${r.amount} ${r.symbol}${r.qualifier ? ` ${r.qualifier}` : ""}`
 	if (r.foreground) return `Show this send, ${what}, ${r.route}`
-	return `Open ${what}, ${r.route}, ${r.visibility}, ${r.age}`
+	const tail = r.word && r.detail ? `${r.word.text.toLowerCase()}, ${r.detail}` : `${r.visibility}, ${r.age}`
+	return `Open ${what}, ${r.route}, ${tail}${r.note ? `, ${r.note}` : ""}`
 })
 
 // Action clicks must not also open Activity.
@@ -71,12 +78,13 @@ function onAct(): void {
 <template>
 	<li
 		class="row ul-notch"
-		:class="{ 'has-button': !!action, foreground: row.foreground, qualified: !!row.qualifier }"
+		:class="{ 'has-button': !!action, foreground: row.foreground, qualified: !!extra }"
 		:aria-current="row.foreground || undefined"
 		:data-testid="TESTIDS.activityRow"
 		:data-record-id="row.id"
 		:data-group="row.group"
 		:data-status="row.status"
+		:data-tone="row.word?.tone"
 		:data-action="action ?? undefined"
 		@click="emit('open', row.id)"
 	>
@@ -85,7 +93,7 @@ function onAct(): void {
 			{{ row.amount }} {{ row.symbol }}
 		</button>
 		<span class="meta">{{ meta }}</span>
-		<span v-if="row.qualifier" class="meta qualifier">{{ row.qualifier }}</span>
+		<span v-if="extra" class="meta qualifier" :class="{ note: !row.qualifier }">{{ extra }}</span>
 		<button
 			v-if="action"
 			type="button"
@@ -209,6 +217,43 @@ function onAct(): void {
 .row.foreground[data-status="running"] .word {
 	font-weight: 700;
 	color: var(--ul-accent-text);
+}
+
+.meta.note {
+	color: var(--ul-ink-3);
+}
+
+/* A cross-chain phase's tone overrides its status's: an ended row is flat whatever its colour. */
+.row[data-tone="lost"],
+.row[data-tone="ended"] {
+	--ul-fill: transparent;
+}
+
+.row[data-tone="run"] .dot {
+	background: var(--ul-accent-text);
+}
+
+.row[data-tone="run"] .word {
+	font-weight: 700;
+	color: var(--ul-accent-text);
+}
+
+.row[data-tone="wait"] .dot,
+.row[data-tone="ended"] .dot {
+	background: var(--ul-ink-2);
+}
+
+.row[data-tone="wait"] .word {
+	font-weight: 700;
+	color: var(--ul-ink-2);
+}
+
+.row[data-tone="lost"] .word {
+	font-weight: 400;
+}
+
+.row[data-tone="ended"] .word {
+	color: var(--ul-ink);
 }
 
 .btn {
