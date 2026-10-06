@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { type ManifestToken, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import type { DeployStep } from "./deploy-manifest"
+import { preLifiTestnetManifest } from "./lifi-canary-fixture"
 import {
 	assertL1Pins,
 	assertNoSourceDrift,
@@ -63,11 +62,9 @@ describe("assertNoSourceDrift", () => {
 })
 
 describe("router-only intent", () => {
-	const live = parseManifestV2(
-		JSON.parse(readFileSync(join(import.meta.dirname, "../../../apps/tools/public/testnet-bridge.json"), "utf8")),
-	)
+	const live = preLifiTestnetManifest()
 	const bridge = live.bridge
-	if (!bridge) throw new Error("the live testnet manifest carries no bridge")
+	if (!bridge) throw new Error("the pre-promotion testnet manifest carries no bridge")
 	const WETH = "0xfff9976782d46cc05630d1f6ebab18b2324d6b14"
 	const scope = routerOnlyScopeOf(live, [WETH.toUpperCase().replace("0X", "0x")], 12)
 	const routerOnly = { depositRouter: `0x${"d1".repeat(20)}`, fuelSwapper: `0x${"f5".repeat(20)}` }
