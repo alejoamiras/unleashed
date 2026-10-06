@@ -159,7 +159,8 @@ async function assertFillable(deps: FillDeps, d: SourceDeposit): Promise<void> {
  * destination pool hashes the relay differently; the fill deadline is within `deadlineMarginS` of the destination's
  * head; another relayer's exclusivity window is open; or the account cannot pay `outputAmount`. Approves the pool for
  * exactly `outputAmount` (cleared again if the fill does not land; a failed clear throws {@link AllowanceStillLive}).
- * A relay already filled, by anyone, before or during the call, is otherwise success with nothing sent.
+ * A relay already filled, by anyone, before or during the call, is otherwise success with no fill of ours; one filled
+ * during the call may still have cost our approval and its revoke.
  */
 export async function fillSourceDeposit(deps: FillDeps, srcTxHash: Hex): Promise<FillResult> {
 	if (!isTxHash(srcTxHash)) throw new FillRefused("not-a-hash", `${String(srcTxHash).slice(0, 80)} is not a 32-byte transaction hash`)
@@ -259,7 +260,7 @@ export async function fillCli(
 		cfg.srcTxHash,
 	)
 	console.log(
-		r.alreadyFilled ? `already filled (relay ${r.relayHash}); nothing sent` : `filled in ${r.fillTxHash} (relay ${r.relayHash})`,
+		r.alreadyFilled ? `already filled (relay ${r.relayHash}); no fill of ours` : `filled in ${r.fillTxHash} (relay ${r.relayHash})`,
 	)
 }
 

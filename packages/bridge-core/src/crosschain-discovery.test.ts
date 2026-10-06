@@ -17,7 +17,9 @@ import {
 	type Hex,
 	keccak256,
 	pad,
+	parseAbi,
 	parseAbiItem,
+	parseAbiParameters,
 	toEventSelector,
 	toFunctionSelector,
 	toHex,
@@ -529,8 +531,26 @@ describe("discoverCrossChain", () => {
 	})
 
 	it("not-sent comes only from a reverted source transaction of the record's signer for its LI.FI id, final once that block is finalized; absence is pending", async () => {
-		// A self-addressed EIP-7702 batch, with the id off the word grid where the batch nests the Diamond call.
-		const input: Hex = `0x12345678${"00".repeat(36)}${PUBLIC.transactionId.slice(2)}`
+		// EIP-5792 through an EIP-7702 account: an ERC-7821 batch (approve, then the Diamond call) sent to itself.
+		const batch = parseAbi([
+			"function execute(bytes32 mode, bytes executionData)",
+			"function executeBatch((address target, uint256 value, bytes data)[] calls)",
+		])
+		const calls = (diamondCall: { target: Address; data: Hex }) => [
+			{ target: RAIL.source.usdc, value: 0n, data: "0x095ea7b3" as Hex },
+			{ ...diamondCall, value: 0n },
+		]
+		const erc7821 = (diamondCall: { target: Address; data: Hex }) =>
+			encodeFunctionData({
+				abi: batch,
+				functionName: "execute",
+				args: [
+					pad("0x01", { dir: "right" }),
+					encodeAbiParameters(parseAbiParameters("(address target, uint256 value, bytes data)[]"), [calls(diamondCall)]),
+				],
+			})
+		const ours = { target: RAIL.source.diamond, data: PUBLIC.calldata }
+		const input = erc7821(ours)
 		const reverted: Tx = { hash: SRC_TX, block: SRC_BLOCK, logs: [], status: "reverted", input, to: RAIL.inputs.user }
 		const final = await discover(record(), reads([reverted], []))
 		expect(final).toMatchObject({
@@ -554,6 +574,16 @@ describe("discoverCrossChain", () => {
 		const otherId = encodeFunctionData({ abi, args: [{ ...bridgeData, transactionId: label("another transfer") }, acrossData] })
 		expect((await discover(record(), reads([{ ...direct, input: otherId }], []))).verdict).toBe("pending")
 		expect((await discover(record(), reads([{ ...direct, to: ATTACKER }], []))).verdict).toBe("pending")
+
+		// A batch is ours only through a decoded Diamond call: the id handed to another contract, or an encoding
+		// that does not decode, leaves the scan to decide.
+		const executeBatch = encodeFunctionData({ abi: batch, functionName: "executeBatch", args: [calls(ours)] })
+		expect((await discover(record(), reads([{ ...reverted, input: executeBatch }], []))).verdict).toBe("not-sent")
+		const elsewhere = erc7821({ target: ATTACKER, data: PUBLIC.calldata })
+		expect((await discover(record(), reads([{ ...reverted, input: elsewhere }], []))).verdict).toBe("pending")
+		const opaque: Hex = `0x12345678${"00".repeat(36)}${PUBLIC.transactionId.slice(2)}`
+		expect((await discover(record(), reads([{ ...reverted, input: opaque }], []))).verdict).toBe("pending")
+		expect((await discover(record(), reads([{ ...reverted, to: ATTACKER }], []))).verdict).toBe("pending")
 
 		// The recorded hash names another reverted transaction of the same sender: the transfer itself landed elsewhere.
 		const unrelated: Tx = { ...reverted, input: `0x12345678${"00".repeat(68)}` }

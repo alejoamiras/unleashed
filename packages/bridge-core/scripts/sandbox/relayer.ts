@@ -234,12 +234,12 @@ async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRela
 
 /**
  * Approves `spokePool` for exactly `relay.outputAmount` of its output token and sends `fillRelay` from the wallet's
- * account, which is also the logged relayer. Without explicit gas the fill is simulated first, so a fill that would
- * revert throws before anything is sent. Once the approval is submitted, any failure short of a landed fill, its own
- * confirmation included, clears the approval again.
+ * account, which is also the logged relayer. Without explicit gas the fill is simulated before it is sent, so a fill
+ * that would revert throws without a fill transaction. Once the approval is submitted, any failure short of a landed
+ * fill, its own confirmation included, clears the approval again.
  *
- * @throws the approval's submit error with nothing sent; otherwise the first failure once the approval is cleared,
- * or {@link AllowanceStillLive} when the clear fails too.
+ * @throws the approval's submit error as is; otherwise the first failure once the approval is cleared, or
+ * {@link AllowanceStillLive} when the clear fails too.
  */
 export async function sendFill(
 	dest: Destination,

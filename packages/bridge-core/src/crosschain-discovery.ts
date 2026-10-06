@@ -26,6 +26,7 @@ import {
 	pad,
 	parseAbi,
 	parseAbiItem,
+	parseAbiParameters,
 	toEventSelector,
 	toFunctionSelector,
 	toHex,
@@ -441,15 +442,6 @@ async function receiptOrNull(client: DiscoveryChainReads, hash: Hex): Promise<Di
 	}
 }
 
-/** Whether `data` holds all 32 bytes of `id` at a byte boundary, at any depth of nesting. */
-function carriesWord(data: Hex, id: Hex): boolean {
-	if (!/^0x[0-9a-fA-F]{64}$/.test(id)) return false
-	const hay = data.toLowerCase()
-	const needle = id.slice(2).toLowerCase()
-	for (let i = hay.indexOf(needle, 2); i >= 0; i = hay.indexOf(needle, i + 1)) if (i % 2 === 0) return true
-	return false
-}
-
 /** The `BridgeData.transactionId` of a call to the rail's facet, or `undefined` when it does not decode. */
 function diamondCallId(input: Hex, rail: CrossChainDiscoveryContext["rail"]["kind"]): unknown {
 	try {
@@ -460,19 +452,40 @@ function diamondCallId(input: Hex, rail: CrossChainDiscoveryContext["rail"]["kin
 	}
 }
 
+/** The batch entrypoints EIP-5792 wallets call on an EIP-7702 account: ERC-7821 / ERC-7579 `execute` and `executeBatch`. */
+const BATCH_ABI = parseAbi([
+	"function execute(bytes32 mode, bytes executionData)",
+	"function executeBatch((address target, uint256 value, bytes data)[] calls)",
+])
+const BATCH_CALLS = parseAbiParameters("(address target, uint256 value, bytes data)[]")
+
+/** The calls of a batch in either shape, or none when `input` is neither. */
+function batchedCalls(input: Hex): readonly { target: Address; data: Hex }[] {
+	try {
+		const call = decodeFunctionData({ abi: BATCH_ABI, data: input })
+		if (call.functionName === "executeBatch") return call.args[0]
+		// The mode's first byte is the call type; 0x01 is a batch, whose data opens with `abi.encode(calls)`.
+		const [mode, data] = call.args
+		return mode.startsWith("0x01") ? decodeAbiParameters(BATCH_CALLS, data)[0] : []
+	} catch {
+		return []
+	}
+}
+
 /**
  * A reverted receipt has no logs to authenticate, so it is this record's only when the record's sender signed it
- * and either it calls the source Diamond with a rail entrypoint whose decoded `BridgeData.transactionId` is
- * `lifiTxId`, or it is addressed to the sender itself (an EIP-7702 batch, whose inner calls are not decoded) and
- * carries `lifiTxId` as one 32-byte run. A call to any other address can carry the public id without being this
- * transfer, which may still land under another hash.
+ * and it calls the source Diamond with a rail entrypoint whose decoded `BridgeData.transactionId` is `lifiTxId`:
+ * directly, or as one call of a batch the sender addresses to itself. Any other shape, an undecoded batch included,
+ * leaves the verdict to the scan: the public id can ride in a call that is not this transfer, which may still land.
  */
 async function revertedIsOurs(c: Ctx, client: DiscoveryChainReads, receipt: DiscoveryReceipt): Promise<boolean> {
 	const { srcSender, lifiTxId } = c.rec.route
 	if (!hexEq(receipt.from, srcSender)) return false
 	const tx = await c.read(() => client.getTransaction({ hash: receipt.transactionHash }))
-	if (hexEq(tx.to, c.ctx.source.diamond)) return hexEq(diamondCallId(tx.input, c.ctx.rail.kind), lifiTxId)
-	return hexEq(tx.to, srcSender) && carriesWord(tx.input, lifiTxId as Hex)
+	const diamond = c.ctx.source.diamond
+	const isOurs = (target: Address | null, data: Hex) => hexEq(target, diamond) && hexEq(diamondCallId(data, c.ctx.rail.kind), lifiTxId)
+	if (isOurs(tx.to, tx.input)) return true
+	return hexEq(tx.to, srcSender) && batchedCalls(tx.input).some((call) => isOurs(call.target, call.data))
 }
 
 async function fromRecordedHash(c: Ctx, client: DiscoveryChainReads, hash: Hex): Promise<SourceFacts | undefined> {
