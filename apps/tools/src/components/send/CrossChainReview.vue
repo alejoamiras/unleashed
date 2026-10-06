@@ -241,7 +241,7 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 				</div>
 				<div class="row">
 					<dt>Quote</dt>
-					<dd>{{ figures.fixed ? "Fixed testnet terms, rebuilt every 60 s" : "Refreshes every 60 s" }}</dd>
+					<dd>{{ figures.fixed ? "Fixed testnet terms, rebuilt every 60\u00a0s" : "Refreshes every 60\u00a0s" }}</dd>
 				</div>
 			</dl>
 		</div>
@@ -306,6 +306,8 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 .note {
 	--ul-fill: var(--ul-raised);
 	color: var(--ul-ink-2);
+	/* The address never breaks, so `pretty` alone still leaves a two-word last line. */
+	text-wrap: balance;
 }
 
 .glyph {
@@ -620,10 +622,11 @@ dd {
 		flex: 1 0 100%;
 	}
 
+	/* Edge to edge: through the step panel's 12px and the page's 16px gutter. */
 	.nav {
 		position: sticky;
 		bottom: 0;
-		margin: 0 -12px -16px;
+		margin: 0 -28px -16px;
 		padding: 10px 16px 14px;
 		background: var(--ul-panel);
 	}

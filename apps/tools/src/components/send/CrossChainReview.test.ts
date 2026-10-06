@@ -103,7 +103,7 @@ describe("CrossChainReview", () => {
 		)
 		expect(w.text()).toContain("Terms valid for 0:42 · rebuilt before you sign")
 		await w.find(sel(TESTIDS.sendReviewDetailsToggle)).trigger("click")
-		expect(w.find(sel(TESTIDS.sendReviewDetails)).text()).toContain("QuoteFixed testnet terms, rebuilt every 60 s")
+		expect(w.find(sel(TESTIDS.sendReviewDetails)).text()).toContain("QuoteFixed testnet terms, rebuilt every 60\u00a0s")
 		w.unmount()
 	})
 
