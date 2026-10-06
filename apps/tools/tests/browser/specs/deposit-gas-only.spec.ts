@@ -1,6 +1,15 @@
 /** Gas-only deposits (cells 18–21): every route shape, public and private, and what it adds to. */
 import { PRIVATE_FUEL_CLAIM_GAS } from "@unleashed/bridge-core"
-import { balanceOf, fundPublicFeeJuice, mint, mintFeeAsset, privateCreditOf, privateFpc } from "@unleashed/bridge-core/sandbox"
+import {
+	balanceOf,
+	fuelSwapperOf,
+	fundPublicFeeJuice,
+	mint,
+	mintFeeAsset,
+	privateCreditOf,
+	privateFpc,
+	setFuelRate,
+} from "@unleashed/bridge-core/sandbox"
 import { expect, test } from "../fixtures/test"
 import { connectAztec } from "../pages/connect"
 import { keptFor } from "../pages/fees"
@@ -12,8 +21,14 @@ test.use({ family: "deposit-gas-only", cells: 6, l1Index: 5 })
 const USDC = 10n ** 6n
 const FJ = 10n ** 18n
 const L1 = 31337
-/** The mock venue's rate: one base unit of anything buys this many FJ-wei. */
+/** The venue's rate: one base unit of a 6-decimal fixture token buys this many FJ-wei. */
 const RATE = 10n ** 12n
+
+/** The swapper rates no fixture token beyond the manifest's: WETH gets one at which a base unit buys `RATE`, as a
+ *  6-decimal token's does. */
+async function rateWeth(sandbox: Parameters<typeof fuelSwapperOf>[0], weth: `0x${string}`): Promise<void> {
+	await setFuelRate(sandbox.clients.l1, fuelSwapperOf(sandbox), weth, RATE * 10n ** 18n)
+}
 
 async function bridgeGas(
 	page: import("@playwright/test").Page,
@@ -106,6 +121,7 @@ test("cell 21p — plain, WETH, private: the single-hop route's Fee Juice become
 }) => {
 	const weth = sandbox.clients.deployment.tokens.weth
 	const units = 2n * 10n ** 6n
+	await rateWeth(sandbox, weth)
 	await mint(sandbox.clients.l1, weth, l1.address, units)
 	const fpc = await privateFpc(actor.s)
 	const creditBefore = await privateCreditOf(actor.s, fpc)
@@ -150,8 +166,8 @@ test("cell 20b — selfpay, swapped, public FJ held: conservation, after = befor
 
 test("cell 21 — plain, WETH, public: the single-hop route is discovered and settled", async ({ page, sandbox, actor, l1 }) => {
 	const weth = sandbox.clients.deployment.tokens.weth
-	// The venue sells one base unit of anything for RATE FJ-wei, decimals ignored: an 18-decimal input is sized in units.
 	const units = 2n * 10n ** 6n
+	await rateWeth(sandbox, weth)
 	await mint(sandbox.clients.l1, weth, l1.address, units)
 	const fjBefore = await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")
 	await bridgeGas(page, {
