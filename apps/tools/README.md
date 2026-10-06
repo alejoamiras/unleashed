@@ -77,7 +77,8 @@ for a private send, the deposit signature.
   registers the token on its first claim — the only difference the user sees is a one-line note.
 - **Amount** — three choice cards (token only / token + gas / gas only) and one privacy row.
   Gas is sized from the manifest's calibrated `fjPerTx`/`fjRegister` and re-quoted before signing
-  (`useGasShare`, `useRouteQuote`); a routeless token cannot carry gas and says so.
+  (`useGasShare`, `useFuelQuote`); a routeless token cannot carry gas and says so. The deposit goes
+  through the generation's `depositRouter` (`bridgeWithPermit`).
 - **Review** — a frozen five-line summary + collapsed details (addresses, route, effective rate,
   the portal's derivation status). The wallet grant for the token's L2 contract is requested right
   before the signature (`useTokenGrant`), and the journal record is written BEFORE the signature is
@@ -85,7 +86,9 @@ for a private send, the deposit signature.
 - **Journal** — every in-flight send/exit, device-local, milestone facts only
   (`useBridgeJournal` over `@unleashed/bridge-core`'s journal engine). At boot each record's token block
   is re-validated against the live factory registration; a record that disagrees is withheld
-  (`blocked`), never claimed. Records can be exported as a sealed backup and restored. The record
+  (`blocked`), never claimed. A deposit from another chain is a schema-4 record under its own key:
+  `crosschain-watch.ts` follows it from the source signature with read clients only (no wallet,
+  resumed after a reload), and once its deposit lands the same claim lanes run it. Records can be exported as a sealed backup and restored. The record
   whose stepper is on screen is the stepper's alone: the dock lists it only once it is backgrounded
   (`visibleRecords`); the Activity page lists every record. The page card and the dock row read one
   pure policy (`lib/record-policy.ts`), so the dock never offers a button the card would refuse —
@@ -154,8 +157,10 @@ only): dashboard state, so a check against a live mainnet host needs a logged-in
 
 `bb.js` needs cross-origin isolation. The build GENERATES `dist/_headers` (`vite.config.ts`) with
 COOP/COEP + a tight CSP whose `connect-src` is the target's (`src/lib/network-targets.ts`): the
-Aztec node hosts plus exactly one token-list file. `dist/build.json` and a `<meta>` tag carry the
-build id and chain id; `verify:build-target` asserts a built `dist/` matches the target it claims.
+Aztec node hosts, exactly one token-list file and, on testnet, the keyless read RPCs a cross-chain
+deposit is watched through plus the Across API it is quoted from (mainnet admits no remote origin).
+`dist/build.json` and a `<meta>` tag carry the build id and chain id; `verify:build-target` asserts
+a built `dist/` matches the target it claims, its `_headers` included.
 
 The app only works in a secure context: over insecure HTTP there is no `crypto.randomUUID` and
 COOP/COEP are ignored. `workers.dev` is HTTPS-only in browsers that honor the `.dev` preload; the
@@ -225,8 +230,9 @@ apps/tools/
 │   │   ├── AztecWalletPanel, L1WalletPanel, AccountSwitcher, ConnectionErrorStrip ← the header chips
 │   │   ├── Bridge*.vue        ← stepper + phase rail, receipt, journal page list + cards
 │   │   └── *.vue              ← faucet + connection components
-│   ├── composables/           ← useSend, useHubExit, useTokenCatalog/Selection/Grant, useRouteQuote,
-│   │                            useGasShare, useBridgeJournal, useL1Wallet, useWalletConnection,
+│   ├── composables/           ← useSend, useHubExit, useTokenCatalog/Selection/Grant, useFuelQuote,
+│   │                            useCrossChainRoute, crosschain-deposit-flow, crosschain-watch,
+│   │                            useEthereumReader, useGasShare, useBridgeJournal, useL1Wallet, useWalletConnection,
 │   │                            useShell, useDockState, useActivityFeed, useCompletionToasts, …
 │   ├── contracts/             ← bridge-generation.ts (manifest reader), deployments.{json,ts}, the FPCs
 │   ├── lib/                   ← capabilities (per-token wallet grants), send-model, network-targets,
