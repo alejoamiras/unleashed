@@ -67,6 +67,8 @@ export interface AcrossV4DepositParams {
 	outputAmount: bigint
 	quoteTimestamp: number
 	fillDeadline: number
+	/** The only address that may fill, until `fillDeadline`, so a deposit it leaves unfilled refunds; anyone when absent. */
+	exclusiveRelayer?: Address
 	/** The Executor's steps on the destination; at least one, since the deposit always carries a call. */
 	steps: readonly LifiSwapData[]
 }
@@ -74,6 +76,9 @@ export interface AcrossV4DepositParams {
 export function encodeLifiReceiverMessage(transactionId: Hex, steps: readonly LifiSwapData[], receiver: Address): Hex {
 	return encodeAbiParameters(LIFI_RECEIVER_MESSAGE_PARAMS, [transactionId, steps, receiver])
 }
+
+/** Across reads an exclusivity parameter up to this as an offset from the deposit's block, and above it as a timestamp. */
+const MAX_EXCLUSIVITY_PERIOD_S = 31_536_000
 
 function word(a: Address): Hex {
 	return pad(a, { size: 32 })
@@ -86,6 +91,10 @@ function assertDepositShape(p: AcrossV4DepositParams): void {
 	// Every rail asset bridges to itself with equal decimals, so an output above the input is a mis-built route.
 	if (p.outputAmount > p.inputAmount) throw new Error("across-v4: outputAmount exceeds inputAmount")
 	if (p.fillDeadline <= p.quoteTimestamp) throw new Error("across-v4: fillDeadline must follow quoteTimestamp")
+	if (p.exclusiveRelayer === zeroAddress) throw new Error("across-v4: the exclusive relayer is the zero address")
+	if (p.exclusiveRelayer && p.fillDeadline <= MAX_EXCLUSIVITY_PERIOD_S) {
+		throw new Error("across-v4: an exclusive deposit's fillDeadline must be a timestamp Across reads as absolute")
+	}
 	if (p.steps.length === 0) throw new Error("across-v4: a deposit without destination steps is not a route of ours")
 }
 
@@ -93,7 +102,8 @@ function assertDepositShape(p: AcrossV4DepositParams): void {
  * The two structs {@link buildAcrossV4Deposit} encodes, for a decoder to compare a route against field by field.
  *
  * `BridgeData.receiver` is the user: with a message present the facet does not compare it to `receiverAddress`.
- * `outputAmountMultiplier` is 0 because only the swap-and-bridge entrypoint reads it; there is no exclusive relayer.
+ * `outputAmountMultiplier` is 0 because only the swap-and-bridge entrypoint reads it. An exclusive relayer holds the
+ * fill until `fillDeadline` itself, passed as the absolute exclusivity deadline.
  * Throws on a shape no route of ours can have; it does not check addresses against any book.
  */
 export function acrossV4Call(p: AcrossV4DepositParams): { bridgeData: LifiBridgeData; acrossData: AcrossV4Data } {
@@ -118,10 +128,10 @@ export function acrossV4Call(p: AcrossV4DepositParams): { bridgeData: LifiBridge
 			receivingAssetId: word(p.outputToken),
 			outputAmount: p.outputAmount,
 			outputAmountMultiplier: 0n,
-			exclusiveRelayer: pad("0x", { size: 32 }),
+			exclusiveRelayer: word(p.exclusiveRelayer ?? zeroAddress),
 			quoteTimestamp: p.quoteTimestamp,
 			fillDeadline: p.fillDeadline,
-			exclusivityParameter: 0,
+			exclusivityParameter: p.exclusiveRelayer ? p.fillDeadline : 0,
 			message: encodeLifiReceiverMessage(p.transactionId, p.steps, p.user),
 		},
 	}

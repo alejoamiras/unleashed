@@ -297,13 +297,14 @@ async function acrossLimits(ctx: RowCtx, rows: readonly CanaryRow[]): Promise<Ac
 
 async function railTerms(ctx: RowCtx, row: CanaryRow, message: Hex): Promise<RailTerms> {
 	const q = await quoteFor(ctx, row.amount, message)
+	const filler = ctx.cfg.canary
 	if (q.ok) {
 		const { outputAmount, quoteTimestamp, fillDeadline, estimatedFillTimeSec } = q.quote
-		return { quote: "across", outputAmount, quoteTimestamp, fillDeadline, etaSeconds: estimatedFillTimeSec }
+		return { quote: "across", outputAmount, quoteTimestamp, fillDeadline, etaSeconds: estimatedFillTimeSec, exclusiveRelayer: filler }
 	}
 	ctx.deps.log(`${row.kind}: Across quotes nothing (${q.reason}); self-built terms`)
 	const head = await ctx.deps.reads.source.getBlock({ blockTag: "latest" })
-	return selfBuiltTerms(row.amount, Number(head.timestamp))
+	return selfBuiltTerms(row.amount, Number(head.timestamp), filler)
 }
 
 interface CrossChainBuilt extends RouterCall {
@@ -433,10 +434,13 @@ async function settleFill(
 	c: CrossChainBuilt,
 	rec: CrossChainDepositRecord,
 ): Promise<{ d: Settled; sourceTx: Hex; fill: Fill }> {
-	let d = await discoverWithin(ctx, rec, ctx.cfg.windows.organicFillMs)
+	// A deposit the canary holds exclusively has no organic fill to wait for.
+	let d = await discoverWithin(ctx, rec, c.terms.exclusiveRelayer ? 0 : ctx.cfg.windows.organicFillMs)
 	let selfTx: Hex | null = null
 	if (!decided(d)) {
-		ctx.deps.log(`${c.row.kind}: no relayer filled within the window; self-filling`)
+		ctx.deps.log(
+			`${c.row.kind}: ${c.terms.exclusiveRelayer ? "the canary holds the fill" : "no relayer filled within the window"}; self-filling`,
+		)
 		selfTx = (await ctx.live.selfFill(rec.route.srcTxHash as Hex, ctx.fillGas)).fillTxHash
 		d = await discoverWithin(ctx, rec, ctx.cfg.windows.settleMs)
 	}

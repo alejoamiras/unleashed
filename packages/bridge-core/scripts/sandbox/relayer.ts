@@ -12,6 +12,7 @@ import {
 	type Address,
 	type Chain,
 	decodeEventLog,
+	encodeFunctionData,
 	erc20Abi,
 	getAbiItem,
 	getAddress,
@@ -163,7 +164,8 @@ export interface Destination {
 export interface FillCall {
 	/** Where Across would repay the relayer; the fork suites and the canary name the origin chain. */
 	repaymentChainId: bigint
-	/** Explicit gas, which skips the pre-send simulation: a fill that cannot run its message lands as a revert. */
+	/** Explicit gas, which skips the pre-send simulation and {@link fillGas}: a fill that cannot run its message lands
+	 *  as a revert, or as a recovery under Amsterdam's schedule. */
 	gas?: bigint
 }
 
@@ -212,12 +214,35 @@ async function clearApproval(dest: Destination, a: Approval, fill: unknown): Pro
 	}
 }
 
+/** EIP-7825's per-transaction gas cap: no fill can be given more. */
+export const TX_GAS_CAP = 16_777_216n
+
+/**
+ * The gas a fill is sent with. A node's estimate is not enough: under Amsterdam's schedule LI.FI's receiver catches an
+ * underfunded message and recovers the delivery to the user, so the estimate settles on that recovery. The fill gets
+ * the smallest of 2×, 4×, … the estimate whose simulated logs equal those at the cap, where nothing is underfunded.
+ */
+export async function fillGas(dest: Destination, spokePool: Address, data: Hex): Promise<bigint> {
+	const account = dest.wallet.account
+	const outcome = async (gas: bigint) => {
+		const [block] = await dest.public.simulateBlocks({ blocks: [{ calls: [{ account, to: spokePool, data, gas }] }] })
+		const c = block.calls[0]
+		return `${c.status}:${c.logs?.map((l) => `${l.address.toLowerCase()}/${l.topics[0]}`).join(",")}`
+	}
+	const atCap = await outcome(TX_GAS_CAP)
+	const estimate = await dest.public.estimateGas({ account, to: spokePool, data })
+	for (let gas = estimate * 2n; gas < TX_GAS_CAP; gas *= 2n) if ((await outcome(gas)) === atCap) return gas
+	return TX_GAS_CAP
+}
+
 async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRelayData, call: FillCall) {
 	const account = dest.wallet.account
 	// viem's inference collapses this tuple argument to `never`; `AcrossRelayData` is `RELAY_DATA` field for field.
 	const args = [relay as never, call.repaymentChainId, pad(account.address, { size: 32 })] as const
-	if (call.gas === undefined) {
+	let gas = call.gas
+	if (gas === undefined) {
 		await dest.public.simulateContract({ account, address: spokePool, abi: SPOKE_POOL_ABI, functionName: "fillRelay", args })
+		gas = await fillGas(dest, spokePool, encodeFunctionData({ abi: SPOKE_POOL_ABI, functionName: "fillRelay", args }))
 	}
 	const hash = await dest.wallet.writeContract({
 		address: spokePool,
@@ -226,7 +251,7 @@ async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRela
 		args,
 		account,
 		chain: dest.wallet.chain,
-		...(call.gas === undefined ? {} : { gas: call.gas }),
+		gas,
 	})
 	const { status } = await dest.public.waitForTransactionReceipt({ hash })
 	return { hash, status }
@@ -235,8 +260,8 @@ async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRela
 /**
  * Approves `spokePool` for exactly `relay.outputAmount` of its output token and sends `fillRelay` from the wallet's
  * account, which is also the logged relayer. Without explicit gas the fill is simulated before it is sent, so a fill
- * that would revert throws without a fill transaction. Once the approval is submitted, any failure short of a landed
- * fill, its own confirmation included, clears the approval again.
+ * that would revert throws without a fill transaction, and is sent with {@link fillGas}. Once the approval is
+ * submitted, any failure short of a landed fill, its own confirmation included, clears the approval again.
  *
  * @throws the approval's submit error as is; otherwise the first failure once the approval is cleared, or
  * {@link AllowanceStillLive} when the clear fails too.
@@ -267,7 +292,8 @@ export async function sendFill(
 export type RelayMode = { kind: "now" } | { kind: "delay"; ms: number } | { kind: "never" } | { kind: "starve-gas" }
 
 /** A `starve-gas` fill's gas: the pool's own bookkeeping fits, LI.FI's receiver → Executor → router path does not, and
- *  the receiver keeps no recovery gas, so the whole fill reverts and the deposit stays unfilled. */
+ *  under the sandbox's pre-Amsterdam schedule the receiver keeps no recovery gas, so the whole fill reverts and the
+ *  deposit stays unfilled. Under Amsterdam's the receiver recovers instead. */
 export const STARVED_FILL_GAS = 250_000n
 
 export type RelayOutcome =

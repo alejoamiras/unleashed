@@ -92,6 +92,8 @@ describe("fillSourceDeposit", () => {
 				return 10n ** 12n
 			},
 			simulateContract: async () => ({}),
+			estimateGas: async () => 100_000n,
+			simulateBlocks: async () => [{ calls: [{ status: "success", logs: [] }] }],
 			waitForTransactionReceipt: async ({ hash }: { hash: Hex }) => {
 				if (confirms(hash)) return { status: "success" }
 				throw new Error(`timed out waiting for ${hash}`)

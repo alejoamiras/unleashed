@@ -2,6 +2,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, decodeFunctionData, type Hex, pad } from "viem"
 import { describe, expect, it, vi } from "vitest"
+import { ACROSS_V4_FACET_ABI } from "../src/across-v4"
 import type { AcrossRelayData } from "../src/crosschain-discovery"
 import type { L1Ctx } from "../src/flows"
 import { SWAP_TOKENS_SINGLE_V3_ABI } from "../src/lifi-abi"
@@ -106,7 +107,7 @@ describe("the canary's transactions", () => {
 	const b = canaryBindings(routedManifest(), 84532)
 
 	it("refuse to sign a cross-chain transaction verifyRoute does not accept", async () => {
-		const terms = selfBuiltTerms(5_000_000n, NOW_S)
+		const terms = selfBuiltTerms(5_000_000n, NOW_S, CANARY)
 		const legs = await rowLegs(
 			{ kind: "crosschain-public", origin: "crosschain", isPrivate: false, fuel: "none", expect: "deposited" },
 			await AztecAddress.random(),
@@ -125,6 +126,18 @@ describe("the canary's transactions", () => {
 		const x = expectation(routerCall)
 		const tx = crossChainTx(x)
 		expect(() => verifiedRoute(tx, x)).not.toThrow()
+		// The fill is the canary's alone until the deadline; a route that frees it is not this row's.
+		const { args } = decodeFunctionData({ abi: ACROSS_V4_FACET_ABI, data: tx.data })
+		expect(args[1]).toMatchObject({ exclusiveRelayer: pad(CANARY).toLowerCase(), exclusivityParameter: terms.fillDeadline })
+		const open = crossChainExpectation(b, {
+			user: CANARY,
+			srcAmount: 5_000_000n,
+			lifiTxId: `0x${"11".repeat(32)}`,
+			routerCall,
+			hasFuel: false,
+			terms: { ...terms, exclusiveRelayer: undefined },
+		})
+		expect(() => verifiedRoute(crossChainTx(open), x)).toThrow(/verifyRoute refused call._acrossData.exclusiveRelayer/)
 		const notTheRouter = expectation("0x1234")
 		expect(() => verifiedRoute(crossChainTx(notTheRouter), notTheRouter)).toThrow(/verifyRoute refused router.selector/)
 		expect(() => verifiedRoute({ ...tx, approval: { ...tx.approval, amount: tx.approval.amount + 1n } }, x)).toThrow(
@@ -206,6 +219,7 @@ describe("the canary's gas ceilings", () => {
 			estimateGas: async () => 80_000n,
 			estimateFeesPerGas: async () => fees,
 			simulateContract: async () => ({}),
+			simulateBlocks: async () => [{ calls: [{ status: "success", logs: [] }] }],
 			waitForTransactionReceipt: async () => ({ status: "success" }),
 		}
 		const relay: AcrossRelayData = {
@@ -232,8 +246,9 @@ describe("the canary's gas ceilings", () => {
 		await expect(fill(10n ** 14n)).rejects.toThrow(/may burn 100000000000000 wei \(and as much again to revoke it\) on Ethereum/)
 		expect(writeContract).not.toHaveBeenCalled()
 
-		// The approval and its held-back revoke take the whole budget: the fill is refused, the revoke still goes out.
-		await expect(fill(2n * 10n ** 14n)).rejects.toThrow(/may burn 100000000000000 wei on Ethereum, over the 0 wei its cap has left/)
+		// The approval and its held-back revoke take the whole budget: the fill, at twice its estimate, is refused and the
+		// revoke still goes out.
+		await expect(fill(2n * 10n ** 14n)).rejects.toThrow(/may burn 160000000000000 wei on Ethereum, over the 0 wei its cap has left/)
 		expect(writeContract.mock.calls.map(([w]) => [w.functionName, w.args[1]])).toEqual([
 			["approve", 5n],
 			["approve", 0n],

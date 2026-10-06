@@ -83,6 +83,20 @@ describe("across-v4", () => {
 		expect(bridgeData).toMatchObject({ receiver: params.user, hasDestinationCall: true, hasSourceSwaps: false })
 		expect(acrossData.receiverAddress.toLowerCase()).toBe(`0x${"0".repeat(24)}${f.destination.receiverAcrossV4.slice(2).toLowerCase()}`)
 		expect(acrossData.message).toBe(f.message)
+		expect(acrossData).toMatchObject({ exclusiveRelayer: `0x${"0".repeat(64)}`, exclusivityParameter: 0 })
+	})
+
+	it("holds an exclusive fill until the fill deadline, passed as Across's absolute exclusivity deadline", () => {
+		const { params } = fixtureParams()
+		const filler: Address = `0x${"ca".repeat(20)}`
+		const { args } = decodeFunctionData({
+			abi: ACROSS_V4_FACET_ABI,
+			data: buildAcrossV4Deposit({ ...params, exclusiveRelayer: filler }).data,
+		})
+		expect(args[1]).toMatchObject({
+			exclusiveRelayer: `0x${"0".repeat(24)}${"ca".repeat(20)}`,
+			exclusivityParameter: params.fillDeadline,
+		})
 	})
 
 	it.each<[string, (p: AcrossV4DepositParams) => Partial<AcrossV4DepositParams>]>([
@@ -90,6 +104,12 @@ describe("across-v4", () => {
 		["a deadline at the quote time", (p) => ({ fillDeadline: p.quoteTimestamp })],
 		["no destination step", () => ({ steps: [] })],
 		["a short transaction id", () => ({ transactionId: "0x01" })],
+		["the zero address as exclusive relayer", () => ({ exclusiveRelayer: `0x${"0".repeat(40)}` })],
+		// Across would read a deadline this small as an offset from the deposit's block.
+		[
+			"an exclusive deposit whose deadline is not a timestamp",
+			() => ({ exclusiveRelayer: `0x${"ca".repeat(20)}`, quoteTimestamp: 1, fillDeadline: 7_201 }),
+		],
 	])("refuses %s", (_, override) => {
 		const { params } = fixtureParams()
 		expect(() => buildAcrossV4Deposit({ ...params, ...override(params) })).toThrow(/across-v4/)
