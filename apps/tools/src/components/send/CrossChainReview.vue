@@ -87,10 +87,8 @@ const gasLine = computed(() => {
 })
 
 const takes = computed(() => {
-	if (props.figures.fixed && refundWait.value)
+	if (!IS_MAINNET && refundWait.value)
 		return `Up to ${refundWait.value} for a manual fill on ${l1}, a few minutes for Aztec to pick it up, then your claim.`
-	if (!IS_MAINNET)
-		return `As long as ${rail.value}'s test relayer takes to reach ${l1}, a few minutes for Aztec to pick it up, then your claim.`
 	const minutes = Math.max(1, Math.ceil(props.figures.etaSeconds / 60))
 	return `About ${minutes} min to reach ${l1}, a few minutes for Aztec to pick it up, then your claim.`
 })
@@ -120,7 +118,7 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 		<p v-if="!IS_MAINNET && refundWait" class="testnet ul-notch" :data-testid="TESTIDS.sendXcTestnetNotice">
 			<span class="glyph"><Icon name="info-box" :size="24" /></span>
 			<span
-				>Testnet: delivery depends on {{ rail }}'s test relayer. If nobody delivers it within {{ refundWait }}, it is refunded to you on
+				>Testnet: this send waits for a manual fill on {{ l1 }}. If it isn't filled within {{ refundWait }}, it is refunded to you on
 				{{ chainLabel(src) }}.</span
 			>
 		</p>

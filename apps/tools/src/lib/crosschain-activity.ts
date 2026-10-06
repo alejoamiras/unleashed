@@ -197,7 +197,7 @@ export function shortAddress(address: string): string {
 }
 
 /** How long the relay had before the transfer expired: "2 hours", "45 minutes"; null without a deadline. */
-function windowWords(rec: CrossChainDepositRecord): string | null {
+export function windowWords(rec: CrossChainDepositRecord): string | null {
 	const deadline = rec.route.fillDeadline
 	if (deadline === undefined) return null
 	const minutes = Math.round((deadline * 1000 - rec.createdAt) / 60_000)
@@ -252,9 +252,11 @@ export function phaseGuide(rec: CrossChainDepositRecord, phase: CrossChainPhase,
 	}
 }
 
-/** "Across’s test relayer didn’t deliver it within 2 hours". */
+/** "It wasn’t filled on Ethereum · Sepolia within 2 hours" on testnet, where every send waits for a manual fill;
+ *  "Across’s relayers didn’t deliver it within 2 hours" on mainnet. */
 export function expiryLead(rec: CrossChainDepositRecord, what = "it"): string {
-	const relayer = IS_MAINNET ? "relayers" : "test relayer"
 	const window = windowWords(rec)
-	return `${railLabel(rec.route.rail)}’s ${relayer} didn’t deliver ${what} ${window ? `within ${window}` : "in time"}`
+	const by = window ? `within ${window}` : "in time"
+	if (!IS_MAINNET) return `${what.charAt(0).toUpperCase()}${what.slice(1)} wasn’t filled on ${chainLabel(rec.chainId)} ${by}`
+	return `${railLabel(rec.route.rail)}’s relayers didn’t deliver ${what} ${by}`
 }

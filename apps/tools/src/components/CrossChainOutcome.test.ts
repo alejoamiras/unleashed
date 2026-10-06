@@ -43,7 +43,7 @@ describe("CrossChainOutcome", () => {
 		const expired = panel(xcRecord(ended, { outcome: "expired-on-source" }))
 		expect(expired.get("h2").text()).toBe("Refund pending on Base Sepolia")
 		expect(cards(expired)[0]).toBe(
-			"Across’s test relayer didn’t deliver this transfer to Ethereum · Sepolia within 2 hours, so it expired.",
+			"This transfer waited 2 hours for a manual fill on Ethereum · Sepolia and wasn’t filled, so it expired.",
 		)
 		expect(expired.get(".figure").text()).toBe("5.00 USDC due back in 0x3fA8…c41d on Base Sepolia")
 		expect(expired.get(sel(TESTIDS.xcOutcomeChangeSend)).text()).toBe("Pick another balance")

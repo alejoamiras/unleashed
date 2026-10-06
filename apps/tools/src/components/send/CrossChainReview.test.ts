@@ -63,7 +63,7 @@ describe("CrossChainReview", () => {
 	it("states a testnet send as the testnet board draws it, and signs", async () => {
 		const w = review()
 		expect(w.find(sel(TESTIDS.sendXcTestnetNotice)).text()).toBe(
-			"Testnet: delivery depends on Across's test relayer. If nobody delivers it within 2 hours, it is refunded to you on Base Sepolia.",
+			"Testnet: this send waits for a manual fill on Ethereum · Sepolia. If it isn't filled within 2 hours, it is refunded to you on Base Sepolia.",
 		)
 		expect(w.find(sel(TESTIDS.sendReviewSend)).text()).toContain("5.00USDCfrom BASE Base Sepolia")
 		expect(w.find(sel(TESTIDS.sendXcLimits)).text()).toBe("Across's testnet limits: at least ≈ 1.95, at most ≈ 8.00 USDC per send")
