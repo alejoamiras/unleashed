@@ -98,7 +98,9 @@ build_apps() {
   log "building tools (local target) → $TOOLS_DIST"
   UNLEASHED_SANDBOX_ARTIFACTS="$ARTIFACTS" UNLEASHED_TOOLS_WEB_WALLETS="$WEB_WALLETS" \
     bun run build:local -- --outDir "$TOOLS_DIST" >"$STATE_DIR/build-tools.log" 2>&1
-  UNLEASHED_SANDBOX_ARTIFACTS="$ARTIFACTS" bun run verify:build-target local --dist "$TOOLS_DIST"
+  # The same inputs as the build: the wallet origins are part of the target's connect-src.
+  UNLEASHED_SANDBOX_ARTIFACTS="$ARTIFACTS" UNLEASHED_TOOLS_WEB_WALLETS="$WEB_WALLETS" \
+    bun run verify:build-target local --dist "$TOOLS_DIST"
   grep -rqF -- "$NODE_URL" "$TOOLS_DIST/assets" || { log "FATAL: the tools bundle does not name the node $NODE_URL"; exit 2; }
   for url in "$WALLET_ORIGIN_PLAIN/?profile=plain" "$WALLET_ORIGIN_SELFPAY/?profile=selfpay" "$WALLET_ORIGIN_FULL/?profile=full"; do
     grep -rqF -- "$url" "$TOOLS_DIST/assets" || { log "FATAL: the tools bundle does not list the test wallet at $url"; exit 2; }
