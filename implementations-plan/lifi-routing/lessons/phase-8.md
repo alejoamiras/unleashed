@@ -1,0 +1,110 @@
+# Phase 8: The cross-chain screens
+
+**Verdict: built; the gate results are in the Gate section below.** S-1…S-11, S-15 and S-16 are built from the
+14 signed boards (digests checked against the plan before building). The Phase 7 plumbing now has its screens:
+`crossChainRecords` render on Activity, in the dock, on the stepper and on the receipt; `useCrossChainRoute` is
+bound to the wizard's `useGasShare` through `useCrossChainSend`; `useSourceChain` reads per-chain balances through
+`readClientFor` and switches the wallet's chain; backups carry both journal keys; "Continue from Ethereum"
+pre-fills an Ethereum-origin send. Every state a board does not draw is a proposal awaiting the owner (G-UX-2).
+
+## Facts the next phases rely on
+
+- **The source registry decides the path.** A token-step row is a source row exactly when `sourceTokenOf` finds
+  it in `appSources()`; every other row is the Ethereum-origin path. `crosschain-steps`, `crosschain-activity`
+  and the footer read the registry through that one lookup.
+- **Bridging starts at the transport, not the hash.** A cross-chain record reads "Sending" until discovery writes
+  `route.transport` from the source receipt; a broadcast `srcTxHash` alone keeps the Send phase active. The card,
+  the stepper and the outcome panel's "stalled" all key on it.
+- **A wallet throw without a clear rejection keeps the record and watches it at once**; the first discovery that
+  finds the send lifts the flow's error flag (`clearRecordError`).
+- **The signer is the wallet client's account.** `sendOn` passed the quoted account as the signer, so the
+  account-switch refusal could never fire.
+- **No price source exists**, so every fee and balance is in the source token's units ("≈ 0.49 USDC · 9.8 %").
+  `FEE_CEILING_BPS = 1000`: mainnet blocks a token send over it, testnet only warns, a gas-only send never blocks.
+- **The quote's 60 s TTL is visible**: the amount step re-quotes at zero, the review's band counts down and an
+  expired quote replaces Sign and send with the H-States #3 box; Refresh quote re-asks in place.
+- **Outcome panel.** `outcomeVariant(rec, now)` non-null swaps the stepper for `CrossChainOutcome`; a stalled send
+  keeps this session's log under it (`BridgeLog`, shared with the stepper).
+- **Shell requests.** `continueFromEthereum` and `showReceipt` queue one request each; the wizard (always mounted
+  behind `v-show`) takes them through a watch.
+- **Scoped class names collide inside one component.** A `.sign` rule for the "You sign" line also styled the
+  Sign and send button; the line is now `.itemised`.
+- **`ref()` deep-unwraps `Fr`**; the frozen review is a `shallowRef`. `SendWizard` tests must mock
+  `useCrossChainSend`, or a second `useTokenSelection` disposes twice.
+- **Vue condenses whitespace between inline spans split across lines**; use `{{ " " }}`.
+- **`formatBigInt` defaults to 2 decimals**: native balances use 4 so a small ETH balance is not "0.00".
+- **Every testnet send is built on fixed terms, with one exclusive relayer.** Two owner decisions set this.
+  First, Across's testnet API returns no quote for the router message. Second, Across's own testnet relayer
+  fills with 1.15× the node's gas estimate, and on Sepolia that lands in ReceiverAcrossV4's recovery path, so an
+  organic fill sends the token back to the wallet.
+  - `selfBuiltTerms` lives in `bridge-core/src/across-self-built.ts`, and the canary imports it from there. It
+    keeps 25 % for the relay, gives a 2 h fill window and names `filler` as the exclusive relayer until
+    `fillDeadline`. It throws on an L1 of chain 1.
+  - `TESTNET_FILLER` is the pinned testnet canary signer, and a test holds the two equal.
+  - The builder writes the relayer's word and an absolute exclusivity deadline. It refuses the zero address and
+    a deadline of 31,536,000 or less, which the SpokePool reads as an offset. `verifyRoute` polices both fields.
+  - Off mainnet, `appRouteDeps` passes `fixedTerms`, and the route never asks Across. Each route is
+    `terms: "fixed"` with `limits: null`. On mainnet the deps carry no `fixedTerms`: there, Across's quote is
+    the only source, and no quote still means no route.
+  - The journal keeps `route.terms: "fixed"`. On such a record `etaSeconds` is the whole fill window, not an
+    estimate, so the stepper and the card wait for the manual fill, and `bridgingLate` never fires.
+  - Each such send needs `fill-testnet.ts` before its deadline, or Across refunds it (S-Refunded).
+  - The fee ceiling is not shown for fixed terms, because a fixed share has no amount that clears it.
+
+## Fidelity screenshots
+
+- The boards render locally with their canvas runtime beside them and the design's fonts served from the repo;
+  every other origin is aborted. Theme comes from the board's `theme` prop default; a drawn state from its
+  `this.state = { … }` initialiser.
+- The build is shot through a gitignored harness (`apps/tools/harness.local/`, ignored by `*.local`): the real
+  `AppShell` with `SendWizard` aliased to a fixture view that mounts the real step, stepper, receipt and outcome
+  components, both wallets primed through their singletons, journal records set on the journal's refs, and a
+  JSON-RPC stub answering the pinned read RPCs. The wizard raises `bridgeForm` on its form steps; a harness must
+  too, or the contract links show where the boards draw none.
+- The first dev-server load can answer 504 "Outdated Optimize Dep" while Vite re-bundles; load once before
+  shooting.
+
+## Open
+
+- **Owner gates (G-UX-2):** every undrawn state built here (account switched, gas venue unreadable, route
+  unavailable, a failed read, a failed contract check, the testnet over-ceiling warning, "Waiting for {source} to
+  confirm the send…", register and claim prompts on the cross-chain rail, the provisional "Finalizing" guides,
+  "Bridge · waiting", the revoke errors, the dock's "Ended" group, the stalled panel's "Last checked") and every
+  deviation in the Phase 8 report. The fixed-terms copy is the same kind of gate: the review's terms line in the
+  limits' place, its Takes row, "Fixed testnet terms" in place of the amount step's quote age, "Terms valid
+  for … · rebuilt before you sign", the Details "Quote" row, and the bridging line, ETA and estimate of the
+  stepper and the card.
+- **Phase 9:**
+  - Cross-chain browser specs: the LI.FI book injection for the sandbox chain, and the `l1-wallet` fixture's chain
+    map, `wallet_switchEthereumChain` and EIP-5792 calls (from Phase 7, still open).
+  - `tokens.spec` assumes the manifest's tokens head the list; with a routed source, source rows come first.
+  - The outcome panel's "Lands as ≈ …" line needs a fresh Ethereum-origin quote (`figures.continueQuote`).
+  - A cross-chain send does not ask for the hub token's grant before signing; the claim asks later.
+  - The Ethereum-origin review's wrong-chain notice is wired but unreachable: a chain change closes that review.
+  - Whether `scan.li.fi` tracks a testnet transfer ("Track on LI.FI") is a manual check.
+  - A testnet send is filled only if someone runs `fill-testnet.ts` with the canary key within 2 h, and nothing
+    tells the operator one is waiting. No amount bound applies beyond the filler's Sepolia balance.
+  - The testnet notice and S-Refunded still name "Across's test relayer"; the pinned filler is the only one
+    who can fill. Rewording either is the owner's call.
+  - The review's quoted-limits line can no longer render on testnet, since nothing quotes there.
+
+## Attempts
+
+1. Four workers built the surfaces in one worktree. The git index is shared, so each staged only its own paths
+   and checked `git diff --cached --stat` before committing; a file two workers touched was staged by hunk
+   (`git hash-object -w`, `git update-index --cacheinfo`). Commitlint rejects body lines over 100 characters.
+2. Gate 1's first run timed out one `AddressesView` test at 5 s while the screenshot run loaded the machine; it
+   passes alone and in the rerun. Gates and the screenshot run go one at a time.
+3. Two e2e runs were stopped when the code changed under them (27 and 9 of 70 green; the runner's EXIT trap
+   reaped each sandbox group). The second had failed `activity.spec` cell 40, two tabs racing: one record had
+   no `claimTxHash` when its stepper showed it arrived. That code is not cross-chain, and the cell passed in the
+   runs before and after, so it is a flake.
+
+## Gate
+
+- `contracts/` is untouched by this phase; forge was not run.
+- `bun run lint && bun run typecheck:all && bun run test:all`: Biome clean, complexity baseline OK; design 242
+  passed; bridge-core 73 files, 688 passed and 11 skipped; tools 125 files, 1753 passed.
+- `bun run audit:tools`: 1753 passed, complexity baseline OK, every committed address matches its rebuilt
+  instance, the build succeeds.
+- `bun run e2e:tools`: 70 passed. No page object needed a change: no spec drives a cross-chain send.
