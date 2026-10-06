@@ -1,7 +1,8 @@
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { ref } from "vue"
+import { computed, ref, shallowRef } from "vue"
 import type { GrantOutcome, ResolvedToken, SelectableToken, TokenBalances } from "@/lib/send-model"
+import { XC_SENDER, XC_SOURCE, XC_SRC_TX, xcRecord } from "@/test/crosschain-record"
 
 // A stale mounted wizard still watches the shared journal refs and would adopt the next test's
 // record — unmount between cases.
@@ -82,6 +83,8 @@ const proposeFn = vi.fn(() => ({ fuelAmount: 2_000_000n, fuelFj: 5n * 10n ** 18n
 const gasShareDispose = vi.fn()
 
 const records = ref<Record<string, unknown>[]>([])
+const crossChainRecords = ref<Record<string, unknown>[]>([])
+const listedRecords = computed(() => [...records.value, ...crossChainRecords.value])
 /** Records THIS tab's engine created — the wizard's provenance test for adopting a run's record. */
 const sessionLive = new Set<string>()
 /** Provisional id → the id the record's transaction gave it. */
@@ -108,10 +111,37 @@ const addTokenFn = vi.fn(async () => {})
 const isRegisteredFn = vi.fn(async () => false)
 const aztecWallet = ref<object | null>(null)
 const l1WrongChain = ref(false)
+const l1ChainId = ref(31337)
 let rowOwner: () => string | undefined = () => undefined
 let selectionOwner: () => string | undefined = () => undefined
 const addTokenStatus = ref<{ kind: string; error?: { message: string } }>({ kind: "idle" })
 const toasts: { kind: string; text: string }[] = []
+
+/** The registry's one source row in these cases: USDC on Base Sepolia. */
+const SRC_USDC = "0x036cbd53842c5426634e7929541ec2318f3dcf7e"
+const SOURCE_ROW: SelectableToken = {
+	chainId: XC_SOURCE,
+	address: SRC_USDC,
+	symbol: "USDC",
+	name: "USDC",
+	decimals: 6,
+	source: "manifest",
+	logoKey: `${XC_SOURCE}:${SRC_USDC}`,
+}
+const contractAccount = vi.fn(async (_chainId: number) => false)
+const switchTo = vi.fn(async (_chainId: number) => true)
+/** The cross-chain branch's answer to the ask on screen; a case sets it as the route core would. */
+const xcQuoted = shallowRef<{ ask: Record<string, unknown>; outcome: { kind: string }; at: number } | null>(null)
+const xcLoading = ref(false)
+const xcRequote = vi.fn()
+const xcSend = vi.fn(async (..._args: unknown[]): Promise<unknown> => ({ id: "xc-1" }))
+const xcDispose = vi.fn()
+const XC_ROUTE = { minReceived: 4_510_000n }
+const xcQuote = (at = Date.now()) => ({
+	ask: { srcChainId: XC_SOURCE, user: L1_ADDRESS, intent: "token", isPrivate: false },
+	outcome: { kind: "route" },
+	at,
+})
 
 vi.mock("@/contracts/bridge-generation", () => ({
 	HUB: { toString: () => AZTEC_ACCOUNT },
@@ -121,7 +151,58 @@ vi.mock("@/contracts/bridge-generation", () => ({
 	MANIFEST_TOKENS: [],
 }))
 vi.mock("@/composables/useL1Wallet", () => ({
-	useL1Wallet: () => ({ address: ref(L1_ADDRESS), chainId: ref(31337), wrongChain: l1WrongChain, publicClient: { readContract } }),
+	useL1Wallet: () => ({
+		address: ref(L1_ADDRESS),
+		chainId: l1ChainId,
+		wrongChain: l1WrongChain,
+		publicClient: { readContract },
+		ensureWalletClient: () => ({}),
+	}),
+}))
+vi.mock("@/composables/useSourceChain", () => ({
+	appSources: () => [],
+	sourceTokenOf: () => undefined,
+	useSourceChain: () => ({
+		sources: [],
+		rows: [SOURCE_ROW],
+		natives: [],
+		balances: ref({ [SOURCE_ROW.logoKey]: 40_000_000n }),
+		contractChains: ref([]),
+		walletChainId: ref(null),
+		contractAccount,
+		switchTo,
+		refresh: vi.fn(async () => {}),
+		dispose: vi.fn(),
+	}),
+}))
+vi.mock("@/composables/useCrossChainSend", () => ({
+	useCrossChainSend: (deps: { row: () => SelectableToken | null }) => {
+		const route = computed(() => (xcQuoted.value?.outcome.kind === "route" ? XC_ROUTE : null))
+		return {
+			entry: computed(() => (deps.row() ? { source: { chainId: XC_SOURCE, rail: "acrossV4" } } : undefined)),
+			dest: ref(resolvedToken(candidate())),
+			quoted: xcQuoted,
+			route,
+			figures: computed(() => (route.value ? { delivered: XC_ROUTE.minReceived } : null)),
+			ceiling: ref(null),
+			notice: ref(null),
+			gasError: ref(null),
+			gas: ref(null),
+			loading: xcLoading,
+			expiresIn: ref(60_000),
+			ready: computed(() => route.value !== null),
+			planOf: (r: typeof XC_ROUTE, a: { intent: string; isPrivate: boolean }) => ({
+				direction: "l1-to-l2",
+				intent: a.intent,
+				token: resolvedToken(candidate()),
+				amount: r.minReceived,
+				isPrivate: a.isPrivate,
+			}),
+			requote: xcRequote,
+			send: xcSend,
+			dispose: xcDispose,
+		}
+	},
 }))
 vi.mock("@/composables/useBridgeWallet", () => ({
 	useBridgeWallet: () => ({
@@ -135,6 +216,8 @@ vi.mock("@/composables/useBridgeWallet", () => ({
 vi.mock("@/composables/useBridgeJournal", () => ({
 	useBridgeJournal: () => ({
 		records,
+		crossChainRecords,
+		listedRecords,
 		activeFlowId,
 		runtime: journalRuntime,
 		claimForeground,
@@ -279,7 +362,10 @@ const stubs = {
 		"gasError",
 		"blockedReason",
 		"tokenOnlyBlocked",
+		"crossChain",
 	]),
+	CrossChainReview: stub("CrossChainReview", ["plan", "ask", "expiresIn", "state", "walletChainId", "busy", "error"]),
+	CrossChainOutcome: stub("CrossChainOutcome", ["record"]),
 	ReviewStep: stub("ReviewStep", [
 		"plan",
 		"portalVerified",
@@ -370,6 +456,20 @@ async function atReview(w: Awaited<ReturnType<typeof wizard>>, amount = "1") {
 	return w.findComponent({ name: "ReviewStep" })
 }
 
+/** The same walk from the source row, with the route answered `quotedAt`. */
+async function atCrossChainReview(w: Awaited<ReturnType<typeof wizard>>, quotedAt = Date.now()) {
+	w.findComponent({ name: "TokenStep" }).vm.$emit("select", SOURCE_ROW)
+	await flushPromises()
+	const amount = w.findComponent({ name: "AmountStep" })
+	amount.vm.$emit("update:amount", "5")
+	amount.vm.$emit("update:valid", true)
+	xcQuoted.value = xcQuote(quotedAt)
+	await flushPromises()
+	amount.vm.$emit("next")
+	await flushPromises()
+	return w.findComponent({ name: "CrossChainReview" })
+}
+
 describe("SendWizard", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
@@ -394,8 +494,15 @@ describe("SendWizard", () => {
 		setRoute(null)
 		routeError.value = null
 		records.value = []
+		crossChainRecords.value = []
 		sessionLive.clear()
 		activeFlowId.value = null
+		l1ChainId.value = 31337
+		xcQuoted.value = null
+		xcLoading.value = false
+		xcRequote.mockReset()
+		xcSend.mockResolvedValue({ id: "xc-1" })
+		contractAccount.mockResolvedValue(false)
 		journalRuntime.value = {}
 		sendError.value = null
 		sendBusy.value = false
@@ -1720,10 +1827,136 @@ describe("SendWizard", () => {
 		expect(selectFn).not.toHaveBeenCalled()
 	})
 
+	it("a source row goes to the amount step unread, and its review signs on the source chain once the account is known to be no contract", async () => {
+		const w = await wizard()
+		w.findComponent({ name: "TokenStep" }).vm.$emit("select", SOURCE_ROW)
+		await flushPromises()
+		// A registry row has no hub binding to read on Ethereum: picking it is the whole token step.
+		expect(selectFn).not.toHaveBeenCalled()
+		const amount = w.findComponent({ name: "AmountStep" })
+		expect(amount.props()).toMatchObject({ token: { symbol: "USDC", decimals: 6 }, balances: { l1: 40_000_000n } })
+		amount.vm.$emit("update:amount", "5")
+		amount.vm.$emit("update:valid", true)
+		await flushPromises()
+		expect(w.findComponent({ name: "StepStrip" }).props("completed")).toBe(1)
+		xcQuoted.value = xcQuote()
+		await flushPromises()
+		expect(amount.props("crossChain")).toMatchObject({ srcChainId: XC_SOURCE, rail: "acrossV4" })
+		amount.vm.$emit("next")
+		await flushPromises()
+
+		const review = w.findComponent({ name: "CrossChainReview" })
+		expect(review.props("plan")).toMatchObject({ direction: "l1-to-l2", amount: 4_510_000n })
+		expect(review.props("walletChainId")).toBe(31337)
+		review.vm.$emit("switch-chain")
+		expect(switchTo).toHaveBeenCalledWith(XC_SOURCE)
+		review.vm.$emit("confirm")
+		await flushPromises()
+		expect(contractAccount).not.toHaveBeenCalled()
+
+		// The switch to the source chain is part of this review, not a change that stands it down.
+		l1ChainId.value = XC_SOURCE
+		await flushPromises()
+		expect(review.props("walletChainId")).toBeNull()
+		contractAccount.mockRejectedValueOnce(new Error("rpc down"))
+		review.vm.$emit("confirm")
+		await flushPromises()
+		expect(review.props("state")).toEqual({ kind: "unchecked" })
+		expect(xcSend).not.toHaveBeenCalled()
+		review.vm.$emit("act")
+		await flushPromises()
+		expect(xcSend).toHaveBeenCalledWith(xcQuoted.value, XC_ROUTE, expect.objectContaining({ address: ERC20 }), {})
+	})
+
+	it("puts the outcome panel in the stepper's place once its cross-chain send ends without arriving; dismissing starts over", async () => {
+		const w = await wizard()
+		const review = await atCrossChainReview(w)
+		l1ChainId.value = XC_SOURCE
+		crossChainRecords.value = [xcRecord({ id: "xc-1" })]
+		review.vm.$emit("confirm")
+		await flushPromises()
+		expect(w.findComponent({ name: "BridgeStepper" }).props("record")).toMatchObject({ id: "xc-1" })
+
+		crossChainRecords.value = [
+			xcRecord({ id: "xc-1", completedAt: 2_000 }, { outcome: "delivered-to-wallet", outcomeAmount: "4900000" }),
+		]
+		await flushPromises()
+		expect(w.findComponent({ name: "BridgeStepper" }).exists()).toBe(false)
+		expect(w.findComponent({ name: "BridgeReceipt" }).exists()).toBe(false)
+		const outcome = w.findComponent({ name: "CrossChainOutcome" })
+		expect(outcome.props("record")).toMatchObject({ id: "xc-1" })
+		outcome.vm.$emit("dismiss")
+		await flushPromises()
+		expect(releaseForeground).toHaveBeenCalledWith("xc-1")
+		expect(w.findComponent({ name: "TokenStep" }).exists()).toBe(true)
+	})
+
+	it("an expired quote on the review is asked again and the answer frozen in its place", async () => {
+		const w = await wizard()
+		const review = await atCrossChainReview(w, Date.now() - 61_000)
+		expect(review.props("state")).toEqual({ kind: "expired" })
+		review.vm.$emit("confirm")
+		await flushPromises()
+		expect(contractAccount).not.toHaveBeenCalled()
+
+		xcRequote.mockImplementation(() => {
+			xcLoading.value = true
+			xcQuoted.value = null
+		})
+		review.vm.$emit("act")
+		await flushPromises()
+		expect(xcRequote).toHaveBeenCalledTimes(1)
+		expect(review.props()).toMatchObject({ state: null, busy: true })
+		xcQuoted.value = xcQuote()
+		xcLoading.value = false
+		await flushPromises()
+		const fresh = w.findComponent({ name: "CrossChainReview" })
+		expect(fresh.props()).toMatchObject({ state: null, busy: false })
+		expect(fresh.props("expiresIn")).toBeGreaterThan(55_000)
+	})
+
+	it("takes the shell's requests: a prefilled Ethereum send, a token the catalog lacks, a cross-chain receipt", async () => {
+		const w = await wizard()
+		useShell().continueFromEthereum({
+			token: ERC20 as `0x${string}`,
+			amount: 150_000_000n,
+			intent: "token+gas",
+			isPrivate: false,
+			fromRecordId: "xc-1",
+		})
+		await flushPromises()
+		expect(useShell().prefill.value).toBeNull()
+		expect(selectFn).toHaveBeenCalledWith(candidate(), "l1-to-l2")
+		expect(w.findComponent({ name: "AmountStep" }).props()).toMatchObject({ amount: "1.5", intent: "token+gas", isPrivate: false })
+
+		useShell().continueFromEthereum({ token: `0x${"99".repeat(20)}`, intent: "token", isPrivate: true, fromRecordId: "xc-1" })
+		await flushPromises()
+		expect(w.findComponent({ name: "AmountStep" }).exists()).toBe(false)
+		expect(w.findComponent({ name: "TokenStep" }).exists()).toBe(true)
+
+		crossChainRecords.value = [xcRecord({ id: "xc-2", completedAt: 9_000, claimTxHash: WORD as `0x${string}` })]
+		useShell().showReceipt("xc-2")
+		await flushPromises()
+		expect(w.findComponent({ name: "BridgeReceipt" }).props("snapshot")).toMatchObject({
+			direction: "deposit",
+			source: { chainId: XC_SOURCE, txHash: XC_SRC_TX },
+			sender: XC_SENDER,
+		})
+	})
+
 	it("disposes every composable on unmount", async () => {
 		const w = await wizard()
 		w.unmount()
-		for (const dispose of [exitDispose, sendDispose, gasShareDispose, routeDispose, grantDispose, selectDispose, catalogDispose]) {
+		for (const dispose of [
+			xcDispose,
+			exitDispose,
+			sendDispose,
+			gasShareDispose,
+			routeDispose,
+			grantDispose,
+			selectDispose,
+			catalogDispose,
+		]) {
 			expect(dispose).toHaveBeenCalledTimes(1)
 		}
 	})

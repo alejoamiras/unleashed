@@ -4,6 +4,8 @@ import { Icon } from "@unleashed/design"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract } from "@aztec-labs/aztec.js/contracts"
 import {
+	type AnyJournalRecord,
+	type CrossChainDepositRecord,
 	type SendDepositRecord,
 	type SendJournalRecord,
 	type SendWithdrawRecord,
@@ -11,25 +13,31 @@ import {
 	type TokenState,
 	PORTAL_FACTORY_ABI,
 	assetKindOf,
+	isCrossChainRecord,
 	isSendRecord,
 	predictPortal,
 } from "@unleashed/bridge-core"
 import type { Address, PublicClient } from "viem"
-import { computed, onBeforeUnmount, onScopeDispose, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onScopeDispose, ref, shallowRef, watch } from "vue"
 import { FUEL, HUB, HUB_TOKEN_ARTIFACT, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { readHubBinding } from "@/contracts/hub-binding"
 
 /** Components */
 import BridgeReceipt, { type ReceiptSnapshot } from "@/components/BridgeReceipt.vue"
 import BridgeStepper from "@/components/BridgeStepper.vue"
-import AmountStep from "./AmountStep.vue"
+import CrossChainOutcome from "@/components/CrossChainOutcome.vue"
+import AmountStep, { type CrossChainAmount } from "./AmountStep.vue"
+import CrossChainReview from "./CrossChainReview.vue"
+import type { CrossChainState } from "./CrossChainState.vue"
 import MintStrip from "./MintStrip.vue"
 import ReviewStep, { type ReviewEstimate } from "./ReviewStep.vue"
 import TokenStep from "./TokenStep.vue"
 import WizardShell from "./WizardShell.vue"
 
 /** Composables */
-import { useShell } from "@/composables/useShell"
+import { type EthereumPrefill, useShell } from "@/composables/useShell"
+import { type CrossChainRefusal, useCrossChainSend } from "@/composables/useCrossChainSend"
+import { type CrossChainRoute, type QuotedRoute, ROUTE_TTL_MS } from "@/composables/useCrossChainRoute"
 import { useAddressLookup } from "@/composables/useAddressLookup"
 import { useBridgeBackup } from "@/composables/useBridgeBackup"
 import { type RecordRuntime, useBridgeJournal } from "@/composables/useBridgeJournal"
@@ -52,9 +60,14 @@ import { useTokenSelection } from "@/composables/useTokenSelection"
 import { displayAmountOf, recordTokenBlock } from "@/lib/asset-label"
 import { stepperPhases } from "@/lib/bridge-steps"
 import { chainLabel } from "@/lib/chains"
-import { formatCompact, formatDisplayAmount, parseAmountStrict } from "@/lib/format"
+import { useNow } from "@/lib/clock"
+import { sendView } from "@/lib/crosschain-activity"
+import { type CrossChainFigures, countdownText } from "@/lib/crosschain-figures"
+import { outcomeVariant } from "@/lib/crosschain-outcome"
+import { formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString, trimAddress } from "@/lib/format"
+import { NETWORK } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
-import { safeDisplay } from "@/lib/token-display"
+import { checksumAddress, safeDisplay } from "@/lib/token-display"
 import { accountOf } from "@/lib/record-policy"
 import { forgetWalletFees } from "@/lib/wallet-fee-budget"
 import { walletLabel } from "@/lib/wallet-name"
@@ -243,22 +256,58 @@ interface ReviewSnapshot {
 	/** What a token-only deposit's claim, or a private exit, was SHOWN to set aside from held gas;
 	 *  null when the review opened unpriced, or for any other plan. */
 	ownGasCeiling: bigint | null
+	/** An Ethereum-origin token-only send left the amount step with no route to buy gas: it carries none. */
+	gasUnavailable: boolean
+	/** A send from another chain: the quote the confirm signs. */
+	crossChain?: FrozenRoute
 }
-const reviewed = ref<ReviewSnapshot | null>(null)
+interface FrozenRoute {
+	quoted: QuotedRoute
+	route: CrossChainRoute
+	figures: CrossChainFigures
+}
+// Shallow: the snapshot is replaced whole, never edited, and a cross-chain one holds field elements a deep proxy breaks.
+const reviewed = shallowRef<ReviewSnapshot | null>(null)
 /** Set when a change under the frozen review sent the user back to the amount step. */
 const reviewStale = ref(false)
 /** The specific reason, when the stand-down has one worth naming over the generic line. */
 const reviewStaleWhy = ref<string | null>(null)
 
 const isExit = computed(() => direction.value === "l2-to-l1")
-const resolved = selection.selected
-const ownedRecord = computed(() => (ownedId.value ? journal.records.value.find((r) => r.id === ownedId.value) : undefined))
-const activeRecord = computed(() => (activeId.value ? journal.records.value.find((r) => r.id === activeId.value) : undefined))
+/** The picked row when a deposit starts on another chain; null for an Ethereum row. */
+const xcRow = computed(() => (picked.value && !isExit.value && isSourceRow(picked.value) ? picked.value : null))
+/** The Ethereum token the pick resolved to. A source row has none: the token its rail delivers is `xc.dest`. */
+const resolved = computed(() => (xcRow.value ? null : selection.selected.value))
+const amountDecimals = computed(() => xcRow.value?.decimals ?? resolved.value?.decimals)
+const amountUnits = computed(() => (amountDecimals.value === undefined ? null : parseAmountStrict(amount.value, amountDecimals.value)))
+const xc = useCrossChainSend({
+	row: () => xcRow.value,
+	amount: () => (xcRow.value ? amountUnits.value : null),
+	intent: () => intent.value,
+	isPrivate: () => isPrivate.value,
+	user: () => l1.address.value ?? undefined,
+	recipient: () => bridge.selectedAccount.value ?? undefined,
+	// Only the amount step quotes: a review signs the quote it froze, or says it expired.
+	quoting: () => step.value === 1 && stage.value === "wizard" && xcRow.value !== null,
+	gasShare,
+})
+/** The Ethereum token the claim lands as: the pick itself, or what a source row's rail delivers. */
+const claimToken = computed(() => (xcRow.value ? xc.dest.value : resolved.value))
+const now = useNow()
+
+/** A record the wizard can own: an Ethereum-origin send or a cross-chain one. */
+const isWizardRecord = (r: AnyJournalRecord): boolean => isCrossChainRecord(r) || isSendRecord(r)
+const findRecord = (id: string | null) => (id ? journal.listedRecords.value.find((r) => r.id === id) : undefined)
+const ownedRecord = computed(() => findRecord(ownedId.value))
+const activeRecord = computed(() => findRecord(activeId.value))
 
 /** What the wizard draws: a takeover once its stage has something to show, otherwise the form steps. */
 const view = computed(() => {
 	if (stage.value === "permit" && permitRecord.value) return { kind: "permit", record: permitRecord.value } as const
-	if (stage.value === "stepper" && ownedRecord.value) return { kind: "stepper", record: ownedRecord.value } as const
+	const owned = stage.value === "stepper" ? ownedRecord.value : undefined
+	// A cross-chain send that ended without arriving, or stalled on its rail, has its own panel in the stepper's place.
+	if (owned && isCrossChainRecord(owned) && outcomeVariant(owned, now.value) !== null) return { kind: "outcome", record: owned } as const
+	if (owned) return { kind: "stepper", record: owned } as const
 	if (stage.value === "receipt" && receiptSnapshot.value) {
 		const snapshot = receiptTokenMissing.value ? receiptSnapshot.value : { ...receiptSnapshot.value, addTokenLabel: undefined }
 		return { kind: "receipt", snapshot } as const
@@ -293,8 +342,6 @@ watch(busy, (held) =>
 
 /** ---- amount ------------------------------------------------------------------------------- */
 
-const amountUnits = computed(() => (resolved.value ? parseAmountStrict(amount.value, resolved.value.decimals) : null))
-
 // The strip's labels render a symbol a list or a pasted contract chose; stripped and capped like
 // every other place it lands.
 /** What the amount step renders against: the chain's answer once it lands FOR THE ROW PICKED, the
@@ -318,9 +365,42 @@ const tokenLabel = computed(() => {
 
 /** What the step strip shows for the amount once the user has moved past it. */
 const amountLabel = computed(() => {
-	const token = resolved.value
+	const decimals = amountDecimals.value
 	const units = amountUnits.value
-	return token && units !== null && units > 0n ? `${formatDisplayAmount(units, token.decimals)} ${tokenSymbol.value}` : undefined
+	return decimals !== undefined && units !== null && units > 0n
+		? `${formatDisplayAmount(units, decimals)} ${tokenSymbol.value}`
+		: undefined
+})
+
+/** The amount step's route inputs: the cross-chain route's for a source row, the Ethereum-origin swap's otherwise. */
+const stepRoute = computed(() => {
+	const row = xcRow.value
+	if (!row) {
+		const kind = routeKind.value
+		return { balances: selection.balances.value, gas: gas.value, gasError: gasError.value, kind, loading: routeQuote.loading.value }
+	}
+	const refusal = xc.gasError.value
+	return {
+		balances: { l1: sourceChain.balances.value[row.logoKey] },
+		gas: refusal ? null : xc.gas.value,
+		gasError: refusal,
+		kind: xc.route.value ? ("route" as const) : null,
+		loading: xc.loading.value,
+	}
+})
+
+const crossChainAmount = computed<CrossChainAmount | null>(() => {
+	const e = xc.entry.value
+	if (!xcRow.value || !e) return null
+	const { figures, ceiling, notice, expiresIn } = xc
+	return {
+		srcChainId: e.source.chainId,
+		rail: e.source.rail,
+		figures: figures.value,
+		ceiling: ceiling.value,
+		notice: notice.value,
+		expiresIn: expiresIn.value,
+	}
 })
 
 /** ---- the gas leg -------------------------------------------------------------------------- */
@@ -406,7 +486,7 @@ const gasError = computed(
 
 /** ---- step gating -------------------------------------------------------------------------- */
 
-const tokenChosen = computed(() => resolved.value !== null)
+const tokenChosen = computed(() => xcRow.value !== null || resolved.value !== null)
 
 /** An exit burns through the HUB's binding for the token. A portal on Ethereum is not that binding —
  *  the registration message may exist and never have been consumed — and without it there is no L2
@@ -428,7 +508,7 @@ function privateExitReason(): string | null {
 }
 
 /** What a claim from the account's held gas sets aside for this token, at the last price; null while unpriced. */
-const ownGasCeiling = computed(() => (resolved.value ? gasShare.ownGasCeilingFor(resolved.value.state, isPrivate.value) : null))
+const ownGasCeiling = computed(() => (claimToken.value ? gasShare.ownGasCeilingFor(claimToken.value.state, isPrivate.value) : null))
 /** Which held gas would pay a token-only claim at this ceiling — the decision the claim's own ladder
  *  makes, so a balance known to cover pays whatever the other read did — or null while unpriced with
  *  something held: without a price only an empty account is known. */
@@ -472,7 +552,8 @@ watch(
 // direction, a new send) cannot leave a stale "valid" standing behind it.
 const amountReady = computed(() => {
 	const units = amountUnits.value
-	return exitBlocked.value === null && tokenOnlyBlocked.value === null && amountValid.value && units !== null && units > 0n
+	const routed = xcRow.value === null || xc.ready.value
+	return routed && exitBlocked.value === null && tokenOnlyBlocked.value === null && amountValid.value && units !== null && units > 0n
 })
 
 const completed = computed(() => (amountReady.value ? 2 : tokenChosen.value ? 1 : 0))
@@ -480,6 +561,7 @@ const completed = computed(() => (amountReady.value ? 2 : tokenChosen.value ? 1 
 /** ---- the plan ----------------------------------------------------------------------------- */
 
 const plan = computed<SendPlan | ExitPlan | null>(() => {
+	if (xcRow.value) return crossChainPlan()
 	const token = resolved.value
 	const units = amountUnits.value
 	if (!token || units === null || units <= 0n) return null
@@ -501,6 +583,13 @@ const plan = computed<SendPlan | ExitPlan | null>(() => {
 		...(gasLeg ? { gas: gasLeg } : {}),
 	}
 })
+
+/** The deposit a source row's route makes on Ethereum, as the journal files it. */
+function crossChainPlan(): SendPlan | null {
+	const quoted = xc.quoted.value
+	const route = xc.route.value
+	return quoted && route ? xc.planOf(route, quoted.ask) : null
+}
 
 /** Transactions the bought gas covers AFTER what the claim path must set aside — counted from the
  *  floor the swap is signed against, never from the sizing target: a capped slice ships less than
@@ -602,7 +691,18 @@ function freezeReview(target: SendPlan | ExitPlan): ReviewSnapshot {
 			txCovered,
 		},
 		ownGasCeiling: setsAsideHeldGas(target) ? gasShare.ownGasCeilingFor(target.token.state, target.isPrivate) : null,
+		gasUnavailable: target.direction === "l1-to-l2" && target.intent === "token" && GAS_CLOSED.has(routeKind.value),
+		crossChain: frozenRoute(),
 	}
+}
+
+const GAS_CLOSED = new Set<string | null>(["no-route", "unavailable"])
+
+function frozenRoute(): FrozenRoute | undefined {
+	const quoted = xc.quoted.value
+	const route = xc.route.value
+	const figures = xc.figures.value
+	return xcRow.value && quoted && route && figures ? { quoted, route, figures } : undefined
 }
 
 /** The plans whose fee comes out of gas the account already holds: a token-only deposit's claim, a private exit. */
@@ -780,6 +880,7 @@ function enterReview(): void {
 	if (!amountReady.value || !target) return
 	reviewed.value = freezeReview(target)
 	reviewStale.value = false
+	clearCrossChainReview()
 	step.value = 2
 }
 
@@ -790,6 +891,7 @@ function goToStep(index: 0 | 1 | 2): void {
 	}
 	reviewed.value = null
 	reviewStale.value = false
+	clearCrossChainReview()
 	step.value = index
 }
 
@@ -828,7 +930,8 @@ watch(
 		tokenOnlyBlocked,
 		() => bridge.selectedAccount.value,
 		() => l1.address.value,
-		() => l1.chainId.value,
+		// A send from another chain is signed there: the switch to it is part of the review, not a change under it.
+		() => (xcRow.value ? null : l1.chainId.value),
 	],
 	(next, prev) => invalidateReview(undefined, changedInputs(next, prev)),
 )
@@ -856,6 +959,113 @@ watch(
 	},
 )
 
+/** ---- the cross-chain review --------------------------------------------------------------- */
+
+/** What the last confirm of a cross-chain review ran into; every new review starts clear. */
+const xcRefusal = ref<CrossChainState | null>(null)
+const xcError = ref<string | null>(null)
+/** A new quote asked from the review: it is frozen in place once it lands. */
+const xcRequoting = ref(false)
+
+function clearCrossChainReview(): void {
+	xcRefusal.value = null
+	xcError.value = null
+	xcRequoting.value = false
+}
+
+/** The frozen cross-chain review, with the plan it signs. */
+const xcReview = computed(() => {
+	const s = reviewed.value
+	return s?.crossChain && s.plan.direction === "l1-to-l2" ? { ...s.crossChain, plan: s.plan } : null
+})
+const xcExpiresIn = computed(() => (xcReview.value ? xcReview.value.quoted.at + ROUTE_TTL_MS - now.value : 0))
+/** What stands in Sign and send's place: the confirm's last refusal, else a quote past its TTL. */
+const xcSignState = computed<CrossChainState | null>(() => {
+	if (xcRequoting.value) return null
+	return xcRefusal.value ?? (xcExpiresIn.value <= 0 ? { kind: "expired" } : null)
+})
+/** The chain the wallet sits on while the review needs it on the source chain; null once it is there. */
+const xcWalletChainId = computed(() => {
+	const src = xcReview.value?.quoted.ask.srcChainId
+	const on = l1.chainId.value
+	return src === undefined || on === null || on === src ? null : on
+})
+const ethWrongChain = computed(() =>
+	l1.wrongChain.value && l1.chainId.value !== null ? { walletChainId: l1.chainId.value, needChainId: NETWORK.l1ChainId } : null,
+)
+
+function switchToSource(): void {
+	const src = xcReview.value?.quoted.ask.srcChainId
+	if (src !== undefined) void sourceChain.switchTo(src)
+}
+
+function onCrossChainAct(): void {
+	const state = xcSignState.value
+	if (state?.kind === "contract") onChangeWallet()
+	else if (state?.kind === "unchecked") retrySign()
+	else if (state?.kind === "account") requoteFromAmount()
+	else if (state) requoteInPlace()
+}
+
+function retrySign(): void {
+	xcRefusal.value = null
+	void onConfirm()
+}
+
+/** The wallet answers as another account: the amount step prices the route again for it. */
+function requoteFromAmount(): void {
+	goToStep(1)
+	xc.requote()
+}
+
+/** An expired or refused quote is asked again from the review, which freezes the answer in place, or stands
+ *  down to the amount step where the answer's refusal shows. */
+function requoteInPlace(): void {
+	xcRefusal.value = null
+	xcRequoting.value = true
+	xc.requote()
+	settleRequote()
+}
+
+function settleRequote(): void {
+	if (!xcRequoting.value || xc.loading.value) return
+	xcRequoting.value = false
+	if (amountReady.value) enterReview()
+	else goToStep(1)
+}
+watch(() => xc.loading.value, settleRequote)
+
+/** A contract account cannot send from a source chain, and one whose code could not be read is not taken for an EOA. */
+async function contractRefusal(chainId: number): Promise<CrossChainState | null> {
+	try {
+		return (await sourceChain.contractAccount(chainId)) ? { kind: "contract" } : null
+	} catch {
+		return { kind: "unchecked" }
+	}
+}
+
+function refusalState(kind: CrossChainRefusal, priced: string): CrossChainState {
+	if (kind === "account") return { kind, priced: trimAddress(checksumAddress(priced)) }
+	return kind === "refused" ? { kind, field: "" } : { kind }
+}
+
+async function runCrossChain(snapshot: ReviewSnapshot, frozen: FrozenRoute, target: SendPlan): Promise<void> {
+	const { ask } = frozen.quoted
+	const refusal = await contractRefusal(ask.srcChainId)
+	if (reviewed.value !== snapshot) return
+	const client = l1.ensureWalletClient()
+	if (refusal || !client) {
+		xcRefusal.value = refusal
+		xcError.value = client ? null : "Connect your Ethereum wallet first."
+		return
+	}
+	const sent = await xc.send(frozen.quoted, frozen.route, target.token, client)
+	if ("id" in sent) {
+		if (ownedId.value !== sent.id && backgroundedCanonical.value !== sent.id) adopt(sent.id)
+	} else if ("refused" in sent) xcRefusal.value = refusalState(sent.refused, ask.user)
+	else xcError.value = sent.error
+}
+
 /** ---- submit + the takeover ---------------------------------------------------------------- */
 
 function adopt(id: string): void {
@@ -875,10 +1085,10 @@ function adopt(id: string): void {
  */
 function adoptRunRecord(): void {
 	if (!submitting.value || ownedId.value || (stage.value !== "wizard" && stage.value !== "permit")) return
-	const mine = journal.records.value.find((r) => isSendRecord(r) && !preSubmitIds.has(r.id) && journal.isSessionLive(r.id))
+	const mine = journal.listedRecords.value.find((r) => isWizardRecord(r) && !preSubmitIds.has(r.id) && journal.isSessionLive(r.id))
 	if (mine && mine.id !== backgroundedCanonical.value) adopt(mine.id)
 }
-watch(journal.records, adoptRunRecord)
+watch(journal.listedRecords, adoptRunRecord)
 
 /**
  * The gas gate is re-read at CONFIRM, not trusted from when the amount step opened: gas spent
@@ -988,19 +1198,26 @@ async function onConfirm(): Promise<void> {
 	const snapshot = reviewed.value
 	const target = snapshot?.plan
 	if (!snapshot || !target || submitting.value || preflighting.value || stage.value !== "wizard") return
+	if (snapshot.crossChain && (xcSignState.value !== null || xcWalletChainId.value !== null)) return
 	if (!(await preflight(snapshot))) return
 	submitting.value = true
 	backgroundedId.value = null
 	backgroundedLine.value = null
-	preSubmitIds = new Set(journal.records.value.map((r) => r.id))
+	preSubmitIds = new Set(journal.listedRecords.value.map((r) => r.id))
 	reviewSaid.value = promisedLine(target)
 	receiptReview.value = receiptReviewOf(snapshot)
 	sendStartedAt.value = Date.now()
 	try {
-		await (target.direction === "l2-to-l1" ? runExit(target, snapshot.ownGasCeiling) : runSend(target))
+		await runReviewed(snapshot)
 	} finally {
 		submitting.value = false
 	}
+}
+
+function runReviewed(snapshot: ReviewSnapshot): Promise<void> {
+	const target = snapshot.plan
+	if (target.direction === "l2-to-l1") return runExit(target, snapshot.ownGasCeiling)
+	return snapshot.crossChain ? runCrossChain(snapshot, snapshot.crossChain, target) : runSend(target)
 }
 
 /** The record the permission phase is rendered from: the plan, filed the way the send will file it,
@@ -1093,6 +1310,20 @@ function exitSnapshotOf(rec: SendWithdrawRecord, base: SnapshotBase): ReceiptSna
 	return { ...base, direction: "withdraw", recipient: rec.recipientL1, l1TxHash: rec.consumeTxHash, l2TxHash: rec.exitTxHash }
 }
 
+/** Puts `rec`'s receipt up; false for a record that has none. A cross-chain one names its source leg and the
+ *  account that sent it there. */
+function openReceipt(rec: AnyJournalRecord): boolean {
+	const view = sendView(rec)
+	if (!isSendRecord(view)) return false
+	const base = snapshotOf(view)
+	receiptSnapshot.value = isCrossChainRecord(rec)
+		? { ...base, source: { chainId: rec.route.srcChainId, txHash: rec.route.srcTxHash }, sender: rec.route.srcSender }
+		: base
+	receiptL2Token.value = view.direction === "deposit" ? (view.token?.l2Token ?? null) : null
+	stage.value = "receipt"
+	return true
+}
+
 function depositSnapshotOf(rec: SendDepositRecord, base: SnapshotBase): ReceiptSnapshot {
 	const wallet = { status: bridge.status.value, selectedAccount: bridge.selectedAccount.value, accounts: bridge.accounts.value }
 	const alias = accountOf(rec, wallet)?.alias
@@ -1114,13 +1345,11 @@ watch(
 	() => ownedRecord.value?.completedAt,
 	(done) => {
 		const rec = ownedRecord.value
-		if (!done || stage.value !== "stepper" || !rec || !isSendRecord(rec)) return
-		receiptSnapshot.value = snapshotOf(rec)
-		receiptL2Token.value = rec.direction === "deposit" ? (rec.token?.l2Token ?? null) : null
-		stage.value = "receipt"
+		// A cross-chain send that ended without arriving keeps its outcome panel: there is no receipt for it.
+		if (!done || stage.value !== "stepper" || !rec || (isCrossChainRecord(rec) && rec.route.outcome)) return
 		// Release the takeover so the finished record surfaces in the journal list; the receipt renders
 		// from the snapshot, so it survives the release.
-		journal.releaseForeground(rec.id)
+		if (openReceipt(rec)) journal.releaseForeground(rec.id)
 	},
 )
 
@@ -1139,7 +1368,7 @@ watch(
 		if (ownedRecord.value === undefined) {
 			// Only the row OURS was renamed into: another surface's foreground is not this send.
 			const adoptable = activeRecord.value
-			if (adoptable && isSendRecord(adoptable) && adoptable.id === journal.canonicalRecordId(ownedId.value ?? "")) {
+			if (adoptable && isWizardRecord(adoptable) && adoptable.id === journal.canonicalRecordId(ownedId.value ?? "")) {
 				ownedId.value = adoptable.id
 				return
 			}
@@ -1193,18 +1422,14 @@ function onBackground(): void {
 }
 
 const backgrounded = computed(() => {
-	const id = backgroundedCanonical.value
-	const rec = id ? journal.records.value.find((r) => r.id === id) : undefined
+	const rec = findRecord(backgroundedCanonical.value)
 	return rec && !rec.completedAt ? rec : undefined
 })
 
 // A backgrounded send may register the token while the user prepares the next one from it: once
 // it lands, the token is re-resolved, which also stands down a review priced for a first send.
 watch(
-	() => {
-		const id = backgroundedCanonical.value
-		return id ? journal.records.value.find((r) => r.id === id)?.completedAt : undefined
-	},
+	() => findRecord(backgroundedCanonical.value)?.completedAt,
 	(done) => {
 		if (done && picked.value) void reselect(picked.value, direction.value)
 	},
@@ -1265,11 +1490,66 @@ async function onAddToken(): Promise<void> {
 		pushToast({ kind: "error", text: `Your wallet cannot add tokens yet. Update ${walletName.value} and reload.` })
 }
 
+/** ---- the outcome panel and requests from elsewhere in the app ------------------------------ */
+
+/** "Get a new quote" returns to the amount step, "Change the send" to the token step, both from the same source
+ *  token at the amount it was sent with. */
+function resendFrom(rec: CrossChainDepositRecord, toAmount: boolean): void {
+	onNewSend()
+	const { srcChainId, srcToken, srcAmount } = rec.route
+	const row = sourceChain.rows.find((r) => r.chainId === srcChainId && r.address === srcToken.toLowerCase())
+	if (!row) return
+	onSelectSource(row)
+	// Stored amounts are user-writable: only digits become a figure.
+	if (/^\d+$/.test(srcAmount)) amount.value = toDecimalString(BigInt(srcAmount), row.decimals)
+	intent.value = rec.intent
+	isPrivate.value = rec.isPrivate
+	if (!toAmount) goToStep(0)
+}
+
+/** A request may take the wizard over except mid-confirm or under the permission prompt. */
+const takeable = computed(() => !preflighting.value && stage.value !== "permit" && !(stage.value === "wizard" && submitting.value))
+
+/** A send still running keeps its line above the form, as Run in background leaves it. */
+function clearForRequest(): void {
+	const rec = stage.value === "stepper" ? ownedRecord.value : undefined
+	if (rec && !rec.completedAt) onBackground()
+	else onNewSend()
+}
+
+/** A send that continues one delivered to the Ethereum wallet: its token, at what arrived, as it was asked. A token
+ *  the catalog does not list leaves the user on the token step. */
+function applyPrefill(p: EthereumPrefill): void {
+	clearForRequest()
+	direction.value = "l1-to-l2"
+	const row = catalog.tokens.value.find((t) => t.address.toLowerCase() === p.token.toLowerCase())
+	if (!row) return
+	void onSelect(row)
+	if (p.amount !== undefined && row.decimals >= 0) amount.value = toDecimalString(p.amount, row.decimals)
+	intent.value = p.intent
+	isPrivate.value = p.isPrivate
+}
+
+function takeRequests(): void {
+	if (!takeable.value) return
+	const prefill = catalog.loading.value ? null : shell.takePrefill()
+	if (prefill) applyPrefill(prefill)
+	const receiptId = shell.takeReceiptRequest()
+	const rec = receiptId ? findRecord(journal.canonicalRecordId(receiptId)) : undefined
+	if (!rec?.completedAt) return
+	clearForRequest()
+	openReceipt(rec)
+}
+
 void catalog.refresh()
+// The wizard stays mounted behind other sections, so a request can arrive at any stage; one waits for the catalog
+// and for any confirm in progress.
+watch([shell.prefill, shell.receiptRequest, takeable, catalog.loading], takeRequests, { immediate: true })
 
 // Reverse of construction: the flows read the selection's epoch and the selection reads the catalog,
 // so each is stood down before the thing it depends on stops answering.
 onBeforeUnmount(() => {
+	xc.dispose()
 	exitFlow.dispose()
 	sendFlow.dispose()
 	gasShare.dispose()
@@ -1300,6 +1580,15 @@ onBeforeUnmount(() => {
 		:started-at="sendStartedAt"
 		@background="onBackground"
 		@backup="backup.exportBridgeWithToast"
+		@new-send="onNewSend"
+	/>
+	<CrossChainOutcome
+		v-else-if="view.kind === 'outcome'"
+		:record="view.record"
+		@continue="applyPrefill"
+		@dismiss="onNewSend"
+		@new-quote="resendFrom(view.record, true)"
+		@change-send="resendFrom(view.record, false)"
 	/>
 	<BridgeReceipt
 		v-else-if="view.kind === 'receipt'"
@@ -1357,20 +1646,22 @@ onBeforeUnmount(() => {
 				v-if="amountToken"
 				:direction="direction"
 				:token="amountToken"
-				:resolving="selection.loading.value"
-				:balances="selection.balances.value"
+				:resolving="xcRow ? false : selection.loading.value"
+				:balances="stepRoute.balances"
 				:intent="intent"
 				:amount="amount"
 				:is-private="isPrivate"
-				:gas="gas"
-				:route-kind="routeKind"
-				:route-loading="routeQuote.loading.value"
+				:gas="stepRoute.gas"
+				:route-kind="stepRoute.kind"
+				:route-loading="stepRoute.loading"
 				:tx-target="gasShare.txTarget.value"
 				:fj-per-tx="fjPerTx"
 				:gas-set-aside="gasOnlySetAside(isPrivate)"
-				:gas-error="gasError"
+				:gas-error="stepRoute.gasError"
 				:blocked-reason="exitBlocked"
 				:token-only-blocked="tokenOnlyReason"
+				:cross-chain="crossChainAmount"
+				@retry="xc.requote()"
 				@update:valid="amountValid = $event"
 				@update:intent="intent = $event"
 				@update:amount="amount = $event"
@@ -1381,8 +1672,27 @@ onBeforeUnmount(() => {
 			/>
 		</template>
 		<template #review>
+			<CrossChainReview
+				v-if="xcReview && reviewed"
+				:plan="xcReview.plan"
+				:ask="xcReview.quoted.ask"
+				:figures="xcReview.figures"
+				:symbol="tokenSymbol ?? ''"
+				:account="reviewed.account"
+				:slippage-bps="reviewed.slippageBps"
+				:tx-covered="reviewed.estimate.txCovered"
+				:expires-in="xcExpiresIn"
+				:state="xcSignState"
+				:wallet-chain-id="xcWalletChainId"
+				:busy="busy || xcRequoting"
+				:error="xcError"
+				@back="goToStep(1)"
+				@confirm="onConfirm"
+				@act="onCrossChainAct"
+				@switch-chain="switchToSource"
+			/>
 			<ReviewStep
-				v-if="reviewed"
+				v-else-if="reviewed"
 				:plan="reviewed.plan"
 				:portal-verified="portalVerified"
 				:account="reviewed.account"
@@ -1393,9 +1703,17 @@ onBeforeUnmount(() => {
 				:busy="busy"
 				:error="flowError"
 				:paused="exitFlow.paused.value"
+				:gas-unavailable="reviewed.gasUnavailable"
+				:wrong-chain="ethWrongChain"
 				@back="goToStep(1)"
 				@confirm="onConfirm"
+				@switch-chain="sourceChain.switchTo(NETWORK.l1ChainId)"
 			/>
+		</template>
+		<template v-if="step === 2 && xcReview" #band>
+			<p class="quote-band" :data-testid="TESTIDS.sendXcQuoteBand">
+				Quote valid for <span class="clock">{{ countdownText(xcExpiresIn) }}</span> · refreshed before you sign
+			</p>
 		</template>
 	</WizardShell>
 	</div>
@@ -1461,5 +1779,16 @@ onBeforeUnmount(() => {
 	flex: none;
 	margin-top: 2px;
 	color: var(--ul-attention);
+}
+
+.quote-band {
+	margin: 0;
+	font: 400 13px/1.45 var(--ul-font-body);
+	color: var(--ul-ink-2);
+}
+
+.quote-band .clock {
+	font-family: var(--ul-font-mono);
+	color: var(--ul-ink);
 }
 </style>
