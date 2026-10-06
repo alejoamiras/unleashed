@@ -274,7 +274,7 @@ export interface CrossChainRoute {
 	etaSeconds: number
 	/** Across only. */
 	fillDeadline?: number
-	/** Built on `selfBuiltTerms` because Across quoted none: Across only, filled by hand before `fillDeadline` or
+	/** Built on `selfBuiltTerms`: Across only, filled by hand by its exclusive relayer before `fillDeadline` or
 	 *  refunded; `etaSeconds` is then the whole fill window, not an estimate. Absent for a quoted deposit. */
 	terms?: "fixed"
 	/** Provisional until `completedAt` is set; see `outcomePatch`. */

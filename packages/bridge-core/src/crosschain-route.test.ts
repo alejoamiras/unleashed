@@ -3,6 +3,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type Address, type Hex, zeroHash } from "viem"
 import { describe, expect, it } from "vitest"
+import { TESTNET_FILLER } from "./across-self-built"
 import { acrossMessageOf, acrossRouteTx, bridgeFromCallerCall, crossChainIntent } from "./crosschain-route"
 import { testnetSwapperFuelProvider, withFuelFloor } from "./fuel-quote"
 import { type RouteExpectation, verifyRoute } from "./lifi-decode"
@@ -78,5 +79,13 @@ describe("an Across route of ours", () => {
 		const hostile = await routeWith(fuel.slice + 1n)
 		const refused = verifyRoute(acrossRouteTx(hostile), hostile)
 		expect(refused.ok ? undefined : refused.field).toBe("fuelSwap._swapData.fromAmount")
+	})
+
+	it("holds a deposit to the exclusive relayer it was built for, byte for byte", async () => {
+		const open = await routeWith(fuel.slice)
+		const held = { ...open, rail: { ...open.rail, exclusiveRelayer: TESTNET_FILLER } } as RouteExpectation
+		expect(verifyRoute(acrossRouteTx(held), held).ok).toBe(true)
+		const unheld = verifyRoute(acrossRouteTx(open), held)
+		expect(unheld.ok ? undefined : unheld.field).toBe("call._acrossData.exclusiveRelayer")
 	})
 })
