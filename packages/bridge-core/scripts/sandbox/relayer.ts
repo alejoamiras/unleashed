@@ -167,17 +167,25 @@ export interface FillCall {
 	gas?: bigint
 }
 
-async function approveExactly(dest: Destination, token: Address, spender: Address, amount: bigint): Promise<void> {
-	const hash = await dest.wallet.writeContract({
-		address: token,
+interface Approval {
+	token: Address
+	spender: Address
+	amount: bigint
+}
+
+const submitApproval = (dest: Destination, a: Approval): Promise<Hex> =>
+	dest.wallet.writeContract({
+		address: a.token,
 		abi: erc20Abi,
 		functionName: "approve",
-		args: [spender, amount],
+		args: [a.spender, a.amount],
 		account: dest.wallet.account,
 		chain: dest.wallet.chain,
 	})
+
+async function confirmApproval(dest: Destination, a: Approval, hash: Hex): Promise<void> {
 	const receipt = await dest.public.waitForTransactionReceipt({ hash })
-	if (receipt.status !== "success") throw new Error(`approve(${spender}, ${amount}) on ${token} reverted`)
+	if (receipt.status !== "success") throw new Error(`approve(${a.spender}, ${a.amount}) on ${a.token} reverted`)
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -195,11 +203,12 @@ export class AllowanceStillLive extends Error {
 }
 
 /** Clears the approval of a fill that did not land. @throws AllowanceStillLive when the clear fails too. */
-async function clearApproval(dest: Destination, token: Address, spender: Address, fill: unknown): Promise<void> {
+async function clearApproval(dest: Destination, a: Approval, fill: unknown): Promise<void> {
+	const revoke = { ...a, amount: 0n }
 	try {
-		await approveExactly(dest, token, spender, 0n)
+		await confirmApproval(dest, revoke, await submitApproval(dest, revoke))
 	} catch (e) {
-		throw new AllowanceStillLive(spender, token, e, fill)
+		throw new AllowanceStillLive(a.spender, a.token, e, fill)
 	}
 }
 
@@ -226,9 +235,11 @@ async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRela
 /**
  * Approves `spokePool` for exactly `relay.outputAmount` of its output token and sends `fillRelay` from the wallet's
  * account, which is also the logged relayer. Without explicit gas the fill is simulated first, so a fill that would
- * revert throws before anything is sent. A fill that does not land clears the approval again.
+ * revert throws before anything is sent. Once the approval is submitted, any failure short of a landed fill, its own
+ * confirmation included, clears the approval again.
  *
- * @throws the fill's own error once its approval is cleared, or {@link AllowanceStillLive} when the clear fails too.
+ * @throws the approval's submit error with nothing sent; otherwise the first failure once the approval is cleared,
+ * or {@link AllowanceStillLive} when the clear fails too.
  */
 export async function sendFill(
 	dest: Destination,
@@ -236,16 +247,17 @@ export async function sendFill(
 	relay: AcrossRelayData,
 	call: FillCall,
 ): Promise<{ hash: Hex; status: "success" | "reverted" }> {
-	const token = wordAddress(relay.outputToken)
-	await approveExactly(dest, token, spokePool, relay.outputAmount)
+	const approval: Approval = { token: wordAddress(relay.outputToken), spender: spokePool, amount: relay.outputAmount }
+	const approved = await submitApproval(dest, approval)
 	let sent: Awaited<ReturnType<typeof fillOnce>>
 	try {
+		await confirmApproval(dest, approval, approved)
 		sent = await fillOnce(dest, spokePool, relay, call)
 	} catch (e) {
-		await clearApproval(dest, token, spokePool, e)
+		await clearApproval(dest, approval, e)
 		throw e
 	}
-	if (sent.status !== "success") await clearApproval(dest, token, spokePool, new Error(`the fill ${sent.hash} reverted`))
+	if (sent.status !== "success") await clearApproval(dest, approval, new Error(`the fill ${sent.hash} reverted`))
 	return sent
 }
 

@@ -9,6 +9,7 @@ import {
 	type AbiEvent,
 	type Address,
 	decodeEventLog,
+	decodeFunctionData,
 	encodeAbiParameters,
 	encodeEventTopics,
 	encodeFunctionData,
@@ -22,6 +23,7 @@ import {
 	toHex,
 } from "viem"
 import { describe, expect, it } from "vitest"
+import { ACROSS_V4_FACET_ABI } from "./across-v4"
 import { bytesFromHex, mintToPrivateContentHash, mintToPublicContentHash, sha256ToField, word } from "./content-hash"
 import {
 	acrossRelayHash,
@@ -56,6 +58,8 @@ interface Receipts {
 }
 interface Variant {
 	transactionId: Hex
+	/** The source Diamond call. */
+	calldata: Hex
 	intent: { tokenSecretHash: Hex; fuelSecretHash: Hex; aztecRecipient: Hex; fuelSlice: string; minFuelOutput: string }
 }
 interface Rail {
@@ -223,6 +227,7 @@ interface Tx {
 	status?: "success" | "reverted"
 	from?: Address
 	input?: Hex
+	to?: Address | null
 }
 
 interface ChainOptions {
@@ -287,7 +292,7 @@ function chain(o: ChainOptions): DiscoveryChainReads & { fillReads: unknown[] } 
 			reads++
 			const tx = o.txs.find((t) => eq(t.hash, hash))
 			if (!tx) throw new Error(`no transaction ${hash}`)
-			return { input: tx.input ?? "0x" }
+			return { input: tx.input ?? "0x", to: tx.to ?? null }
 		},
 		readContract: async (args) => {
 			fillReads.push(args)
@@ -524,9 +529,9 @@ describe("discoverCrossChain", () => {
 	})
 
 	it("not-sent comes only from a reverted source transaction of the record's signer for its LI.FI id, final once that block is finalized; absence is pending", async () => {
-		// The id off the word grid, where an EIP-7702 batch nests the Diamond call.
+		// A self-addressed EIP-7702 batch, with the id off the word grid where the batch nests the Diamond call.
 		const input: Hex = `0x12345678${"00".repeat(36)}${PUBLIC.transactionId.slice(2)}`
-		const reverted: Tx = { hash: SRC_TX, block: SRC_BLOCK, logs: [], status: "reverted", input }
+		const reverted: Tx = { hash: SRC_TX, block: SRC_BLOCK, logs: [], status: "reverted", input, to: RAIL.inputs.user }
 		const final = await discover(record(), reads([reverted], []))
 		expect(final).toMatchObject({
 			verdict: "not-sent",
@@ -539,6 +544,16 @@ describe("discoverCrossChain", () => {
 
 		expect((await discover(record(), reads([{ ...reverted, from: ATTACKER }], []))).verdict).toBe("pending")
 		expect((await discover(record(), reads([], []))).verdict).toBe("pending")
+
+		// A direct Diamond call is ours by its decoded `BridgeData.transactionId`, not by the id its Across message
+		// also carries; the public id in a call to any other contract is not this transfer.
+		const direct: Tx = { ...reverted, input: PUBLIC.calldata, to: RAIL.source.diamond }
+		expect((await discover(record(), reads([direct], []))).verdict).toBe("not-sent")
+		const abi = ACROSS_V4_FACET_ABI
+		const [bridgeData, acrossData] = decodeFunctionData({ abi, data: PUBLIC.calldata }).args
+		const otherId = encodeFunctionData({ abi, args: [{ ...bridgeData, transactionId: label("another transfer") }, acrossData] })
+		expect((await discover(record(), reads([{ ...direct, input: otherId }], []))).verdict).toBe("pending")
+		expect((await discover(record(), reads([{ ...direct, to: ATTACKER }], []))).verdict).toBe("pending")
 
 		// The recorded hash names another reverted transaction of the same sender: the transfer itself landed elsewhere.
 		const unrelated: Tx = { ...reverted, input: `0x12345678${"00".repeat(68)}` }

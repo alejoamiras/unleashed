@@ -17,6 +17,7 @@ import {
 	type Address,
 	decodeAbiParameters,
 	decodeEventLog,
+	decodeFunctionData,
 	encodeAbiParameters,
 	getAbiItem,
 	type Hex,
@@ -30,6 +31,7 @@ import {
 	toHex,
 	zeroHash,
 } from "viem"
+import { ACROSS_V4_FACET_ABI } from "./across-v4"
 import {
 	assertCanonical,
 	type BudgetedRead,
@@ -56,6 +58,7 @@ import {
 } from "./journal"
 import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_RECEIVER_MESSAGE_PARAMS } from "./lifi-abi"
 import { PRIVATE_FPC_ADDRESS } from "./private-fuel"
+import { STARGATE_FACET_V2_ABI } from "./stargate"
 
 // ── public types ─────────────────────────────────────────────────────────────
 
@@ -90,7 +93,8 @@ export interface DiscoveryChainReads extends ChainHeadClient {
 	}): Promise<readonly DiscoveryLog[]>
 	/** `null`, or viem's `TransactionReceiptNotFoundError`, when the node has no receipt for `hash`. */
 	getTransactionReceipt(args: { hash: Hex }): Promise<DiscoveryReceipt | null>
-	getTransaction(args: { hash: Hex }): Promise<{ input: Hex }>
+	/** `to` is `null` for a contract creation. */
+	getTransaction(args: { hash: Hex }): Promise<{ input: Hex; to: Address | null }>
 	readContract(args: {
 		address: Address
 		abi: Abi
@@ -446,16 +450,29 @@ function carriesWord(data: Hex, id: Hex): boolean {
 	return false
 }
 
+/** The `BridgeData.transactionId` of a call to the rail's facet, or `undefined` when it does not decode. */
+function diamondCallId(input: Hex, rail: CrossChainDiscoveryContext["rail"]["kind"]): unknown {
+	try {
+		const abi = rail === "acrossV4" ? ACROSS_V4_FACET_ABI : STARGATE_FACET_V2_ABI
+		return decodeFunctionData({ abi, data: input }).args[0].transactionId
+	} catch {
+		return undefined
+	}
+}
+
 /**
- * A reverted receipt has no logs to authenticate. It is this record's when the record's sender signed it and its
- * calldata carries the record's `lifiTxId`, the `BridgeData.transactionId` the route sets, whether the transaction
- * calls the Diamond directly or batches through an EIP-7702 account; any other reverted transaction of the sender's
- * is not this transfer, which may still have landed under another hash.
+ * A reverted receipt has no logs to authenticate, so it is this record's only when the record's sender signed it
+ * and either it calls the source Diamond with a rail entrypoint whose decoded `BridgeData.transactionId` is
+ * `lifiTxId`, or it is addressed to the sender itself (an EIP-7702 batch, whose inner calls are not decoded) and
+ * carries `lifiTxId` as one 32-byte run. A call to any other address can carry the public id without being this
+ * transfer, which may still land under another hash.
  */
 async function revertedIsOurs(c: Ctx, client: DiscoveryChainReads, receipt: DiscoveryReceipt): Promise<boolean> {
-	if (!hexEq(receipt.from, c.rec.route.srcSender)) return false
+	const { srcSender, lifiTxId } = c.rec.route
+	if (!hexEq(receipt.from, srcSender)) return false
 	const tx = await c.read(() => client.getTransaction({ hash: receipt.transactionHash }))
-	return carriesWord(tx.input, c.rec.route.lifiTxId as Hex)
+	if (hexEq(tx.to, c.ctx.source.diamond)) return hexEq(diamondCallId(tx.input, c.ctx.rail.kind), lifiTxId)
+	return hexEq(tx.to, srcSender) && carriesWord(tx.input, lifiTxId as Hex)
 }
 
 async function fromRecordedHash(c: Ctx, client: DiscoveryChainReads, hash: Hex): Promise<SourceFacts | undefined> {
