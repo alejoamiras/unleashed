@@ -4,7 +4,6 @@ pragma solidity >=0.8.27;
 import {Test} from "forge-std/Test.sol";
 import {TestUsdc} from "../src/TestUsdc.sol";
 import {MintableERC20} from "../src/MintableERC20.sol";
-import {InertSwapTarget} from "../src/InertSwapTarget.sol";
 
 contract TestUsdcTest is Test {
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
@@ -38,14 +37,5 @@ contract TestUsdcTest is Test {
 
     function test_decimals_are_constructor_driven() public view {
         assertEq(token.decimals(), 6);
-    }
-
-    /// The mainnet swapTarget stub reverts on ANY call (selector or plain value transfer).
-    function test_inertSwapTarget_reverts_all_calls() public {
-        InertSwapTarget stub = new InertSwapTarget();
-        (bool okCall,) = address(stub).call(abi.encodeWithSignature("swap(address,uint256)", address(1), 1));
-        assertFalse(okCall);
-        (bool okValue,) = address(stub).call{value: 1 wei}("");
-        assertFalse(okValue);
     }
 }

@@ -10,7 +10,7 @@ import {PortalFactory} from "../../src/PortalFactory.sol";
 import {MintableERC20} from "../../src/MintableERC20.sol";
 import {ILiFiSwap} from "../../src/interfaces/ILiFiSwap.sol";
 import {CapturingInbox, CapturingOutbox, FakeRegistry, FakeRollup} from "./AztecFakes.sol";
-import {MockPermit2, MockFeeJuicePortal} from "./RouterMocks.sol";
+import {MockPermit2, MockFeeJuicePortal} from "./CounterpartyMocks.sol";
 import {MockLifiSwap, MockExecutor} from "./DepositRouterMocks.sol";
 
 /// `DepositRouter` over the REAL factory, a LI.FI-shaped swap target and a mock Permit2. The token leg lands in a
