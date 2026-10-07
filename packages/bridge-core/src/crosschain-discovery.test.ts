@@ -751,10 +751,12 @@ describe("discoverCrossChain", () => {
 		})
 	})
 
-	it("a deposit the canonical chain no longer carries leaves no claim facts behind, unless the record is final", async () => {
-		const deposited = await discover(record(), reads([sourceTx(ROUTED)], [fillTx(ROUTED.destination.logs)]))
+	it("a deposit the canonical chain no longer carries leaves no claim facts behind, unless it or the record is final", async () => {
+		const above = fillTx(ROUTED.destination.logs, { block: ETH_BLOCK + 2n })
+		const deposited = await discover(record(), reads([sourceTx(ROUTED)], [above]))
 		const claimable = { ...record(), ...discoveryPatch(record(), deposited, 7) } as CrossChainDepositRecord
 		expect(deriveCrossChainDepositStage(claimable)).toBe("syncing")
+		expect(claimable.route.depositFinal, "its block is above the finalized head").toBeUndefined()
 		const rerun = async (ethTxs: Tx[], rec = claimable) =>
 			({ ...rec, ...discoveryPatch(rec, await discover(rec, reads([sourceTx(ROUTED)], ethTxs)), 9) }) as CrossChainDepositRecord
 		const gone = {
@@ -771,12 +773,11 @@ describe("discoverCrossChain", () => {
 		const recovered = await rerun([fillTx(ROUTED_RECOVERY, { hash: label("recovery") })])
 		expect(recovered).toMatchObject({ ...gone, route: { outcome: "delivered-to-wallet" } })
 
-		const claimed = await rerun([], { ...claimable, completedAt: 8 })
-		expect(claimed).toMatchObject({
-			leafIndex: FACTS.token.leafIndex,
-			depositTxHash: FILL_TX,
-			fuel: { leafIndex: FACTS.fuel.leafIndex },
-		})
+		const final = await rerun([fillTx(ROUTED.destination.logs)])
+		expect(final.route.depositFinal).toBe(true)
+		const kept = { leafIndex: FACTS.token.leafIndex, depositTxHash: FILL_TX, fuel: { leafIndex: FACTS.fuel.leafIndex } }
+		expect(await rerun([], final)).toMatchObject({ ...kept, route: { depositFinal: true } })
+		expect(await rerun([], { ...claimable, completedAt: 8 })).toMatchObject(kept)
 	})
 
 	it("finds a lost source hash through the Transfer scan, skipping the sender's other LI.FI transfers", async () => {

@@ -181,7 +181,7 @@ const across = xc.route.transport as object
 
 describe("validateCrossChainRecord — schema 4", () => {
 	it("accepts both rails fully populated, unchanged; the Ethereum-origin validator refuses them", () => {
-		for (const rec of [xc, sg, mutateRoute({ terms: "fixed" })]) {
+		for (const rec of [xc, sg, mutateRoute({ terms: "fixed" }), mutateRoute({ depositFinal: true })]) {
 			expect(validateCrossChainRecord(rec)).toEqual(rec)
 			expect(validateJournalRecord(rec)).toEqual(rec)
 			expect(() => validateAnyBackupRecord(rec)).toThrow(REJECT)
@@ -222,6 +222,8 @@ describe("validateCrossChainRecord — schema 4", () => {
 		["Across transport on Stargate", mutateRoute({ transport: across }, sg)],
 		["Stargate transport on Across", mutateRoute({ transport: sg.route.transport })],
 		["Stargate pool short", mutateRoute({ transport: { ...(sg.route.transport as object), pool: "0x90" } }, sg)],
+		["depositFinal false", mutateRoute({ depositFinal: false })],
+		["depositFinal beside an outcome", mutateRoute({ depositFinal: true, outcome: "not-sent" })],
 		["outcome unknown", mutateRoute({ outcome: "refunded" })],
 		["outcomeTxHash without outcome", mutateRoute({ outcomeTxHash: H("de") })],
 		["outcomeAmount without outcome", mutateRoute({ outcomeAmount: "1" })],

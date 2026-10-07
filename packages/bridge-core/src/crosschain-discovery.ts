@@ -1053,12 +1053,19 @@ function withFacts(route: CrossChainRoute, d: DiscoveryFacts): CrossChainRoute {
 	}
 }
 
-const withoutOutcome = (route: CrossChainRoute): CrossChainRoute => ({
+/** The route with neither provisional verdict on it: no outcome, and no deposit marked final. */
+const undecided = (route: CrossChainRoute): CrossChainRoute => ({
 	...route,
+	depositFinal: undefined,
 	outcome: undefined,
 	outcomeTxHash: undefined,
 	outcomeAmount: undefined,
 })
+
+/** Heights are compared only on the record's own Ethereum chain; any other chain reads as not final. */
+function depositSettled(rec: CrossChainDepositRecord, decidedAt: ChainBlock, finalized: ChainBlock): boolean {
+	return decidedAt.chainId === rec.chainId && finalized.chainId === rec.chainId && decidedAt.blockNumber <= finalized.blockNumber
+}
 
 function depositPatch(rec: CrossChainDepositRecord, deposit: DepositedFacts): Partial<CrossChainDepositRecord> {
 	const fuel =
@@ -1089,9 +1096,10 @@ function withoutDeposit(rec: CrossChainDepositRecord): Partial<CrossChainDeposit
 /**
  * The journal patch a discovery implies, or `undefined` for `incomplete` (a partial run proves nothing).
  * Facts merge (extras are only ever added, so a lying read cannot make a record retirable). A final
- * record (`completedAt`) keeps its outcome and deposit; otherwise every run replaces both provisional
- * facts: a deposit clears the outcome, `pending` clears both, an outcome goes through `outcomePatch`
- * and clears the deposit.
+ * record (`completedAt`) keeps its outcome and deposit, and a deposit marked final keeps its deposit;
+ * otherwise every run replaces both provisional facts: a deposit clears the outcome and is marked final
+ * once its block is finalized, `pending` clears both, an outcome goes through `outcomePatch` and clears
+ * the deposit.
  */
 export function discoveryPatch(
 	rec: CrossChainDepositRecord,
@@ -1100,8 +1108,11 @@ export function discoveryPatch(
 ): Partial<CrossChainDepositRecord> | undefined {
 	if (d.verdict === "incomplete") return undefined
 	const route = withFacts(rec.route, d)
-	if (rec.completedAt !== undefined) return { route }
-	if (d.verdict === "deposited") return { route: withoutOutcome(route), ...depositPatch(rec, d.deposit) }
-	if (d.verdict === "pending") return { route: withoutOutcome(route), ...withoutDeposit(rec) }
+	if (rec.completedAt !== undefined || rec.route.depositFinal) return { route }
+	if (d.verdict === "deposited") {
+		const final = depositSettled(rec, d.decidedAt, d.finalized) ? { depositFinal: true as const } : {}
+		return { route: { ...undecided(route), ...final }, ...depositPatch(rec, d.deposit) }
+	}
+	if (d.verdict === "pending") return { route: undecided(route), ...withoutDeposit(rec) }
 	return { ...withoutDeposit(rec), ...outcomePatch({ ...rec, route }, d.observation, now) }
 }

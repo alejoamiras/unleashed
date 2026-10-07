@@ -313,8 +313,9 @@ function assertExtraDeposits(extras: unknown): void {
 	}
 }
 
-/** The outcome union, and its two facts only beside an outcome. */
+/** The outcome union, and its two facts only beside an outcome; a final deposit is never beside one. */
 function assertOutcome(r: Partial<CrossChainRoute>): void {
+	if (r.depositFinal !== undefined && (r.depositFinal !== true || r.outcome !== undefined)) throw new Error(INVALID)
 	if (r.outcome === undefined) {
 		if (r.outcomeTxHash !== undefined || r.outcomeAmount !== undefined) throw new Error(INVALID)
 		return

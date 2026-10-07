@@ -277,6 +277,9 @@ export interface CrossChainRoute {
 	/** Built on `selfBuiltTerms`: Across only, filled by hand by its exclusive relayer before `fillDeadline` or
 	 *  refunded; `etaSeconds` is then the whole fill window, not an estimate. Absent for a quoted deposit. */
 	terms?: "fixed"
+	/** The block holding the intended `Deposited` is at or below Ethereum's finalized head. Until then a reorg can
+	 *  re-include the fill at another leaf, so discovery keeps re-deriving the deposit. */
+	depositFinal?: true
 	/** Provisional until `completedAt` is set; see `outcomePatch`. */
 	outcome?: CrossChainOutcome
 	outcomeTxHash?: Hex
