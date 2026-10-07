@@ -193,6 +193,18 @@ describe("sendCrossChain", () => {
 		expect(currentCrossChainRecord(routeRecordId(sealing.secrets))).toBeUndefined()
 	})
 
+	it("refuses a route that expired during the approval right before the deposit; the approval stays revocable", async () => {
+		const a = ask()
+		const route = await quotedRoute(a)
+		let now = Date.now()
+		const { wallet, sent } = fakeWallet(route, { onSend: () => (now += ROUTE_TTL_MS + 1) })
+		await expect(sendCrossChain(sendOf(a, route, now), wallet, fakeReads(0n), { now: () => now, watch: false })).rejects.toThrow(
+			ROUTE_EXPIRED,
+		)
+		expect(sent.map(approvedAmount)).toEqual([route.tx.approval.amount])
+		expectRevocable(route)
+	})
+
 	it("sends one atomic batch through a zero allowance first, journals its id then its hash, and starts the watch", async () => {
 		const a = ask({ intent: "token" })
 		const route = await quotedRoute(a)

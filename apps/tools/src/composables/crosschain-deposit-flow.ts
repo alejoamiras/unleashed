@@ -181,6 +181,17 @@ async function assertAccount(wallet: CrossChainWallet, ask: CrossChainAsk): Prom
 	}
 }
 
+function assertFresh(s: CrossChainSend, o: CrossChainSendOptions): void {
+	if ((o.now ?? Date.now)() - s.quotedAt > ROUTE_TTL_MS) throw new Error(ROUTE_EXPIRED)
+}
+
+/** Immediately before each source-chain transaction: the route is inside its TTL, and the wallet still answers as
+ *  the account it names. */
+async function assertSignable(s: CrossChainSend, wallet: CrossChainWallet, o: CrossChainSendOptions): Promise<void> {
+	assertFresh(s, o)
+	await assertAccount(wallet, s.ask)
+}
+
 /** The wallet must sign on the route's chain, as the account the route names as depositor and refund address. */
 async function assertSource(wallet: CrossChainWallet, ask: CrossChainAsk): Promise<void> {
 	await assertAccount(wallet, ask)
@@ -299,7 +310,7 @@ async function sendOnSource(
 	const deposit: SourceCall = { to: s.route.tx.to, data: s.route.tx.data, value: s.route.tx.value }
 	if (approvals.length > 0 && wallet.batch && (await wallet.batch.atomic(s.ask.srcChainId))) {
 		assertVerified(s.route)
-		await assertAccount(wallet, s.ask)
+		await assertSignable(s, wallet, o)
 		setRecordStep(id, "sending-source")
 		onRequested()
 		const batchId = await wallet.batch.send([...approvals, deposit])
@@ -308,9 +319,9 @@ async function sendOnSource(
 		await adoptBatchHash(id, wallet.batch, batchId, o)
 		return
 	}
-	await approveOnSource(id, s, wallet, reads, approvals)
+	await approveOnSource(id, s, wallet, reads, o, approvals)
 	assertVerified(s.route)
-	await assertAccount(wallet, s.ask)
+	await assertSignable(s, wallet, o)
 	setRecordStep(id, "sending-source")
 	onRequested()
 	const srcTxHash = await wallet.sendTransaction(deposit)
@@ -325,11 +336,12 @@ async function approveOnSource(
 	s: CrossChainSend,
 	wallet: CrossChainWallet,
 	reads: CrossChainReads,
+	o: CrossChainSendOptions,
 	approvals: readonly SourceCall[],
 ): Promise<void> {
 	let approved: Hex | undefined
 	for (const call of approvals) {
-		await assertAccount(wallet, s.ask)
+		await assertSignable(s, wallet, o)
 		setRecordStep(id, "approving-source")
 		approved = await wallet.sendTransaction(call)
 		updateCrossChainRecord(id, { approveTxHash: approved })
@@ -372,8 +384,8 @@ function settleFailedSend(id: string, requested: boolean, e: unknown, watcher: C
  * Journal, seal, verify, sign and persist one cross-chain deposit. Returns the record id once the source
  * transaction (or batch) is journaled; discovery takes it from there.
  *
- * The wallet's live account is checked again before every signature, and the whole span holds the operation
- * guard, so the app's Aztec account cannot change under it.
+ * The wallet's live account is checked again before every signature, and the route's age before every source-chain
+ * transaction; the whole span holds the operation guard, so the app's Aztec account cannot change under it.
  *
  * @throws before any record exists when the route is stale, refused by the decoder, or the wallet is on another
  * chain or account; after the record exists, with the record discarded when nothing can have left the wallet, or
@@ -394,7 +406,7 @@ async function journalAndSend(
 	reads: CrossChainReads,
 	o: CrossChainSendOptions,
 ): Promise<string> {
-	if ((o.now ?? Date.now)() - s.quotedAt > ROUTE_TTL_MS) throw new Error(ROUTE_EXPIRED)
+	assertFresh(s, o)
 	await assertSource(wallet, s.ask)
 	assertVerified(s.route)
 	const heads = { source: await reads.source.getBlockNumber(), ethereum: await reads.ethereum.getBlockNumber() }
