@@ -231,7 +231,8 @@ function sendingGuide(rec: CrossChainDepositRecord, rt: RecordRuntime): string {
 /** A not-sent send that ended before its deposit was signed (declined, or its terms lapsed after the approval), not one
  *  the source chain reverted. */
 export function depositUnsigned(rec: CrossChainDepositRecord): boolean {
-	return rec.route.outcome === "not-sent" && !rec.route.srcTxHash && !rec.route.outcomeTxHash
+	const { outcome, srcTxHash, srcBatchId, outcomeTxHash } = rec.route
+	return outcome === "not-sent" && !srcTxHash && !srcBatchId && !outcomeTxHash
 }
 
 /** The card's one guide line for `phase`, worded from the record's own facts. */

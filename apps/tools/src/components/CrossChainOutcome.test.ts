@@ -86,6 +86,8 @@ describe("CrossChainOutcome", () => {
 			"Revoke the approval, or get new terms and sign again.",
 		])
 		expect(w.find(".tx").exists()).toBe(false)
+		const batch = panel(xcRecord(ended, { outcome: "not-sent", srcTxHash: undefined, srcBatchId: "0x01" }))
+		expect(cards(batch)[0]).toBe("Base Sepolia rejected the transaction, so it never ran.")
 
 		await w.get(sel(TESTIDS.journalXcRevoke)).trigger("click")
 		await flushPromises()

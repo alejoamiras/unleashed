@@ -353,8 +353,9 @@ async function approveOnSource(
 			if (isUserRejection(e)) approvalsUnanswered.delete(id)
 			throw e
 		}
-		approvalsUnanswered.delete(id)
+		// The marker clears only once the hash is journaled: a failed write still leaves the record kept.
 		updateCrossChainRecord(id, { approveTxHash: approved })
+		approvalsUnanswered.delete(id)
 		const receipt = await reads.source.waitForTransactionReceipt({ hash: approved })
 		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain, so the deposit was not sent.")
 	}
