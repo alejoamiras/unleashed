@@ -27,7 +27,6 @@ import { connectL1, openSend, waitForReceipt } from "../pages/send"
 test.use({ family: "deposit-crosschain", cells: 5, l1Index: 9 })
 
 const USDC = 10n ** 6n
-const ETHEREUM = 31337
 /** Five whole tokens: under the fixed terms' cap, and enough for the gas slice and a token leg. */
 const SEND = 5n * USDC
 
@@ -57,10 +56,6 @@ async function sendFromSource(page: Page, actor: { address: string }, plan: Cros
 /** The record once its source transaction is known and the rail named its transport: the relay has it. */
 const bridging = (page: Page) =>
 	crossChainRecordWhen(page, (r) => Boolean(r.route.srcTxHash && r.route.transport), "the source send is on the rail")
-
-/** The user moves the wallet back to Ethereum once the send has left the source chain: the claim's Ethereum checks read
- *  through the wallet (`validateTokenBlock`), and the app offers no switch away from a source chain. */
-const walletBackOnEthereum = (l1: L1WalletControl) => l1.setChainId(ETHEREUM)
 
 /** A record this page did not send is claimed from its card, which a reloaded page shows. */
 async function claimFromCard(page: Page, id: string) {
@@ -110,7 +105,6 @@ test("cell 50 — public token + gas from the source chain: a standing MAX allow
 
 	await sendFromSource(page, actor, planOf(src, "token+gas", false))
 	await bridging(page)
-	await walletBackOnEthereum(l1)
 	await waitForReceipt(page)
 	const rec = await crossChainRecordWhen(page, (r) => r.completedAt !== undefined, "the record completed")
 
@@ -174,7 +168,6 @@ test("cell 51 — private token + gas through one atomic batch, reloaded before 
 	expect(decodeFunctionData({ abi: erc20Abi, data: batch.calls[0].data as Hex }).args).toEqual([src.diamond, SEND])
 	expect(l1.calls("eth_sendTransaction"), "nothing left the page outside the batch").toBe(0)
 
-	await walletBackOnEthereum(l1)
 	await reloadAndReconnect(page, actor)
 	await claimFromCard(page, sent.id)
 	const rec = await crossChainRecordWhen(page, (r) => r.completedAt !== undefined, "the record completed")
@@ -201,7 +194,6 @@ test("cell 52 — reloaded while bridging, with another deposit for the same cre
 
 	await sendFromSource(page, actor, planOf(src, "token+gas", false))
 	const sent = await bridging(page)
-	await walletBackOnEthereum(l1)
 	expect(sent.leafIndex, "not deposited yet").toBeUndefined()
 
 	// Anyone may deposit for a credential they have seen; at or above the floor it is a gift only this user can claim.

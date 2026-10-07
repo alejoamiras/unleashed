@@ -103,6 +103,11 @@ vi.mock("@/composables/useWalletConnection", async (importOriginal) => {
 })
 
 vi.mock("./useFuelQuote", () => ({ sliceSwapData: h.sliceSwapData }))
+// No pinned Ethereum reader by default, so every Ethereum read goes through the mocked wallet below.
+vi.mock("./useEthereumReader", async (orig) => ({
+	...(await orig<typeof import("./useEthereumReader")>()),
+	readClientFor: () => undefined,
+}))
 
 vi.mock("@/composables/useTokenGrant", () => ({
 	useTokenGrant: () => ({ isGranted: h.isGranted, ensureGranted: h.ensureGranted, dispose: h.disposeGrant }),
@@ -1119,5 +1124,14 @@ describe("validateTokenBlock", () => {
 	it("refuses when the factory has no registration for the token any more", async () => {
 		h.readRegistration.mockImplementation(async () => undefined)
 		await expect(validateTokenBlock(block())).resolves.toMatch(/no portal for this token/)
+	})
+
+	it("reads through the pinned Ethereum reader, so a wallet left on a source chain still passes", async () => {
+		h.chainId.value = 84532
+		const reader = { getChainId: async () => 31337 }
+		await expect(validateTokenBlock(block(), undefined, reader)).resolves.toBeNull()
+		expect(h.readRegistration).toHaveBeenCalledWith(reader, expect.anything(), ERC20)
+		await expect(validateTokenBlock(block(), undefined, { getChainId: async () => 1 })).rejects.toThrow(/on chain 1/)
+		h.chainId.value = 31337
 	})
 })

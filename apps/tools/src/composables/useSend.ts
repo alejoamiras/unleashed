@@ -62,6 +62,7 @@ import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-qu
 import { appWatchDeps } from "./crosschain-deposit-flow"
 import { resumeCrossChainWatches } from "./crosschain-watch"
 import { findDepositTx } from "./deposit-reconcile"
+import { readClientFor } from "./useEthereumReader"
 import { sliceSwapData } from "./useFuelQuote"
 import { reconcileFuelConsumed } from "./fuel-recovery"
 import { hubMessageState } from "@/lib/message-nullifier"
@@ -261,16 +262,25 @@ function registrationDiffers(reg: Registration, token: JournalTokenBlock): boole
  * The authoritative resume/import check: the factory's frozen registration must still name the
  * block's words, decimals and register key/index, and the hub's derivation from those words must
  * still land on the block's L2 token. Returns the refusal reason, or null when it all holds.
+ *
+ * Reads through the build's pinned Ethereum RPCs where it pins any: a cross-chain send leaves the
+ * wallet on its source chain, and its claim must not wait on the wallet coming back. The wallet's
+ * transport answers only where no reader is pinned.
  */
-export async function validateTokenBlock(token: JournalTokenBlock, l1 = useL1Wallet()): Promise<string | null> {
+export async function validateTokenBlock(
+	token: JournalTokenBlock,
+	l1 = useL1Wallet(),
+	reader: Pick<PublicClient, "getChainId"> | undefined = readClientFor(NETWORK.l1ChainId),
+): Promise<string | null> {
 	const gen = SEND_GENERATION
 	if (!gen || !HUB || !TOKEN_CLASS_ID) return "This network has no bridge — this record cannot run here."
+	const source = { publicClient: reader ?? l1.publicClient }
 	// A registration read on another chain answers "no portal" for every genuine block, and that
-	// answer would be terminal. The chain is asserted on both sides of the read: a wallet that
+	// answer would be terminal. The chain is asserted on both sides of the read: a transport that
 	// switched mid-read throws (unavailable), it never contradicts.
-	await assertL1Chain(l1)
-	const reg = await readRegistration(l1.publicClient as never, gen.factory as `0x${string}`, token.erc20 as `0x${string}`)
-	await assertL1Chain(l1)
+	await assertL1Chain(source)
+	const reg = await readRegistration(source.publicClient as never, gen.factory as `0x${string}`, token.erc20 as `0x${string}`)
+	await assertL1Chain(source)
 	if (!reg) return "Ethereum has no portal for this token any more — this record cannot be claimed here."
 	const sameWords = reg.nameWord === token.nameWord && reg.symbolWord === token.symbolWord && reg.decimals === token.decimals
 	if (!sameWords || registrationDiffers(reg, token)) {
