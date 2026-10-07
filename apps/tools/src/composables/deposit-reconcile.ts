@@ -17,7 +17,7 @@ import {
 	PRIVATE_FPC_ADDRESS,
 	ScanIncomplete,
 	type SendDepositRecord,
-	SWAP_BRIDGE_ROUTER_ABI,
+	LEGACY_ROUTER_ABI,
 	scanRange,
 } from "@unleashed/bridge-core"
 import { decodeFunctionData, getAbiItem } from "viem"
@@ -259,8 +259,8 @@ const DEPOSIT_ROUTER_SHAPE: RouterShape = {
 
 // ── the retired SwapBridgeRouter ─────────────────────────────────────────────
 
-const BRIDGE_EVENT = getAbiItem({ abi: SWAP_BRIDGE_ROUTER_ABI, name: "Bridge" })
-const BRIDGE_WITH_FUEL_EVENT = getAbiItem({ abi: SWAP_BRIDGE_ROUTER_ABI, name: "BridgeWithFuel" })
+const BRIDGE_EVENT = getAbiItem({ abi: LEGACY_ROUTER_ABI, name: "Bridge" })
+const BRIDGE_WITH_FUEL_EVENT = getAbiItem({ abi: LEGACY_ROUTER_ABI, name: "BridgeWithFuel" })
 
 type BridgeArgs = { tokenPortal: Hex; bridgeToken: Hex; amount: bigint; aztecRecipient: Hex; secretHash: Hex; isPrivate: boolean }
 type BridgeWithFuelArgs = {
@@ -279,7 +279,7 @@ type BridgeWithFuelArgs = {
 function legacyCalldataMatches(rec: SendDepositRecord, input: Hex): boolean {
 	let decoded: { functionName: string; args?: readonly unknown[] }
 	try {
-		decoded = decodeFunctionData({ abi: SWAP_BRIDGE_ROUTER_ABI, data: input })
+		decoded = decodeFunctionData({ abi: LEGACY_ROUTER_ABI, data: input })
 	} catch {
 		return false
 	}

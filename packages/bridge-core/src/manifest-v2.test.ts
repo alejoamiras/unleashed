@@ -39,9 +39,7 @@ async function fixture() {
 				factory: FACTORY,
 				implementation: IMPL,
 				guardian: "0x0000000000000000000000000000000000000002",
-				router: "0x0000000000000000000000000000000000000003",
 				permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
-				swapTarget: "0x0000000000000000000000000000000000000004",
 				feeJuicePortal: FEE_PORTAL,
 			},
 			l2: {
@@ -135,6 +133,7 @@ describe("manifest v2 (strict, self-deriving)", () => {
 
 const ROUTER = "0x00000000000000000000000000000000000000d1"
 const SWAPPER = "0x00000000000000000000000000000000000000d2"
+const RETIRED = "0x0000000000000000000000000000000000000003"
 const FUEL = { slippageBps: 100, crossChainSlippageBps: 150, minFuelFj: "1", fjPerTx: "2", fjRegister: "3" }
 const SOURCE_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 
@@ -142,7 +141,7 @@ const SOURCE_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 async function routed() {
 	const raw = await fixture()
 	const l1 = raw.bridge.l1 as Record<string, unknown>
-	Object.assign(l1, { depositRouter: ROUTER, fuelSwapper: SWAPPER, fuel: FUEL, legacyRouters: [raw.bridge.l1.router] })
+	Object.assign(l1, { depositRouter: ROUTER, fuelSwapper: SWAPPER, fuel: FUEL, legacyRouters: [RETIRED] })
 	;(raw.bridge as Record<string, unknown>).routing = {
 		provider: "lifi",
 		sources: [{ chainId: 84532, rail: "acrossV4", tokens: [{ address: SOURCE_USDC, symbol: "USDC", decimals: 6, destToken: ERC20 }] }],

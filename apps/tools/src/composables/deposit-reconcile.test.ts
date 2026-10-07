@@ -1,4 +1,4 @@
-import { DEPOSIT_ROUTER_ABI, PRIVATE_FPC_ADDRESS, type SendDepositRecord, SWAP_BRIDGE_ROUTER_ABI } from "@unleashed/bridge-core"
+import { DEPOSIT_ROUTER_ABI, PRIVATE_FPC_ADDRESS, type SendDepositRecord, LEGACY_ROUTER_ABI } from "@unleashed/bridge-core"
 import { encodeFunctionData } from "viem"
 import { describe, expect, it, vi } from "vitest"
 import { type DepositSearchOptions, findDepositTx, type ReconcileL1Client } from "./deposit-reconcile"
@@ -46,7 +46,7 @@ function bridgeCalldata(
 	over: Partial<{ tokenPortal: Hex; bridgeToken: Hex; amount: bigint; aztecRecipient: Hex; secretHash: Hex; isPrivate: boolean }> = {},
 ) {
 	return encodeFunctionData({
-		abi: SWAP_BRIDGE_ROUTER_ABI,
+		abi: LEGACY_ROUTER_ABI,
 		functionName: "bridge",
 		args: [
 			{
@@ -65,7 +65,7 @@ function bridgeCalldata(
 
 function bridgeWithFuelCalldata(over: Record<string, unknown> = {}) {
 	return encodeFunctionData({
-		abi: SWAP_BRIDGE_ROUTER_ABI,
+		abi: LEGACY_ROUTER_ABI,
 		functionName: "bridgeWithFuel",
 		args: [
 			{
