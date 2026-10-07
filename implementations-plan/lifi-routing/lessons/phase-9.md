@@ -135,3 +135,13 @@ Run on the fixed branch's head, with the forge outputs in place:
   exit 0 in 1.3 h; the egress fixture blocked nothing in either run.
 - Re-run on the arc-4 review fixes: lint and `typecheck:all` exit 0; `test:all` design 242,
   bridge-core 705 passed and 11 skipped, tools 1755.
+
+### The jsdom smokes are CI-only
+
+`bun run --cwd apps/tools test:e2e` (the mocked-wallet smokes `_build-tools.yml` runs inside
+`quality-status`) is in neither `audit:tools` nor `test:all`, so arc 4 broke it twice unseen: the
+claim's token check moved to the pinned Ethereum reader, which the send smoke had not mocked (it built
+a real RPC client and the register path never ran), and the on-screen send's row started counting
+toward the badge while the shell smoke still asserted a read-only row. Both smokes now follow the
+built behaviour. Run `test:e2e`, and `build:mainnet` with `verify:build-target mainnet`, before a push
+that CI will gate.

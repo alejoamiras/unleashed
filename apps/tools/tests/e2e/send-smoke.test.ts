@@ -115,6 +115,16 @@ vi.mock("@/contracts/bridge-generation", async () => {
 })
 
 vi.mock("@/composables/useL1Wallet", () => ({ useL1Wallet: () => h.wire.l1 }))
+// The pinned per-chain readers would otherwise build real RPC clients; every chain read answers from the fake.
+vi.mock("@/composables/useEthereumReader", () => {
+	const readClientFor = () => (h.wire.l1 as { publicClient: unknown }).publicClient
+	return {
+		readClientFor,
+		discoveryReadsFor: () => undefined,
+		useEthereumReader: () => ({ ethereum: readClientFor, forChain: readClientFor, discoveryReadsFor: () => undefined }),
+		__resetReadClientsForTests: () => {},
+	}
+})
 vi.mock("@/composables/useWalletConnection", () => ({
 	useWalletConnection: () => h.wire.session,
 	requestHubToken: (token: { l2Token: string }) => {
