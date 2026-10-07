@@ -13,7 +13,7 @@ import { TESTIDS } from "@/lib/testids"
 const LINKS = [
 	{ label: "Wallet site", href: "https://nulo.sh" },
 	{ label: "Get the extension", href: import.meta.env.VITE_WALLET_INSTALL_URL ?? "https://nulo.sh" },
-	{ label: "Docs", href: "https://github.com/alejoamiras/nulo" },
+	{ label: "Docs", href: "https://github.com/nulo-sh/nulo" },
 ] as const
 </script>
 
