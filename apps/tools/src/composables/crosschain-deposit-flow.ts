@@ -3,7 +3,8 @@
  * of the gas slice) is written and read back, and a private one's v3 envelope sealed, before any source-chain
  * signature. Then on the source chain: the wallet's chain and account asserted, the route verified again,
  * exactly the input approved, and the LI.FI transaction sent, or one atomic batch where the wallet offers it.
- * The hash, or the batch id, is journaled the moment the wallet returns it; from there discovery decides.
+ * Every hash the wallet returns, approvals included, or the batch id, is journaled at once; once the deposit's
+ * is, discovery decides.
  */
 import {
 	type CrossChainDepositRecord,
@@ -290,18 +291,7 @@ async function sendOnSource(
 		await adoptBatchHash(id, wallet.batch, batchId, o)
 		return
 	}
-	let approved: Hex | undefined
-	for (const call of approvals) {
-		setRecordStep(id, "approving-source")
-		approved = await wallet.sendTransaction(call)
-		const receipt = await reads.source.waitForTransactionReceipt({ hash: approved })
-		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain, so the deposit was not sent.")
-	}
-	if (approved) {
-		updateCrossChainRecord(id, { approveTxHash: approved })
-		markApproveOutcome(id, "done")
-		logRecordLine(id, approvalConfirmedLine(s.ask.srcChainId, approved))
-	}
+	await approveOnSource(id, s, wallet, reads, approvals)
 	assertVerified(s.route)
 	setRecordStep(id, "sending-source")
 	onRequested()
@@ -310,13 +300,46 @@ async function sendOnSource(
 	setRecordStep(id, undefined)
 }
 
-/** Nothing bridged when the deposit never reached the wallet, or the wallet refused it: the record goes. Any
- *  other failure keeps it, since the transfer may be on its way, and watches it at once so discovery decides. */
+/** Each approval is journaled the moment the wallet returns it, before its receipt: from then on the record is
+ *  what remembers that the Diamond may spend from the wallet. */
+async function approveOnSource(
+	id: string,
+	s: CrossChainSend,
+	wallet: CrossChainWallet,
+	reads: CrossChainReads,
+	approvals: readonly SourceCall[],
+): Promise<void> {
+	let approved: Hex | undefined
+	for (const call of approvals) {
+		setRecordStep(id, "approving-source")
+		approved = await wallet.sendTransaction(call)
+		updateCrossChainRecord(id, { approveTxHash: approved })
+		const receipt = await reads.source.waitForTransactionReceipt({ hash: approved })
+		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain, so the deposit was not sent.")
+	}
+	if (!approved) return
+	markApproveOutcome(id, "done")
+	logRecordLine(id, approvalConfirmedLine(s.ask.srcChainId, approved))
+}
+
+/** Nothing bridged, but an approval may stand: such a record ends `not-sent`, whose card offers the revoke. */
+function endUnsent(id: string): void {
+	if (!currentCrossChainRecord(id)?.approveTxHash) {
+		discard(id)
+		return
+	}
+	setRecordStep(id, undefined)
+	updateCrossChainRecord(id, (current) => ({ route: { ...current.route, outcome: "not-sent" }, completedAt: Date.now() }))
+}
+
+/** Nothing bridged when the deposit never reached the wallet, or the wallet refused it: the record goes, unless it
+ *  journaled an approval. Any other failure keeps it, since the transfer may be on its way, and watches it at once
+ *  so discovery decides. */
 function settleFailedSend(id: string, requested: boolean, e: unknown, watcher: CrossChainWatchDeps | undefined): void {
 	try {
 		if (!requested || isUserRejection(e)) {
 			sealKeys.delete(id)
-			discard(id)
+			endUnsent(id)
 			return
 		}
 		flagRecordError(id, humanizeWalletError(e instanceof Error ? e.message : String(e)))
@@ -331,7 +354,8 @@ function settleFailedSend(id: string, requested: boolean, e: unknown, watcher: C
  * transaction (or batch) is journaled; discovery takes it from there.
  *
  * @throws before any record exists when the route is stale, refused by the decoder, or the wallet is on another
- * chain or account; after the record exists, with the record discarded when nothing can have left the wallet.
+ * chain or account; after the record exists, with the record discarded when nothing can have left the wallet, or
+ * ended `not-sent` when an approval was journaled.
  */
 export async function sendCrossChain(
 	s: CrossChainSend,

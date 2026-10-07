@@ -3,6 +3,7 @@ import { type CrossChainDiscovery, deriveCrossChainDepositStage, ERC20_ABI, open
 import { decodeFunctionData, type Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { stepperPhases } from "@/lib/bridge-steps"
+import { crossChainPhase } from "@/lib/crosschain-activity"
 import { crossChainUnconfirmed } from "@/lib/crosschain-steps"
 import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, signatureOf, USER } from "@/test/crosschain"
 import {
@@ -60,7 +61,7 @@ function fakeWallet(route: CrossChainRoute, o: { chainId?: number; rejectDeposit
 	return { wallet, sent, journaledAtSend }
 }
 
-function fakeReads(allowance: bigint, o: { directApprove?: boolean } = {}): CrossChainReads {
+function fakeReads(allowance: bigint, o: { directApprove?: boolean; receiptLost?: boolean } = {}): CrossChainReads {
 	return {
 		source: {
 			readContract: async () => allowance,
@@ -69,10 +70,21 @@ function fakeReads(allowance: bigint, o: { directApprove?: boolean } = {}): Cros
 				return { data: undefined }
 			},
 			getBlockNumber: async () => 100n,
-			waitForTransactionReceipt: async () => ({ status: "success" }),
+			waitForTransactionReceipt: async () => {
+				if (o.receiptLost) throw new Error("The request took too long to respond.")
+				return { status: "success" }
+			},
 		} as unknown as CrossChainReads["source"],
 		ethereum: { getBlockNumber: async () => 200n },
 	}
+}
+
+/** What a failed send leaves once the wallet returned an approval: the record, ended `not-sent` with the approval's
+ *  hash, which is the state whose card offers the revoke. */
+function expectRevocable(route: CrossChainRoute): void {
+	const rec = currentCrossChainRecord(routeRecordId(route.secrets))
+	expect(rec?.approveTxHash).toBe(hashOf(1))
+	expect(rec && crossChainPhase(rec)).toEqual({ kind: "not-sent" })
 }
 
 const sendOf = (a: ReturnType<typeof ask>, route: CrossChainRoute, quotedAt = Date.now()): CrossChainSend => ({
@@ -116,10 +128,23 @@ describe("sendCrossChain", () => {
 		const tampered = { ...route, tx: { ...route.tx, approval: { ...route.tx.approval, amount: route.tx.approval.amount + 1n } } }
 		await expect(sendCrossChain(sendOf(a, tampered), onChain, fakeReads(0n))).rejects.toThrow(ROUTE_REFUSED)
 		expect(storedCrossChainRecords()).toEqual([])
+		// The allowance already equals the input, so no approval stands behind the refused deposit.
 		const refusing = fakeWallet(route, { rejectDeposit: true })
-		await expect(sendCrossChain(sendOf(a, route), refusing.wallet, fakeReads(0n))).rejects.toThrow(/rejected/)
-		expect(refusing.journaledAtSend).toEqual([true, true])
+		await expect(sendCrossChain(sendOf(a, route), refusing.wallet, fakeReads(route.tx.approval.amount))).rejects.toThrow(/rejected/)
+		expect(refusing.journaledAtSend).toEqual([true])
 		expect(storedCrossChainRecords()).toEqual([])
+	})
+
+	it.each([
+		["the wallet refused the deposit", { rejectDeposit: true }, {}, /rejected/],
+		["the approval's receipt never came", {}, { receiptLost: true }, /too long/],
+	] as const)("keeps a revocable record when %s after it returned an approval", async (_label, w, r, error) => {
+		const a = ask()
+		const route = await quotedRoute(a)
+		const { wallet, sent } = fakeWallet(route, w)
+		await expect(sendCrossChain(sendOf(a, route), wallet, fakeReads(0n, r), { watch: false })).rejects.toThrow(error)
+		expect(sent.length).toBe("rejectDeposit" in w ? 2 : 1)
+		expectRevocable(route)
 	})
 
 	it("sends one atomic batch through a zero allowance first, journals its id then its hash, and starts the watch", async () => {
