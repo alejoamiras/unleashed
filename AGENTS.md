@@ -18,7 +18,7 @@ the map; this file is the ruleset. `CLAUDE.md` imports it.
 `apps/tools` must work with **every wallet that speaks `@aztec-labs/wallet-sdk`**. Send, Exit and Drip use
 only the standard surface (`requestCapabilities`, `registerContract`, `executeUtility`,
 `simulateTx`, `sendTx`, `createAuthWit`). The wallet-specific RPCs that
-`@alejoamiras/nulo-wallet-sdk-schema-patch` adds (`registerToken`, `isTokenRegistered`,
+`@nulo-sh/wallet-sdk-schema-patch` adds (`registerToken`, `isTokenRegistered`,
 `grantPublicAuthwit`) are optional conveniences and must **fail open** on a wallet without them;
 nothing on the bridge's critical path depends on them. The browser suite drives the real UI
 against an embedded wallet-sdk test wallet and an injected EIP-1193 wallet, never against a
@@ -38,9 +38,9 @@ repositories share exactly four facts, each with one owner:
 | Chain identity (chainId, rollup version) | each repository, independently | none | [`apps/tools/src/lib/chain-constants.ts`](apps/tools/src/lib/chain-constants.ts) here; the wallet keeps its own copy. |
 
 Driving the app with the Nulo wallet is a manual pre-release check, never a CI gate. The
-three published packages are `@alejoamiras/nulo-wallet-crypto` (`EncryptionKey`, which seals the
-bridge-record backups), `@alejoamiras/nulo-resolve-asset` and
-`@alejoamiras/nulo-wallet-sdk-schema-patch`; they are exact-pinned dependencies like any other.
+three published packages are `@nulo-sh/wallet-crypto` (`EncryptionKey`, which seals the
+bridge-record backups), `@nulo-sh/resolve-asset` and
+`@nulo-sh/wallet-sdk-schema-patch`; they are exact-pinned dependencies like any other.
 
 ## Skills and runbooks own their domains
 
@@ -62,7 +62,7 @@ A rule or policy goes here. Keep each lesson in one place.
 - **The linker is `isolated`** (`bunfig.toml`). A workspace resolves only what its `package.json`
   declares; an undeclared import can still resolve locally through the store's hoist fallback and
   then fail on CI's fresh runner. Declare every package a workspace imports, type-only imports
-  included. Never walk `node_modules` by hand: `@alejoamiras/nulo-resolve-asset` resolves from the
+  included. Never walk `node_modules` by hand: `@nulo-sh/resolve-asset` resolves from the
   caller. [`packages/bridge-core/scripts/layout-identity.test.ts`](packages/bridge-core/scripts/layout-identity.test.ts)
   is the executable guarantee.
 - **Unit tests run on Bun** (`bun --bun vitest run`). Every unit vitest config spreads `sharedTest`

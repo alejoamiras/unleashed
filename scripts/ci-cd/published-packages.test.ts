@@ -12,16 +12,16 @@ const EXACT = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/
 
 const CONSUMERS: Record<string, string[]> = {
 	"apps/tools": [
-		"@alejoamiras/nulo-resolve-asset",
-		"@alejoamiras/nulo-wallet-crypto",
-		"@alejoamiras/nulo-wallet-sdk-schema-patch",
+		"@nulo-sh/resolve-asset",
+		"@nulo-sh/wallet-crypto",
+		"@nulo-sh/wallet-sdk-schema-patch",
 	],
-	"packages/bridge-core": ["@alejoamiras/nulo-resolve-asset", "@alejoamiras/nulo-wallet-crypto"],
+	"packages/bridge-core": ["@nulo-sh/resolve-asset", "@nulo-sh/wallet-crypto"],
 }
 const PEERS: Record<string, string[]> = {
-	"@alejoamiras/nulo-resolve-asset": [],
-	"@alejoamiras/nulo-wallet-crypto": ["@aztec-labs/accounts", "@aztec-labs/foundation"],
-	"@alejoamiras/nulo-wallet-sdk-schema-patch": ["@aztec-labs/aztec.js", "@aztec-labs/stdlib"],
+	"@nulo-sh/resolve-asset": [],
+	"@nulo-sh/wallet-crypto": ["@aztec-labs/accounts", "@aztec-labs/foundation"],
+	"@nulo-sh/wallet-sdk-schema-patch": ["@aztec-labs/aztec.js", "@aztec-labs/stdlib"],
 }
 
 type Deps = Record<string, string>

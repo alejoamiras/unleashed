@@ -19,7 +19,7 @@ import { ProtocolContractAddress } from "@aztec-labs/protocol-contracts"
 import { FunctionSelector } from "@aztec-labs/stdlib/abi"
 import { ExecutionPayload, PendingTxReceipt, type Tx } from "@aztec-labs/stdlib/tx"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { deriveNuloAccountKeys } from "@alejoamiras/nulo-wallet-crypto"
+import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { DAPP_SELF_PAY_FEATURE, type Seed, type TestWalletIdentity, type TestWalletProfile } from "./profile"
 
 /** The call `FeeJuicePaymentMethodWithClaim` emits: a self-payer WITH it is a claim in setup. */

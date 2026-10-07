@@ -4,7 +4,7 @@
 # Isolated linker: per-workspace symlinked node_modules + a .bun store. Kills phantom
 # dependencies (a workspace resolves ONLY what it declares). Whatever would assume a hoisted
 # layout (the foundry @aztec/ remap, package-file lookups, bridge-core script paths) is
-# layout-agnostic via @alejoamiras/nulo-resolve-asset + generated remappings; the executable
+# layout-agnostic via @nulo-sh/resolve-asset + generated remappings; the executable
 # guarantee is packages/bridge-core/scripts/layout-identity.test.ts.
 # `globalStore` is DELIBERATELY unset (defaults off): the committed layout uses per-project
 # hardlinked stores, so CI never creates or restores a shared symlink store

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { EncryptionKey } from "@alejoamiras/nulo-wallet-crypto"
+import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 import {
 	type BridgeBackupFile,
 	openBridgeBackup,

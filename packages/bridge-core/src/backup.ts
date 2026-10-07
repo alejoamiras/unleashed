@@ -1,4 +1,4 @@
-import type { EncryptionKey } from "@alejoamiras/nulo-wallet-crypto"
+import type { EncryptionKey } from "@nulo-sh/wallet-crypto"
 import type {
 	BridgeJournalRecord,
 	DepositFuelBlock,

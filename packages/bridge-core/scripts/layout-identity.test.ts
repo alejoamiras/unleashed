@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { resolvePackageAsset } from "@alejoamiras/nulo-resolve-asset"
+import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { expect, it } from "vitest"
 
 /**
