@@ -32,7 +32,6 @@ import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import { type BridgeBlock, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
-import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
 import { type DeployStep, readDeployJournal } from "./deploy-manifest"
 import { git, resolveBin, run } from "./run"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
@@ -205,10 +204,9 @@ export interface DeployIntent {
  * tokens; everything promotion locks (identity, factory, hub) and the legacy router stay as `build` found them.
  */
 export interface RouterOnlyScope {
-	generation: Record<
-		"factory" | "implementation" | "registry" | "guardian" | "router" | "swapTarget" | "permit2" | "feeJuicePortal" | "hub",
-		string
-	>
+	/** The retired router's two fields only while the live manifest still names them. */
+	generation: Record<"factory" | "implementation" | "registry" | "guardian" | "permit2" | "feeJuicePortal" | "hub", string> &
+		Partial<Record<"router" | "swapTarget", string>>
 	/** The live manifest's tokens by the addresses their generation derives; each stays in the candidate unchanged. */
 	tokens: Array<{ erc20: string; portal: string; l2Token: string }>
 	/** The only tokens the candidate may add. */
@@ -320,8 +318,9 @@ export function routerOnlyScopeOf(live: ManifestV2, preCreate: readonly string[]
 		feeJuicePortal: l1.feeJuicePortal,
 		hub: l2.hub.address,
 	}
+	const pinned = Object.entries(generation).flatMap(([k, v]) => (v === undefined ? [] : [[k, lcAddr(v)]]))
 	return {
-		generation: Object.fromEntries(Object.entries(generation).map(([k, v]) => [k, lcAddr(v)])) as RouterOnlyScope["generation"],
+		generation: Object.fromEntries(pinned) as RouterOnlyScope["generation"],
 		tokens: tokens.map((t) => ({ erc20: lcAddr(t.erc20), portal: lcAddr(t.portal), l2Token: lcAddr(t.l2Token) })),
 		preCreate: preCreate.map((t) => lcAddr(requireAddress(t, "--pre-create token"))),
 		journal: { path: TESTNET_JOURNAL, steps: journalSteps },
@@ -332,7 +331,7 @@ export function routerOnlyScopeOf(live: ManifestV2, preCreate: readonly string[]
  *  derives it; adds only the named tokens; and names the arc's two contracts. */
 export function assertRouterOnlyScope(scope: RouterOnlyScope, candidate: ManifestV2): void {
 	const { l1, l2, tokens } = requireBridge(candidate)
-	const now: Record<keyof RouterOnlyScope["generation"], string> = { ...l1, hub: l2.hub.address }
+	const now: Partial<Record<keyof RouterOnlyScope["generation"], string>> = { ...l1, hub: l2.hub.address }
 	for (const [field, want] of Object.entries(scope.generation) as Array<[keyof RouterOnlyScope["generation"], string]>) {
 		if (!sameAddr(now[field], want)) throw new Error(`router-only: candidate ${field} ${now[field]} != the generation's ${want} — STOP`)
 	}
@@ -671,12 +670,10 @@ async function reportHubBindings(b: BridgeBlock, nodeUrl: string): Promise<void>
 	console.log("  hub initialization hash + class match the manifest's [token_class_id, l1_factory, guardian]; token class published")
 }
 
-/** The DepositRouter and its swapper, when the candidate names them: the owner, factory and swap target a
- *  lookalike would get wrong. Returns `[label, on-chain, manifest]` rows. */
-async function depositRouterBindings(pub: PublicClient, b: BridgeBlock): Promise<Array<[string, unknown, string]>> {
-	const { depositRouter, fuelSwapper } = b.l1
-	if (!depositRouter) return []
-	const router = depositRouter as Address
+/** The DepositRouter and its swapper: the owner, factory and swap target a lookalike would get wrong. Returns
+ *  `[label, on-chain, manifest]` rows. */
+async function depositRouterBindings(pub: PublicClient, b: BridgeBlock, router: Address): Promise<Array<[string, unknown, string]>> {
+	const { fuelSwapper } = b.l1
 	const [owner, factory, swapTarget] = await Promise.all([
 		pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "owner" }),
 		pub.readContract({ address: router, abi: DEPOSIT_ROUTER_ABI, functionName: "FACTORY" }),
@@ -698,40 +695,38 @@ async function depositRouterBindings(pub: PublicClient, b: BridgeBlock): Promise
  * The generation's privileged bindings, read off the chains that hold them — a digest cannot catch
  * a wrong owner, a foreign swap target, or an implementation the factory does not clone — followed
  * by the complete L1 verifier (every router/factory constant, every token, the runtime code hashes),
- * so a lookalike router that only answers `swapTarget` correctly cannot promote.
+ * so a lookalike router that only answers the readbacks here correctly cannot promote.
  */
 async function verifyGenerationBindings(m: ManifestV2, rpcUrl: string, nodeUrl: string): Promise<void> {
 	const b = requireBridge(m)
+	const router = b.l1.depositRouter as Address | undefined
+	if (!router) throw new Error("the candidate names no depositRouter, so nothing could send through it — STOP")
 	const pub: PublicClient = createL1PublicClient({ chain: manifestL1Chain(m, rpcUrl), rpcUrl })
-	for (const [label, address] of [
+	const named: Array<[string, string | undefined]> = [
 		["factory", b.l1.factory],
 		["implementation", b.l1.implementation],
-		["router", b.l1.router],
-		["depositRouter", b.l1.depositRouter],
+		["depositRouter", router],
 		["fuelSwapper", b.l1.fuelSwapper],
-	] as const) {
+		...(b.l1.legacyRouters ?? []).map((a): [string, string] => ["legacy router", a]),
+	]
+	for (const [label, address] of named) {
 		if (!address) continue
 		const code = await pub.getCode({ address: address as Address })
 		if (!code || code === "0x") throw new Error(`candidate ${label} ${address} has no code on L1 — STOP`)
 	}
-	const [factoryOwner, implementation, l2Hub, routerOwner, swapTarget] = await Promise.all([
+	const [factoryOwner, implementation, l2Hub] = await Promise.all([
 		pub.readContract({ address: b.l1.factory as Address, abi: FACTORY_CONSTANTS_ABI, functionName: "owner" }),
 		pub.readContract({ address: b.l1.factory as Address, abi: PORTAL_FACTORY_ABI, functionName: "IMPLEMENTATION" }),
 		pub.readContract({ address: b.l1.factory as Address, abi: PORTAL_FACTORY_ABI, functionName: "L2_HUB" }),
-		pub.readContract({ address: b.l1.router as Address, abi: ROUTER_CONSTANTS_ABI, functionName: "owner" }),
-		pub.readContract({ address: b.l1.router as Address, abi: SWAP_BRIDGE_ROUTER_ABI, functionName: "swapTarget" }),
 	])
-	console.log(`  factory.owner ${factoryOwner} · router.owner ${routerOwner}`)
+	console.log(`  factory.owner ${factoryOwner}`)
 	const bindings: Array<[string, unknown, string]> = [
 		["factory owner", factoryOwner, b.l1.guardian],
-		// The router's owner rotates the swap target; anyone but the guardian holding it is a foreign router.
-		["router owner", routerOwner, b.l1.guardian],
 		["factory IMPLEMENTATION", implementation, b.l1.implementation],
 		// The factory addresses every register message to this hub; a manifest naming another one
 		// would ship a hub that never learns a token.
 		["factory L2_HUB", l2Hub, b.l2.hub.address],
-		["router swapTarget", swapTarget, b.l1.swapTarget],
-		...(await depositRouterBindings(pub, b)),
+		...(await depositRouterBindings(pub, b, router)),
 	]
 	for (const [label, got, want] of bindings) {
 		if (String(got).toLowerCase() !== want.toLowerCase()) throw new Error(`${label} ${String(got)} != manifest ${want} — STOP`)

@@ -109,10 +109,13 @@ export const bridgeBlockSchema = z
 				factory: evmAddressV2,
 				implementation: evmAddressV2,
 				guardian: evmAddressV2,
-				router: evmAddressV2,
+				/** The retired SwapBridgeRouter while a manifest still names it here; reconciled like `legacyRouters`. */
+				router: evmAddressV2.optional(),
 				permit2: evmAddressV2,
-				swapTarget: evmAddressV2,
+				/** The retired router's Uniswap V4 swap target. */
+				swapTarget: evmAddressV2.optional(),
 				feeJuicePortal: evmAddressV2,
+				/** The retired router's Uniswap V4 venue and budgets; the DepositRouter's budgets are `fuel`. */
 				swap: z
 					.object({
 						poolManager: evmAddressV2,

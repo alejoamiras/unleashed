@@ -28,6 +28,7 @@ export function sendGenerationOf(m: ManifestV2, bridge: BridgeBlock): SendGenera
  */
 export function legacyRoutersOf(bridge: BridgeBlock): Address[] {
 	const current = bridge.l1.depositRouter?.toLowerCase()
-	const all = [bridge.l1.router, ...(bridge.l1.legacyRouters ?? [])].map((a) => a.toLowerCase() as Address)
+	const listed = [...(bridge.l1.router ? [bridge.l1.router] : []), ...(bridge.l1.legacyRouters ?? [])]
+	const all = listed.map((a) => a.toLowerCase() as Address)
 	return [...new Set(all)].filter((a) => a !== current)
 }

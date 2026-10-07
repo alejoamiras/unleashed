@@ -1,14 +1,13 @@
 /**
  * L1-side helpers shared by the operator scripts: the minimal ERC-20 ABI, the read-back assertion,
- * the operator-only factory/router constants the app's ABIs omit, and the portal/router preflights
- * every gate runs before it trusts a generation.
+ * the operator-only factory/router constants the app's ABIs omit, and the portal preflight every gate
+ * runs before it trusts a generation.
  */
 import { type Abi, type Account, type Address, type Chain, defineChain, encodeFunctionData, type Hex, type WalletClient } from "viem"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import type { L1Ctx } from "../src/flows"
 import { ensurePermit2Allowance } from "../src/l1"
 import { predictPortal } from "../src/portal-address"
-import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
 import { sourceChain } from "../src/source-chains"
 import { retried } from "./retried"
 
@@ -35,11 +34,11 @@ export const ERC20_MIN_ABI = [
 	},
 ] as const
 
-/** The router constants only the operator gates read; the app-facing ABI carries the call surface. */
+/** What every router this repository deployed answers, the retired one included: its owner and the factory it binds. */
 export const ROUTER_CONSTANTS_ABI = [
 	{ type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "FACTORY", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 	{ type: "function", name: "permit2", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "BRIDGE_WITNESS_TYPE_STRING", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
 ] as const
 
 /** The factory constants only the operator gates read. The guardian is the OWNER (the pause bits are
@@ -249,40 +248,6 @@ export function manifestL1Chain(m: { network: string; l1ChainId: number }, rpcUr
 		rpcUrls: { default: { http: [rpcUrl] } },
 		...(multicall3 ? { contracts: { multicall3: { address: multicall3 as Address } } } : {}),
 	})
-}
-
-/** The read surface the router preflight needs — a viem PublicClient satisfies it. The returns stay
- *  `unknown`: viem's per-ABI inference does not survive an overloaded structural signature. */
-export interface RouterReader {
-	readContract(args: {
-		address: Address
-		abi: typeof SWAP_BRIDGE_ROUTER_ABI
-		functionName: "swapTarget"
-		args: readonly []
-	}): Promise<unknown>
-	readContract(args: {
-		address: Address
-		abi: typeof ROUTER_CONSTANTS_ABI
-		functionName: "BRIDGE_WITNESS_TYPE_STRING"
-		args: readonly []
-	}): Promise<unknown>
-}
-
-/** The router must bind its swap target INTO the Permit2 witness — one that does not would reject
- *  every signature the wallet produces — and the target it binds must be the expected one. */
-export async function assertRouterWitnessShape(pub: RouterReader, router: Address, expectedSwapTarget: string): Promise<void> {
-	assertSame(
-		await pub.readContract({ address: router, abi: SWAP_BRIDGE_ROUTER_ABI, functionName: "swapTarget", args: [] }),
-		expectedSwapTarget,
-		"router.swapTarget",
-	)
-	const typeString = String(
-		await pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "BRIDGE_WITNESS_TYPE_STRING", args: [] }),
-	)
-	if (!typeString.includes("address swapTarget")) {
-		throw new Error(`router ${router} does not bind swapTarget into its Permit2 witness — every wallet signature would be rejected`)
-	}
-	console.log("  ✓ router.BRIDGE_WITNESS_TYPE_STRING binds swapTarget")
 }
 
 /** The read surface the portal preflight needs — a viem PublicClient satisfies it. */
