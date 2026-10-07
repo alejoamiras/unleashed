@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { TESTIDS } from "@/lib/testids"
 
 const gen = vi.hoisted(() => ({ promoted: true }))
@@ -33,6 +33,8 @@ async function view() {
 }
 
 describe("AddressesView", () => {
+	// The first import transforms the view's whole graph; outside a test's timeout a loaded machine cannot fail it.
+	beforeAll(() => import("./AddressesView.vue"), 60_000)
 	beforeEach(() => {
 		gen.promoted = true
 	})
