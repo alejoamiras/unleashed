@@ -13,6 +13,7 @@ import {
 	assertL1Pins,
 	assertNoSourceDrift,
 	assertNothingJournalled,
+	assertRetireLiveUnmoved,
 	assertRetireRouterScope,
 	assertRouterOnlyJournal,
 	assertRouterOnlyScope,
@@ -165,5 +166,14 @@ describe("retire-router intent", () => {
 		expect(() => assertRetireRouterScope(scope, candidate, `${bytes} `)).toThrow(/not the recorded/)
 		expect(() => assertNothingJournalled(scope.journal, [])).toThrow(/deploys nothing/)
 		expect(() => retireRouterCandidate(candidate)).toThrow(/nothing to retire/)
+	})
+
+	it("promotes only over the live manifest it was built from, or over its own candidate after an interrupted promote", () => {
+		const promoted = JSON.stringify(retireRouterCandidate(live))
+		const sha = createHash("sha256").update(promoted).digest("hex")
+		expect(() => assertRetireLiveUnmoved(scope, bytes, sha)).not.toThrow()
+		expect(() => assertRetireLiveUnmoved(scope, promoted, sha)).not.toThrow()
+		const calibrated = bytes.replace('"fjPerTx": "3281752999468680000"', '"fjPerTx": "3300000000000000000"')
+		expect(() => assertRetireLiveUnmoved(scope, calibrated, sha)).toThrow(/moved since build/)
 	})
 })

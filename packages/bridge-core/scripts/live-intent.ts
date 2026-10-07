@@ -430,6 +430,18 @@ export function assertRetireRouterScope(scope: RetireRouterScope, candidate: Man
 	}
 }
 
+/**
+ * The working-tree live manifest is still the one the build recorded, or already the pinned candidate after a promote
+ * that stopped before its receipt. Any other bytes landed after build, and the candidate would overwrite them.
+ */
+export function assertRetireLiveUnmoved(scope: RetireRouterScope, liveBytes: Buffer | string, candidateSha256: string): void {
+	const digest = createHash("sha256").update(liveBytes).digest("hex")
+	if (digest === scope.live.sha256 || digest === candidateSha256) return
+	throw new Error(
+		`the live manifest hashes to ${digest}: it moved since build (${scope.live.sha256}) and is not the candidate — rebuild the intent; STOP`,
+	)
+}
+
 /** A manifest-only arc deploys nothing, so its journal never grows. */
 export function assertNothingJournalled(journal: RetireRouterScope["journal"], steps: readonly DeployStep[]): void {
 	if (steps.length !== journal.steps) {
@@ -871,6 +883,7 @@ async function verifyCandidate(intent: DeployIntent, intentPath: string, candida
 	if (intent.routerOnly) assertRouterOnlyScope(intent.routerOnly, candidate)
 	if (intent.retireRouter) {
 		assertRetireRouterScope(intent.retireRouter, candidate, liveManifestAt(intent.source.commit))
+		assertRetireLiveUnmoved(intent.retireRouter, readFileSync(join(repoRoot, TESTNET_LIVE_MANIFEST)), digest)
 	}
 	await verifyGenerationBindings(candidate, sepolia, intent.primaryRpc)
 	console.log("✓ candidate strict-valid + privileged readbacks agree")
@@ -1076,6 +1089,7 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 	const live = readLiveManifest(paths.bridgeLive)
 	if (live) assertZeroSeed(candidate, live)
 	else console.log("no live manifest yet — first promotion; the generation interlock has nothing to compare against")
+	if (intent.retireRouter) assertRetireLiveUnmoved(intent.retireRouter, readFileSync(paths.bridgeLive), bytes.bridgeSha)
 
 	writeAtomic(paths.bridgeLive, bytes.bridge, bytes.bridgeSha)
 	if (bytes.faucet && bytes.faucetSha) writeAtomic(paths.faucetLive, bytes.faucet, bytes.faucetSha)
