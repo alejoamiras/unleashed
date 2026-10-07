@@ -18,7 +18,8 @@ vi.mock("./deposit-flow", () => ({ providerFingerprint: () => "rabby" }))
 const watchCrossChain = vi.fn(async (_id: string, _deps: unknown) => {})
 vi.mock("./crosschain-deposit-flow", () => ({ appWatchDeps: () => ({}), crossChainSealKey: () => undefined }))
 vi.mock("./crosschain-watch", () => ({
-	needsWatch: (rec: { leafIndex?: string; completedAt?: number }) => rec.leafIndex === undefined && rec.completedAt === undefined,
+	needsWatch: (rec: { completedAt?: number; route: { outcome?: string; depositFinal?: true } }) =>
+		rec.completedAt === undefined && (rec.route.outcome !== undefined || rec.route.depositFinal !== true),
 	watchCrossChain: (id: string, deps: unknown) => watchCrossChain(id, deps),
 }))
 
@@ -217,6 +218,24 @@ describe("useBridgeBackup", () => {
 			const { updatedAt: _stamped, ...stored } = crossChainRecords.value[0] as typeof rec
 			const { updatedAt: _orig, ...original } = rec
 			expect(stored).toEqual(original)
+			expect(watchCrossChain).toHaveBeenCalledWith(rec.id, expect.anything())
+		})
+
+		it("a file that calls its deposit final is watched until discovery says so again", async () => {
+			wireSend(async () => null)
+			const rec = xcRecord(
+				{ portal: CLONE, bridge: HUB, token: (sendRecord() as unknown as { token: JournalTokenBlock }).token, leafIndex: "7" },
+				{ srcTxHash: `0x${"57".repeat(32)}`, depositFinal: true },
+			)
+			let file: Blob | undefined
+			URL.createObjectURL = vi.fn((blob: Blob) => {
+				file = blob
+				return "blob:fake"
+			})
+			vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+			await useBridgeBackup().exportBridge(rec)
+			await useBridgeBackup().restoreFile(await (file as Blob).text())
+			expect(useBridgeJournal().crossChainRecords.value[0]?.route.depositFinal).toBeUndefined()
 			expect(watchCrossChain).toHaveBeenCalledWith(rec.id, expect.anything())
 		})
 

@@ -383,6 +383,7 @@ export function validateCrossChainRecord(rec: unknown): CrossChainDepositRecord 
 	if (!r || typeof r !== "object" || r.schema !== 4 || r.direction !== "deposit") throw new Error(INVALID)
 	const route = validateRoute(r.route)
 	const shared = validateSendRecord({ ...r, schema: 3, route: undefined })
+	if (route.depositFinal && (r as { leafIndex?: unknown }).leafIndex === undefined) throw new Error(INVALID)
 	return { ...shared, schema: 4, route } as CrossChainDepositRecord
 }
 

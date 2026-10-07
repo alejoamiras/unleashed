@@ -69,14 +69,16 @@ async function assertSendRecordImportable(record: AnyJournalRecord): Promise<voi
 	if (blocked) throw new Error(blocked)
 }
 
-/** Each record family goes back under its own key; a cross-chain one still on its way is watched at once. */
+/** Each record family goes back under its own key; a cross-chain one still on its way is watched at once. A file's
+ *  word that its deposit is final is no evidence, so discovery establishes it again. */
 function track(record: AnyJournalRecord): void {
 	if (!isCrossChainRecord(record)) {
 		addRecordVerified(record)
 		return
 	}
-	addCrossChainRecordVerified(record)
-	if (needsWatch(record)) void watchCrossChain(record.id, appWatchDeps())
+	const unproven = { ...record, route: { ...record.route, depositFinal: undefined } }
+	addCrossChainRecordVerified(unproven)
+	if (needsWatch(unproven)) void watchCrossChain(record.id, appWatchDeps())
 }
 
 export function useBridgeBackup() {
