@@ -98,6 +98,8 @@ export interface CrossChainSendOptions {
 /** Seal keys of this session's private sends: a deposit found while the key is still here is re-sealed exact
  *  without another signature. */
 const sealKeys = new Map<string, EncryptionKey>()
+/** Records whose approval the wallet was asked for and never answered: it may have broadcast it all the same. */
+const approvalsUnanswered = new Set<string>()
 
 export function crossChainSealKey(id: string): EncryptionKey | undefined {
 	return sealKeys.get(id)
@@ -188,8 +190,9 @@ function assertFresh(s: CrossChainSend, o: CrossChainSendOptions): void {
 /** Immediately before each source-chain transaction: the route is inside its TTL, and the wallet still answers as
  *  the account it names. */
 async function assertSignable(s: CrossChainSend, wallet: CrossChainWallet, o: CrossChainSendOptions): Promise<void> {
-	assertFresh(s, o)
 	await assertAccount(wallet, s.ask)
+	// Last before the wallet is asked: an account read that answers late cannot carry an expired route past it.
+	assertFresh(s, o)
 }
 
 /** The wallet must sign on the route's chain, as the account the route names as depositor and refund address. */
@@ -343,7 +346,14 @@ async function approveOnSource(
 	for (const call of approvals) {
 		await assertSignable(s, wallet, o)
 		setRecordStep(id, "approving-source")
-		approved = await wallet.sendTransaction(call)
+		approvalsUnanswered.add(id)
+		try {
+			approved = await wallet.sendTransaction(call)
+		} catch (e) {
+			if (isUserRejection(e)) approvalsUnanswered.delete(id)
+			throw e
+		}
+		approvalsUnanswered.delete(id)
 		updateCrossChainRecord(id, { approveTxHash: approved })
 		const receipt = await reads.source.waitForTransactionReceipt({ hash: approved })
 		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain, so the deposit was not sent.")
@@ -353,9 +363,10 @@ async function approveOnSource(
 	logRecordLine(id, approvalConfirmedLine(s.ask.srcChainId, approved))
 }
 
-/** Nothing bridged, but an approval may stand: such a record ends `not-sent`, whose card offers the revoke. */
+/** Nothing bridged, but an approval may stand, journaled or asked for and never answered: such a record ends
+ *  `not-sent`, whose card reads the allowance and offers the revoke. */
 function endUnsent(id: string): void {
-	if (!currentCrossChainRecord(id)?.approveTxHash) {
+	if (!currentCrossChainRecord(id)?.approveTxHash && !approvalsUnanswered.has(id)) {
 		discard(id)
 		return
 	}
@@ -430,6 +441,8 @@ async function journalAndSend(
 	} catch (e) {
 		settleFailedSend(rec.id, requested, e, watcher)
 		throw e
+	} finally {
+		approvalsUnanswered.delete(rec.id)
 	}
 }
 

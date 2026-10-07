@@ -40,6 +40,8 @@ interface WalletOptions {
 	live?: () => Address | undefined
 	/** Runs as the wallet takes each source transaction. */
 	onSend?: () => void
+	/** How the wallet answers the approval request instead of returning its hash. */
+	failApproval?: "rejected" | "no-answer"
 }
 
 /** A wallet that notes, at each source transaction, whether the record was already stored (and sealed). */
@@ -59,6 +61,10 @@ function fakeWallet(route: CrossChainRoute, o: WalletOptions = {}) {
 		sendTransaction: async (call) => {
 			const rec = stored()
 			journaledAtSend.push(!!rec && (!rec.isPrivate || !!rec.sealedEnvelope))
+			if (o.failApproval && call.to !== route.tx.to) {
+				if (o.failApproval === "rejected") throw Object.assign(new Error("User rejected the request."), { code: 4001 })
+				throw new Error("The wallet disconnected.")
+			}
 			sent.push(call)
 			o.onSend?.()
 			if (o.rejectDeposit && call.to === route.tx.to) throw Object.assign(new Error("User rejected the request."), { code: 4001 })
@@ -191,6 +197,38 @@ describe("sendCrossChain", () => {
 		await expect(sendCrossChain(sendOf(p, sealing), sealer.wallet, fakeReads(0n), { watch: false })).rejects.toThrow(ACCOUNT_SWITCHED)
 		expect([sealer.signed, sealer.sent]).toEqual([[], []])
 		expect(currentCrossChainRecord(routeRecordId(sealing.secrets))).toBeUndefined()
+	})
+
+	it("keeps a record whose approval the wallet never answered, and drops one whose approval it refused", async () => {
+		const a = ask()
+		const route = await quotedRoute(a)
+		const lost = fakeWallet(route, { failApproval: "no-answer" })
+		await expect(sendCrossChain(sendOf(a, route), lost.wallet, fakeReads(0n), { watch: false })).rejects.toThrow(/disconnected/)
+		const kept = currentCrossChainRecord(routeRecordId(route.secrets))
+		expect([kept?.approveTxHash, kept && crossChainPhase(kept)]).toEqual([undefined, { kind: "not-sent" }])
+
+		__resetJournalForTests()
+		const refused = fakeWallet(route, { failApproval: "rejected" })
+		await expect(sendCrossChain(sendOf(a, route), refused.wallet, fakeReads(0n), { watch: false })).rejects.toThrow(/rejected/)
+		expect(storedCrossChainRecords()).toEqual([])
+	})
+
+	it("reads the route's age after the account, so a late account answer cannot carry an expired route to the wallet", async () => {
+		const a = ask()
+		const route = await quotedRoute(a)
+		let now = Date.now()
+		let reads = 0
+		// The entry check and the post-seal check read the account first; the third read is the approval's.
+		const late = fakeWallet(route, {
+			live: () => {
+				if (++reads === 3) now += ROUTE_TTL_MS + 1
+				return USER
+			},
+		})
+		await expect(sendCrossChain(sendOf(a, route, now), late.wallet, fakeReads(0n), { now: () => now, watch: false })).rejects.toThrow(
+			ROUTE_EXPIRED,
+		)
+		expect(late.sent).toEqual([])
 	})
 
 	it("refuses a route that expired during the approval right before the deposit; the approval stays revocable", async () => {
