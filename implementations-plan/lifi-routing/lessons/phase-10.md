@@ -80,3 +80,25 @@ Run at the branch head with the forge outputs in place, Foundry 1.7.1 and halmos
   and scripts: the live testnet manifest and two frozen fixtures; the optional schema fields; the retire-router
   arc and the router-only scope's pin of the old fields in `live-intent.ts`; the DepositRouter's own swap
   target and its readers; and the Uniswap-format token list.
+
+## Review round 1
+
+Four findings from the foreign review, each verified against the code and accepted.
+
+1. **Medium: a retire-router promote could overwrite a newer live manifest.** The candidate was checked against
+   the live manifest at the build commit only; `promote` compared the working-tree live file through
+   `assertZeroSeed`, and the allowlist hides it from the drift check. A calibration or promotion landed between
+   build and promote would have been lost. Fix: `assertRetireLiveUnmoved` runs in `verify --candidate` and in
+   `promote` right before the write, and accepts the live file only at the digest the build recorded or as the
+   pinned candidate itself (a re-run after a promote that stopped before its receipt).
+2. **Medium: the listed old router went unchecked.** `verify-l1` and the promotion's code check read
+   `legacyRouters` alone, while reconcile also reads `l1.router` through `legacyRoutersOf`, so during the
+   transition the live old router had no code, factory or owner check. Fix: both read `legacyRoutersOf`.
+3. **Low: `deploy` parsed `--routing` after the generation was on chain**, and a dry run never parsed it. Fix:
+   it is parsed beside `--rates`, before connecting.
+4. **Low: `generationBase`'s doc narrated.** Deleted; the budgets' constraint already sits on `priorFuelBudgets`.
+
+Gate on the fixed head: `bun run lint` checked 613 files with no fixes applied (2 infos outside this phase's
+files), complexity baseline OK; `typecheck:all` exit 0 for design, bridge-core and tools; `test:all`: design 242
+passed, bridge-core 661 passed and 11 skipped, tools 1756 passed; `bun run lint:actions` exit 0;
+`bun run test:ci-gating`: 31 pass, 0 fail.
