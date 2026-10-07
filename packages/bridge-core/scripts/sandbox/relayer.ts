@@ -328,8 +328,11 @@ export interface RelayerOptions {
 	destinationSpokePool: Address
 	mode?: RelayMode
 	pollMs?: number
-	/** Gives the filler `amount` of `token` before each fill; the sandbox mints. */
-	fund?: (token: Address, amount: bigint) => Promise<void>
+	/** Gives the filler `to` the `amount` of `token` before each fill; the sandbox mints. */
+	fund?: (token: Address, amount: bigint, to: Address) => Promise<void>
+	/** The destination signer for a deposit that names an exclusive relayer other than `destination`'s account, which
+	 *  alone may fill it before its deadline; without it such a deposit is filled from `destination` and refused. */
+	exclusiveFiller?: (relayer: Address) => Promise<Destination>
 }
 
 export interface Relayer {
@@ -433,11 +436,20 @@ class RelayLoop implements Relayer {
 		this.timers.add(timer)
 	}
 
+	/** The deposit's exclusive relayer where it names one other than ours, else our own signer. */
+	private async fillerOf(d: SourceDeposit): Promise<Destination> {
+		const own = this.o.destination
+		if (BigInt(d.relay.exclusiveRelayer) === 0n || !this.o.exclusiveFiller) return own
+		const named = wordAddress(d.relay.exclusiveRelayer)
+		return isAddressEqual(named, own.wallet.account.address) ? own : this.o.exclusiveFiller(named)
+	}
+
 	private async fill(d: SourceDeposit, key: Hex, mode: RelayMode): Promise<void> {
 		try {
-			await this.o.fund?.(wordAddress(d.relay.outputToken), d.relay.outputAmount)
+			const filler = await this.fillerOf(d)
+			await this.o.fund?.(wordAddress(d.relay.outputToken), d.relay.outputAmount, filler.wallet.account.address)
 			const gas = mode.kind === "starve-gas" ? STARVED_FILL_GAS : undefined
-			const r = await sendFill(this.o.destination, this.o.destinationSpokePool, d.relay, {
+			const r = await sendFill(filler, this.o.destinationSpokePool, d.relay, {
 				repaymentChainId: this.chains.origin,
 				gas,
 			})
@@ -450,7 +462,8 @@ class RelayLoop implements Relayer {
 
 /**
  * Watches `sourceSpokePool` from the source's current head and fills every deposit bound for the destination chain
- * on `destinationSpokePool`, one at a time from one key, each as the mode in force when the loop first saw it.
+ * on `destinationSpokePool`, one at a time from one key (or as the exclusive relayer a deposit names, through
+ * `exclusiveFiller`), each as the mode in force when the loop first saw it.
  */
 export async function startRelayer(o: RelayerOptions): Promise<Relayer> {
 	const [origin, destination, head] = await Promise.all([
