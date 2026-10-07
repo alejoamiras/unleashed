@@ -142,8 +142,11 @@ The ledger entry D51 holds the verdicts. What the rounds taught:
 
 - An in-memory marker is not a journal: a reload drops it, so any fact a later screen depends on (an approval
   that may stand) needs either a journaled field or a chain read that re-derives it.
-- A send that never reached the chain needs a terminal verdict, or it is undismissable: the fill deadline is the
-  chain-checkable bound for an Across route (the SpokePool refuses a deposit past it), read at a finalized block.
+- Absence of logs is never a verdict. A "never sent" outcome built on an empty `Transfer` scan past the fill
+  deadline was wrong twice over: an RPC can drop logs and a source reorg can land the send below the scan start,
+  and Across's `deposit` accepts a deadline already past (it bounds the quote's age and the deadline's upper
+  limit only), so a stale wallet prompt can still land. Only a journaled fact of what the app asked the wallet
+  for can end a send nobody saw.
 - Restored files carry claims, not facts: every field that ends a watch (`depositFinal`, an outcome, completion)
   is evidence only when discovery re-derives it. `depositFinal` is now stripped; outcomes from a decryptable file
   remain trusted, an accepted risk.

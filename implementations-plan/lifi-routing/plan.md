@@ -1551,15 +1551,22 @@ code before it was triaged; the fixes are logged in `lessons/phase-9.md` § Arc 
 - Round 3 (two medium, one low), the plan's hard stop; the owner chose *"Fix the real ones, accept forged backups
   (Recommended)"*:
   1. The unanswered-approval marker lived in memory and was cleared before the hash was written. The hash is now
-     journaled first. A reload with a wallet prompt open left the send "not found yet" for good, with no revoke and
-     no Dismiss: discovery now ends a send never handed over (no hash, no batch id) as `not-sent` once a finalized
-     source block is past its `fillDeadline` with no transfer found, since the SpokePool refuses a deposit after
-     it; the card then offers the revoke and Dismiss. Stargate routes carry no deadline and stay pending.
+     journaled first. A reload with a wallet prompt open leaves the send "not found yet" for good, with no revoke
+     and no Dismiss; see round 4 for why that stays.
   2. A restored record's outcome is trusted, and a batch send with no hash read as never signed. A batch is never
      called never signed. Accepted with a follow-up: a backup that decrypts can carry a false outcome or completion,
      and producing one needs the user's backup key.
   3. (low) A Base receipt without its L1 fee showed execution gas alone as the attempt's fee; the figure is now left
      out.
+- Round 4 (past the cap; one high, one medium, both against the round 3 fix that ended a never-found send as
+  `not-sent` at its `fillDeadline`): absence is not proof. An RPC that drops `Transfer` logs, or a source reorg that
+  mines the send below the saved scan start, made a real deposit final `not-sent`, and Dismiss could then delete its
+  recovery secret. And the premise was false: Across's `deposit` (SpokePool v5.0.26) bounds the quote's age and the
+  deadline's upper limit only, so a stale prompt can still land after the deadline. The verdict is reverted. The
+  owner chose *"Revert it, accept the stuck card (Recommended)"*: after a reload with a wallet prompt open, the card
+  stays "not found yet" with no revoke offer and no Dismiss, and the exact approval stays open until revoked
+  elsewhere; a follow-up designs a journaled "deposit requested" marker, with cross-tab care, that lets a send never
+  asked for its deposit end safely. The other round 3 fixes held.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
