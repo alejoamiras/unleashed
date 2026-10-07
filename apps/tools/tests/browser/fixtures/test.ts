@@ -133,7 +133,10 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 			pool.all.map((a) => a.seed),
 		)
 		await parkWalletPanel(context, walletOrigins)
-		await installL1WalletControl(context, { rpcUrl: handle.anvilUrl, privateKey: key as `0x${string}`, chainId: handle.l1ChainId })
+		const cc = handle.crossChain
+		const rpcUrls: Record<number, string> = { [handle.l1ChainId]: handle.anvilUrl }
+		if (cc) rpcUrls[cc.sourceChainId] = cc.sourceUrl
+		await installL1WalletControl(context, { rpcUrls, privateKey: key as `0x${string}`, chainId: handle.l1ChainId })
 		await use(context)
 	},
 

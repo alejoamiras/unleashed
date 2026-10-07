@@ -1,17 +1,27 @@
 /**
  * An injected EIP-1193 wallet for the tools page, answered from Node: the page's `window.ethereum`
- * forwards every request through an exposed function to a viem wallet client over the sandbox's
- * anvil, which signs with the run's actor key. Wrong-chain, account-change and rejection cells
- * drive it through the control it returns.
+ * forwards every request through an exposed function to a viem wallet client over the anvil of the
+ * chain it is on, which signs with the run's actor key. Wrong-chain, account-change, rejection and
+ * batch cells drive it through the control it returns.
  */
 import type { BrowserContext, Page } from "@playwright/test"
-import { type Address, createWalletClient, defineChain, type Hex, http } from "viem"
+import { type Address, createPublicClient, createWalletClient, defineChain, type Hex, http, numberToHex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 
 export interface L1WalletOptions {
-	rpcUrl: string
+	/** The anvil behind each chain the wallet can switch to; it starts on `chainId`, which must be one of them. */
+	rpcUrls: Readonly<Record<number, string>>
 	privateKey: Hex
 	chainId: number
+}
+
+/** One EIP-5792 `wallet_sendCalls` the page made, as it asked, and the transactions the wallet sent for it. */
+export interface CallBatch {
+	id: string
+	chainId: number
+	atomicRequired: boolean
+	calls: { to: Address; data?: Hex; value?: Hex }[]
+	hashes: Hex[]
 }
 
 export type RejectKind = "signature" | "transaction"
@@ -42,8 +52,19 @@ export interface L1WalletControl {
 	/** How often the page asked for one wallet-side method (`eth_sendTransaction`,
 	 *  `eth_signTypedData_v4`, `personal_sign`), held and refused calls included. */
 	calls(method: string): number
-	/** The chain `eth_chainId` answers; a change emits `chainChanged` in every page of the context. */
+	/** The chain `eth_chainId` answers; a change emits `chainChanged` in every page of the context. A chain
+	 *  without an anvil of its own reads and signs through the starting chain's, as a misconfigured wallet would. */
 	setChainId(chainId: number): Promise<void>
+	readonly chainId: number
+	/** Report EIP-5792 atomic batching on `chainId` from now on; null (the default) reports it nowhere. */
+	atomicOn(chainId: number | null): void
+	/** The next batch is sent at once but its receipts are withheld (`wallet_getCallsStatus` answers pending) until
+	 *  `releaseBatchReceipts`: a wallet whose batch landed before it told the page. */
+	holdBatchReceipts(): void
+	releaseBatchReceipts(): void
+	batches(): CallBatch[]
+	/** Sends from this account on `chainId` outside the page, as another app would have before this one opened. */
+	sendOutside(chainId: number, call: { to: Address; data: Hex }): Promise<Hex>
 	/** Swap the signing key; emits `accountsChanged`. */
 	setAccount(privateKey: Hex): Promise<void>
 	/** The next request of that kind is refused with EIP-1193 code 4001. */
@@ -63,6 +84,74 @@ export interface L1WalletControl {
 type Rpc = { method: string; params?: unknown[] }
 
 const USER_REJECTED = { code: 4001, message: "User rejected the request." }
+/** EIP-3326: a chain this wallet has no network for. */
+const UNKNOWN_CHAIN = { code: 4902, message: "Unrecognized chain ID." }
+
+type BatchRequest = { chainId: Hex; atomicRequired: boolean; calls: { to: Address; data?: Hex; value?: Hex }[] }
+type RawReceipt = { status: Hex; logs: unknown[]; blockHash: Hex; blockNumber: Hex; gasUsed: Hex; transactionHash: Hex } | null
+
+/** EIP-5792 batches: sent one call after another on the chain the wallet is on, answered with the receipts the
+ *  chain holds for them unless a hold withholds them. */
+class BatchBook {
+	private atomicChain: number | null = null
+	private readonly list: CallBatch[] = []
+	private readonly withheld = new Set<string>()
+	private holdArmed = false
+
+	setAtomic(chainId: number | null): void {
+		this.atomicChain = chainId
+	}
+	atomicOn = (chainId: number): boolean => this.atomicChain === chainId
+	holdNext(): void {
+		this.holdArmed = true
+	}
+	release(): void {
+		this.withheld.clear()
+	}
+	all = (): CallBatch[] => this.list.map((b) => ({ ...b, hashes: [...b.hashes] }))
+
+	/** Files a batch; refuses one for another chain (5710) or one that must be atomic where this wallet is not (5760). */
+	open(req: BatchRequest, walletChain: number): string {
+		const chainId = Number(req.chainId)
+		if (chainId !== walletChain) throw { code: 5710, message: `the batch names chain ${chainId}; the wallet is on ${walletChain}` }
+		if (req.atomicRequired && !this.atomicOn(chainId)) throw { code: 5760, message: "Atomicity not supported." }
+		const id = numberToHex(BigInt(this.list.length + 1), { size: 32 })
+		this.list.push({ id, chainId, atomicRequired: req.atomicRequired, calls: req.calls, hashes: [] })
+		if (this.holdArmed) this.withheld.add(id)
+		this.holdArmed = false
+		return id
+	}
+
+	async send(id: string, sendOne: (call: { to: Address; data?: Hex; value?: bigint }) => Promise<Hex>): Promise<void> {
+		const batch = this.byId(id)
+		for (const c of batch.calls)
+			batch.hashes.push(await sendOne({ to: c.to, data: c.data, value: c.value ? BigInt(c.value) : undefined }))
+	}
+
+	async status(id: string, receiptOf: (chainId: number, hash: Hex) => Promise<unknown>) {
+		const b = this.byId(id)
+		const head = { version: "2.0.0", id, chainId: numberToHex(b.chainId), atomic: this.atomicOn(b.chainId) }
+		if (this.withheld.has(id)) return { ...head, status: 100 }
+		const receipts = (await Promise.all(b.hashes.map((h) => receiptOf(b.chainId, h)))) as RawReceipt[]
+		if (receipts.some((r) => r === null)) return { ...head, status: 100 }
+		const ok = receipts.every((r) => r?.status === "0x1")
+		const fields = (r: NonNullable<RawReceipt>) => ({
+			logs: r.logs,
+			status: r.status,
+			blockHash: r.blockHash,
+			blockNumber: r.blockNumber,
+			gasUsed: r.gasUsed,
+			transactionHash: r.transactionHash,
+		})
+		return { ...head, status: ok ? 200 : 500, receipts: receipts.map((r) => fields(r as NonNullable<RawReceipt>)) }
+	}
+
+	private byId(id: string): CallBatch {
+		const b = this.list.find((x) => x.id === id)
+		if (!b) throw { code: 5730, message: `unknown batch ${id}` }
+		return b
+	}
+}
 
 /** JSON turned every bigint into a string on the way over; the ABI types say which ones to restore. */
 function coerceTyped(types: Record<string, { name: string; type: string }[]>, type: string, value: unknown): unknown {
@@ -97,16 +186,22 @@ function typedDataOf(json: string) {
 }
 
 export async function installL1Wallet(context: BrowserContext, o: L1WalletOptions): Promise<L1WalletControl> {
+	const home = o.rpcUrls[o.chainId]
+	if (!home) throw new Error(`the L1 wallet starts on chain ${o.chainId}, which has no anvil`)
+	const rpcOf = (id: number) => o.rpcUrls[id] ?? home
 	const chain = (id: number) =>
 		defineChain({
 			id,
 			name: `anvil-${id}`,
 			nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-			rpcUrls: { default: { http: [o.rpcUrl] } },
+			rpcUrls: { default: { http: [rpcOf(id)] } },
 		})
 	let account = privateKeyToAccount(o.privateKey)
 	let chainId = o.chainId
-	let client = createWalletClient({ account, chain: chain(chainId), transport: http(o.rpcUrl) })
+	const clientOn = (id: number) => createWalletClient({ account, chain: chain(id), transport: http(rpcOf(id)) })
+	const readerOn = (id: number) => createPublicClient({ chain: chain(id), transport: http(rpcOf(id)) })
+	let client = clientOn(chainId)
+	const batches = new BatchBook()
 	const rejections = new Set<RejectKind>()
 	const holds: Array<{ kind: RejectKind; match?: HoldMatch }> = []
 	const swallows: Array<{ match?: HoldMatch }> = []
@@ -160,22 +255,44 @@ export async function installL1Wallet(context: BrowserContext, o: L1WalletOption
 
 	const switchChain = async (id: number) => {
 		chainId = id
-		client = createWalletClient({ account, chain: chain(chainId), transport: http(o.rpcUrl) })
+		client = clientOn(chainId)
 		await emit("chainChanged", `0x${id.toString(16)}`)
 	}
 	const refuse = (kind: RejectKind) => {
 		if (takeRejection(kind)) throw USER_REJECTED
 	}
 
-	/** The wallet-side methods; anything else is a node read, proxied to anvil as-is. */
+	/** The wallet-side methods; anything else is a node read, proxied to the current chain's anvil as-is. */
 	const wallet: Record<string, (params: unknown[]) => Promise<unknown>> = {
 		eth_requestAccounts: async () => [account.address],
 		eth_accounts: async () => [account.address],
 		eth_chainId: async () => `0x${chainId.toString(16)}`,
 		wallet_switchEthereumChain: async (params) => {
-			await switchChain(Number.parseInt((params[0] as { chainId: string }).chainId, 16))
+			count("wallet_switchEthereumChain")
+			const id = Number.parseInt((params[0] as { chainId: string }).chainId, 16)
+			if (!(id in o.rpcUrls)) throw UNKNOWN_CHAIN
+			await switchChain(id)
 			return null
 		},
+		wallet_getCapabilities: async (params) => {
+			count("wallet_getCapabilities")
+			const asked = (params[1] as Hex[] | undefined) ?? Object.keys(o.rpcUrls).map((id) => numberToHex(Number(id)))
+			return Object.fromEntries(
+				asked.map((id) => [id, { atomic: { status: batches.atomicOn(Number(id)) ? "supported" : "unsupported" } }]),
+			)
+		},
+		wallet_sendCalls: async (params) => {
+			count("wallet_sendCalls")
+			refuse("transaction")
+			const id = batches.open(params[0] as BatchRequest, chainId)
+			signed++
+			await batches.send(id, (call) => client.sendTransaction(call))
+			return { id }
+		},
+		wallet_getCallsStatus: async (params) =>
+			batches.status(params[0] as string, (id, hash) =>
+				readerOn(id).request({ method: "eth_getTransactionReceipt", params: [hash] }),
+			),
 		eth_sendTransaction: (params) => {
 			count("eth_sendTransaction")
 			refuse("transaction")
@@ -276,9 +393,22 @@ export async function installL1Wallet(context: BrowserContext, o: L1WalletOption
 		calls: (method) => counts[method] ?? 0,
 		permits: () => [...permits],
 		setChainId: switchChain,
+		get chainId() {
+			return chainId
+		},
+		atomicOn: (id) => batches.setAtomic(id),
+		holdBatchReceipts: () => batches.holdNext(),
+		releaseBatchReceipts: () => batches.release(),
+		batches: () => batches.all(),
+		sendOutside: async (id, call) => {
+			const hash = await clientOn(id).sendTransaction(call)
+			const receipt = await readerOn(id).request({ method: "eth_getTransactionReceipt", params: [hash] })
+			if (receipt?.status !== "0x1") throw new Error(`the outside transaction ${hash} on chain ${id} did not succeed`)
+			return hash
+		},
 		async setAccount(privateKey) {
 			account = privateKeyToAccount(privateKey)
-			client = createWalletClient({ account, chain: chain(chainId), transport: http(o.rpcUrl) })
+			client = clientOn(chainId)
 			await emit("accountsChanged", [account.address])
 		},
 		rejectNext(kind) {
