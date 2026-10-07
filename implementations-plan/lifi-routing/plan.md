@@ -267,6 +267,7 @@ type CrossChainDepositRecord = Omit<SendDepositRecord, "schema"> & { schema: 4; 
   fillDeadline?: number                           // Across only
   outcome?: "not-sent" | "delivered-to-wallet" | "expired-on-source"; outcomeTxHash?: Hex; outcomeAmount?: string
   extraDeposits?: { txHash: Hex; leafIndex: string; amount: string }[]   // authenticated gifts to the same secret
+  depositFinal?: true      // the deposit's block is at or below Ethereum `finalized`; never beside an outcome
 } }
 ```
 
