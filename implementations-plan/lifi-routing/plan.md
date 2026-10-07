@@ -1536,6 +1536,31 @@ these answers settle the questions that do not need a screenshot:
   in place of "The send reverted on Base Sepolia" for such a send. Neither the panel nor the card lists a rejected
   transaction it never had.
 
+**D51 Arc 4 Codex loop (`gpt-6.1-sol` at `high`, over the arc 4 diff).** Every finding was verified against the
+code before it was triaged; the fixes are logged in `lessons/phase-9.md` § Arc 4 review fixes.
+- Round 1 (four, all accepted and fixed): discovery stopped before the deposit was final (`route.depositFinal`, the
+  watch until final, claim material dropped when the deposit moves); a refused deposit discarded a live approval
+  (hashes journaled as returned, such a send ends `not-sent` with the revoke offer); the account check compared
+  captured values (the live account before every signature, inside `withOperation`); the route's TTL was checked at
+  entry only (checked before each wallet request).
+- Round 2 (six): 1–3 (a claim before Ethereum finality, a submitted claim not bound to its deposit snapshot,
+  re-included fuel keeping the old message's settlement) all need the deposit to move before finality; the owner
+  ruled *"Claim early"* and accepted them as a risk with a follow-up (D50). 4–6 accepted and fixed: an approval
+  whose reply the wallet lost keeps its record; the route's age is read after the live account, right before each
+  request; a restored file's `depositFinal` is refused without a deposit and stripped on restore.
+- Round 3 (two medium, one low), the plan's hard stop; the owner chose *"Fix the real ones, accept forged backups
+  (Recommended)"*:
+  1. The unanswered-approval marker lived in memory and was cleared before the hash was written. The hash is now
+     journaled first. A reload with a wallet prompt open left the send "not found yet" for good, with no revoke and
+     no Dismiss: discovery now ends a send never handed over (no hash, no batch id) as `not-sent` once a finalized
+     source block is past its `fillDeadline` with no transfer found, since the SpokePool refuses a deposit after
+     it; the card then offers the revoke and Dismiss. Stargate routes carry no deadline and stay pending.
+  2. A restored record's outcome is trusted, and a batch send with no hash read as never signed. A batch is never
+     called never signed. Accepted with a follow-up: a backup that decrypts can carry a false outcome or completion,
+     and producing one needs the user's backup key.
+  3. (low) A Base receipt without its L1 fee showed execution gas alone as the attempt's fee; the figure is now left
+     out.
+
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
 signed order expires about 645 s after its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above

@@ -136,6 +136,19 @@ Run on the fixed branch's head, with the forge outputs in place:
 - Re-run on the arc-4 review fixes: lint and `typecheck:all` exit 0; `test:all` design 242,
   bridge-core 705 passed and 11 skipped, tools 1755.
 
+### Arc 4 review, rounds 2 and 3
+
+The ledger entry D51 holds the verdicts. What the rounds taught:
+
+- An in-memory marker is not a journal: a reload drops it, so any fact a later screen depends on (an approval
+  that may stand) needs either a journaled field or a chain read that re-derives it.
+- A send that never reached the chain needs a terminal verdict, or it is undismissable: the fill deadline is the
+  chain-checkable bound for an Across route (the SpokePool refuses a deposit past it), read at a finalized block.
+- Restored files carry claims, not facts: every field that ends a watch (`depositFinal`, an outcome, completion)
+  is evidence only when discovery re-derives it. `depositFinal` is now stripped; outcomes from a decryptable file
+  remain trusted, an accepted risk.
+- viem's OP-stack receipt formatter returns `l1Fee: null` when the RPC omits it; treat `null` as unknown, not 0.
+
 ### The jsdom smokes are CI-only
 
 `bun run --cwd apps/tools test:e2e` (the mocked-wallet smokes `_build-tools.yml` runs inside
