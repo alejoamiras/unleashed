@@ -28,7 +28,11 @@ test("cell 34 — the catalog lists the generation's tokens first, then the comm
 
 	const keys = await page.locator(tid(TESTIDS.sendTokenTile)).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.key ?? ""))
 	const manifestKeys = sandbox.manifest.bridge?.tokens.map((t) => `${L1}:${t.erc20.toLowerCase()}`) ?? []
-	expect(keys.slice(0, manifestKeys.length), "the generation's tokens lead, in manifest order").toEqual(manifestKeys)
+	// The source chain's routed rows and each chain's native coin sit apart from Ethereum's catalog.
+	const ethereumKeys = keys.filter((k) => k.startsWith(`${L1}:`))
+	expect(ethereumKeys.slice(0, manifestKeys.length), "the generation's tokens lead Ethereum's rows, in manifest order").toEqual(
+		manifestKeys,
+	)
 	// The community list is served from the suite's fixture (the egress fence answers its origin).
 	expect(keys, "the fixture list's tokens follow").toEqual(expect.arrayContaining([`${L1}:0x1111111111111111111111111111111111111111`]))
 

@@ -13,6 +13,7 @@
  * identity is read from the run's artifacts by `local-target-loader.ts` (Node) and `define`d into
  * the bundle as `__LOCAL_TARGET__`, so a testnet or mainnet build never carries it.
  */
+import type { SandboxLifiContracts } from "@unleashed/bridge-core"
 import {
 	MAINNET_L1_CHAIN_ID,
 	MAINNET_ROLLUP_VERSION,
@@ -58,6 +59,8 @@ export interface ToolsTarget {
 	/** Token-list digests accepted in place of bridge-core's pin. Only the local target sets any: its
 	 *  browser suite answers the list from fixtures. */
 	tokenListSha256?: readonly string[]
+	/** The sandbox's LI.FI and Across stand-ins, booked for its two anvils. Only the local target sets them. */
+	sandboxLifi?: SandboxLifiContracts
 }
 
 export const LOCAL_L1_CHAIN_ID = 31337
@@ -96,6 +99,8 @@ export interface LocalTargetConfig {
 	source?: { chainId: number; rpcUrl: string }
 	/** The sandbox's loopback Across API. */
 	acrossApiUrl?: string
+	/** The sandbox's LI.FI and Across stand-ins. */
+	sandboxLifi?: SandboxLifiContracts
 }
 
 const loopback = (protocol: string) => `${protocol}://127.0.0.1:* ${protocol}://localhost:*`
@@ -123,6 +128,7 @@ export function localTarget(cfg: LocalTargetConfig): ToolsTarget {
 		...(cfg.tokenListSha256 ? { tokenListSha256: cfg.tokenListSha256 } : {}),
 		readRpcUrls,
 		...(cfg.acrossApiUrl ? { acrossApiUrl: cfg.acrossApiUrl } : {}),
+		...(cfg.sandboxLifi ? { sandboxLifi: cfg.sandboxLifi } : {}),
 	}
 }
 

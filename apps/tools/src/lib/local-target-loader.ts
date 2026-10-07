@@ -15,6 +15,8 @@ const TOKEN_LIST_FIXTURES = ["token-list.json", "token-list-hostile.json"].map(
 
 const sha256Of = (file: URL) => createHash("sha256").update(readFileSync(file)).digest("hex")
 
+type Hex = `0x${string}`
+
 interface Handle {
 	anvilUrl: string
 	nodeUrl: string
@@ -22,8 +24,38 @@ interface Handle {
 	walletChainId: number
 	l1ChainId: number
 	/** Absent on a handle from before the sandbox's cross-chain half. */
-	crossChain?: { sourceUrl: string; sourceChainId: number }
+	crossChain?: {
+		sourceUrl: string
+		sourceChainId: number
+		source: { spokePool: Hex; diamond: Hex; token: Hex }
+		destination: { spokePool: Hex; executor: Hex; receiverAcrossV4: Hex; token: Hex }
+	}
 }
+
+type CrossChain = NonNullable<Handle["crossChain"]>
+
+/** The sandbox manifest routes nothing, since no live book may learn its chains, so the local build alone routes the
+ *  source anvil's token into the rail token it delivers, which shares its symbol and decimals. */
+function withSandboxRouting(manifestJson: string, cc: CrossChain): string {
+	const manifest = JSON.parse(manifestJson) as {
+		bridge?: { tokens: { erc20: string; displaySymbol: string; decimals: number }[]; routing?: unknown } | null
+	}
+	const dest = manifest.bridge?.tokens.find((t) => t.erc20.toLowerCase() === cc.destination.token.toLowerCase())
+	if (!manifest.bridge || !dest) throw new Error(`local target: the sandbox manifest has no token ${cc.destination.token} to route into`)
+	const token = { address: cc.source.token, symbol: dest.displaySymbol, decimals: dest.decimals, destToken: cc.destination.token }
+	manifest.bridge.routing = { provider: "lifi", sources: [{ chainId: cc.sourceChainId, rail: "acrossV4", tokens: [token] }] }
+	return `${JSON.stringify(manifest, null, "\t")}\n`
+}
+
+const sandboxLifiOf = (cc: CrossChain, l1ChainId: number): NonNullable<LocalTargetConfig["sandboxLifi"]> => ({
+	source: { chainId: cc.sourceChainId, diamond: cc.source.diamond, spokePool: cc.source.spokePool },
+	ethereum: {
+		chainId: l1ChainId,
+		executor: cc.destination.executor,
+		receiverAcrossV4: cc.destination.receiverAcrossV4,
+		spokePool: cc.destination.spokePool,
+	},
+})
 
 /** The loopback Across API a held sandbox serves; `sandbox:up` writes it, a one-shot run does not. */
 function relayApiUrl(artifactsDir: string): string | undefined {
@@ -57,14 +89,19 @@ export function loadLocalRun(artifactsDir: string, opts: LocalRunOptions = {}): 
 		webWalletUrls: opts.webWalletUrls ?? [],
 		tokenListSha256: TOKEN_LIST_FIXTURES.map(sha256Of),
 		l1RpcUrl: handle.anvilUrl,
-		...(handle.crossChain ? { source: { chainId: handle.crossChain.sourceChainId, rpcUrl: handle.crossChain.sourceUrl } } : {}),
+	}
+	const cc = handle.crossChain
+	if (cc) {
+		config.source = { chainId: cc.sourceChainId, rpcUrl: cc.sourceUrl }
+		config.sandboxLifi = sandboxLifiOf(cc, handle.l1ChainId)
 	}
 	const acrossApiUrl = relayApiUrl(artifactsDir)
 	if (acrossApiUrl) config.acrossApiUrl = acrossApiUrl
+	const manifestJson = readFileSync(join(artifactsDir, "manifest.json"), "utf8")
 	return {
 		target: localTarget(config),
 		config,
-		manifestJson: readFileSync(join(artifactsDir, "manifest.json"), "utf8"),
+		manifestJson: cc ? withSandboxRouting(manifestJson, cc) : manifestJson,
 		deploymentsJson: readFileSync(join(artifactsDir, "deployments.json"), "utf8"),
 	}
 }

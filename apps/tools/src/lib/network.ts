@@ -10,7 +10,14 @@
  * no `viem`/`@aztec` pull); this module layers the `viem` Chain object + endpoints on top for the
  * app bundle. The Chain object is target-driven (Sepolia for the testnet build, mainnet otherwise).
  */
-import { type EnabledSource, enabledSources, type ManifestV2, SOURCE_CHAINS, type SourceChain } from "@unleashed/bridge-core"
+import {
+	type EnabledSource,
+	enabledSources,
+	type ManifestV2,
+	registerSandboxLifi,
+	SOURCE_CHAINS,
+	type SourceChain,
+} from "@unleashed/bridge-core"
 import { type Chain, defineChain } from "viem"
 import { arbitrum, base, baseSepolia, foundry, mainnet, optimism, sepolia } from "viem/chains"
 import { resolveToolsTarget } from "./network-targets"
@@ -80,6 +87,8 @@ const sandboxSources: SourceChain[] =
 					rpcUrls,
 				}))
 		: []
+
+if (target.key === "local" && target.sandboxLifi) registerSandboxLifi(target.sandboxLifi)
 
 const sandboxChain = (s: SourceChain): Chain =>
 	defineChain({
