@@ -73,3 +73,60 @@ cell has no browser path and stays covered by unit tests (see Open). The gate re
 - `bun run e2e:tools` from a fresh sandbox: 75 passed, Playwright exit 0. The egress fixture is automatic and
   asserts its blocked list is empty at every test's teardown, so a green run is an empty record.
 - The two-worktree concurrent run is the coordinator's.
+
+## Arc 4 review fixes
+
+Four review findings on the cross-chain send, each verified against the code before it was fixed.
+
+1. **Discovery stopped before the deposit was final.** An L1→L2 message hash includes its leaf index, so a reorg
+   that re-includes the fill at another leaf moves every fact a claim is built from, and the claim waits on
+   `l1ToL2MessageReadiness` for a hash that never arrives. `discoveryPatch` now sets the optional
+   `route.depositFinal` once the deposit's block is at or below Ethereum's finalized head, clears it with the
+   deposit, and keeps a final deposit's facts against later reads; the schema-4 validator accepts only `true`,
+   never beside an outcome. `needsWatch` keeps a deposited record watched until then, so a reload resumes it.
+   The claim still starts at the first deposit. A round that moves the deposit drops the cached claim material
+   and starts the claim again; a claim already waiting in its checkpoint gate or simulate loop re-reads the
+   stored record every poll and starts over once it moved. Cached material naming another leaf is never used,
+   even when another tab moved the deposit. The v3 envelope stays until the deposit is final and is re-sealed
+   exact then, from the in-memory key or at the next unseal; a claim that completes first leaves it on a
+   finished record.
+2. **A refused deposit discarded a live approval.** Approval hashes are journaled as the wallet returns them,
+   before their receipts. A send that ends with nothing bridged but an approval journaled (the deposit refused,
+   the approval's receipt lost, an expiry or account switch caught before the deposit) ends `not-sent` and final
+   instead of being discarded, so its Activity card shows `LeftoverApproval`. Only drawn states show it: the
+   wizard's not-sent outcome panel replaces the return to the review, and the Activity card reads "Not sent"
+   with the revoke. Their copy says the source chain rejected or reverted the send, which is untrue of a wallet
+   decline; that wording is the owner's call and was left as drawn.
+3. **The account check compared captured values.** `CrossChainWallet.liveAccount` asks the wallet
+   (`eth_accounts` through viem's `getAddresses`, which never prompts), and the send compares it with the
+   route's sender right before the seal's message, each approval, the batch and the deposit. `sendCrossChain`
+   runs inside `withOperation`, as Ethereum-origin sends do.
+4. **The route's TTL was checked at entry only.** `ROUTE_TTL_MS` is checked again right before each approval,
+   the batch and the deposit; a confirmed approval stays revocable through fix 2.
+
+### Attempts
+
+1. `git fetch` of the parent branch hung on SSH; the branch was cut from the commit the brief named, which the
+   shared object store already held.
+2. A fresh worktree has no `contracts/bridge/evm/{lib,out,cache,out-lifi,cache-lifi}`. They were copied from the
+   parent worktree, as `lessons.md` allows. Without them bridge-core skips its artifact-dependent tests
+   (27 skipped instead of 11), which reads as green.
+3. Each new test was run against its fix removed: the claim restart (claim built once), the stale-material
+   guard (the restarted claim sealed leaf 7), and the per-signature account and TTL checks (the deposit sent).
+
+### Open
+
+- `plan.md`'s Journal schema 4 block does not name `route.depositFinal` yet.
+- The not-sent copy for a wallet decline after an approval (fix 2) needs the owner's wording or approval.
+- `LeftoverApproval` reads the allowance once per mount: an approval whose receipt was lost and that lands
+  later offers its revoke only when the card mounts again.
+
+### Gate
+
+Run on the fixed branch's head, with the forge outputs in place:
+
+- `bun run lint`: Biome checked 621 files with no fixes applied, and the complexity baseline held;
+  `bun run typecheck:all` exited 0 for design, bridge-core and tools.
+- `bun run test:all`: design 242 passed, bridge-core 704 passed and 11 skipped, tools 1752 passed.
+- `bun run e2e:tools -- specs/deposit-crosschain.spec.ts`: 5 passed (cells 50–54), playwright exit 0.
+- `bun run e2e:tools -- specs/l1-wallet.spec.ts`: 5 passed (cells 26, 26d, 26e), playwright exit 0.
