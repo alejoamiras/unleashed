@@ -46,14 +46,19 @@ cell has no browser path and stays covered by unit tests (see Open). The gate re
 4. Cell 50 reached "Cross to Aztec failed": the wrong-chain refusal above. The cell now moves the wallet back
    once the send is on the rail.
 5. Cell 50 compared a decoded spender with a lower-case address. After that, cells 50–54 passed on first run.
+6. Integration: `validateTokenBlock` now reads the factory registration through the pinned Ethereum reader (D49),
+   and the cells no longer move the wallet back before the claim. `deposit-crosschain.spec.ts` alone: 5 passed.
+7. The 98 `unleashed-wallet-*` stores in `/dev/shm` (about 1.7 GB) were `wallet-store.ts` stores that live scripts
+   killed before their cleanup left behind. No process held any of them (`lsof +D /dev/shm`); those older than an
+   hour were removed, which freed the tmpfs.
 
 ## Open
 
-- **The claim of a cross-chain send needs the wallet back on Ethereum, and the app does not ask for it.** A
-  user whose wallet stays on the source chain sees the claim fail with "Switch networks and try again" and no
-  switch to press. Moving the claim lane's Ethereum reads to `readClientFor(NETWORK.l1ChainId)` would remove
-  the dependency; it changes which RPC vouches for a token block, so it is a decision, not a test fix.
-- **Decoder refusal before signing has no browser path.** Off mainnet the route rides self-built fixed terms,
+- **Resolved: the claim needed the wallet back on Ethereum.** The claim's token check reads through the pinned
+  Ethereum reader now (D49).
+- **A killed live script leaves its wallet store in `/dev/shm`.** `wallet-store.ts` removes its store only on a
+  clean exit; a reaper of unheld stores at start, as the e2e runner has for its sandboxes, is a follow-up.
+- **Decoder refusal before signing has no browser path** (D49). Off mainnet the route rides self-built fixed terms,
   so the bytes `verifyRoute` checks are the app's own and no venue answer can be tampered with from the
   harness. Unit tests cover it: `useCrossChainRoute.test.ts` ("never offers bytes the decoder refuses") and
   `crosschain-deposit-flow.test.ts` ("refuses a stale, tampered or wrong-chain route before journaling").
