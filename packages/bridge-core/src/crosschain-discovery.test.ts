@@ -706,6 +706,25 @@ describe("discoverCrossChain", () => {
 		expect(verdictOf(await discover(record(), filled))).toBe("incomplete: filled by the finalized block, yet no fill was found")
 	})
 
+	it("a send never handed over is not-sent once a finalized source block is past its fill deadline with no transfer", async () => {
+		const deadline = BigInt(RAIL.inputs.fillDeadline)
+		const unsent = record(PUBLIC, { srcTxHash: undefined })
+		const past = reads([], [], {}, { timestamp: () => deadline + 1n })
+		const d = await discover(unsent, past)
+		const at = { chainId: RAIL.source.chainId, blockNumber: SRC_BLOCK }
+		expect(d).toMatchObject({ verdict: "not-sent", observation: { decidedAt: at, finalized: at } })
+		expect(discoveryPatch(unsent, d, 7)).toMatchObject({ completedAt: 7, route: { outcome: "not-sent", outcomeTxHash: undefined } })
+
+		// At the deadline, once handed over (a hash or a batch id), or on a deadline-free route, it stays pending.
+		expect((await discover(unsent, reads([], [], {}, { timestamp: () => deadline }))).verdict).toBe("pending")
+		expect((await discover(record(PUBLIC, { srcTxHash: undefined, srcBatchId: "0x01" }), past)).verdict).toBe("pending")
+		expect((await discover(record(), past)).verdict).toBe("pending")
+		expect((await discover(record(PUBLIC, { srcTxHash: undefined, fillDeadline: undefined }), past)).verdict).toBe("pending")
+		// A transfer the scan finds outranks the deadline: the send left the wallet.
+		const found = reads([sourceTx(ROUTED)], [], { timestamp: () => deadline + 1n }, { timestamp: () => deadline + 1n })
+		expect((await discover(unsent, found)).verdict).toBe("expired-on-source")
+	})
+
 	it("a chain switch, a reorg during the scan or a node behind the record is incomplete, never a verdict", async () => {
 		const txs = () => [fillTx(ROUTED.destination.logs)]
 		let epoch = 0
