@@ -33,8 +33,8 @@ jobs:
 
       # Offline manifest-integrity gate. verify:deployments re-derives the tools app's own token
       # instances AND — with BRIDGE_MANIFEST set to THIS target's manifest — the bridge L2 instances,
-      # asserting each recomputes to the committed address and that the required core router/permit2/
-      # swapTarget are present. No network: the live on-chain readbacks live at deploy time (verify-l1).
+      # asserting each recomputes to the committed address and that the manifest parses against the v2
+      # schema. No network: the live on-chain readbacks live at deploy time (verify-l1).
       - name: Verify deployments + bridge manifest (offline, ${{ inputs.target }})
         env:
           BRIDGE_MANIFEST: public/${{ inputs.target }}-bridge.json
