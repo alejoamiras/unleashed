@@ -130,3 +130,8 @@ Run on the fixed branch's head, with the forge outputs in place:
 - `bun run test:all`: design 242 passed, bridge-core 704 passed and 11 skipped, tools 1752 passed.
 - `bun run e2e:tools -- specs/deposit-crosschain.spec.ts`: 5 passed (cells 50–54), playwright exit 0.
 - `bun run e2e:tools -- specs/l1-wallet.spec.ts`: 5 passed (cells 26, 26d, 26e), playwright exit 0.
+- Full browser suite, twice at once: `bun run e2e:tools` in this worktree and in a second worktree on
+  the same code, each with its own claimed ports and sandbox. Both reported 75 passed and playwright
+  exit 0 in 1.3 h; the egress fixture blocked nothing in either run.
+- Re-run on the arc-4 review fixes: lint and `typecheck:all` exit 0; `test:all` design 242,
+  bridge-core 705 passed and 11 skipped, tools 1755.
