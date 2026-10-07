@@ -1,8 +1,9 @@
 /**
  * Watches each cross-chain record from its source signature to an answer, through read clients only, so it needs
  * no wallet and survives the tab that started the send: every round, discovery re-derives where the record stands
- * from both chains and the journal takes its patch. A deposit hands the record to the claim lanes, re-sealed exact
- * first while the seal key is still in memory; an outcome is watched until the block that decided it is final.
+ * from both chains and the journal takes its patch. A deposit hands the record to the claim lanes at once; a deposit
+ * and an outcome alike are watched until the block that decided them is final, and a private record is re-sealed
+ * exact only then, while the seal key is still in memory.
  */
 import {
 	type CrossChainDepositRecord,
@@ -12,6 +13,7 @@ import {
 	discoverCrossChain,
 	discoveryPatch,
 	type EncryptionKey,
+	envelopeV3MatchesRecord,
 	lifiBook,
 	openDepositEnvelopeV3,
 	predictPortal,
@@ -26,6 +28,7 @@ import {
 	clearRecordError,
 	currentCrossChainRecord,
 	flagRecordError,
+	forgetClaimMaterial,
 	isSessionLive,
 	markRecordChecked,
 	setRecordStep,
@@ -56,39 +59,44 @@ export interface CrossChainWatchDeps {
 
 const watching = new Set<string>()
 
-/** Whether discovery still has something to decide: nothing deposited yet, or an outcome not yet final. */
+/** Whether discovery still has something to decide: nothing deposited yet, or a deposit or outcome not yet final. */
 export function needsWatch(rec: CrossChainDepositRecord): boolean {
 	if (rec.completedAt !== undefined) return false
-	return rec.route.outcome !== undefined || rec.leafIndex === undefined
+	return rec.route.outcome !== undefined || rec.route.depositFinal !== true
 }
 
-/** With the key still in memory, a deposit inside the sealed window is re-sealed exact (no signature) and its
- *  secret cached for the claim; otherwise the claim's unseal does the same after one signature. */
-async function resealWithKey(rec: CrossChainDepositRecord, key: EncryptionKey | undefined): Promise<void> {
+/** The facts a claim is built from: a reorg that re-includes the fill moves at least one of them. */
+const depositKey = (r: CrossChainDepositRecord): string =>
+	[r.depositTxHash, r.leafIndex, r.messageHash, r.amount, r.fuel?.leafIndex, r.fuel?.messageHash].join("|")
+
+/** With the key still in memory, the claim's secret is cached for the deposit as found (no signature), and a
+ *  final deposit inside the sealed window is re-sealed exact; otherwise the claim's unseal does both after one
+ *  signature. */
+async function useSealKey(rec: CrossChainDepositRecord, key: EncryptionKey | undefined): Promise<void> {
 	if (!key || !rec.sealedEnvelope || rec.leafIndex === undefined) return
 	const v3 = await openDepositEnvelopeV3(key, rec.sealedEnvelope).catch(() => null)
 	if (!v3) return
 	const deposited = { recipient: rec.recipient, amount: rec.amount, leafIndex: rec.leafIndex }
-	try {
-		const exact = await resealExactEnvelope(key, v3, deposited)
-		updateCrossChainRecord(rec.id, { sealedEnvelope: exact }, (current) => current.sealedEnvelope === rec.sealedEnvelope)
-		cacheSecret(rec.id, v3.secret, {
-			v: 2,
-			secret: v3.secret,
-			sealerL1: v3.sealerL1,
-			...deposited,
-			...(v3.salt ? { salt: v3.salt } : {}),
-		})
-	} catch (e) {
-		log("deposit outside its sealed window; the claim will say so", rec.id, e instanceof Error ? e.message : String(e))
+	if (!envelopeV3MatchesRecord(v3, deposited)) {
+		log("deposit outside its sealed window; the claim will say so", rec.id)
+		return
 	}
+	cacheSecret(rec.id, v3.secret, { v: 2, secret: v3.secret, sealerL1: v3.sealerL1, ...deposited, ...(v3.salt ? { salt: v3.salt } : {}) })
+	if (!rec.route.depositFinal) return
+	const exact = await resealExactEnvelope(key, v3, deposited)
+	updateCrossChainRecord(
+		rec.id,
+		{ sealedEnvelope: exact },
+		(current) => current.sealedEnvelope === rec.sealedEnvelope && depositKey(current) === depositKey(rec),
+	)
 }
 
-async function afterDeposit(id: string, deps: CrossChainWatchDeps): Promise<void> {
-	const rec = currentCrossChainRecord(id)
-	if (!rec) return
-	if (rec.isPrivate) await resealWithKey(rec, deps.sealKey?.(id))
-	if (isSessionLive(id)) deps.claim(id)
+/** A deposit found, or found again elsewhere, starts the claim of what this session sent from the new facts; one
+ *  turned final is re-sealed. */
+async function afterDeposit(rec: CrossChainDepositRecord, moved: boolean, deps: CrossChainWatchDeps): Promise<void> {
+	if (!moved && rec.route.depositFinal !== true) return
+	if (rec.isPrivate) await useSealKey(rec, deps.sealKey?.(rec.id))
+	if (moved && isSessionLive(rec.id)) deps.claim(rec.id)
 }
 
 /** One discovery run and its patch; `again` while discovery has more to decide. */
@@ -105,25 +113,27 @@ export async function watchRound(id: string, deps: CrossChainWatchDeps): Promise
 	markRecordChecked(id, deps.now())
 	// Computed from the copy the write merges into: the claim lanes may have written since this run read.
 	const written = updateCrossChainRecord(id, (current) => discoveryPatch(current, d, deps.now()) ?? {})
+	if (!written) return "done"
 	// The flow flags a send the wallet took without answering; once discovery finds it, it is in flight again.
-	if (written && !handedOver(rec) && handedOver(written)) clearRecordError(id)
-	if (written) narrateRail(written, d, deps.now())
-	if (d.verdict === "deposited") {
-		await afterDeposit(id, deps)
-		return "done"
-	}
-	return written && needsWatch(written) ? "again" : "done"
+	if (!handedOver(rec) && handedOver(written)) clearRecordError(id)
+	const moved = depositKey(rec) !== depositKey(written)
+	// Material unsealed for the deposit before names a leaf the chain may no longer carry.
+	if (moved) forgetClaimMaterial(id)
+	narrateRail(written, d, deps.now(), moved)
+	if (d.verdict === "deposited") await afterDeposit(written, moved, deps)
+	return needsWatch(written) ? "again" : "done"
 }
 
 /** Anything that shows the send left the wallet: its hash or batch id, its deposit, or an outcome. */
 const handedOver = (r: CrossChainDepositRecord): boolean =>
 	r.route.srcTxHash !== undefined || r.route.srcBatchId !== undefined || r.leafIndex !== undefined || r.route.outcome !== undefined
 
-/** A proven source send is on its rail, late past its usual time, until a deposit or an outcome answers. */
-function narrateRail(rec: CrossChainDepositRecord, d: CrossChainDiscovery, now: number): void {
-	if (d.verdict !== "pending") setRecordStep(rec.id, undefined)
-	else if (rec.route.transport && rec.leafIndex === undefined)
-		setRecordStep(rec.id, bridgingLate(rec, now) ? "bridging-late" : "bridging")
+/** A proven source send is on its rail, late past its usual time, until a deposit or an outcome answers. A deposit
+ *  already found leaves the step to the claim lanes. */
+function narrateRail(rec: CrossChainDepositRecord, d: CrossChainDiscovery, now: number, moved: boolean): void {
+	if (d.verdict === "pending") {
+		if (rec.route.transport && rec.leafIndex === undefined) setRecordStep(rec.id, bridgingLate(rec, now) ? "bridging-late" : "bridging")
+	} else if (d.verdict !== "deposited" || moved) setRecordStep(rec.id, undefined)
 }
 
 /** Watch `id` until discovery decides it; a second call for a watched record is a no-op. */

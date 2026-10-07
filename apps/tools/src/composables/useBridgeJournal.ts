@@ -507,6 +507,19 @@ export function isSessionLive(id: string): boolean {
 export function cacheSecret(id: string, secretHex: string, envelope: DepositEnvelopeV2): void {
 	secretCache.set(id, { secretHex, envelope })
 }
+export function forgetClaimMaterial(id: string): void {
+	secretCache.delete(id)
+}
+
+/** The cached claim material, unless the cross-chain record's deposit moved since it was cached: discovery
+ *  re-derives those facts (here or in another tab), and material for another leaf claims a message that is
+ *  not there. */
+function cachedMaterial(rec: ClaimRecord): { secretHex: string; envelope: DepositEnvelopeV2 } | undefined {
+	const cached = secretCache.get(rec.id)
+	if (!cached || !isCrossChainRecord(rec as AnyJournalRecord) || envelopeMatchesRecord(cached.envelope, rec)) return cached
+	secretCache.delete(rec.id)
+	return undefined
+}
 
 export function addRecord(rec: BridgeJournalRecord): void {
 	upsertRecord(deps.kv, rec)
@@ -830,24 +843,26 @@ function handleUnsealFailure(rec: ClaimRecord, e: unknown, connected: string | n
 }
 
 /**
- * A cross-chain record seals a v3 amount window until its deposit lands. Opened with the key in hand, it
- * is re-sealed exact against the deposited amount, so every later open reads an ordinary v2 envelope.
- * Null when the deposit is not known yet or falls outside the sealed window.
+ * A cross-chain record seals a v3 amount window until its deposit is final. Opened with the key in hand, it
+ * reads as the exact envelope of the deposit as found, and is re-sealed exact once that deposit is final, so
+ * every later open reads an ordinary v2 envelope. Null when the deposit is not known yet or falls outside
+ * the sealed window.
  */
 export async function openClaimEnvelope(key: EncryptionKey, rec: ClaimRecord, blob: string): Promise<DepositEnvelopeV2 | null> {
-	if (!isCrossChainRecord(rec as AnyJournalRecord)) return openDepositEnvelope(key, blob)
+	const xc = rec as AnyJournalRecord
+	if (!isCrossChainRecord(xc)) return openDepositEnvelope(key, blob)
 	const v3 = await openDepositEnvelopeV3(key, blob).catch(() => null)
 	if (!v3) return openDepositEnvelope(key, blob)
-	if (!rec.leafIndex || !envelopeV3MatchesRecord(v3, rec)) return null
-	const deposited = { recipient: rec.recipient, amount: rec.amount, leafIndex: rec.leafIndex }
-	patchRecord(rec.id, { sealedEnvelope: await resealExactEnvelope(key, v3, deposited) })
+	if (!xc.leafIndex || !envelopeV3MatchesRecord(v3, xc)) return null
+	const deposited = { recipient: xc.recipient, amount: xc.amount, leafIndex: xc.leafIndex }
+	if (xc.route.depositFinal) patchRecord(xc.id, { sealedEnvelope: await resealExactEnvelope(key, v3, deposited) })
 	return { v: 2, secret: v3.secret, sealerL1: v3.sealerL1, ...deposited, ...(v3.salt ? { salt: v3.salt } : {}) }
 }
 
 const OUTSIDE_SEALED_WINDOW = "This deposit doesn't match its sealed copy, so it can't be claimed from here. Nothing was deleted."
 
 async function resolvePrivateSecret(rec: ClaimRecord): Promise<{ secretHex: string; envelope: DepositEnvelopeV2 } | null> {
-	const cached = secretCache.get(rec.id)
+	const cached = cachedMaterial(rec)
 	if (cached) return cached
 	if (!deps.signL1) {
 		setRuntime(rec.id, { attention: "error", note: "Connect your Ethereum wallet to unseal this claim." })
@@ -1100,27 +1115,30 @@ function surfaceRunFailure(id: string, e: unknown): void {
 
 async function runDepositClaimInner(id: string, opts: { interactive?: boolean } = {}): Promise<void> {
 	const interactive = opts.interactive !== false
-	let continueRounds = false
+	let next = "stop" as ClaimRun
 	let gen = 0
 	const ran = await withRecordLock(id, async () => {
 		// This runner is now the record's owner - any previously scheduled round dies silently.
 		gen = bumpGen(id)
-		continueRounds = (await runDepositClaimLocked(id, gen, interactive)) === "continue"
+		next = await runDepositClaimLocked(id, gen, interactive)
 	})
 	if (ran === "held-elsewhere") noteHeldElsewhere(id, "claiming this deposit")
-	// Chunked re-entry happens OUTSIDE the lock so RETRY/DISCARD stay reachable between rounds.
-	if (continueRounds && genOf(id) === gen) {
-		await wait(INTER_ROUND_MS)
-		if (genOf(id) === gen) void runDepositClaim(id, { interactive: false })
-	}
+	// Re-entry happens OUTSIDE the lock so RETRY/DISCARD stay reachable between rounds; a claim whose deposit
+	// moved starts over from the record's new facts.
+	if (next === "stop" || genOf(id) !== gen) return
+	if (next === "continue") await wait(INTER_ROUND_MS)
+	if (genOf(id) === gen) void runDepositClaim(id, { interactive: false })
 }
+
+/** `continue`: schedule another receipt round; `restart`: the deposit the claim was built for moved. */
+type ClaimRun = "continue" | "stop" | "restart"
 
 /** The lock-held claim sequence. Runs UNDER withRecordLock's serialization — the awaits in
  *  here are deliberately unfenced (a newer runner cannot enter until this releases; its
  *  bumpGen then kills this runner's rounds); explicit gen checks live only in the receipt
- *  polling and the caller's chunked re-entry. Returns whether another receipt round should
- *  be scheduled outside the lock. */
-async function runDepositClaimLocked(id: string, gen: number, interactive: boolean): Promise<"continue" | "stop"> {
+ *  polling and the caller's chunked re-entry. Returns what the caller schedules outside the
+ *  lock. */
+async function runDepositClaimLocked(id: string, gen: number, interactive: boolean): Promise<ClaimRun> {
 	const rec = claimTarget(id)
 	if (!rec) return "stop"
 
@@ -1148,7 +1166,8 @@ async function runDepositClaimLocked(id: string, gen: number, interactive: boole
 	if (!preGated && countdownApplies(fresh)) gate = await awaitBlockCountdown(fresh, id, gate)
 	if (!preGated && checkpointApplies(fresh)) gate = await awaitCheckpointGate(fresh, id, gate)
 	const ready = await awaitConsumable(interaction, fresh, material, gate)
-	if ((await settleConsumability(ready, fresh, gen)) === "stop") return "stop"
+	const settled = await settleConsumability(ready, fresh, gen)
+	if (settled !== "proceed") return settled
 	setRuntime(id, { claimable: true })
 
 	return sendAndWatch(id, gen, interaction)
@@ -1183,8 +1202,9 @@ async function settleConsumability(
 	ready: Awaited<ReturnType<typeof awaitConsumable>>,
 	fresh: ClaimRecord,
 	gen: number,
-): Promise<"proceed" | "stop"> {
+): Promise<"proceed" | "stop" | "restart"> {
 	if (ready === "ready") return "proceed"
+	if (ready === "moved") return "restart"
 	if (ready === "invalid") return reportTamperedMessage(fresh.id)
 	if (ready === "claimed-elsewhere" && claimsThroughHub(fresh)) return completeClaimedByOther(fresh, gen)
 	throw new Error("the L1→L2 message never became consumable — claim it again from the journal later")
@@ -1511,7 +1531,7 @@ async function awaitCheckpointGate(rec: ClaimRecord, id: string, gate: ArrivalGa
 	const gateHashes = [rec.messageHash, rec.fuel?.messageHash].filter((h): h is string => !!h)
 	if (deps.messageReadiness && gateHashes.length > 0) {
 		let fresh = true
-		for (let g = 0; g < 300; g++) {
+		for (let g = 0; g < 300 && !depositMoved(rec); g++) {
 			const blocked = await sweepMessageCheckpoints(gateHashes)
 			if (blocked === null) {
 				markCheckpointsPassed(id)
@@ -1569,9 +1589,10 @@ async function awaitConsumable(
 	rec: ClaimRecord,
 	material: ClaimMaterial,
 	gate: ArrivalGateState,
-): Promise<"ready" | "claimed-elsewhere" | "invalid" | "timeout"> {
+): Promise<"ready" | "claimed-elsewhere" | "invalid" | "timeout" | "moved"> {
 	const id = rec.id
 	for (let i = gate.simulateStart; i < 300; i++) {
+		if (depositMoved(rec)) return "moved"
 		narrateConsumableWait(id, gate)
 		try {
 			await interaction.simulate()
@@ -1657,6 +1678,14 @@ function sameClaimSnapshot(live: BridgeJournalRecord, verified: ClaimRecord): bo
 	const a = live as unknown as Record<string, unknown>
 	const b = verified as unknown as Record<string, unknown>
 	return CLAIM_SNAPSHOT_FIELDS.every((k) => a[k] === b[k])
+}
+
+/** The stored cross-chain record no longer carries the deposit `rec`'s claim was built for: discovery found the
+ *  fill again at another leaf (an Ethereum reorg) or lost it, and the message the claim waits for never comes. */
+function depositMoved(rec: ClaimRecord): boolean {
+	if (!isCrossChainRecord(rec as AnyJournalRecord)) return false
+	const stored = currentRecord(rec.id) as ClaimRecord | undefined
+	return !stored || !sameClaimSnapshot(stored, rec) || stored.fuel?.messageHash !== rec.fuel?.messageHash
 }
 
 /** The token's nullifier says nothing about the fuel: a relayer can claim the token with its own
@@ -1981,7 +2010,7 @@ async function recordMessageConsumed(rec: ClaimRecord): Promise<boolean | null |
 }
 
 function claimMaterialOf(rec: ClaimRecord): ClaimMaterial | undefined {
-	if (rec.isPrivate) return secretCache.get(rec.id)
+	if (rec.isPrivate) return cachedMaterial(rec)
 	const secretHex = publicClaimSecretOf(rec)
 	return secretHex ? { secretHex } : undefined
 }

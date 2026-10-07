@@ -2,10 +2,13 @@
 import {
 	type CrossChainDiscovery,
 	type CrossChainOutcome,
+	type DepositEnvelopeV2,
 	deriveCrossChainDepositStage,
 	openDepositEnvelope,
+	predictPortal,
 	recoveryKeyFromSignature,
 	recoveryKeyMessage,
+	type SendDepositRecord,
 } from "@unleashed/bridge-core"
 import type { Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -18,6 +21,7 @@ import {
 	connectJournalDeps,
 	currentCrossChainRecord,
 	openClaimEnvelope,
+	runDepositClaim,
 	updateCrossChainRecord,
 	useBridgeJournal,
 } from "./useBridgeJournal"
@@ -50,26 +54,31 @@ const reads: CrossChainReads = {
 }
 
 /** A send this session made, journaled and on its way. */
-async function sent(over: Parameters<typeof ask>[0] = {}): Promise<string> {
+async function sent(over: Parameters<typeof ask>[0] = {}, token = DEST_TOKEN): Promise<string> {
 	const a = ask(over)
-	return sendCrossChain({ ask: a, route: await quotedRoute(a), token: DEST_TOKEN, quotedAt: Date.now() }, wallet, reads, { watch: false })
+	return sendCrossChain({ ask: a, route: await quotedRoute(a), token, quotedAt: Date.now() }, wallet, reads, { watch: false })
 }
+
+/** A send lane the claim engine accepts: the token's clone as this binding's factory derives it, under the hub. */
+const LANE = { factory: `0x${"fa".repeat(20)}`, implementation: `0x${"1e".repeat(20)}`, feeJuicePortal: `0x${"fe".repeat(20)}` }
+const LANE_TOKEN = { ...DEST_TOKEN, portal: predictPortal(LANE.factory, LANE.implementation, DEST_TOKEN.address) }
 
 const pending: CrossChainDiscovery = { verdict: "pending", extraDeposits: [] }
 
-/** Our execution completed into the router; the token leg landed `tokenAmount` (the swap may leave part of the slice to it). */
-const deposited = (tokenAmount: string): CrossChainDiscovery => ({
+/** Our execution completed into the router at token leaf `leaf`; the token leg landed `tokenAmount` (the swap may
+ *  leave part of the slice to it). Final once Ethereum finalized its block. */
+const deposited = (tokenAmount: string, at: { leaf: number; final: boolean } = { leaf: 7, final: true }): CrossChainDiscovery => ({
 	verdict: "deposited",
 	extraDeposits: [],
 	srcTxHash: hashOf(1),
 	deposit: {
-		depositTxHash: hashOf(77),
+		depositTxHash: hashOf(70 + at.leaf),
 		received: OUT.toString(),
-		token: { amount: tokenAmount, leafIndex: "7", messageHash: hashOf(78) },
-		fuel: { consumed: "490000", received: "490000000000000000", leafIndex: "8", messageHash: hashOf(79) },
+		token: { amount: tokenAmount, leafIndex: String(at.leaf), messageHash: hashOf(71 + at.leaf) },
+		fuel: { consumed: "490000", received: "490000000000000000", leafIndex: String(at.leaf + 1), messageHash: hashOf(72 + at.leaf) },
 	},
 	decidedAt: { chainId: SEPOLIA, blockNumber: 210n },
-	finalized: { chainId: SEPOLIA, blockNumber: 205n },
+	finalized: { chainId: SEPOLIA, blockNumber: at.final ? 210n : 205n },
 })
 
 /** An outcome decided at block 300 of its deciding chain, final once that chain finalizes it. */
@@ -174,20 +183,86 @@ describe("the cross-chain watcher", () => {
 		},
 	)
 
-	it("re-seals a private deposit exact while its key is in memory, and claims what this session sent", async () => {
-		const id = await sent({ isPrivate: true })
-		// The swap consumed less than the slice: the token leg lands inside the sealed window, above its floor.
-		const w = watchDeps([deposited("4500000")])
-		await watchCrossChain(id, w.deps)
-		const rec = currentCrossChainRecord(id)
+	it.each([
+		["with the seal key in memory", true],
+		["unsealed by a signature, as after a reload", false],
+	])("a deposit re-found at another leaf before finality restarts the claim from the new facts (%s)", async (_label, inMemory) => {
+		const id = await sent({ isPrivate: true }, LANE_TOKEN)
 		const key = crossChainSealKey(id)
-		if (!rec?.sealedEnvelope || !key) throw new Error("the record must be sealed with its key in memory")
-		const exact = await openDepositEnvelope(key, rec.sealedEnvelope)
-		expect([exact.amount, exact.leafIndex, exact.recipient]).toEqual(["4500000", "7", ask().recipient])
-		expect(w.claim).toHaveBeenCalledWith(id)
+		const sealedV3 = currentCrossChainRecord(id)?.sealedEnvelope
+		if (!key || !sealedV3) throw new Error("the record must be sealed")
+		const hub = currentCrossChainRecord(id)?.bridge as string
+		const builtFor: { leafIndex?: string; sealed?: string }[] = []
+		const claimSend = vi.fn(async (rec: SendDepositRecord, _value: string, envelope?: DepositEnvelopeV2) => {
+			builtFor.push({ leafIndex: rec.leafIndex, sealed: envelope?.leafIndex })
+			return { simulate: async () => {}, send: () => new Promise<never>(() => {}) }
+		})
+		// Only the messages of the deposit at leaf 9 ever reach Aztec: leaf 7's fill was reorged away.
+		const messageReadiness = vi.fn(async (h: string) =>
+			h === hashOf(80) || h === hashOf(81) ? { checkpoint: 1, anchor: 1 } : { checkpoint: 5, anchor: 0 },
+		)
+		const gateWaits: (() => void)[] = []
+		const signL1 = vi.fn(async (m: string) => signatureOf(m))
+		connectJournalDeps({
+			kv: storage,
+			signL1,
+			connectedL1: () => USER,
+			connectedAztec: () => ask().recipient,
+			sendBinding: () => ({ ...LANE, hub }),
+			validateTokenBlock: async () => null,
+			ensureTokenGrant: async () => "granted",
+			claimSend,
+			claimReceiptStatus: async () => "pending",
+			messageReadiness,
+			waitMs: () => new Promise<void>((r) => gateWaits.push(r)),
+		})
+		const verdicts = [
+			deposited("4500000", { leaf: 7, final: false }),
+			deposited("4500000", { leaf: 9, final: false }),
+			deposited("4500000", { leaf: 9, final: true }),
+		]
+		const discover = vi.fn(async () => verdicts.shift() as CrossChainDiscovery)
+		const roundWaits: (() => void)[] = []
+		const next = async (rounds: number) => {
+			for (const r of roundWaits.splice(0)) r()
+			await vi.waitFor(() => expect(discover).toHaveBeenCalledTimes(rounds))
+		}
+		const watching = watchCrossChain(id, {
+			...watchDeps([]).deps,
+			discover: discover as unknown as CrossChainWatchDeps["discover"],
+			sealKey: inMemory ? crossChainSealKey : () => undefined,
+			claim: (claimed) => void runDepositClaim(claimed),
+			wait: () => new Promise<void>((r) => roundWaits.push(r)),
+		})
+
+		// The claim starts at the first deposit and waits for leaf 7's message; the envelope keeps its window.
+		await vi.waitFor(() => expect(messageReadiness).toHaveBeenCalledWith(hashOf(78)))
+		expect(currentCrossChainRecord(id)?.sealedEnvelope).toBe(sealedV3)
+
+		// Discovery finds the fill again at leaf 9: the waiting claim notices and is rebuilt from the new facts, its
+		// material included.
+		await next(2)
+		await vi.waitFor(() => expect(roundWaits).toHaveLength(1))
+		for (const r of gateWaits.splice(0)) r()
+		await vi.waitFor(() => expect(claimSend).toHaveBeenCalledTimes(2))
+		expect(builtFor).toEqual([
+			{ leafIndex: "7", sealed: "7" },
+			{ leafIndex: "9", sealed: "9" },
+		])
+		expect(signL1).toHaveBeenCalledTimes(inMemory ? 0 : 2)
+		expect(currentCrossChainRecord(id)?.sealedEnvelope).toBe(sealedV3)
+
+		// Final: the watch ends, and the envelope is re-sealed exact at the leaf that held where the key is at hand.
+		await next(3)
+		await watching
+		const rec = currentCrossChainRecord(id)
+		expect(rec?.route.depositFinal).toBe(true)
+		if (!inMemory) return expect(rec?.sealedEnvelope).toBe(sealedV3)
+		const exact = await openDepositEnvelope(key, rec?.sealedEnvelope as string)
+		expect([exact.amount, exact.leafIndex, exact.recipient]).toEqual(["4500000", "9", ask().recipient])
 	})
 
-	it("after a reload, the claim's unseal re-seals the window exact; a deposit outside it is refused", async () => {
+	it("after a reload, the claim's unseal reads the window as the deposit found, exact once final; a deposit outside it is refused", async () => {
 		const id = await sent({ isPrivate: true })
 		const sealedV3 = currentCrossChainRecord(id)?.sealedEnvelope as string
 		const rec = () => currentCrossChainRecord(id) as unknown as ClaimRecord
@@ -195,7 +270,10 @@ describe("the cross-chain watcher", () => {
 		const binding = { chainId: rec().chainId, portal: rec().portal, bridge: rec().bridge, secretHashHex: id }
 		const key = await recoveryKeyFromSignature(signatureOf(recoveryKeyMessage(binding)))
 		updateCrossChainRecord(id, { amount: OUT.toString(), leafIndex: "7" })
-		expect((await openClaimEnvelope(key, rec(), sealedV3))?.amount).toBe(OUT.toString())
+		expect(await openClaimEnvelope(key, rec(), sealedV3)).toMatchObject({ amount: OUT.toString(), leafIndex: "7" })
+		expect(rec().sealedEnvelope, "a deposit not yet final keeps its window").toBe(sealedV3)
+		updateCrossChainRecord(id, (current) => ({ route: { ...current.route, depositFinal: true } }))
+		await openClaimEnvelope(key, rec(), sealedV3)
 		expect((await openDepositEnvelope(key, rec().sealedEnvelope as string)).leafIndex).toBe("7")
 		updateCrossChainRecord(id, { amount: (OUT + 1n).toString() })
 		expect(await openClaimEnvelope(key, rec(), sealedV3)).toBeNull()
