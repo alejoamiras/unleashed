@@ -13,6 +13,7 @@ import { type RunEnv, runEnv } from "../env"
 import type { Seed } from "../test-wallet/profile"
 import { confineEgress, type Egress, type TokenListFixture } from "./egress"
 import { installL1Wallet, type L1WalletControl } from "./l1-wallet"
+import { type RelayerControl, relayerControl } from "./relayer"
 import { type ActorHandle, type SandboxAccess, sandboxAccess } from "./sandbox"
 import { parkWalletPanel } from "./wallet-panel"
 
@@ -34,6 +35,8 @@ interface Fixtures {
 	egress: Egress
 	actor: ActorHandle
 	page: Page
+	/** The run's relay loop and the two chains' clocks; the loop goes back to filling at once after the test. */
+	relayer: RelayerControl
 }
 
 /** Worker-scoped = per spec file: Playwright reuses a worker across files whose worker options
@@ -157,6 +160,13 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 
 	actor: async ({ pool }, use) => {
 		await use(pool.take())
+	},
+
+	relayer: async ({ run, sandbox }, use) => {
+		const l2 = l2CtxFor(sandbox.clients.l2, sandbox.clients.l2.relayer)
+		const control = relayerControl(readHandle(run.artifactsDir), run.artifactsDir, l2)
+		await use(control)
+		await control.setMode({ kind: "now" })
 	},
 
 	// The app's own log lines and every error, from both frames, land in the runner's output — the
