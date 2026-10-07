@@ -1,12 +1,21 @@
 import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
-import { mount } from "@vue/test-utils"
+import { flushPromises, mount } from "@vue/test-utils"
 import { describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
 import { XC_CREATED, XC_SRC_TX, XC_TRANSPORT, xcRecord } from "@/test/crosschain-record"
 
 const now = ref(XC_CREATED + 9 * 60_000)
+const attemptFee = ref<string | undefined>()
+const allowance = { value: 0n }
 vi.mock("@/lib/clock", () => ({ useNow: () => now }))
 vi.mock("@/composables/useEthHeld", () => ({ useEthHeld: () => ref(undefined) }))
+vi.mock("@/composables/useAttemptFee", () => ({ useAttemptFee: () => attemptFee }))
+vi.mock("@/composables/leftover-approval", () => ({
+	leftoverAllowance: async () => allowance.value,
+	revokeLeftover: async () => {
+		allowance.value = 0n
+	},
+}))
 
 import type { OutcomeFigures } from "@/lib/crosschain-outcome"
 import { TESTIDS } from "@/lib/testids"
@@ -48,17 +57,41 @@ describe("CrossChainOutcome", () => {
 		expect(expired.get(".figure").text()).toBe("5.00 USDC due back in 0x3fA8…c41d on Base Sepolia")
 		expect(expired.get(sel(TESTIDS.xcOutcomeChangeSend)).text()).toBe("Pick another balance")
 
+		attemptFee.value = "0.000041"
 		const notSent = panel(xcRecord(ended, { outcome: "not-sent" }))
 		expect(notSent.get("h2").text()).toBe("Nothing moved")
-		expect(cards(notSent).slice(0, 2)).toEqual([
+		expect(cards(notSent)).toEqual([
 			"Base Sepolia rejected the transaction, so it never ran.",
-			"Your USDC never left your wallet. The only cost is the Base Sepolia network fee for the attempt.",
+			"Your USDC never left your wallet. The only cost is the Base Sepolia network fee for the attempt, 0.000041 ETH.",
+			"Get new terms and sign again. Your amount, privacy and gas choice are kept.",
 		])
+		expect(notSent.get(sel(TESTIDS.xcOutcomeNewQuote)).text()).toBe("Get new terms")
 		expect(notSent.get(".tx").text()).toBe("Rejected on Base Sepolia0x5757…5757 · reverted, 0 USDC moved")
 		await notSent.get(sel(TESTIDS.xcOutcomeNewQuote)).trigger("click")
 		await notSent.get(sel(TESTIDS.xcOutcomeChangeSend)).trigger("click")
 		expect(notSent.emitted("new-quote")).toHaveLength(1)
 		expect(notSent.emitted("change-send")).toHaveLength(1)
+	})
+
+	it("a deposit never signed names its approval only while the revoke offer below reads it open", async () => {
+		allowance.value = 5_000_000n
+		const w = panel(xcRecord(ended, { outcome: "not-sent", srcTxHash: undefined }))
+		await flushPromises()
+		expect(cards(w)).toEqual([
+			"The approval on Base Sepolia went through, but the deposit was never signed, so nothing was sent.",
+			"Your USDC never left your wallet, but the approval for it is still open. Revoke it below.",
+			"Revoke the approval, or get new terms and sign again.",
+		])
+		expect(w.find(".tx").exists()).toBe(false)
+
+		await w.get(sel(TESTIDS.journalXcRevoke)).trigger("click")
+		await flushPromises()
+		expect(w.find(sel(TESTIDS.journalXcRevoke)).exists()).toBe(false)
+		expect(cards(w)).toEqual([
+			"The deposit was never signed, so nothing was sent.",
+			"Your USDC never left your wallet.",
+			"Get new terms and sign again.",
+		])
 	})
 
 	it("stalled: a bridging send past twice its usual time, with its clock, LI.FI's trail and the last read", async () => {

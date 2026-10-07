@@ -1,5 +1,6 @@
 <script setup lang="ts">
 /** Utils */
+import { selfBuiltMaxDeposit } from "@unleashed/bridge-core"
 import { Button, Icon } from "@unleashed/design"
 import { computed, ref } from "vue"
 import type { CrossChainAsk } from "@/composables/useCrossChainRoute"
@@ -69,10 +70,10 @@ const limits = computed(() => {
 	return l && { min: `≈ ${formatAmount(l.min, decimals.value)}`, max: `≈ ${formatAmount(l.max, decimals.value)}` }
 })
 
-const fixedTerms = computed(
-	() =>
-		`Fixed testnet terms, not a quote: the relay fee is a fixed ${feeShareText(props.figures.feeBps)} and the send waits for a manual fill on ${l1}.`,
-)
+const fixedTerms = computed(() => {
+	const cap = formatDisplayAmount(selfBuiltMaxDeposit(decimals.value), decimals.value)
+	return `Fixed testnet terms: the relay fee is ${feeShareText(props.figures.feeBps)} of the amount, and one send carries at most ${cap} ${props.symbol}.`
+})
 
 const gasLine = computed(() => {
 	const f = props.figures

@@ -127,6 +127,15 @@ export function quoteWord(f: Pick<CrossChainFigures, "fixed">): { valid: string;
 	return f.fixed ? { valid: "Terms", renewed: "rebuilt" } : { valid: "Quote", renewed: "refreshed" }
 }
 
+/** Testnet sends ride fixed terms, never a quote, so their retries say "terms"; mainnet keeps the boards' quote words. */
+export const RETRY_WORDS = IS_MAINNET
+	? {
+			getNew: "Get a new quote",
+			tryAgain: "Try again with a new quote; routes change from minute to minute.",
+			signAgain: "Get a new quote and sign again.",
+		}
+	: { getNew: "Get new terms", tryAgain: "Try again with new terms.", signAgain: "Get new terms and sign again." }
+
 /** "0:42": a quote's remaining life, never negative. */
 export function countdownText(ms: number): string {
 	const total = Math.max(0, Math.ceil(ms / 1000))

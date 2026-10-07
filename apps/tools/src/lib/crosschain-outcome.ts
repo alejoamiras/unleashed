@@ -6,7 +6,16 @@
 import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
 import { agoWords } from "@/lib/activity"
 import { chainLabel, chainTxUrl, lifiScanUrl, railLabel } from "@/lib/chains"
-import { assetText, crossChainAsset, crossChainPhase, expiryLead, shortAddress, windowWords } from "@/lib/crosschain-activity"
+import {
+	assetText,
+	crossChainAsset,
+	crossChainPhase,
+	depositUnsigned,
+	expiryLead,
+	shortAddress,
+	windowWords,
+} from "@/lib/crosschain-activity"
+import { RETRY_WORDS } from "@/lib/crosschain-figures"
 import { bridgingLate, crossChainRoute, etaRange } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
 import { IS_MAINNET } from "@/lib/network"
@@ -30,6 +39,10 @@ export interface OutcomeFigures {
 	continueQuote?: { amount: string; symbol: string; gas?: string }
 	/** When discovery last read the chains (ms). */
 	checkedAt?: number
+	/** A reverted send's network fee in ETH, read from its receipt ("0.000041"). */
+	attemptFee?: string
+	/** The not-sent send's approval can still be spent, as the revoke offer below the panel last read it. */
+	approvalOpen?: boolean
 }
 
 export type OutcomeTone = "attention" | "lost" | "raised"
@@ -138,23 +151,46 @@ function expiredCopy(rec: CrossChainDepositRecord, w: Words, endedAgo: string): 
 		happened: expiryHappened(rec, w),
 		means: `Nothing reached ${w.l1} or Aztec, and there is nothing to claim. ${w.rail} refunds the ${w.symbol} to your wallet on ${w.src}; the network fee for the send is not returned.`,
 		figure: figureOf(rec, rec.route.srcAmount, "due back in", w.src, w),
-		next: "Try again with a new quote; routes change from minute to minute. Or send from another network instead.",
+		next: `${RETRY_WORDS.tryAgain} Or send from another network instead.`,
 		nextTone: "raised",
 		txs: [sentTx(rec, `Sent on ${w.src}`, w.sent), { label: `Refund on ${w.src}`, note: `pending · ${w.sent}` }],
 	}
 }
 
-function notSentCopy(rec: CrossChainDepositRecord, w: Words, endedAgo: string): OutcomeCopy {
+/** An unsigned deposit names its approval only while the revoke offer reads it open: past a revoke, or for an approval
+ *  the wallet never answered and that never landed, those clauses would be false. */
+function unsignedWords(w: Words, approvalOpen: boolean): Pick<OutcomeCopy, "happened" | "means" | "next"> {
+	if (!approvalOpen) {
+		return {
+			happened: "The deposit was never signed, so nothing was sent.",
+			means: `Your ${w.symbol} never left your wallet.`,
+			next: RETRY_WORDS.signAgain,
+		}
+	}
+	const signAgain = RETRY_WORDS.signAgain.charAt(0).toLowerCase() + RETRY_WORDS.signAgain.slice(1)
 	return {
+		happened: `The approval on ${w.src} went through, but the deposit was never signed, so nothing was sent.`,
+		means: `Your ${w.symbol} never left your wallet, but the approval for it is still open. Revoke it below.`,
+		next: `Revoke the approval, or ${signAgain}`,
+	}
+}
+
+function notSentCopy(rec: CrossChainDepositRecord, w: Words, endedAgo: string, f: OutcomeFigures): OutcomeCopy {
+	const ended = {
 		tag: "Didn’t go through",
 		tagTone: "lost",
 		title: "Nothing moved",
 		when: endedAgo,
-		happened: `${w.src} rejected the transaction, so it never ran.`,
-		means: `Your ${w.symbol} never left your wallet. The only cost is the ${w.src} network fee for the attempt.`,
 		figure: figureOf(rec, rec.route.srcAmount, "still in", w.src, w),
-		next: "Get a new quote and sign again. Your amount, privacy and gas choice are kept.",
 		nextTone: "raised",
+	} as const
+	if (depositUnsigned(rec)) return { ...ended, ...unsignedWords(w, f.approvalOpen === true), txs: [] }
+	const fee = f.attemptFee === undefined ? "" : `, ${f.attemptFee} ETH`
+	return {
+		...ended,
+		happened: `${w.src} rejected the transaction, so it never ran.`,
+		means: `Your ${w.symbol} never left your wallet. The only cost is the ${w.src} network fee for the attempt${fee}.`,
+		next: `${RETRY_WORDS.signAgain} Your amount, privacy and gas choice are kept.`,
 		txs: [sentTx(rec, `Rejected on ${w.src}`, `reverted, 0 ${w.symbol} moved`)],
 	}
 }
@@ -186,7 +222,7 @@ export function outcomeCopy(rec: CrossChainDepositRecord, variant: OutcomeVarian
 		case "expired":
 			return expiredCopy(rec, w, endedAgo)
 		case "not-sent":
-			return notSentCopy(rec, w, endedAgo)
+			return notSentCopy(rec, w, endedAgo, f)
 		case "stalled":
 			return stalledCopy(rec, w, now)
 	}

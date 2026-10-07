@@ -96,7 +96,7 @@ describe("CrossChainReview", () => {
 		expect(w.find(sel(TESTIDS.sendXcTestnetNotice)).exists()).toBe(true)
 		expect(w.find(sel(TESTIDS.sendXcLimits)).exists()).toBe(false)
 		expect(w.find(sel(TESTIDS.sendXcFixedTerms)).text()).toBe(
-			"Fixed testnet terms, not a quote: the relay fee is a fixed 25.0 % and the send waits for a manual fill on Ethereum · Sepolia.",
+			"Fixed testnet terms: the relay fee is 25.0 % of the amount, and one send carries at most 8.00 USDC.",
 		)
 		expect(w.find(sel(TESTIDS.sendReviewTakes)).text()).toBe(
 			"TakesUp to 2 hours for a manual fill on Ethereum · Sepolia, a few minutes for Aztec to pick it up, then your claim.",
@@ -123,7 +123,9 @@ describe("CrossChainReview", () => {
 	it("puts what forbids signing in Sign and send's place: an expired quote, then the wrong chain", async () => {
 		const expired = review({ state: { kind: "expired" } })
 		expect(expired.find(sel(TESTIDS.sendReviewConfirm)).exists()).toBe(false)
-		expect(expired.find(sel(TESTIDS.sendXcNotice)).text()).toContain("This quote expired.")
+		expect(expired.find(sel(TESTIDS.sendXcNotice)).text()).toBe(
+			"These terms expired.They’re rebuilt from the latest block; nothing was signed.Rebuild terms",
+		)
 		await expired.find(sel(TESTIDS.sendXcRefresh)).trigger("click")
 		expect(expired.emitted("act")).toHaveLength(1)
 		expired.unmount()

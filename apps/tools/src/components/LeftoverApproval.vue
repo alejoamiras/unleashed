@@ -17,6 +17,8 @@ import { isUserRejection } from "@/lib/wallet-errors"
 
 /** A failed send's leftover approval, shown only while the LI.FI Diamond can still spend from the wallet. */
 const props = defineProps<{ record: CrossChainDepositRecord }>()
+/** After every read: whether the approval can still be spent. */
+const emit = defineEmits<{ read: [open: boolean] }>()
 
 const allowance = ref(0n)
 const revoking = ref(false)
@@ -29,6 +31,7 @@ async function refresh(): Promise<void> {
 		// An unread allowance offers nothing: a revoke shown on a guess could be a wasted prompt.
 		allowance.value = 0n
 	}
+	emit("read", allowance.value > 0n)
 }
 watch(() => props.record.id, refresh, { immediate: true })
 

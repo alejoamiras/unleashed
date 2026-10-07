@@ -68,6 +68,13 @@ describe("BridgeJournalCard — a cross-chain send", () => {
 			actions: [TESTIDS.journalXcDismiss],
 		},
 		{
+			name: "not sent, the deposit never signed",
+			rec: xcRecord(done, { outcome: "not-sent", srcTxHash: undefined }),
+			chip: "Not sent",
+			guide: "The deposit was never signed, so nothing moved. Your 5.00 USDC is still in 0x3fA8…c41d.",
+			actions: [TESTIDS.journalXcDismiss],
+		},
+		{
 			name: "delivered to the wallet",
 			rec: xcRecord(done, delivered),
 			chip: "Delivered to wallet",

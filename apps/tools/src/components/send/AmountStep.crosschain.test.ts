@@ -105,7 +105,7 @@ describe("AmountStep, cross-chain", () => {
 
 		const none = step({ figures: null, notice: { kind: "no-route" } })
 		const notice = none.find(sel(TESTIDS.sendXcNotice))
-		expect(notice.text()).toContain("LI.FI found no way to bring 5.00 USDC from Base Sepolia to Aztec.")
+		expect(notice.text()).toContain("The gas swap on Ethereum · Sepolia has no price for this amount right now. Nothing was signed.")
 		expect(none.find(sel(TESTIDS.sendXcFees)).exists()).toBe(false)
 		expect(continues(none)).toBe(false)
 		await none.find(sel(TESTIDS.sendXcRetry)).trigger("click")

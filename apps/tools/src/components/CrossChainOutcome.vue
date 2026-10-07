@@ -5,6 +5,7 @@ import { Button } from "@unleashed/design"
 import { computed, ref, useId } from "vue"
 
 /** Composables */
+import { useAttemptFee } from "@/composables/useAttemptFee"
 import { useEthHeld } from "@/composables/useEthHeld"
 import type { EthereumPrefill } from "@/composables/useShell"
 
@@ -13,11 +14,13 @@ import { agoWords } from "@/lib/activity"
 import { lifiScanUrl } from "@/lib/chains"
 import { useNow } from "@/lib/clock"
 import { ethereumPrefillOf } from "@/lib/crosschain-activity"
+import { RETRY_WORDS } from "@/lib/crosschain-figures"
 import { type OutcomeFigures, outcomeCopy, outcomeLead, outcomeVariant } from "@/lib/crosschain-outcome"
 import { TESTIDS } from "@/lib/testids"
 
 /** Components */
 import BridgePhaseRail from "./BridgePhaseRail.vue"
+import LeftoverApproval from "./LeftoverApproval.vue"
 
 /**
  * What a cross-chain send's own surface shows once it ends without arriving (delivered to the wallet,
@@ -37,9 +40,16 @@ const now = useNow()
 const titleId = useId()
 const variant = computed(() => outcomeVariant(props.record, now.value))
 const ethHeld = useEthHeld(() => (variant.value === "delivered" && !props.figures?.ethHeld ? props.record.route.srcSender : undefined))
+const attemptFee = useAttemptFee(() => {
+	const r = props.record.route
+	const hash = variant.value === "not-sent" ? (r.outcomeTxHash ?? r.srcTxHash) : undefined
+	return hash ? { chainId: r.srcChainId, hash } : undefined
+})
+const approvalOpen = ref(false)
 const copy = computed(() => {
 	const v = variant.value
-	return v ? outcomeCopy(props.record, v, now.value, { ethHeld: ethHeld.value, ...props.figures }) : null
+	const read = { ethHeld: ethHeld.value, attemptFee: attemptFee.value, approvalOpen: approvalOpen.value }
+	return v ? outcomeCopy(props.record, v, now.value, { ...read, ...props.figures }) : null
 })
 const lead = computed(() => outcomeLead(props.record))
 const prefill = computed(() => (variant.value === "delivered" ? ethereumPrefillOf(props.record) : null))
@@ -115,6 +125,8 @@ function onContinue(): void {
 				</div>
 			</div>
 
+			<LeftoverApproval v-if="variant === 'not-sent'" :record="record" @read="approvalOpen = $event" />
+
 			<div class="actions">
 				<template v-if="variant === 'delivered'">
 					<Button size="large" :disabled="!prefill" :data-testid="TESTIDS.xcOutcomeContinue" @click="onContinue">
@@ -148,7 +160,7 @@ function onContinue(): void {
 					<p v-if="checked" class="aside">{{ checked }}</p>
 				</template>
 				<template v-else>
-					<Button size="large" :data-testid="TESTIDS.xcOutcomeNewQuote" @click="emit('new-quote')">Get a new quote</Button>
+					<Button size="large" :data-testid="TESTIDS.xcOutcomeNewQuote" @click="emit('new-quote')">{{ RETRY_WORDS.getNew }}</Button>
 					<Button size="large" variant="secondary" :data-testid="TESTIDS.xcOutcomeChangeSend" @click="emit('change-send')">
 						{{ variant === "expired" ? "Pick another balance" : "Change the send" }}
 					</Button>

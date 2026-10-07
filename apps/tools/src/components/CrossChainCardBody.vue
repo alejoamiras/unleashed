@@ -11,7 +11,7 @@ import { useShell } from "@/composables/useShell"
 
 /** Utils */
 import { chainLabel, lifiScanUrl } from "@/lib/chains"
-import { assetText, type CrossChainPhase, ethereumPrefillOf, phaseGuide, shortAddress } from "@/lib/crosschain-activity"
+import { assetText, type CrossChainPhase, depositUnsigned, ethereumPrefillOf, phaseGuide, shortAddress } from "@/lib/crosschain-activity"
 import { TESTIDS } from "@/lib/testids"
 
 /** Components */
@@ -40,7 +40,8 @@ const final = computed(() => props.phase.kind === "not-sent" || props.phase.kind
 const notSent = computed(() => {
 	if (props.phase.kind !== "not-sent") return null
 	const route = props.record.route
-	return { source: chainLabel(route.srcChainId), sent: assetText(props.record, route.srcAmount), who: shortAddress(route.srcSender) }
+	const lead = depositUnsigned(props.record) ? "The deposit was never signed" : `The send reverted on ${chainLabel(route.srcChainId)}`
+	return { lead, sent: assetText(props.record, route.srcAmount), who: shortAddress(route.srcSender) }
 })
 const prefill = computed(() => (delivered.value ? ethereumPrefillOf(props.record) : null))
 const trackUrl = computed(() => (props.phase.kind === "bridging" ? lifiScanUrl(props.record.route.srcTxHash ?? "") : ""))
@@ -62,7 +63,7 @@ function onContinue(): void {
 			@act="journal.discard(record.id)"
 		>
 			<span :data-testid="TESTIDS.journalXcGuide"
-				>The send reverted on {{ notSent.source }}, so nothing moved. Your <span class="mono">{{ notSent.sent }}</span> is still in
+				>{{ notSent.lead }}, so nothing moved. Your <span class="mono">{{ notSent.sent }}</span> is still in
 				<span class="mono">{{ notSent.who }}</span>.</span
 			>
 		</StateNotice>

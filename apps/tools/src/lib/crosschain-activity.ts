@@ -228,6 +228,12 @@ function sendingGuide(rec: CrossChainDepositRecord, rt: RecordRuntime): string {
 	return crossChainPhases(rec, rt).find((p) => p.state === "active")?.detail ?? `Waiting for ${src} to confirm the send…`
 }
 
+/** A not-sent send that ended before its deposit was signed (declined, or its terms lapsed after the approval), not one
+ *  the source chain reverted. */
+export function depositUnsigned(rec: CrossChainDepositRecord): boolean {
+	return rec.route.outcome === "not-sent" && !rec.route.srcTxHash && !rec.route.outcomeTxHash
+}
+
 /** The card's one guide line for `phase`, worded from the record's own facts. */
 export function phaseGuide(rec: CrossChainDepositRecord, phase: CrossChainPhase, facts: GuideFacts = {}): string {
 	const src = chainLabel(rec.route.srcChainId)
@@ -241,7 +247,7 @@ export function phaseGuide(rec: CrossChainDepositRecord, phase: CrossChainPhase,
 		case "finalizing":
 			return finalizingGuide(rec, phase.outcome, phase.chainId)
 		case "not-sent":
-			return `The send reverted on ${src}, so nothing moved. Your ${assetText(rec, rec.route.srcAmount)} is still in ${who}.`
+			return `${depositUnsigned(rec) ? "The deposit was never signed" : `The send reverted on ${src}`}, so nothing moved. Your ${assetText(rec, rec.route.srcAmount)} is still in ${who}.`
 		case "delivered": {
 			const held = facts.ethHeld === undefined ? "" : `; you hold ${facts.ethHeld} ETH`
 			const what = assetText(rec, rec.route.outcomeAmount) ?? `Your ${symbol}`

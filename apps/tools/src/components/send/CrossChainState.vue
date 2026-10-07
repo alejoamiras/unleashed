@@ -4,7 +4,8 @@ import type { IconName } from "@unleashed/design"
 import { computed } from "vue"
 import type { CrossChainNotice } from "@/composables/useCrossChainSend"
 import { chainLabel } from "@/lib/chains"
-import { NETWORK } from "@/lib/network"
+import { RETRY_WORDS } from "@/lib/crosschain-figures"
+import { IS_MAINNET, NETWORK } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
 import { safeSentence } from "@/lib/token-display"
 
@@ -45,7 +46,7 @@ interface Box {
 }
 
 const RETRY = { action: "Try again", actionTestid: TESTIDS.sendXcRetry }
-const NEW_QUOTE = { action: "Get a new quote", actionTestid: TESTIDS.sendXcRetry }
+const NEW_QUOTE = { action: RETRY_WORDS.getNew, actionTestid: TESTIDS.sendXcRetry }
 
 const source = computed(() => chainLabel(props.srcChainId))
 
@@ -67,8 +68,8 @@ const box = computed<Box>(() => {
 			return {
 				tone: "attention",
 				icon: "hourglass",
-				title: "This quote expired.",
-				action: "Refresh quote",
+				title: IS_MAINNET ? "This quote expired." : "These terms expired.",
+				action: IS_MAINNET ? "Refresh quote" : "Rebuild terms",
 				actionTestid: TESTIDS.sendXcRefresh,
 				actionIcon: "reload",
 			}
@@ -111,7 +112,10 @@ const box = computed<Box>(() => {
 		:data-notice="state.kind"
 		@act="emit('act')"
 	>
-		<template v-if="state.kind === 'no-route'">
+		<template v-if="state.kind === 'no-route' && !IS_MAINNET">
+			The gas swap on {{ chainLabel(NETWORK.l1ChainId) }} has no price for this amount right now. Nothing was signed.
+		</template>
+		<template v-else-if="state.kind === 'no-route'">
 			LI.FI found no way to bring {{ sendText }} from {{ source }} to Aztec. Routes change often.
 		</template>
 		<template v-else-if="state.kind === 'over-cap'">
@@ -121,6 +125,7 @@ const box = computed<Box>(() => {
 			<template v-if="state.field">Field that differs: <span class="mono">{{ state.field }}</span>. </template>Nothing was signed and
 			nothing moved.
 		</template>
+		<template v-else-if="state.kind === 'expired' && !IS_MAINNET">They’re rebuilt from the latest block; nothing was signed.</template>
 		<template v-else-if="state.kind === 'expired'">Fees and amounts may have moved since it was made.</template>
 		<template v-else-if="state.kind === 'venue'">
 			The gas swap on {{ chainLabel(NETWORK.l1ChainId) }} could not be read. Nothing was signed.
