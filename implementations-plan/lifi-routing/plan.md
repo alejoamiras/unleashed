@@ -1475,6 +1475,25 @@ these answers settle the questions that do not need a screenshot:
   the figure `H-Review-Testnet` draws, so the filler can always cover it; an operator alert or an auto-filler is a
   follow-up.
 
+**D49 Phase 9 in the sandbox (lead).** What the browser suite met that the table assumed otherwise:
+- **Decoder refusal before signing has no browser path off mainnet.** Under D45 every byte `verifyRoute` checks on
+  testnet and in the sandbox is the app's own (self-built terms, the swapper call from `sliceSwapData`), so no
+  fixture response can make it refuse without a test-only fault in app code. The cell is held one layer down:
+  `useCrossChainRoute.test.ts` ("never offers bytes the decoder refuses"), `crosschain-deposit-flow.test.ts`
+  ("refuses a stale, tampered or wrong-chain route…") and the refused notice in `testid-coverage.test.ts`. The
+  mainnet plan, whose routes carry LI.FI's bytes, owns a browser cell for it.
+- **Starve-gas never reaches the receiver's recovery.** A fill starved to 250k gas reverts whole under the sandbox
+  SpokePool, so the deposit expires (cell 54). Delivered-to-wallet (cell 53) pauses factory deposits before the
+  fill instead; `ReceiverAcrossV4` catches the revert and pays out on Ethereum.
+- **Exclusive fills.** The relay loop impersonates the relayer a deposit names (`TESTNET_FILLER` under fixed terms) on
+  the L1 anvil, and cell 50 checks that `FilledRelay` names it.
+- **A claim never waits on the wallet's chain.** The suite found that a wallet left on the source chain after a
+  cross-chain send failed the claim's token check (`validateTokenBlock`) with the wrong-chain error, and the app
+  offers no switch away from a source chain. The check now reads the factory registration through the build's
+  pinned Ethereum reader (`readClientFor`), and the wallet's transport only where the build pins none. The trust bar
+  is unchanged: an RPC that lies about the registration defeats the check either way, and the pinned RPCs are the
+  ones cross-chain discovery already trusts for Ethereum facts.
+
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
 signed order expires about 645 s after its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above
