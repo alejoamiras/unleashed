@@ -108,7 +108,8 @@ approval is not a sign-off.
   temporary `minimumReleaseAgeExcludes` entry that leaves in the same PR; prove it with
   `bun install --frozen-lockfile --force`. Until the version is 7 days old, a `package.json` edit in
   a workspace that reaches it re-gates it and fails the install: wait, or add the exclude locally and
-  do not commit it. Details: [`SECURITY.md`](SECURITY.md).
+  do not commit it. The Nulo wallet's three `@nulo-sh/*` packages are a standing exemption (the
+  owner's decision); no other name is. Details: [`SECURITY.md`](SECURITY.md).
 - **The Aztec line (`@aztec-labs/*`, `@aztec-foundation/*`) is exact-pinned and bumped by hand**, after the wallet's repository has published the
   shared packages on the new line. [`UPDATE.md`](UPDATE.md) lists what a bump touches; a bump that
   resets the network is a new bridge generation ([`bridge-generation`](.claude/skills/bridge-generation/SKILL.md)).
