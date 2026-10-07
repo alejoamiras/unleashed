@@ -185,7 +185,6 @@ function privateFpcBlock(): NonNullable<ManifestV2["privateFpc"]> {
 	return { address: PRIVATE_FPC_ADDRESS, version: descriptor.aztecVersion, artifactDigest: descriptor.artifactSha256 }
 }
 
-/** The generation and its tokens with the fuel budgets the router deploy carries into the candidate. */
 function generationBase(gen: GenerationRecord, addrs: NodeL1, tokens: ManifestToken[]): ManifestV2 {
 	const bridge: BridgeBlock = { l1: { ...gen.l1, fuel: priorFuelBudgets() }, l2: gen.l2, tokens }
 	return {
@@ -239,6 +238,7 @@ async function commandDeploy(): Promise<void> {
 	const dryRun = process.argv.includes("--dry-run")
 	const tokens = seedTokens()
 	const rates = ratesArg(tokens)
+	const routing = routingArg()
 	const { l1, l2, addrs } = await connect(mins, { deployAccount: !dryRun })
 	if (dryRun) {
 		console.log(`dry run: would deploy a generation on ${addrs.l1ChainId}/${addrs.rollupVersion} with tokens ${tokens.join(", ")}`)
@@ -268,7 +268,7 @@ async function commandDeploy(): Promise<void> {
 		journalPath: JOURNAL_PATH,
 		base: generationBase(gen, addrs, manifestTokens),
 		rates,
-		...routingArg(),
+		...routing,
 		candidatePath: CANDIDATE_PATH,
 	})
 	// Repo-relative: the journal is the generation's record and must not carry a machine's layout.
