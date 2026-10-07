@@ -363,7 +363,6 @@ function fillIsOurs(fill: Args, transport: Extract<SourceTransport, { kind: "acr
 
 type SourceFacts =
 	| { kind: "unknown" }
-	| { kind: "unsent"; decidedAt: ChainBlock; finalized: ChainBlock }
 	| { kind: "reverted"; srcTxHash: Hex; decidedAt: ChainBlock; finalized: ChainBlock }
 	| { kind: "sent"; srcTxHash: Hex; transport: SourceTransport }
 
@@ -540,28 +539,13 @@ async function fromTransferScan(c: Ctx, client: DiscoveryChainReads, latest: big
 	return { kind: "unknown" }
 }
 
-/**
- * A send the wallet never handed over (no hash, no batch id) that the scan never found is unsent once a finalized
- * source block is past its `fillDeadline`: the SpokePool refuses a deposit after it, so no later block can carry one.
- * Stargate routes carry no deadline and stay pending.
- */
-async function unsentBy(c: Ctx, client: DiscoveryChainReads, latest: bigint): Promise<SourceFacts> {
-	const { srcTxHash, srcBatchId, fillDeadline, srcChainId: chainId } = c.rec.route
-	if (srcTxHash || srcBatchId || fillDeadline === undefined) return { kind: "unknown" }
-	const finalized = await c.read(() => client.getBlock({ blockTag: "finalized" }))
-	if (finalized.number > latest || finalized.timestamp <= BigInt(fillDeadline)) return { kind: "unknown" }
-	const at = { chainId, blockNumber: finalized.number }
-	return { kind: "unsent", decidedAt: at, finalized: at }
-}
-
 /** A recorded hash that does not bind (missing, someone else's, not ours) is treated as lost. */
 async function readSource(c: Ctx, client: DiscoveryChainReads): Promise<SourceFacts> {
 	const scan = await openChainScan(client, c.rec.route.srcChainId, c.read, epochOf(client))
 	const recorded = c.rec.route.srcTxHash ? await fromRecordedHash(c, client, c.rec.route.srcTxHash) : undefined
 	// A reverted attempt can be resent with the same calldata, so a transfer that went through outranks it.
 	const scanned = recorded?.kind === "sent" ? undefined : await fromTransferScan(c, client, scan.latest)
-	let facts = scanned?.kind === "sent" || !recorded ? (scanned as SourceFacts) : recorded
-	if (facts.kind === "unknown") facts = await unsentBy(c, client, scan.latest)
+	const facts = scanned?.kind === "sent" || !recorded ? (scanned as SourceFacts) : recorded
 	await scan.close()
 	return facts
 }
@@ -980,7 +964,7 @@ function decide(rec: CrossChainDepositRecord, source: SourceFacts, eth: Ethereum
 	const x = eth.execution
 	const intended = x?.kind === "completed" ? (x.deposit.token ?? x.deposit.fuel) : undefined
 	const facts: DiscoveryFacts = {
-		...(source.kind === "sent" || source.kind === "reverted" ? { srcTxHash: source.srcTxHash } : {}),
+		...(source.kind === "unknown" ? {} : { srcTxHash: source.srcTxHash }),
 		...(source.kind === "sent" ? { transport: persistedTransport(source.transport) } : {}),
 		extraDeposits: extrasOf(rec, eth.claimable, intended && x ? { txHash: x.txHash, leafIndex: intended.leafIndex } : undefined),
 	}
@@ -989,13 +973,6 @@ function decide(rec: CrossChainDepositRecord, source: SourceFacts, eth: Ethereum
 	if (source.kind === "reverted") {
 		const { srcTxHash: txHash, decidedAt, finalized: srcFinalized } = source
 		return { ...facts, verdict: "not-sent", observation: { outcome: "not-sent", txHash, decidedAt, finalized: srcFinalized } }
-	}
-	if (source.kind === "unsent") {
-		return {
-			...facts,
-			verdict: "not-sent",
-			observation: { outcome: "not-sent", decidedAt: source.decidedAt, finalized: source.finalized },
-		}
 	}
 	if (x?.kind === "recovered") {
 		const observation: OutcomeObservation = {
@@ -1030,9 +1007,8 @@ function assertContext(rec: CrossChainDepositRecord, ctx: CrossChainDiscoveryCon
  *
  * Verdicts: `pending` (nothing decided yet; a send with no known hash stays here), `incomplete` (an RPC
  * failure, an exhausted budget, a chain switch, a reorg during the run, or chain data contradicting the
- * record: retry, never terminal), `not-sent` (the source receipt reverted, final only once its block is
- * finalized on the source chain; or a send never handed over is past its fill deadline at a finalized source
- * block with no transfer found), `deposited` (our execution completed into the router), `delivered-to-wallet`
+ * record: retry, never terminal), `not-sent` (the source receipt reverted; final only once its block is
+ * finalized on the source chain), `deposited` (our execution completed into the router), `delivered-to-wallet`
  * (LI.FI recovered the delivery to the user), `expired-on-source` (Across only: unfilled and past its
  * deadline at the same finalized Ethereum block). Outcome verdicts carry the observation `outcomePatch`
  * takes; `discoveryPatch` turns any verdict into a journal patch.
