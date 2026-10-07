@@ -13,7 +13,7 @@ import type { EthereumPrefill } from "@/composables/useShell"
 import { agoWords } from "@/lib/activity"
 import { lifiScanUrl } from "@/lib/chains"
 import { useNow } from "@/lib/clock"
-import { ethereumPrefillOf } from "@/lib/crosschain-activity"
+import { depositUnsigned, ethereumPrefillOf } from "@/lib/crosschain-activity"
 import { RETRY_WORDS } from "@/lib/crosschain-figures"
 import { type OutcomeFigures, outcomeCopy, outcomeLead, outcomeVariant } from "@/lib/crosschain-outcome"
 import { TESTIDS } from "@/lib/testids"
@@ -125,7 +125,7 @@ function onContinue(): void {
 				</div>
 			</div>
 
-			<LeftoverApproval v-if="variant === 'not-sent'" :record="record" @read="approvalOpen = $event" />
+			<LeftoverApproval v-if="variant === 'not-sent' && depositUnsigned(record)" :record="record" @read="approvalOpen = $event" />
 
 			<div class="actions">
 				<template v-if="variant === 'delivered'">

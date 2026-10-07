@@ -58,7 +58,10 @@ describe("CrossChainOutcome", () => {
 		expect(expired.get(sel(TESTIDS.xcOutcomeChangeSend)).text()).toBe("Pick another balance")
 
 		attemptFee.value = "0.000041"
+		allowance.value = 5_000_000n
 		const notSent = panel(xcRecord(ended, { outcome: "not-sent" }))
+		await flushPromises()
+		expect(notSent.find(sel(TESTIDS.journalXcRevoke)).exists()).toBe(false)
 		expect(notSent.get("h2").text()).toBe("Nothing moved")
 		expect(cards(notSent)).toEqual([
 			"Base Sepolia rejected the transaction, so it never ran.",
