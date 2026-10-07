@@ -42,6 +42,7 @@ import { FUEL_SWAP_SELECTORS } from "../src/lifi-abi"
 import { LIFI_BOOK, type LifiChainBook, type LifiCodeHashes } from "../src/lifi-addresses"
 import type { BridgeBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import { toWord } from "../src/register-hash"
+import { legacyRoutersOf } from "../src/send-generation"
 import { resolveBin, run } from "./run"
 import { createL1PublicClient, loadManifestV2FromConfigArg, requireBridge } from "./script-bootstrap"
 import {
@@ -257,7 +258,7 @@ async function checkFuelSwapper(pub: PublicClient, m: ManifestV2, b: BridgeBlock
 }
 
 async function checkGeneration(pub: PublicClient, m: ManifestV2, b: BridgeBlock, strict: boolean): Promise<void> {
-	const legacyRouters = (b.l1.legacyRouters ?? []) as Address[]
+	const legacyRouters = legacyRoutersOf(b)
 	const deployed: Array<[string, string | undefined]> = [
 		["factory", b.l1.factory],
 		["implementation", b.l1.implementation],

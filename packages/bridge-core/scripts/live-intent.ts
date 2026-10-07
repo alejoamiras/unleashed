@@ -38,6 +38,7 @@ import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import { type BridgeBlock, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
+import { legacyRoutersOf } from "../src/send-generation"
 import { type DeployStep, readDeployJournal, writeCandidateAtomically } from "./deploy-manifest"
 import { git, resolveBin, run } from "./run"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
@@ -802,7 +803,7 @@ async function verifyGenerationBindings(m: ManifestV2, rpcUrl: string, nodeUrl: 
 		["implementation", b.l1.implementation],
 		["depositRouter", router],
 		["fuelSwapper", b.l1.fuelSwapper],
-		...(b.l1.legacyRouters ?? []).map((a): [string, string] => ["legacy router", a]),
+		...legacyRoutersOf(b).map((a): [string, string] => ["legacy router", a]),
 	]
 	for (const [label, address] of named) {
 		if (!address) continue
