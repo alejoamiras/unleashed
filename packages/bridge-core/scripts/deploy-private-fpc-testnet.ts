@@ -15,7 +15,7 @@ import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { SPONSORED_FPC_SALT } from "@aztec-labs/constants"
 import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC"
-import { deriveNuloAccountKeys } from "@alejoamiras/nulo-wallet-crypto"
+import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { deployCanonicalPrivateFpc } from "./deploy-canonical-private-fpc"
 import { TESTNET_NODE_URL } from "../src/testnet-node"
 

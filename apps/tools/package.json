@@ -46,9 +46,9 @@
 		"@aztec-labs/wallets": "6.0.0-rc.1",
 		"@unleashed/bridge-core": "workspace:*",
 		"@unleashed/design": "workspace:*",
-		"@alejoamiras/nulo-resolve-asset": "0.2.0",
-		"@alejoamiras/nulo-wallet-crypto": "0.2.0",
-		"@alejoamiras/nulo-wallet-sdk-schema-patch": "0.2.0",
+		"@nulo-sh/resolve-asset": "0.1.0",
+		"@nulo-sh/wallet-crypto": "0.1.0",
+		"@nulo-sh/wallet-sdk-schema-patch": "0.1.0",
 		"viem": "^2.52.2",
 		"vue": "^3.5.38",
 		"zod": "^4.4.3"
