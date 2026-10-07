@@ -711,7 +711,8 @@ with `op-remote`, batched into one sitting.
     these pinned providers; `verify-l1` defaults `BASE_SEPOLIA_RPC_URL` to the PublicNode endpoint, so the
     1Password item needs no new field.
 - **A6**: *"Yes. Still show it."* Cross-chain fuel-only is offered and stays visible above the fee ceiling, with
-  its fee in USD and an over-ceiling warning; the ceiling blocks token sends, it only warns on fuel-only.
+  its fee in USD and an over-ceiling warning; the ceiling blocks token sends, it only warns on fuel-only. Amended by
+  D50: no ceiling warning on testnet's fixed terms (USD per D48).
 - **A7, A8, A11**: *"Ok."* Approved as written.
 - **A9**: *"Yes. I think it has 0.25% integration fee by default since we are on the fee tier."* Approved. That
   0.25 % is LI.FI's own FeeCollector step (`research/lead-lifi-api-shapes.md:29`), already bounded by the
@@ -753,7 +754,7 @@ with `op-remote`, batched into one sitting.
   smart-contract source accounts refused. Cross-chain **fuel-only**: the contract and core support it; offer it in
   the UI only when its fees stay under the ceiling (mainnet ≈ $5.7 fixed LayerZero fee for a ~$2 slice), or hide it?
 - **A7 Thresholds.** Fee ceiling: proposed 10 % on mainnet, warn-only on testnet (Across testnet charges ~24 % at
-  5 USDC). Cross-chain fuel slippage from the warp test (proposed 300 bps); Ethereum-origin `fuel.slippageBps`
+  5 USDC); amended by D50: testnet's fixed terms show no ceiling warning. Cross-chain fuel slippage from the warp test (proposed 300 bps); Ethereum-origin `fuel.slippageBps`
   unchanged.
 - **A8 Guardian and owner powers.** The new router honours `depositsPaused` for every leg, fuel-only included
   (today's router lets fuel-only through a pause); the owner keeps only `sweep`; rotating the swap target means a
@@ -1494,6 +1495,46 @@ these answers settle the questions that do not need a screenshot:
   pinned Ethereum reader (`readClientFor`), and the wallet's transport only where the build pins none. The trust bar
   is unchanged: an RPC that lies about the registration defeats the check either way, and the pinned RPCs are the
   ones cross-chain discovery already trusts for Ethereum facts.
+
+**D50 Phase 8 sign-offs, second batch (owner).** The two fresh reviewers' remaining deviations went to the owner as
+29 cards, each with the build beside its board. Answers, verbatim:
+- *"Approve all recommendations"* for every card but one:
+  - **Copy no board draws.** The over-cap notice and the testnet progress wording and the small strings, approved
+    as built. The review's fixed-terms line becomes "Fixed testnet terms: the relay fee is 25.0 % of the amount, and
+    one send carries at most 8.00 USDC." Testnet says terms where the boards say quote: "These terms expired.
+    They're rebuilt from the latest block; nothing was signed." [Rebuild terms] · [Get new terms] · "Try again
+    with new terms." · "Get new terms and sign again."; mainnet keeps the boards' words. The testnet no-route body
+    is "The gas swap on Ethereum · Sepolia has no price for this amount right now. Nothing was signed." A deposit
+    approved but never signed reads "The approval on Base Sepolia went through, but the deposit was never signed,
+    so nothing was sent." / "Your USDC never left your wallet, but the approval for it is still open. Revoke it
+    below." / "Revoke the approval, or get new terms and sign again."
+  - **Plan over board.** No fee-ceiling warning on testnet (A6 and A7 amended); the itemised You-sign line without
+    a prompt count; six phases when nothing needs approving; no footnote under All; the design system's field and
+    switch edges; the mainnet cross-chain copy revisited in the mainnet plan; the address on pasted and catalogue
+    Ethereum token rows.
+  - **Boards that disagree.** The build's choice kept on all nine: phone wallet chips with × and chevron, no Portal
+    row on the cross-chain review, one stepper for Ethereum-origin sends, Bridging · Not sent · ✓ beside every
+    Arrived, the red Not sent box, "Deposit · to your wallet", a pink badge, the dock chrome on every page, the
+    short phone chip label.
+  - **What the app can't know.** All five gaps accepted, with a follow-up to keep phase times across reloads. A
+    reverted send states its network fee in ETH, read from its receipt (execution gas plus the OP-stack L1 fee):
+    "…the Base Sepolia network fee for the attempt, 0.000041 ETH."
+  - **Leftovers.** Show receipt kept on the another-deposit card; "Testnet build only" is a canvas note, not built;
+    the four behaviour changes (newest first, the phone's open gas breakdown, the filled Claim, the badge that
+    counts without opening the dock) approved.
+- **Finality.** *"Claim early"*, over the card's recommendation. The claim starts when Aztec has the message, as
+  Ethereum-origin sends do. Accepted risk: before Ethereum finalizes a deposit, a reorg that moves it can leave a
+  claim built on the old position failing, or marked done while Aztec dropped it (the arc 4 review's round 2,
+  findings 1–3: completion ends the watch before finality, a submitted claim is not bound to its deposit snapshot,
+  re-included fuel keeps the old message's settlement). The funds stay claimable at the new position; nothing
+  rebuilds the claim for it. A follow-up covers both paths.
+- **Derived to keep the signed words true** (no new wording): the wizard's panel for a deposit never signed carries
+  the existing revoke offer, which "Revoke it below" names (a reverted send's panel stays as S-Reverted draws it); its approval clauses show only while that offer reads the allowance
+  open, so past a revoke, or for an approval the wallet never answered and that never landed, the panel keeps the
+  signed sentences' other clauses ("The deposit was never signed, so nothing was sent." / "Your USDC never left your
+  wallet." / "Get new terms and sign again."). The Activity card's not-sent line says "The deposit was never signed"
+  in place of "The send reverted on Base Sepolia" for such a send. Neither the panel nor the card lists a rejected
+  transaction it never had.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
