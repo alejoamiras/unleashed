@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { type CrossChainDiscovery, deriveCrossChainDepositStage, ERC20_ABI, openDepositEnvelopeV3 } from "@unleashed/bridge-core"
-import { decodeFunctionData, type Hex } from "viem"
+import { type Address, decodeFunctionData, type Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { stepperPhases } from "@/lib/bridge-steps"
 import { crossChainPhase } from "@/lib/crosschain-activity"
 import { crossChainUnconfirmed } from "@/lib/crosschain-steps"
 import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, signatureOf, USER } from "@/test/crosschain"
 import {
+	ACCOUNT_SWITCHED,
 	type CrossChainReads,
 	type CrossChainSend,
 	type CrossChainWallet,
@@ -17,10 +18,12 @@ import {
 	sendCrossChain,
 } from "./crosschain-deposit-flow"
 import type { CrossChainWatchDeps } from "./crosschain-watch"
+import { opsInFlight } from "./useOpsInFlight"
 import { __resetJournalForTests, currentCrossChainRecord, storedCrossChainRecords, useBridgeJournal } from "./useBridgeJournal"
 import { type CrossChainRoute, ROUTE_TTL_MS, routeRecordId } from "./useCrossChainRoute"
 
 const MAX = (1n << 256n) - 1n
+const OTHER: Address = `0x${"9".repeat(40)}`
 const hashOf = (n: number): Hex => `0x${n.toString(16).padStart(64, "0")}`
 
 beforeEach(() => {
@@ -29,19 +32,35 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+interface WalletOptions {
+	chainId?: number
+	rejectDeposit?: boolean
+	batch?: boolean
+	/** What `eth_accounts` answers now. */
+	live?: () => Address | undefined
+	/** Runs as the wallet takes each source transaction. */
+	onSend?: () => void
+}
+
 /** A wallet that notes, at each source transaction, whether the record was already stored (and sealed). */
-function fakeWallet(route: CrossChainRoute, o: { chainId?: number; rejectDeposit?: boolean; batch?: boolean } = {}) {
+function fakeWallet(route: CrossChainRoute, o: WalletOptions = {}) {
 	const sent: SourceCall[] = []
 	const journaledAtSend: boolean[] = []
+	const signed: string[] = []
 	const stored = () => currentCrossChainRecord(routeRecordId(route.secrets))
 	const wallet: CrossChainWallet = {
 		account: USER,
+		liveAccount: async () => (o.live ? o.live() : USER),
 		chainId: async () => o.chainId ?? BASE_SEPOLIA,
-		signMessage: async (m) => signatureOf(m),
+		signMessage: async (m) => {
+			signed.push(m)
+			return signatureOf(m)
+		},
 		sendTransaction: async (call) => {
 			const rec = stored()
 			journaledAtSend.push(!!rec && (!rec.isPrivate || !!rec.sealedEnvelope))
 			sent.push(call)
+			o.onSend?.()
 			if (o.rejectDeposit && call.to === route.tx.to) throw Object.assign(new Error("User rejected the request."), { code: 4001 })
 			return hashOf(sent.length)
 		},
@@ -58,7 +77,7 @@ function fakeWallet(route: CrossChainRoute, o: { chainId?: number; rejectDeposit
 				}
 			: {}),
 	}
-	return { wallet, sent, journaledAtSend }
+	return { wallet, sent, journaledAtSend, signed }
 }
 
 function fakeReads(allowance: bigint, o: { directApprove?: boolean; receiptLost?: boolean } = {}): CrossChainReads {
@@ -145,6 +164,33 @@ describe("sendCrossChain", () => {
 		await expect(sendCrossChain(sendOf(a, route), wallet, fakeReads(0n, r), { watch: false })).rejects.toThrow(error)
 		expect(sent.length).toBe("rejectDeposit" in w ? 2 : 1)
 		expectRevocable(route)
+	})
+
+	it("re-reads the wallet's account before every signature, under the operation guard", async () => {
+		const a = ask()
+		const route = await quotedRoute(a)
+		let live: Address = USER
+		const guarded: boolean[] = []
+		const switching = fakeWallet(route, {
+			live: () => live,
+			onSend: () => {
+				guarded.push(opsInFlight())
+				live = OTHER
+			},
+		})
+		await expect(sendCrossChain(sendOf(a, route), switching.wallet, fakeReads(0n), { watch: false })).rejects.toThrow(ACCOUNT_SWITCHED)
+		expect(switching.sent, "the approval went out; the deposit was never asked for").toHaveLength(1)
+		expect([guarded, opsInFlight()]).toEqual([[true], false])
+		expectRevocable(route)
+
+		// A private send: the account moves between the entry check and the seal's message.
+		const p = ask({ isPrivate: true })
+		const sealing = await quotedRoute(p)
+		let reads = 0
+		const sealer = fakeWallet(sealing, { live: () => (reads++ === 0 ? USER : OTHER) })
+		await expect(sendCrossChain(sendOf(p, sealing), sealer.wallet, fakeReads(0n), { watch: false })).rejects.toThrow(ACCOUNT_SWITCHED)
+		expect([sealer.signed, sealer.sent]).toEqual([[], []])
+		expect(currentCrossChainRecord(routeRecordId(sealing.secrets))).toBeUndefined()
 	})
 
 	it("sends one atomic batch through a zero allowance first, journals its id then its hash, and starts the watch", async () => {

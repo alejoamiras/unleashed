@@ -39,6 +39,7 @@ import {
 } from "./useBridgeJournal"
 import { type CrossChainAsk, type CrossChainRoute, ROUTE_TTL_MS, routeRecordId } from "./useCrossChainRoute"
 import { discoveryReadsFor } from "./useEthereumReader"
+import { withOperation } from "./useOpsInFlight"
 
 const log = (...args: unknown[]) => console.log("[bridge:crosschain]", ...args)
 
@@ -63,7 +64,10 @@ export interface SourceCall {
 
 /** The connected wallet, on whatever chain it is on now. */
 export interface CrossChainWallet {
+	/** The account this wallet signs as, fixed when it was built. */
 	account: Address
+	/** The account the wallet answers as now (EIP-1193 `eth_accounts`, which never prompts). */
+	liveAccount(): Promise<Address | undefined>
 	chainId(): Promise<number>
 	signMessage(message: string): Promise<Hex>
 	sendTransaction(call: SourceCall): Promise<Hex>
@@ -167,11 +171,19 @@ export function crossChainRecordOf(s: CrossChainSend, heads: { source: bigint; e
 	} as CrossChainDepositRecord
 }
 
-/** The wallet must sign on the route's chain, as the account the route names as depositor and refund address. */
-async function assertSource(wallet: CrossChainWallet, ask: CrossChainAsk): Promise<void> {
-	if (wallet.account.toLowerCase() !== ask.user.toLowerCase()) {
+const sameAddress = (a: string | undefined, b: string): boolean => a?.toLowerCase() === b.toLowerCase()
+
+/** Read from the wallet itself: the client the send was handed keeps the account it was built with after the
+ *  user switches. */
+async function assertAccount(wallet: CrossChainWallet, ask: CrossChainAsk): Promise<void> {
+	if (!sameAddress(wallet.account, ask.user) || !sameAddress(await wallet.liveAccount(), ask.user)) {
 		throw new Error(ACCOUNT_SWITCHED)
 	}
+}
+
+/** The wallet must sign on the route's chain, as the account the route names as depositor and refund address. */
+async function assertSource(wallet: CrossChainWallet, ask: CrossChainAsk): Promise<void> {
+	await assertAccount(wallet, ask)
 	const live = await wallet.chainId()
 	if (live !== ask.srcChainId) {
 		throw new Error(
@@ -206,7 +218,11 @@ async function sealCrossChain(rec: CrossChainDepositRecord, s: CrossChainSend, w
 	)
 	const window = crossChainAmountWindow(rec)
 	const { blob, key } = await sealCrossChainDepositRecord({
-		sign: (m) => runOnLane("l1", () => wallet.signMessage(m)),
+		sign: (m) =>
+			runOnLane("l1", async () => {
+				await assertAccount(wallet, s.ask)
+				return wallet.signMessage(m)
+			}),
 		binding: { ...sealBindingOf({ intent: s.ask.intent, token: s.token } as SendPlan), secretHashHex: rec.id },
 		envelope: {
 			secret: credential.toString(),
@@ -283,6 +299,7 @@ async function sendOnSource(
 	const deposit: SourceCall = { to: s.route.tx.to, data: s.route.tx.data, value: s.route.tx.value }
 	if (approvals.length > 0 && wallet.batch && (await wallet.batch.atomic(s.ask.srcChainId))) {
 		assertVerified(s.route)
+		await assertAccount(wallet, s.ask)
 		setRecordStep(id, "sending-source")
 		onRequested()
 		const batchId = await wallet.batch.send([...approvals, deposit])
@@ -293,6 +310,7 @@ async function sendOnSource(
 	}
 	await approveOnSource(id, s, wallet, reads, approvals)
 	assertVerified(s.route)
+	await assertAccount(wallet, s.ask)
 	setRecordStep(id, "sending-source")
 	onRequested()
 	const srcTxHash = await wallet.sendTransaction(deposit)
@@ -311,6 +329,7 @@ async function approveOnSource(
 ): Promise<void> {
 	let approved: Hex | undefined
 	for (const call of approvals) {
+		await assertAccount(wallet, s.ask)
 		setRecordStep(id, "approving-source")
 		approved = await wallet.sendTransaction(call)
 		updateCrossChainRecord(id, { approveTxHash: approved })
@@ -353,15 +372,27 @@ function settleFailedSend(id: string, requested: boolean, e: unknown, watcher: C
  * Journal, seal, verify, sign and persist one cross-chain deposit. Returns the record id once the source
  * transaction (or batch) is journaled; discovery takes it from there.
  *
+ * The wallet's live account is checked again before every signature, and the whole span holds the operation
+ * guard, so the app's Aztec account cannot change under it.
+ *
  * @throws before any record exists when the route is stale, refused by the decoder, or the wallet is on another
  * chain or account; after the record exists, with the record discarded when nothing can have left the wallet, or
  * ended `not-sent` when an approval was journaled.
  */
-export async function sendCrossChain(
+export function sendCrossChain(
 	s: CrossChainSend,
 	wallet: CrossChainWallet,
 	reads: CrossChainReads,
 	o: CrossChainSendOptions = {},
+): Promise<string> {
+	return withOperation(() => journalAndSend(s, wallet, reads, o))
+}
+
+async function journalAndSend(
+	s: CrossChainSend,
+	wallet: CrossChainWallet,
+	reads: CrossChainReads,
+	o: CrossChainSendOptions,
 ): Promise<string> {
 	if ((o.now ?? Date.now)() - s.quotedAt > ROUTE_TTL_MS) throw new Error(ROUTE_EXPIRED)
 	await assertSource(wallet, s.ask)
@@ -394,6 +425,7 @@ export async function sendCrossChain(
 export function walletOnChain(client: WalletClient, account: Address, chain: Chain): CrossChainWallet {
 	return {
 		account,
+		liveAccount: async () => (await client.getAddresses())[0],
 		chainId: () => client.getChainId(),
 		signMessage: (message) => client.signMessage({ account, message }),
 		sendTransaction: (c) => client.sendTransaction({ account, chain, to: c.to, data: c.data, value: c.value }),

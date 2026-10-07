@@ -39,6 +39,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 const wallet: CrossChainWallet = {
 	account: USER,
+	liveAccount: async () => USER,
 	chainId: async () => BASE_SEPOLIA,
 	signMessage: async (m) => signatureOf(m),
 	sendTransaction: async () => hashOf(1),
