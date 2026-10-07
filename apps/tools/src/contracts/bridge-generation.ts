@@ -48,9 +48,8 @@ export const TOKEN_CLASS_ID: string | undefined = GENERATION?.l2.tokenClassId
 export const MANIFEST_TOKENS: readonly ManifestToken[] = GENERATION?.tokens ?? []
 type FuelBudgets = Pick<NonNullable<BridgeBlock["l1"]["fuel"]>, "slippageBps" | "minFuelFj" | "fjPerTx" | "fjRegister">
 
-/** The gas-share budgets. A generation that predates the deposit router keeps them in its swap block, and its
- *  in-flight claims are still floored by them. */
-export const FUEL: FuelBudgets | undefined = GENERATION?.l1.fuel ?? GENERATION?.l1.swap
+/** The gas-share budgets; undefined on a generation without a deposit router. */
+export const FUEL: FuelBudgets | undefined = GENERATION?.l1.fuel
 /** Routers whose deposits still reconcile; no send uses them. */
 export const LEGACY_ROUTERS: readonly `0x${string}`[] = GENERATION ? legacyRoutersOf(GENERATION) : []
 

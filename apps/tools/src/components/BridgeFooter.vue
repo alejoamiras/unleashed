@@ -38,7 +38,7 @@ function sourceGroups(): ContractGroup[] {
 function bridgeGroups(): ContractGroup[] {
 	if (!GENERATION) return []
 	const l1 = NETWORK.l1ChainId
-	const router = GENERATION.l1.depositRouter ?? GENERATION.l1.router
+	const router = GENERATION.l1.depositRouter
 	return [
 		{
 			chain: chainLabel(l1),
