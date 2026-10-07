@@ -1056,7 +1056,7 @@ verify:build-target` (the built `_headers` list exactly the intended new origins
 existing specs with Ethereum-origin flows on the new router. Pass also: composable tests for decoder refusal,
 chain mismatch, reload while bridging and each outcome; G-UX-1 quoted in this plan. Layers: unit, build, e2e.
 
-#### Phase 8: Visible cross-chain UI (after G-UX-2)
+#### Phase 8: Visible cross-chain UI (after G-UX-2) ✓
 
 Open by reading the signed boards and checking their digests (Design binding 2). S-1…S-11, S-15, S-16 built to
 those boards; testids; `bridge-steps.ts` stays exhaustive; component tests per surface; build-beside-board
@@ -1567,6 +1567,7 @@ code before it was triaged; the fixes are logged in `lessons/phase-9.md` § Arc 
   stays "not found yet" with no revoke offer and no Dismiss, and the exact approval stays open until revoked
   elsewhere; a follow-up designs a journaled "deposit requested" marker, with cross-tab care, that lets a send never
   asked for its deposit end safely. The other round 3 fixes held.
+- Round 5 (resumed): "no new material findings". Arc 4 converged in five rounds.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's

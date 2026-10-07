@@ -173,3 +173,24 @@ On fix round 2's final code, one gate at a time:
   instance, the build succeeds.
 - `bun run e2e:tools`: 70 passed. No page object needed a change: no spec reads the dock rows or drives a
   cross-chain send.
+
+## Owner sign-off
+
+The two fresh reviewers' deviations went to the owner as cards with the build beside each board. D48 records the
+first batch and D50 the second: every card took its recommended option except the claim timing, where the owner
+kept claiming before Ethereum finality. The second batch changed only copy: "terms" on testnet where the boards
+say quote, the review's fixed-terms line with the cap, the testnet no-route body, a deposit approved but never
+signed, and a reverted send's network fee in ETH from its receipt. The revoke offer joins the wizard's panel only
+for a deposit never signed, since S-Reverted draws none. Harness shots checked each string as signed.
+
+## Gate, final
+
+On the converged arc 4 tip:
+- G0: `contracts/` unchanged since the run that passed forge (247 tests, 0 failed), the gas snapshot check, the
+  AST build and halmos (23 proofs, 4 summaries, 0 failed); `bun run lint` exit 0, `typecheck:all` exit 0,
+  `test:all` exit 0 (design 242; bridge-core 705 passed, 11 skipped; tools 1758).
+- `bun run audit:tools` exit 0; the jsdom smokes 28 passed; `build:mainnet` with `verify:build-target mainnet` exit 0.
+- G-UX-2 is quoted in plan.md with its board digests; the deviation list is owner-signed (D48, D50). The screenshot
+  pairs and the list of undrawn surfaces with their approvals go into the arc 4 PR body at Delivery.
+- `AddressesView.test.ts` timed out under a load average above 100: its first case paid the view's cold import
+  inside the test's 5 s. A `beforeAll` warms that import; the case runs in 75 ms.
