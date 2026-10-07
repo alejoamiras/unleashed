@@ -1,9 +1,7 @@
 /**
  * Deploys the mintable test tokens a testnet generation ships with (`MintableERC20`: permissionless
  * capped mint, Permit2 pre-allowed) and prints the `SEED_TOKENS` line for `deploy-generation deploy`.
- * Sepolia only; signs with the pinned testnet key. A token is usable as a seed only when its address
- * sorts below WETH (`SeedTokenPool` needs it as `currency0`), so an address that lands above is
- * discarded and the spec is deployed again at the next nonce.
+ * Sepolia only; signs with the pinned testnet key.
  *
  *   bun scripts/deploy-seed-tokens.ts --spec "Test USDC:USDC:6" --spec "Test USDT:USDT:6" [--dry-run]
  */
@@ -14,9 +12,7 @@ import { evmArtifact } from "./script-artifacts"
 import { createL1Clients, sepoliaChain } from "./script-bootstrap"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
-const WETH = "0xfff9976782d46cc05630d1f6ebab18b2324d6b14"
 const MAX_WHOLE_PER_TX = 1_000_000n
-const MAX_ATTEMPTS_PER_SPEC = 3
 
 interface TokenSpec {
 	name: string
@@ -50,21 +46,14 @@ function requireSigner(): ReturnType<typeof privateKeyToAccount> {
 	return account
 }
 
-const sortsBelowWeth = (address: Address): boolean => BigInt(address) < BigInt(WETH)
-
-/** Deploys one spec until an address below WETH lands; an address above is left as an unused token. */
-async function deployBelowWeth(l1: L1, spec: TokenSpec): Promise<Address> {
+async function deployToken(l1: L1, spec: TokenSpec): Promise<Address> {
 	const { abi, bytecode } = evmArtifact("MintableERC20")
-	for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_SPEC; attempt++) {
-		const hash = await l1.wallet.deployContract({ abi, bytecode, args: [spec.name, spec.symbol, spec.decimals, MAX_WHOLE_PER_TX] })
-		const receipt = await l1.pub.waitForTransactionReceipt({ hash })
-		if (receipt.status !== "success" || !receipt.contractAddress) throw new Error(`${spec.symbol} deploy REVERTED (${hash}) — STOP`)
-		const address = receipt.contractAddress.toLowerCase() as Address
-		const usable = sortsBelowWeth(address)
-		console.log(`  ${spec.symbol}: ${address} (${hash})${usable ? "" : " — sorts above WETH, redeploying"}`)
-		if (usable) return address
-	}
-	throw new Error(`${spec.symbol}: no address below WETH in ${MAX_ATTEMPTS_PER_SPEC} attempts — STOP`)
+	const hash = await l1.wallet.deployContract({ abi, bytecode, args: [spec.name, spec.symbol, spec.decimals, MAX_WHOLE_PER_TX] })
+	const receipt = await l1.pub.waitForTransactionReceipt({ hash })
+	if (receipt.status !== "success" || !receipt.contractAddress) throw new Error(`${spec.symbol} deploy REVERTED (${hash}) — STOP`)
+	const address = receipt.contractAddress.toLowerCase() as Address
+	console.log(`  ${spec.symbol}: ${address} (${hash})`)
+	return address
 }
 
 async function main(): Promise<void> {
@@ -74,7 +63,7 @@ async function main(): Promise<void> {
 	console.log(`deployer ${account.address} · ${specs.map((s) => s.symbol).join(", ")} · cap ${MAX_WHOLE_PER_TX} whole/tx`)
 	if (process.argv.includes("--dry-run")) return
 	const seeds: Address[] = []
-	for (const spec of specs) seeds.push(await deployBelowWeth(l1, spec))
+	for (const spec of specs) seeds.push(await deployToken(l1, spec))
 	console.log(`\nSEED_TOKENS=${seeds.join(",")}`)
 }
 

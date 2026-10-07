@@ -76,11 +76,10 @@ const inputs = {
 	registry: "0x1111111111111111111111111111111111111111",
 	permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
 	feeJuicePortal: "0x2222222222222222222222222222222222222222",
-	feeJuice: "0x3333333333333333333333333333333333333333",
 	guardianL1: DEPLOYER,
 	guardianL2: GUARDIAN_L2,
-	swapTarget: "0x4444444444444444444444444444444444444444",
 } as const
+const FEE_ASSET = "0x3333333333333333333333333333333333333333" as const
 
 interface ChainOptions {
 	/** How many of the deployer's nonces belong to transactions that have not been mined, so `latest`
@@ -92,16 +91,9 @@ interface ChainOptions {
 	publishedClasses?: Set<string>
 }
 
-/** What the deployed contracts answer for every constant read; the factory's `L2_HUB` is per test. */
-function constantReads(chain: { expected: { factory: () => string; implementation: () => string } }): Record<string, string> {
-	return {
-		IMPLEMENTATION: chain.expected.implementation(),
-		FACTORY: chain.expected.factory(),
-		FEE_ASSET: inputs.feeJuice,
-		permit2: inputs.permit2,
-		feeJuicePortal: inputs.feeJuicePortal,
-		swapTarget: inputs.swapTarget,
-	}
+/** What the deployed factory answers for its implementation; its `L2_HUB` is per test. */
+function constantReads(chain: { expected: { implementation: () => string } }): Record<string, string> {
+	return { IMPLEMENTATION: chain.expected.implementation() }
 }
 
 /** An L1 whose deployer nonce advances per deploy and whose reads answer what a real generation would. */
@@ -111,7 +103,6 @@ function fakeChain(startNonce: bigint, predictedAt = startNonce, opts: ChainOpti
 	const deployed: string[] = []
 	const factory = () => getContractAddress({ from: DEPLOYER, nonce: predictedAt }).toLowerCase()
 	const implementation = () => getContractAddress({ from: factory() as `0x${string}`, nonce: 1n }).toLowerCase()
-	const router = () => getContractAddress({ from: DEPLOYER, nonce: predictedAt + 1n }).toLowerCase()
 	const l1 = {
 		account: { address: DEPLOYER },
 		wallet: {
@@ -135,7 +126,7 @@ function fakeChain(startNonce: bigint, predictedAt = startNonce, opts: ChainOpti
 				contractAddress: `0x${hash.slice(-40)}`,
 			})),
 			readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
-				const answer = constantReads({ expected: { factory, implementation } })[functionName]
+				const answer = constantReads({ expected: { implementation } })[functionName]
 				if (answer === undefined) throw new Error(`unexpected read ${functionName}`)
 				return answer
 			}),
@@ -168,7 +159,7 @@ function fakeChain(startNonce: bigint, predictedAt = startNonce, opts: ChainOpti
 		l2: l2 as never,
 		wallet: l2.wallet,
 		deployed,
-		expected: { factory, implementation, router },
+		expected: { factory, implementation },
 	}
 }
 
@@ -189,24 +180,17 @@ describe("deployGeneration — crash-resume at every journalled step", () => {
 	afterAll(() => rmSync(dir, { recursive: true, force: true }))
 	beforeEach(() => vi.clearAllMocks())
 
-	it("a clean run journals the five steps in order and binds the hub to the predicted factory", async () => {
+	it("a clean run journals the four steps in order and binds the hub to the predicted factory", async () => {
 		const chain = fakeChain(5n)
 		const journal = openDeployJournal(join(dir, "clean.jsonl"))
 		answerReads(journal, chain)
 		const record = await deployGeneration(chain.l1, chain.l2, inputs, journal)
-		expect(journal.steps.map((s) => s.kind)).toEqual([
-			"classes-published",
-			"factory-predicted",
-			"factory-deployed",
-			"router-deployed",
-			"hub-deployed",
-		])
+		expect(journal.steps.map((s) => s.kind)).toEqual(["classes-published", "factory-predicted", "factory-deployed", "hub-deployed"])
 		expect(record.l1.factory).toBe(chain.expected.factory())
 		expect(record.l1.implementation).toBe(chain.expected.implementation())
-		expect(record.l1.router).toBe(chain.expected.router())
 		expect(record.l2.hub.salt).toBe(`0x${chain.expected.factory().slice(2).padStart(64, "0")}`)
 		expect(record.l2.hub.constructorArgs).toEqual([record.l2.tokenClassId, chain.expected.factory(), GUARDIAN_L2])
-		expect(chain.deployed).toHaveLength(2)
+		expect(chain.deployed).toHaveLength(1)
 	})
 
 	it("a class the network already carries is not re-published, and a lost publication race is a no-op", async () => {
@@ -280,14 +264,12 @@ describe("deployGeneration — crash-resume at every journalled step", () => {
 			const partial = openDeployJournal(join(dir, `crash-${crashAfter}.jsonl`))
 			for (const step of full.steps.slice(0, crashAfter)) partial.append(step)
 			// The chain state after the crash: every L1 deploy that was journalled has consumed its nonce.
-			const l1Deploys = full.steps
-				.slice(0, crashAfter)
-				.filter((s) => s.kind === "factory-deployed" || s.kind === "router-deployed").length
+			const l1Deploys = full.steps.slice(0, crashAfter).filter((s) => s.kind === "factory-deployed").length
 			const resumed = fakeChain(5n + BigInt(l1Deploys), 5n)
 			answerReads(partial, resumed)
 			const record = await deployGeneration(resumed.l1, resumed.l2, inputs, partial)
 			expect(record, `crash after step ${crashAfter}`).toEqual(reference)
-			expect(resumed.deployed.length, `L1 deploys after crash ${crashAfter}`).toBe(2 - l1Deploys)
+			expect(resumed.deployed.length, `L1 deploys after crash ${crashAfter}`).toBe(1 - l1Deploys)
 			expect(partial.steps.map((s) => s.kind)).toEqual(full.steps.map((s) => s.kind))
 		}
 	})
@@ -330,8 +312,8 @@ describe("deployGeneration — crash-resume at every journalled step", () => {
 		const ours = landed(reference.l2.hub.address)
 		const record = await deployGeneration(ours.chain.l1, ours.chain.l2, inputs, ours.journal)
 		expect(record).toEqual(reference)
-		// Only the router was sent; the factory step was adopted with no transaction of its own.
-		expect(ours.chain.deployed).toHaveLength(1)
+		// Nothing was sent; the factory step was adopted with no transaction of its own.
+		expect(ours.chain.deployed).toHaveLength(0)
 		const adopted = ours.journal.steps.find((st) => st.kind === "factory-deployed")
 		expect(adopted && adopted.kind === "factory-deployed" ? adopted.txHash : "missing").toBeUndefined()
 
@@ -350,7 +332,7 @@ describe("deployGeneration — crash-resume at every journalled step", () => {
 
 		// The crash happened after the hub's deploy landed: the chain carries it, the journal does not.
 		const resumed = (landedHub: ContractInstanceWithAddress, label: string) => {
-			const chain = fakeChain(7n, 5n, { landedHub })
+			const chain = fakeChain(6n, 5n, { landedHub })
 			const journal = openDeployJournal(join(dir, `hub-landed-${label}.jsonl`))
 			for (const step of cleanJournal.steps.filter((s) => s.kind !== "hub-deployed")) journal.append(step)
 			answerReads(journal, chain)
@@ -385,7 +367,7 @@ describe("preCreateToken", () => {
 		answerReads(journal, deployRun)
 		const gen = await deployGeneration(deployRun.l1, deployRun.l2, inputs, journal)
 
-		const preCreateRun = fakeChain(7n, 5n)
+		const preCreateRun = fakeChain(6n, 5n)
 		;(preCreateRun.l1.pub.readContract as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
 			portal,
 			decimals: 6,
@@ -464,7 +446,7 @@ describe("deployFuelSwapper / deployDepositRouter — exact-match adoption", () 
 	it("adopts only an identical contract with code on chain; changed arguments or code deploy anew and append", async () => {
 		const chain = landingChain()
 		const journal = openDeployJournal(join(dir, "adopt.jsonl"))
-		const swapperArgs = { feeAsset: inputs.feeJuice, owner: DEPLOYER }
+		const swapperArgs = { feeAsset: FEE_ASSET, owner: DEPLOYER }
 		const swapper = await deployFuelSwapper(chain.l1, journal, swapperArgs)
 		expect(swapper.adopted).toBe(false)
 		expect(journal.steps[0]).toMatchObject({
@@ -472,7 +454,7 @@ describe("deployFuelSwapper / deployDepositRouter — exact-match adoption", () 
 			address: swapper.address,
 			creationCodeHash: keccak256(`0x${"TestnetFuelSwapper".length.toString(16)}`),
 			// An absent faucet is the zero address, exactly as the constructor receives it.
-			constructorArgs: [inputs.feeJuice, `0x${"0".repeat(40)}`, DEPLOYER.toLowerCase()],
+			constructorArgs: [FEE_ASSET, `0x${"0".repeat(40)}`, DEPLOYER.toLowerCase()],
 		})
 		expect(await deployFuelSwapper(chain.l1, journal, swapperArgs)).toEqual({ address: swapper.address, adopted: true })
 
@@ -502,7 +484,7 @@ describe("deployFuelSwapper / deployDepositRouter — exact-match adoption", () 
 	it("adopts only what the journalled transaction provably created: a successful creation of that address from this code and these arguments", async () => {
 		const chain = landingChain()
 		const journal = openDeployJournal(join(dir, "provenance.jsonl"))
-		const swapperArgs = { feeAsset: inputs.feeJuice, owner: DEPLOYER }
+		const swapperArgs = { feeAsset: FEE_ASSET, owner: DEPLOYER }
 		const args = fuelSwapperArgs(swapperArgs)
 		const { address } = await deployFuelSwapper(chain.l1, journal, swapperArgs)
 		const [hash, landed] = [...chain.creations.entries()][0] as [string, Creation]

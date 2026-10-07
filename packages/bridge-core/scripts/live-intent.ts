@@ -103,11 +103,10 @@ export const CANARY_CAPS: Readonly<Record<string, { maxEthSpend: string }>> = {
 	"11155111": { maxEthSpend: "0.2" },
 }
 
-/** Hard exposure ceilings for one arc, sized for a ~1.25 WETH pool seed (price impact ~1.5% at a
- *  25-token fill). Testnet ETH only; a mainnet arc re-reviews these from scratch. */
+/** Hard exposure ceiling for one arc: everything the signer spends, L1 gas included. Testnet ETH only; a
+ *  mainnet arc re-reviews it from scratch. */
 export const CAPS = {
-	maxTotalEthSpend: "2.0", // ether — L1 gas + WETH_SEED + pool seeding, everything
-	maxWethSeed: "1.5", // ether — SeedTokenPool/DeployFuelLive's WETH_SEED must be explicit and ≤ this
+	maxTotalEthSpend: "2.0", // ether
 }
 
 const here = dirname(fileURLToPath(import.meta.url))

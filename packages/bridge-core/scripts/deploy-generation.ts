@@ -1,17 +1,19 @@
 /**
- * The testnet generation conductor: one L1 PortalFactory + SwapBridgeRouter and one L2 hub, then
- * the manifest's tokens pre-created and pools seeded, written as a CANDIDATE — never the live file.
+ * The testnet generation conductor: one L1 PortalFactory and one L2 hub, the manifest's tokens
+ * pre-created, then the DepositRouter and its TestnetFuelSwapper, written as a CANDIDATE — never the
+ * live file.
  *
- *   bun scripts/deploy-generation.ts deploy   [--dry-run]
+ *   bun scripts/deploy-generation.ts deploy --rates <rates.json> [--routing <routing.json>] [--dry-run]
  *   bun scripts/deploy-generation.ts deploy --router-only --rates <rates.json> [--config <base>] [--routing <routing.json>] [--dry-run]
  *   bun scripts/deploy-generation.ts pre-create --config <candidate> --token <erc20> [--no-register]
  *   bun scripts/deploy-generation.ts calibrate  --config <candidate> --samples <fees.json>
  *
  * `deploy` needs PRIVATE_KEY (the pinned testnet signer) + SEPOLIA_RPC_URL; AZTEC_NODE_URL defaults
  * to the public testnet RPC. Every step is journalled, so a crashed run resumes with the recorded
- * identities. Real proofs: budget ~15 minutes. `--router-only` is L1-only (no L2 account, no proofs):
- * a DepositRouter and TestnetFuelSwapper beside the current generation's router, `--config` (default:
- * the live manifest) as the base of the candidate it writes.
+ * identities. Real proofs: budget ~15 minutes. `--rates` names the swapper's rate for every token
+ * (`{ "<erc20>": "<fee-asset units per whole token>" }`). `--router-only` is L1-only (no L2 account,
+ * no proofs): a new DepositRouter and TestnetFuelSwapper for the current generation, `--config`
+ * (default: the live manifest) as the base of the candidate it writes.
  */
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -27,10 +29,16 @@ import { walletChainIdOf } from "../src/wallet-chain-id"
 import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 import { openDeployJournal, readCandidate, writeCandidateAtomically } from "./deploy-manifest"
 import { deployGeneration, type GenerationRecord, type L2Ctx, preCreateToken } from "./generation"
-import { deployRouterOnly, parseRates, parseRouting, planRouterOnly, type RouterOnlyNetwork } from "./generation-router"
+import {
+	DEFAULT_CROSS_CHAIN_SLIPPAGE_BPS,
+	deployRouterOnly,
+	parseRates,
+	parseRouting,
+	planRouterOnly,
+	type RouterOnlyNetwork,
+	type RouterOnlyOptions,
+} from "./generation-router"
 import { authenticatedNode, type NodeIdentity, PLAN_PINNED_L1_SIGNERS } from "./live-intent"
-import { run } from "./run"
-import { evmArtifact } from "./script-artifacts"
 import {
 	createL1Clients,
 	createL2Wallet,
@@ -48,22 +56,13 @@ const PUBLIC_DIR = join(here, "..", "..", "..", "apps", "tools", "public")
 const CANDIDATE_PATH = join(PUBLIC_DIR, "testnet-bridge.candidate.json")
 const LIVE_PATH = join(PUBLIC_DIR, "testnet-bridge.json")
 const JOURNAL_PATH = join(here, "..", "deploy-journal", "testnet-generation.jsonl")
-const EVM_ROOT = join(here, "..", "..", "..", "contracts", "bridge", "evm")
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
 
-/** Sepolia's Uniswap V4 + Permit2 + Multicall3 singletons. */
-const SEPOLIA = {
-	permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
-	multicall3: "0xca11bde05977b3631167028862be2a173976ca11",
-	poolManager: "0xe03a1074c86cfedd5c142c4f04f1a1536e203543",
-	quoter: "0x61b3f2011a92d183c7dbadbda940a7555ccf9227",
-	weth: "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
-} as const
-const TOKEN_WETH_TIERS = [{ fee: 3000, tickSpacing: 60 }]
-const ETH_FJ = { fee: 987, tickSpacing: 10 }
+/** Sepolia's canonical Permit2. */
+const SEPOLIA_PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3"
 const SLIPPAGE_BPS = 300
 // 4× the worst PrivateFPC ceiling the validator measured over three live private claims on the
 // testnet fee schedule (7.44 FJ); a one-sample run may only ever raise it.
@@ -104,15 +103,7 @@ async function connect(mins: () => string, opts: { deployAccount: boolean }): Pr
 				console.log(stage === "deploying" ? `deploying L2 account (real proof)… (${mins()})` : `L2 account ready (${mins()})`),
 		})
 	}
-	const a = info.l1ContractAddresses
-	const addrs: NodeL1 = {
-		registry: lc(a.registryAddress),
-		feeJuice: lc(a.feeJuiceAddress),
-		feeJuicePortal: lc(a.feeJuicePortalAddress),
-		feeAssetHandler: a.feeAssetHandlerAddress ? lc(a.feeAssetHandlerAddress) : undefined,
-		rollupVersion: info.rollupVersion,
-		l1ChainId: info.l1ChainId,
-	}
+	const addrs = nodeL1Of(info)
 	console.log(`L1 deployer ${account.address} · L2 deployer ${from.toString()} · chain ${addrs.l1ChainId}/${addrs.rollupVersion}`)
 	return {
 		l1,
@@ -136,6 +127,23 @@ interface NodeL1 {
 	l1ChainId: number
 }
 
+/** The node's L1 bindings, as `authenticatedNode` pinned them against the committed baseline. */
+function nodeL1Of(info: NodeIdentity): NodeL1 {
+	const a = info.l1ContractAddresses
+	const handler = a.feeAssetHandlerAddress
+	return {
+		registry: lc(String(a.registryAddress)),
+		feeJuice: lc(String(a.feeJuiceAddress)),
+		feeJuicePortal: lc(String(a.feeJuicePortalAddress)),
+		...(handler ? { feeAssetHandler: lc(String(handler)) } : {}),
+		rollupVersion: info.rollupVersion,
+		l1ChainId: info.l1ChainId,
+	}
+}
+
+/** What the router binds: the node's L1 bindings and Sepolia's canonical Permit2. */
+const routerNetworkOf = (addrs: NodeL1): RouterOnlyNetwork => ({ ...addrs, permit2: SEPOLIA_PERMIT2 })
+
 /** What the journal is stamped with: the chain, rollup and deployer its recorded addresses exist on. */
 const identityOf = (l1: L1Ctx, addrs: NodeL1) => ({
 	l1ChainId: addrs.l1ChainId,
@@ -145,34 +153,25 @@ const identityOf = (l1: L1Ctx, addrs: NodeL1) => ({
 	feeJuicePortal: addrs.feeJuicePortal,
 })
 
-/** The swap target is the one generation piece with no cross-binding, so it deploys first and plain. */
-async function deploySwapTarget(l1: L1Ctx, feeJuice: Address, journal: ReturnType<typeof openDeployJournal>): Promise<Address> {
-	const prior = journal.steps.find((s) => s.kind === "swap-target-deployed")
-	if (prior && prior.kind === "swap-target-deployed") return prior.address as Address
-	const art = evmArtifact("UniswapFuelSwap")
-	const hash = await l1.wallet.deployContract({
-		abi: art.abi,
-		bytecode: art.bytecode,
-		args: [SEPOLIA.poolManager, feeJuice, SEPOLIA.weth],
-		account: l1.account,
-		chain: l1.wallet.chain,
-	} as never)
-	const receipt = await l1.pub.waitForTransactionReceipt({ hash })
-	if (!receipt.contractAddress) throw new Error("UniswapFuelSwap: no contractAddress in the receipt — STOP")
-	journal.append({ kind: "swap-target-deployed", address: lc(receipt.contractAddress), txHash: hash })
-	console.log(`UniswapFuelSwap: ${receipt.contractAddress}`)
-	return lc(receipt.contractAddress)
-}
+type FuelBudgets = NonNullable<BridgeBlock["l1"]["fuel"]>
 
-function priorSwapBudgets(): { fjPerTx: string; fjRegister: string } {
-	if (!existsSync(LIVE_PATH)) return { fjPerTx: "0", fjRegister: "0" }
+/** The live manifest's measured `fjPerTx`/`fjRegister`, which price the same network's L2 claims; a first
+ *  generation starts unmeasured until `calibrate`. */
+function priorFuelBudgets(): FuelBudgets {
+	const unmeasured: FuelBudgets = {
+		slippageBps: SLIPPAGE_BPS,
+		crossChainSlippageBps: DEFAULT_CROSS_CHAIN_SLIPPAGE_BPS,
+		minFuelFj: MIN_FUEL_FJ,
+		fjPerTx: "0",
+		fjRegister: "0",
+	}
+	if (!existsSync(LIVE_PATH)) return unmeasured
 	try {
-		const live = parseManifestV2(JSON.parse(readFileSync(LIVE_PATH, "utf8")))
-		const swap = live.bridge?.l1.swap
-		return swap ? { fjPerTx: swap.fjPerTx, fjRegister: swap.fjRegister } : { fjPerTx: "0", fjRegister: "0" }
+		const fuel = parseManifestV2(JSON.parse(readFileSync(LIVE_PATH, "utf8"))).bridge?.l1.fuel
+		return fuel ? { ...unmeasured, fjPerTx: fuel.fjPerTx, fjRegister: fuel.fjRegister } : unmeasured
 	} catch {
-		// A live file on the previous schema carries no budgets worth carrying.
-		return { fjPerTx: "0", fjRegister: "0" }
+		// A live file on a previous schema carries no budgets worth carrying.
+		return unmeasured
 	}
 }
 
@@ -186,27 +185,9 @@ function privateFpcBlock(): NonNullable<ManifestV2["privateFpc"]> {
 	return { address: PRIVATE_FPC_ADDRESS, version: descriptor.aztecVersion, artifactDigest: descriptor.artifactSha256 }
 }
 
-function buildCandidate(gen: GenerationRecord, addrs: NodeL1, tokens: ManifestToken[]): ManifestV2 {
-	const budgets = priorSwapBudgets()
-	const bridge: BridgeBlock = {
-		l1: {
-			...gen.l1,
-			swap: {
-				poolManager: SEPOLIA.poolManager,
-				quoter: SEPOLIA.quoter,
-				multicall3: SEPOLIA.multicall3,
-				weth: SEPOLIA.weth,
-				feeJuice: addrs.feeJuice,
-				tiers: TOKEN_WETH_TIERS,
-				ethFj: ETH_FJ,
-				slippageBps: SLIPPAGE_BPS,
-				minFuelFj: MIN_FUEL_FJ,
-				...budgets,
-			},
-		},
-		l2: gen.l2,
-		tokens,
-	}
+/** The generation and its tokens with the fuel budgets the router deploy carries into the candidate. */
+function generationBase(gen: GenerationRecord, addrs: NodeL1, tokens: ManifestToken[]): ManifestV2 {
+	const bridge: BridgeBlock = { l1: { ...gen.l1, fuel: priorFuelBudgets() }, l2: gen.l2, tokens }
 	return {
 		schema: 2,
 		network: "testnet",
@@ -224,113 +205,92 @@ function buildCandidate(gen: GenerationRecord, addrs: NodeL1, tokens: ManifestTo
 	}
 }
 
-/** `SeedTokenPool.s.sol` gives a fresh mintable token its TOKEN/WETH leg; the ETH/FJ leg carries over. */
-function seedPool(erc20: Address, journal: ReturnType<typeof openDeployJournal>): void {
-	if (journal.has("pool-seeded", erc20)) return
-	if (process.env.SKIP_POOL_SEED === "1") {
-		console.log(`  pool seed skipped for ${erc20} (SKIP_POOL_SEED=1)`)
-		return
-	}
-	const result = run("forge", ["script", "script/SeedTokenPool.s.sol:SeedTokenPool", "--rpc-url", SEPOLIA_RPC, "--broadcast", "-vv"], {
-		cwd: EVM_ROOT,
-		env: { ...process.env, TOKEN: erc20 },
-		// stdout is piped so the journal can carry the seeding tx; an inherited one reaches the operator
-		// but never this process. `-vv` outruns spawnSync's 1 MiB default, and ENOBUFS would fail a
-		// pool that actually landed.
-		stdio: ["inherit", "pipe", "inherit"],
-		maxBuffer: 32 * 1024 * 1024,
-	})
-	if (result.stdout) console.log(result.stdout)
-	const txHash = result.stdout.match(/0x[0-9a-f]{64}/gi)?.at(-1)
-	journal.append({ kind: "pool-seeded", erc20: lc(erc20), ...(txHash ? { txHash } : {}) })
-}
-
 function argValue(flag: string): string | undefined {
 	const i = process.argv.indexOf(flag)
 	return i === -1 ? undefined : process.argv[i + 1]
 }
 
-/** The mintable test tokens a testnet generation ships with; each gets a portal, a hub registration and a pool. */
+/** The mintable test tokens a testnet generation ships with; each gets a portal and a hub registration. */
 function seedTokens(): Address[] {
 	const raw = process.env.SEED_TOKENS
 	if (!raw) throw new Error("SEED_TOKENS=<erc20>[,<erc20>…] is required for `deploy` (the fake USDC/USDT to pre-create) — STOP")
 	return raw.split(",").map((t) => lc(t.trim()))
 }
 
+const readJson = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"))
+
+/** The swapper rates, refused before anything is sent when a token the run deploys has none. */
+function ratesArg(tokens: readonly string[] = []): Record<string, bigint> {
+	const path = argValue("--rates")
+	if (!path) throw new Error('deploy needs --rates <rates.json> ({ "<erc20>": "<fee-asset units per whole token>" })')
+	const rates = parseRates(readJson(path))
+	const unrated = tokens.filter((t) => !rates[lc(t)])
+	if (unrated.length > 0) throw new Error(`--rates names no swapper rate for ${unrated.join(", ")} — STOP`)
+	return rates
+}
+
+function routingArg(): Pick<RouterOnlyOptions, "routing"> {
+	const path = argValue("--routing")
+	return path ? { routing: parseRouting(readJson(path)) } : {}
+}
+
 async function commandDeploy(): Promise<void> {
 	const mins = stopwatch()
 	const dryRun = process.argv.includes("--dry-run")
 	const tokens = seedTokens()
+	const rates = ratesArg(tokens)
 	const { l1, l2, addrs } = await connect(mins, { deployAccount: !dryRun })
 	if (dryRun) {
 		console.log(`dry run: would deploy a generation on ${addrs.l1ChainId}/${addrs.rollupVersion} with tokens ${tokens.join(", ")}`)
 		return
 	}
 	const journal = openDeployJournal(JOURNAL_PATH, identityOf(l1, addrs))
-	const swapTarget = await deploySwapTarget(l1, addrs.feeJuice, journal)
 	console.log(`\n=== generation (${mins()}) ===`)
 	const gen = await deployGeneration(
 		l1,
 		l2,
 		{
 			registry: addrs.registry,
-			permit2: SEPOLIA.permit2,
+			permit2: SEPOLIA_PERMIT2,
 			feeJuicePortal: addrs.feeJuicePortal,
-			feeJuice: addrs.feeJuice,
 			guardianL1: l1.account.address,
 			guardianL2: l2.from.toString(),
-			swapTarget,
 		},
 		journal,
 	)
 	console.log(`\n=== tokens (${mins()}) ===`)
 	const manifestTokens: ManifestToken[] = []
-	for (const erc20 of tokens) {
-		manifestTokens.push(await preCreateToken(l1, l2, gen, erc20, journal, { maxWholePerTx: 1_000_000 }))
-		seedPool(erc20, journal)
-	}
-	const candidate = buildCandidate(gen, addrs, manifestTokens)
-	writeCandidateAtomically(CANDIDATE_PATH, candidate)
+	for (const erc20 of tokens) manifestTokens.push(await preCreateToken(l1, l2, gen, erc20, journal, { maxWholePerTx: 1_000_000 }))
+	console.log(`\n=== router (${mins()}) ===`)
+	await deployRouterOnly({
+		l1,
+		network: routerNetworkOf(addrs),
+		journalPath: JOURNAL_PATH,
+		base: generationBase(gen, addrs, manifestTokens),
+		rates,
+		...routingArg(),
+		candidatePath: CANDIDATE_PATH,
+	})
 	// Repo-relative: the journal is the generation's record and must not carry a machine's layout.
 	journal.append({ kind: "candidate-written", path: "apps/tools/public/testnet-bridge.candidate.json" })
 	console.log(`\n✅ candidate written to apps/tools/public/testnet-bridge.candidate.json (${mins()})`)
-	console.log("   next: bun scripts/smoke-existing-testnet.ts --config <candidate>, then calibrate, then live-intent promote.")
+	console.log("   next: verify:l1 --strict, bun scripts/smoke-existing-testnet.ts --config <candidate>, calibrate, live-intent promote.")
 }
 
-/** The network constants the router-only arc binds, from the node `authenticatedNode` already pinned against the
- *  committed baseline, and Sepolia's canonical Permit2. */
-function routerOnlyNetwork(info: NodeIdentity): RouterOnlyNetwork {
-	const a = info.l1ContractAddresses
-	const handler = a.feeAssetHandlerAddress
-	return {
-		l1ChainId: info.l1ChainId,
-		rollupVersion: info.rollupVersion,
-		registry: lc(String(a.registryAddress)),
-		feeJuicePortal: lc(String(a.feeJuicePortalAddress)),
-		feeJuice: lc(String(a.feeJuiceAddress)),
-		permit2: SEPOLIA.permit2,
-		...(handler ? { feeAssetHandler: lc(String(handler)) } : {}),
-	}
-}
-
-const readJson = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"))
-
-/** A DepositRouter + TestnetFuelSwapper beside the current generation's router. L1 only: no L2 account, no proofs. */
+/** A new DepositRouter + TestnetFuelSwapper for the current generation. L1 only: no L2 account, no proofs. */
 async function commandRouterOnly(): Promise<void> {
 	const mins = stopwatch()
-	const ratesPath = argValue("--rates")
-	if (!ratesPath) throw new Error('--router-only needs --rates <rates.json> ({ "<erc20>": "<fee-asset units per whole token>" })')
-	const routingPath = argValue("--routing")
+	const rates = ratesArg()
 	const account = requireSigner()
 	const info = await authenticatedNode(NODE_URL)
 	const l1: L1Ctx = { ...createL1Clients({ chain: sepoliaChain(SEPOLIA_RPC), rpcUrl: SEPOLIA_RPC, account }), account }
-	const options = {
+	const options: RouterOnlyOptions = {
 		l1,
-		network: routerOnlyNetwork(info),
+		network: routerNetworkOf(nodeL1Of(info)),
 		journalPath: JOURNAL_PATH,
 		base: loadManifestV2FromConfigArg(process.argv, { mode: "fallback", fallbackPath: LIVE_PATH }),
-		rates: parseRates(readJson(ratesPath)),
-		...(routingPath ? { routing: parseRouting(readJson(routingPath)) } : {}),
+		rates,
+		...routingArg(),
 		candidatePath: CANDIDATE_PATH,
 	}
 	if (process.argv.includes("--dry-run")) {
@@ -347,7 +307,7 @@ async function commandRouterOnly(): Promise<void> {
 	)
 }
 
-/** Adds one token to an existing generation's candidate: portal clone, hub registration, pool. */
+/** Adds one token to an existing generation's candidate: portal clone and hub registration. */
 async function commandPreCreate(): Promise<void> {
 	const mins = stopwatch()
 	const configPath = argValue("--config") ?? CANDIDATE_PATH
@@ -359,22 +319,18 @@ async function commandPreCreate(): Promise<void> {
 	if (manifestToken(manifest, erc20)) throw new Error(`${erc20} is already in the candidate — nothing to pre-create`)
 	const { l1, l2, addrs } = await connect(mins, { deployAccount: true })
 	const journal = openDeployJournal(JOURNAL_PATH, identityOf(l1, addrs))
-	const gen: GenerationRecord = {
-		l1: { ...bridge.l1, swap: undefined } as GenerationRecord["l1"],
-		l2: bridge.l2 as GenerationRecord["l2"],
-	}
+	const gen: GenerationRecord = { l1: bridge.l1 as GenerationRecord["l1"], l2: bridge.l2 as GenerationRecord["l2"] }
 	const token = await preCreateToken(l1, l2, gen, lc(erc20), journal, {
 		register: !process.argv.includes("--no-register"),
 		// A real token has no public mint, so the app must not offer one.
 		...(process.argv.includes("--canonical") ? { source: "canonical" as const } : { maxWholePerTx: 1_000_000 }),
 	})
-	if (process.argv.includes("--seed-pool")) seedPool(lc(erc20), journal)
 	const next: ManifestV2 = { ...manifest, bridge: { ...bridge, tokens: [...bridge.tokens, token] } }
 	writeCandidateAtomically(configPath, next)
 	console.log(`✅ ${token.displaySymbol} added to ${configPath} (${mins()})`)
 }
 
-/** Writes measured `fjPerTx`/`fjRegister` into the candidate's `fuel` and `swap` blocks from a samples file the smoke printed. */
+/** Writes measured `fjPerTx`/`fjRegister` into the candidate's `fuel` block from a samples file the smoke printed. */
 function commandCalibrate(): void {
 	const configPath = argValue("--config") ?? CANDIDATE_PATH
 	const samplesPath = argValue("--samples")

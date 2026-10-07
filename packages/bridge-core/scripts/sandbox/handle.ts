@@ -42,10 +42,8 @@ export const sandboxHandleSchema = z
 			feeJuice: address,
 			feeJuicePortal: address,
 			registry: address,
-			swapTarget: address,
-			quoter: address,
 			tokens: z.record(z.string(), address),
-			/** Beside the old router, never replacing it; optional so a handle from before them still reads. */
+			/** Optional so a handle written before the router existed still reads. */
 			depositRouter: address.optional(),
 			fuelSwapper: address.optional(),
 		}),

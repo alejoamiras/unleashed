@@ -4,7 +4,7 @@ import { TestERC20Abi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, keccak256 } from "viem"
 import type { L1Ctx } from "../../src/flows"
 import { evmArtifact } from "../script-artifacts"
-import { lc, MOCK_RATE_NUM, type SpecKey, SPECS, SWAPPER_FJ_PER_WHOLE_TOKEN, type TokenSpec } from "./constants"
+import { lc, type SpecKey, SPECS, SWAPPER_FJ_PER_WHOLE_TOKEN, type TokenSpec } from "./constants"
 import { type CanonicalName, readVendored } from "./refresh-canonical-bytecode"
 
 /** Permit2 and Multicall3 are canonical singletons nobody can redeploy at their real address, so the
@@ -96,11 +96,8 @@ export interface L1Deployment {
 	feeJuice: Address
 	feeJuicePortal: Address
 	registry: Address
-	swapTarget: Address
-	/** MockV4Quoter — answers discovery for the routable tokens with quotes the swap target settles exactly. */
-	quoter: Address
 	tokens: Record<SpecKey, Address>
-	/** The `DepositRouter` beside the old router, and its `SWAP_TARGET`; set once the generation exists. */
+	/** The `DepositRouter` and its `SWAP_TARGET`; set once the generation exists. */
 	depositRouter?: Address
 	fuelSwapper?: Address
 }
@@ -110,21 +107,12 @@ export async function setFuelRate(l1: L1Ctx, swapper: Address, token: Address, r
 	await writeL1(l1, swapper, evmArtifact("TestnetFuelSwapper").abi, "setRate", [token, rate])
 }
 
-/** Lets discovery find a route for `token` through the facade (NORT is deliberately never listed). */
-export async function setRoutable(l1: L1Ctx, quoter: Address, token: Address, ok = true): Promise<void> {
-	await writeL1(l1, quoter, evmArtifact("MockV4Quoter").abi, "setRoutable", [token, ok])
-}
-
 export async function deployL1Fixtures(
 	l1: L1Ctx,
 	addrs: { feeJuice: Address; feeJuicePortal: Address; registry: Address },
 ): Promise<L1Deployment> {
-	const swapTarget = await deployEvm(l1, "MockSwapTarget", [addrs.feeJuice])
-	await writeL1(l1, swapTarget, evmArtifact("MockSwapTarget").abi, "setRate", [MOCK_RATE_NUM, 1n])
 	await ensureFeeAssetMinter(l1, addrs.feeJuice)
-	await mintFeeAsset(l1, addrs.feeJuice, swapTarget, 10n ** 30n)
 	await mintFeeAsset(l1, addrs.feeJuice, l1.account.address, 10n ** 24n)
-	console.log(`  MockSwapTarget: ${swapTarget} (rate 1:${MOCK_RATE_NUM}, funded)`)
 
 	// Sequential on purpose: these share one L1 account, and viem assigns each tx the nonce it reads
 	// at build time — issuing them together makes every tx after the first "nonce too low".
@@ -135,8 +123,5 @@ export async function deployL1Fixtures(
 		entries.push([key, address])
 	}
 	const tokens = Object.fromEntries(entries) as L1Deployment["tokens"]
-	const quoter = await deployEvm(l1, "MockV4Quoter", [swapTarget, tokens.weth, addrs.feeJuice])
-	for (const key of ["usdc", "usdt", "pxo"] as const) await setRoutable(l1, quoter, tokens[key])
-	console.log(`  MockV4Quoter: ${quoter} (routable: USDC, USDT, PXO; WETH ${tokens.weth})`)
-	return { ...addrs, swapTarget, quoter, tokens }
+	return { ...addrs, tokens }
 }

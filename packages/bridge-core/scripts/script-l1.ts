@@ -38,7 +38,6 @@ export const ERC20_MIN_ABI = [
 export const ROUTER_CONSTANTS_ABI = [
 	{ type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 	{ type: "function", name: "FACTORY", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "permit2", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 ] as const
 
 /** The factory constants only the operator gates read. The guardian is the OWNER (the pause bits are

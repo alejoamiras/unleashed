@@ -64,7 +64,7 @@ export interface SmokeReport {
 	notes: string[]
 }
 
-/** What an operator copies into `bridge.l1.swap.{fjPerTx,fjRegister}` for a network whose fees these were. */
+/** What an operator copies into `bridge.l1.fuel.{fjPerTx,fjRegister}` for a network whose fees these were. */
 export function fuelBudgetNote(samples: Samples): string {
 	const paid = samples.fees.filter((f) => f.feeMode !== "sponsored")
 	if (paid.length === 0) return "ℹ calibration: no paid claim landed — fjPerTx/fjRegister not measured"

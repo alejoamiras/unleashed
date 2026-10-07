@@ -56,9 +56,7 @@ async function withBridge(): Promise<ManifestV2> {
 				factory: FACTORY,
 				implementation: IMPL,
 				guardian: "0x0000000000000000000000000000000000000002",
-				router: "0x0000000000000000000000000000000000000003",
 				permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
-				swapTarget: "0x0000000000000000000000000000000000000004",
 				feeJuicePortal: FEE_PORTAL,
 			},
 			l2: {

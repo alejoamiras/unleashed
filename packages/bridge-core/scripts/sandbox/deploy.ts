@@ -26,7 +26,7 @@ import { ensureForgeArtifacts } from "./forge"
 import type { SandboxClients, SandboxHandle } from "./handle"
 import { copyCanonicalCode, deployL1Fixtures, type L1Deployment } from "./l1"
 import { type Actor, adoptGuardian, connectL2, createActor, l2CtxFor, SANDBOX_ACTOR_SALT, SANDBOX_ACTOR_SECRET } from "./l2"
-import { buildManifest, sandboxFuelBlock, sandboxSwapBlock, type SwapBlock, writeArtifacts } from "./manifest"
+import { buildManifest, sandboxFuelBlock, writeArtifacts } from "./manifest"
 
 export interface DeployedSandbox {
 	clients: SandboxClients
@@ -40,8 +40,6 @@ export interface DeployOptions {
 	artifactsDir: string
 	/** How many anvil actor keys (indices 1..n) the handle lists for browser spec files. */
 	actorKeys?: number
-	/** The `bridge.l1.swap` block; absent until a Quoter is deployed. */
-	swap?: (deployment: SandboxClients["deployment"]) => Promise<SwapBlock | undefined>
 	mins?: () => string
 }
 
@@ -58,8 +56,8 @@ function sourceHarness(url: string): L1Ctx {
 	return { ...createL1Clients({ chain: sandboxSourceChain(url), rpcUrl: url, account }), account }
 }
 
-/** The router, the swapper and the LI.FI rail beside the old router: the swapper rates every fixture token the
- *  old router fuels, and the rail delivers the sandbox's USDC. */
+/** The router, the swapper and the LI.FI rail: the swapper rates every manifest token, and the rail delivers the
+ *  sandbox's USDC. */
 function deployRail(l1: L1Ctx, net: SandboxNetwork, gen: GenerationRecord, d: L1Deployment): Promise<CrossChainDeployment> {
 	return deployCrossChain(l1, sourceHarness(net.sourceUrl), {
 		factory: gen.l1.factory,
@@ -150,10 +148,8 @@ export async function deployEverything(net: SandboxNetwork, opts: DeployOptions)
 			registry: addrs.registry,
 			permit2: PERMIT2,
 			feeJuicePortal: addrs.feeJuicePortal,
-			feeJuice: addrs.feeJuice,
 			guardianL1: l1.account.address,
 			guardianL2: l2.from.toString(),
-			swapTarget: deployment.swapTarget,
 		},
 		journal,
 	)
@@ -165,9 +161,8 @@ export async function deployEverything(net: SandboxNetwork, opts: DeployOptions)
 	Object.assign(deployment, { depositRouter: rail.depositRouter, fuelSwapper: rail.fuelSwapper })
 	console.log(`\n=== faucet (${mins()}) ===`)
 	const drip = await deployDripFixture(l2)
-	const swap = opts.swap ? await opts.swap(deployment) : sandboxSwapBlock(deployment)
 	const router = { depositRouter: rail.depositRouter, fuelSwapper: rail.fuelSwapper, fuel: sandboxFuelBlock() }
-	const manifest = buildManifest(gen, deployment, tokens, Number(info.rollupVersion), swap, router)
+	const manifest = buildManifest(gen, deployment, tokens, Number(info.rollupVersion), router)
 	const manifestPath = join(opts.artifactsDir, "manifest.json")
 	writeCandidateAtomically(manifestPath, manifest)
 	journal.append({ kind: "candidate-written", path: manifestPath })
