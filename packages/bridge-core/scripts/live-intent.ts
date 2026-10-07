@@ -612,6 +612,8 @@ async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
 	if (dirty.length > 0) {
 		throw new Error(`source tree not clean outside the operational allowlist:\n${dirty.join("\n")}`)
 	}
+	// An arc keeps its intent and promotion receipt in a directory of its own, which git cannot hold empty.
+	mkdirSync(dirname(intentPath), { recursive: true })
 	writeFileSync(intentPath, `${JSON.stringify(intent, null, "\t")}\n`)
 	console.log(
 		`✓ intent written to ${intentPath} (commit ${commit.slice(0, 8)}, rollupVersion ${identity.rollupVersion}, signer ${signer}` +
