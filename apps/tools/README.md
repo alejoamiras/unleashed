@@ -128,7 +128,7 @@ Static output, served by one assets-only Cloudflare Worker per target (`wrangler
 `wrangler.mainnet.jsonc`) and deployed by Workers Builds from `main`. Each config's header lists
 the build and deploy commands the dashboard runs; the target is chosen by the command, never by a
 dashboard variable. Build variables: `BUN_VERSION=1.4.2` and `NODE_VERSION=24` (vite loads its
-config under the ambient Node; the config imports raw `.ts` from `@alejoamiras/nulo-resolve-asset`).
+config under the ambient Node; the config imports raw `.ts` from `@nulo-sh/resolve-asset`).
 Each Worker is created once by hand (build, then `worker:deploy:<target>`), live and verified before
 Workers Builds is connected to it; the Cloudflare token for that run arrives as a keyed run from
 `cloudflare.env.example`, never as a file or a CI secret. Workers Builds takes only user tokens,

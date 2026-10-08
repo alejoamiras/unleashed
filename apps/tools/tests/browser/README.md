@@ -47,7 +47,7 @@ Fee fixtures (public Fee Juice, private credit) are funded on-chain from the act
 ## Profiles
 
 - `plain` — a standard wallet-sdk wallet; no wallet-specific RPCs (the transport answers `Unknown wallet method`).
-- `selfpay` — loads `@alejoamiras/nulo-wallet-sdk-schema-patch`, advertises `dapp-self-pay`, routes a self-payer
+- `selfpay` — loads `@nulo-sh/wallet-sdk-schema-patch`, advertises `dapp-self-pay`, routes a self-payer
   payload with no `claim_and_end_setup` call to the account's held public Fee Juice; `registerToken`
   and friends answer `Unsupported wallet method`.
 - `full` — `selfpay` plus a working `registerToken`/`isTokenRegistered`.

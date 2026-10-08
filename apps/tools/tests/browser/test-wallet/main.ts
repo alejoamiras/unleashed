@@ -27,7 +27,7 @@ function boot(): Promise<TestWallet> {
 	booting ??= (async () => {
 		// The patch extends the SDK's WalletSchema singleton, which the handler consults per call: a
 		// `plain` wallet never loads it, so its transport answers the wallet-specific RPCs with an unknown method.
-		if (profile !== "plain") await import("@alejoamiras/nulo-wallet-sdk-schema-patch/register")
+		if (profile !== "plain") await import("@nulo-sh/wallet-sdk-schema-patch/register")
 		const { TestWallet } = await import("./wallet")
 		const wallet = await TestWallet.createFor(profile, identity)
 		for (const seed of window.__unleashedTestWalletSeeds ?? []) line("info", `imported ${(await wallet.importSeed(seed)).toString()}`)

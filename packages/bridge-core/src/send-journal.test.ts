@@ -1,4 +1,4 @@
-import { EncryptionKey } from "@alejoamiras/nulo-wallet-crypto"
+import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 import { describe, expect, it } from "vitest"
 import { openBridgeBackup, sealBridgeBackup, validateAnyBackupRecord } from "./backup"
 import {

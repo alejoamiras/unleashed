@@ -37,7 +37,7 @@ import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { resolvePackageAsset } from "@alejoamiras/nulo-resolve-asset"
+import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 
 import { loadContractArtifact } from "@aztec-labs/stdlib/abi"
 import { AztecAddress } from "@aztec-labs/stdlib/aztec-address"
