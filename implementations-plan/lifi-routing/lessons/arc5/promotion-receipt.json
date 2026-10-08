@@ -1,7 +1,7 @@
 {
-	"promotedAt": "2026-10-08T14:15:48.377Z",
+	"promotedAt": "",
 	"intent": "implementations-plan/lifi-routing/lessons/arc5/intent.json",
-	"commitAtPromotion": "b42e8a75172d072bd0a235ea2c1b6c78f282bd3c",
+	"commitAtPromotion": "",
 	"mode": "bridge-only",
 	"bridge": {
 		"candidateSha256": "6d8fa238c0db604db9364db3f93b8aed8ca8f7d972dc599e46398cca0158f748",
