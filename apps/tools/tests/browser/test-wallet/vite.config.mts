@@ -10,7 +10,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { defineConfig, type Plugin } from "vite"
 import { nodePolyfills } from "vite-plugin-node-polyfills"
-import { resolveExportedAsset, resolvePackageAsset, resolvePackageRoot } from "@alejoamiras/nulo-resolve-asset"
+import { resolveExportedAsset, resolvePackageAsset, resolvePackageRoot } from "@nulo-sh/resolve-asset"
 import { loadLocalRunFromEnv } from "../../../src/lib/local-target-loader"
 
 const here = dirname(fileURLToPath(import.meta.url))

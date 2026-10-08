@@ -21,11 +21,7 @@ describe("MainnetPlaceholderView", () => {
 		const links = mount(MainnetPlaceholderView).findAll(sel(TESTIDS.mainnetPlaceholderLink))
 		expect(links).toHaveLength(3)
 		expect(links.map((l) => l.text())).toEqual(["Wallet site", "Get the extension", "Docs"])
-		expect(links.map((l) => l.attributes("href"))).toEqual([
-			"https://nulo.sh",
-			"https://nulo.sh",
-			"https://github.com/alejoamiras/nulo",
-		])
+		expect(links.map((l) => l.attributes("href"))).toEqual(["https://nulo.sh", "https://nulo.sh", "https://github.com/nulo-sh/nulo"])
 	})
 
 	it("opens every link safely in a new tab", () => {

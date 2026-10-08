@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest"
 import { watch } from "vue"
 
-vi.mock("@alejoamiras/nulo-wallet-sdk-schema-patch/register", () => ({}))
+vi.mock("@nulo-sh/wallet-sdk-schema-patch/register", () => ({}))
 vi.mock("@/lib/chain-info", () => ({ readChainInfo: () => ({ chainId: 1 }) }))
 vi.mock("@/lib/emoji", () => ({ hashToEmoji: () => "🟢🔵🟡🟣🔴⚪⚫🟠🟤" }))
 
