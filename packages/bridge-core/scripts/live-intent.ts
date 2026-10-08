@@ -3,7 +3,7 @@
  * probes before any signing, and a `verify` stage re-run before every broadcast group and at
  * promotion. Executable enforcement, not narrative discipline.
  *
- *   bun packages/bridge-core/scripts/live-intent.ts build <intent-path> [--router-only [--pre-create <erc20>]… | --retire-router]
+ *   bun packages/bridge-core/scripts/live-intent.ts build <intent-path> [--router-only [--pre-create <erc20>]…]
  *   bun packages/bridge-core/scripts/live-intent.ts verify <intent-path> [--candidate <path>]
  *   bun packages/bridge-core/scripts/live-intent.ts promote <intent-path> [--bridge-only]
  *
@@ -17,15 +17,10 @@
  * `verify` re-probes identity + signer + digests and fails on ANY divergence; with `--candidate` it
  * also digest-pins the candidate manifest, strict-validates it, cross-reads the fee-juice portal's
  * UNDERLYING() + handler's FEE_ASSET(), and reads the generation's own bindings back off L1 and L2.
- *
- * `build --retire-router` is a manifest-only arc: no deploy, and `build` itself writes the candidate,
- * the committed live manifest with its old router moved into `legacyRouters` and its Uniswap V4
- * fields dropped. Every later `verify` re-derives that candidate from the build commit and refuses
- * any other bytes, and any journal step appended since `build`.
+
  */
 import { createHash } from "node:crypto"
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
-import { isDeepStrictEqual } from "node:util"
 import { homedir } from "node:os"
 import { dirname, join, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -39,7 +34,7 @@ import { type BridgeBlock, type ManifestV2, parseManifestV2 } from "../src/manif
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
 import { legacyRoutersOf } from "../src/send-generation"
-import { type DeployStep, readDeployJournal, writeCandidateAtomically } from "./deploy-manifest"
+import { type DeployStep, readDeployJournal } from "./deploy-manifest"
 import { git, resolveBin, run } from "./run"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
 import { FACTORY_CONSTANTS_ABI, FUEL_SWAPPER_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI, sourceRpcUrl } from "./script-l1"
@@ -201,8 +196,6 @@ export interface DeployIntent {
 	candidateSha256?: string
 	/** Present on a router-only intent: the generation the arc may not move, and the only changes it may make. */
 	routerOnly?: RouterOnlyScope
-	/** Present on a retire-router intent: the live manifest its one permitted candidate derives from. */
-	retireRouter?: RetireRouterScope
 	/** The canary key the intent covers; `signer: null` refuses every canary-signed run. */
 	canary?: { signer: string | null; caps: typeof CANARY_CAPS; startingBalancesEth?: Record<string, number> }
 }
@@ -212,9 +205,9 @@ export interface DeployIntent {
  * tokens; everything promotion locks (identity, factory, hub) and the legacy router stay as `build` found them.
  */
 export interface RouterOnlyScope {
-	/** The retired router's two fields only while the live manifest still names them. */
-	generation: Record<"factory" | "implementation" | "registry" | "guardian" | "permit2" | "feeJuicePortal" | "hub", string> &
-		Partial<Record<"router" | "swapTarget", string>>
+	generation: Record<"factory" | "implementation" | "registry" | "guardian" | "permit2" | "feeJuicePortal" | "hub", string>
+	/** Routers whose in-flight deposits reconcile reads; each stays listed in the candidate. */
+	legacyRouters: string[]
 	/** The live manifest's tokens by the addresses their generation derives; each stays in the candidate unchanged. */
 	tokens: Array<{ erc20: string; portal: string; l2Token: string }>
 	/** The only tokens the candidate may add. */
@@ -320,22 +313,20 @@ export function routerOnlyScopeOf(live: ManifestV2, preCreate: readonly string[]
 		implementation: l1.implementation,
 		registry: l1.registry,
 		guardian: l1.guardian,
-		router: l1.router,
-		swapTarget: l1.swapTarget,
 		permit2: l1.permit2,
 		feeJuicePortal: l1.feeJuicePortal,
 		hub: l2.hub.address,
 	}
-	const pinned = Object.entries(generation).flatMap(([k, v]) => (v === undefined ? [] : [[k, lcAddr(v)]]))
 	return {
-		generation: Object.fromEntries(pinned) as RouterOnlyScope["generation"],
+		generation: Object.fromEntries(Object.entries(generation).map(([k, v]) => [k, lcAddr(v)])) as RouterOnlyScope["generation"],
+		legacyRouters: (l1.legacyRouters ?? []).map(lcAddr),
 		tokens: tokens.map((t) => ({ erc20: lcAddr(t.erc20), portal: lcAddr(t.portal), l2Token: lcAddr(t.l2Token) })),
 		preCreate: preCreate.map((t) => lcAddr(requireAddress(t, "--pre-create token"))),
 		journal: { path: TESTNET_JOURNAL, steps: journalSteps },
 	}
 }
 
-/** The candidate moves nothing promotion locks, nor the legacy router; keeps every live token as its generation
+/** The candidate moves nothing promotion locks and drops no legacy router; keeps every live token as its generation
  *  derives it; adds only the named tokens; and names the arc's two contracts. */
 export function assertRouterOnlyScope(scope: RouterOnlyScope, candidate: ManifestV2): void {
 	const { l1, l2, tokens } = requireBridge(candidate)
@@ -344,6 +335,9 @@ export function assertRouterOnlyScope(scope: RouterOnlyScope, candidate: Manifes
 		if (!sameAddr(now[field], want)) throw new Error(`router-only: candidate ${field} ${now[field]} != the generation's ${want} — STOP`)
 	}
 	if (!l1.depositRouter || !l1.fuelSwapper) throw new Error("router-only: the candidate names no depositRouter and fuelSwapper — STOP")
+	const listed = new Set((l1.legacyRouters ?? []).map(lcAddr))
+	const dropped = (scope.legacyRouters ?? []).filter((r) => !listed.has(r))
+	if (dropped.length > 0) throw new Error(`router-only: the candidate drops legacy router(s) ${dropped.join(", ")} — STOP`)
 	const byErc20 = new Map(tokens.map((t) => [lcAddr(t.erc20), t]))
 	for (const t of scope.tokens) {
 		const c = byErc20.get(t.erc20)
@@ -379,86 +373,6 @@ export function assertRouterOnlyJournal(scope: RouterOnlyScope, steps: readonly 
 			throw new Error(`journal pre-created ${s.erc20}, which this router-only intent does not name — STOP`)
 		}
 	}
-}
-
-/** A retire-router arc changes the live manifest and nothing on chain, so its only candidate is a function of the
- *  live manifest at the build commit. */
-export interface RetireRouterScope {
-	/** The committed live manifest, repo-relative, and the digest of its bytes at the build commit. */
-	live: { path: string; sha256: string }
-	/** The conductor's journal (repo-relative) and its length at build; the arc appends nothing. */
-	journal: { path: string; steps: number }
-}
-
-const TESTNET_LIVE_MANIFEST = "apps/tools/public/testnet-bridge.json"
-
-/** The live manifest's exact committed bytes at `rev`, untrimmed so the digest is the file's own. */
-const liveManifestAt = (rev: string): string => run("git", ["show", `${rev}:${TESTNET_LIVE_MANIFEST}`], { cwd: repoRoot }).stdout
-const TESTNET_CANDIDATE = "apps/tools/public/testnet-bridge.candidate.json"
-
-/**
- * The live manifest with its SwapBridgeRouter moved to the front of `legacyRouters`, where reconcile still finds
- * its in-flight deposits, and the old router's Uniswap V4 fields dropped: `swapTarget`, `swap` and every
- * `tokens[].pools`. Every other byte of meaning is the live manifest's. Throws when there is no old router to
- * retire, or no deposit router left to send through.
- */
-export function retireRouterCandidate(live: ManifestV2): ManifestV2 {
-	const b = requireBridge(live)
-	const { router, swapTarget: _swapTarget, swap: _swap, legacyRouters, ...l1 } = b.l1
-	if (!router) throw new Error("the live manifest names no old router — there is nothing to retire; STOP")
-	if (!l1.depositRouter) throw new Error("the live manifest names no depositRouter — retiring its router would leave none; STOP")
-	const legacy = [router, ...(legacyRouters ?? [])].map(lcAddr)
-	return {
-		...live,
-		bridge: {
-			...b,
-			l1: { ...l1, legacyRouters: [...new Set(legacy)] },
-			tokens: b.tokens.map(({ pools: _pools, ...t }) => t),
-		},
-	}
-}
-
-/** The candidate is exactly {@link retireRouterCandidate} of the live manifest the scope recorded. */
-export function assertRetireRouterScope(scope: RetireRouterScope, candidate: ManifestV2, liveBytes: string): void {
-	const digest = createHash("sha256").update(liveBytes).digest("hex")
-	if (digest !== scope.live.sha256) {
-		throw new Error(`the live manifest at the build commit hashes to ${digest}, not the recorded ${scope.live.sha256} — STOP`)
-	}
-	const expected = parseManifestV2(retireRouterCandidate(parseManifestV2(JSON.parse(liveBytes))))
-	if (!isDeepStrictEqual(candidate, expected)) {
-		throw new Error("retire-router: the candidate is not the live manifest with its old router retired — STOP")
-	}
-}
-
-/**
- * The working-tree live manifest is still the one the build recorded, or already the pinned candidate after a promote
- * that stopped before its receipt. Any other bytes landed after build, and the candidate would overwrite them.
- */
-export function assertRetireLiveUnmoved(scope: RetireRouterScope, liveBytes: Buffer | string, candidateSha256: string): void {
-	const digest = createHash("sha256").update(liveBytes).digest("hex")
-	if (digest === scope.live.sha256 || digest === candidateSha256) return
-	throw new Error(
-		`the live manifest hashes to ${digest}: it moved since build (${scope.live.sha256}) and is not the candidate — rebuild the intent; STOP`,
-	)
-}
-
-/** A manifest-only arc deploys nothing, so its journal never grows. */
-export function assertNothingJournalled(journal: RetireRouterScope["journal"], steps: readonly DeployStep[]): void {
-	if (steps.length !== journal.steps) {
-		throw new Error(
-			`the conductor journal has ${steps.length} step(s), not the ${journal.steps} at build: a retire-router intent deploys nothing — STOP`,
-		)
-	}
-}
-
-/** The scope from the COMMITTED live manifest, and the candidate it permits. */
-function retireRouterAtHead(): { scope: RetireRouterScope; candidate: ManifestV2 } {
-	const bytes = liveManifestAt("HEAD")
-	const scope: RetireRouterScope = {
-		live: { path: TESTNET_LIVE_MANIFEST, sha256: createHash("sha256").update(bytes).digest("hex") },
-		journal: { path: TESTNET_JOURNAL, steps: committedJournalSteps() },
-	}
-	return { scope, candidate: retireRouterCandidate(parseManifestV2(JSON.parse(bytes))) }
 }
 
 /** A canary chain's read RPC: Sepolia's is the keyed one; a source chain's is its override or the catalogue's. */
@@ -521,16 +435,12 @@ function routerOnlyScopeAtHead(preCreate: readonly string[]): RouterOnlyScope {
 
 interface ArcOptions {
 	routerOnly?: { preCreate: string[] }
-	retireRouter?: boolean
 }
 
-/** What a scoped arc adds to its intent, and the candidate a retire-router build writes beside it. */
-function arcOf(opts: ArcOptions): { scope: Pick<DeployIntent, "routerOnly" | "retireRouter">; label: string; candidate?: ManifestV2 } {
-	if (opts.routerOnly && opts.retireRouter) throw new Error("--router-only and --retire-router are separate arcs — STOP")
+/** What a scoped arc adds to its intent. */
+function arcOf(opts: ArcOptions): { scope: Pick<DeployIntent, "routerOnly">; label: string } {
 	if (opts.routerOnly) return { scope: { routerOnly: routerOnlyScopeAtHead(opts.routerOnly.preCreate) }, label: ", router-only" }
-	if (!opts.retireRouter) return { scope: {}, label: "" }
-	const { scope, candidate } = retireRouterAtHead()
-	return { scope: { retireRouter: scope }, label: ", retire-router", candidate }
+	return { scope: {}, label: "" }
 }
 
 async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
@@ -632,9 +542,6 @@ async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
 		`✓ intent written to ${intentPath} (commit ${commit.slice(0, 8)}, rollupVersion ${identity.rollupVersion}, signer ${signer}` +
 			`${arc.label})`,
 	)
-	if (!arc.candidate) return
-	writeCandidateAtomically(join(repoRoot, TESTNET_CANDIDATE), arc.candidate)
-	console.log(`✓ candidate written to ${TESTNET_CANDIDATE}: the live manifest with its old router retired`)
 }
 
 function requireSepoliaRpc(): string {
@@ -881,10 +788,6 @@ async function verifyCandidate(intent: DeployIntent, intentPath: string, candida
 	assertFeeJuicePins(candidate, intent, sepolia)
 	assertCandidateIdentity(intent, candidate, sepolia)
 	if (intent.routerOnly) assertRouterOnlyScope(intent.routerOnly, candidate)
-	if (intent.retireRouter) {
-		assertRetireRouterScope(intent.retireRouter, candidate, liveManifestAt(intent.source.commit))
-		assertRetireLiveUnmoved(intent.retireRouter, readFileSync(join(repoRoot, TESTNET_LIVE_MANIFEST)), digest)
-	}
 	await verifyGenerationBindings(candidate, sepolia, intent.primaryRpc)
 	console.log("✓ candidate strict-valid + privileged readbacks agree")
 }
@@ -922,7 +825,6 @@ async function verify(intentPath: string, candidatePath?: string): Promise<void>
 	assertSignerUnmoved(intent)
 	assertArtifactDigests(intent)
 	if (intent.routerOnly) assertRouterOnlyJournal(intent.routerOnly, readDeployJournal(join(repoRoot, TESTNET_JOURNAL)))
-	if (intent.retireRouter) assertNothingJournalled(intent.retireRouter.journal, readDeployJournal(join(repoRoot, TESTNET_JOURNAL)))
 	if (candidatePath) await verifyCandidate(intent, intentPath, candidatePath, sepolia)
 	assertSpendWithinCaps(intent, sepolia, now.rollupVersion)
 	assertCanary(intent, sepolia)
@@ -1089,7 +991,6 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 	const live = readLiveManifest(paths.bridgeLive)
 	if (live) assertZeroSeed(candidate, live)
 	else console.log("no live manifest yet — first promotion; the generation interlock has nothing to compare against")
-	if (intent.retireRouter) assertRetireLiveUnmoved(intent.retireRouter, readFileSync(paths.bridgeLive), bytes.bridgeSha)
 
 	writeAtomic(paths.bridgeLive, bytes.bridge, bytes.bridgeSha)
 	if (bytes.faucet && bytes.faucetSha) writeAtomic(paths.faucetLive, bytes.faucet, bytes.faucetSha)
@@ -1114,7 +1015,7 @@ if (isMain) {
 	const [, , cmd, intentPath, ...rest] = process.argv
 	if (!cmd || !intentPath) {
 		console.error(
-			"usage: live-intent.ts build|verify|promote <intent-path> [--router-only [--pre-create <erc20>]… | --retire-router] [--candidate <path>] [--bridge-only]",
+			"usage: live-intent.ts build|verify|promote <intent-path> [--router-only [--pre-create <erc20>]…] [--candidate <path>] [--bridge-only]",
 		)
 		process.exit(1)
 	}
@@ -1124,10 +1025,7 @@ if (isMain) {
 	const preCreate = rest.flatMap((arg, i) => (arg === "--pre-create" && rest[i + 1] ? [rest[i + 1] as string] : []))
 	const dispatch =
 		cmd === "build"
-			? build(intentPath, {
-					...(rest.includes("--router-only") ? { routerOnly: { preCreate } } : {}),
-					retireRouter: rest.includes("--retire-router"),
-				})
+			? build(intentPath, rest.includes("--router-only") ? { routerOnly: { preCreate } } : {})
 			: cmd === "verify"
 				? verify(intentPath, candidatePath)
 				: cmd === "promote"

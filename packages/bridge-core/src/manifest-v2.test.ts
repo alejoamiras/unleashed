@@ -110,12 +110,13 @@ describe("manifest v2 (strict, self-deriving)", () => {
 		expect(() => parseManifestV2(raw)).toThrow(/hub constructorArgs must be \[tokenClassId, factory, guardian\]/)
 	})
 
-	it("rejects hooked pools, a feeJuicePortal mismatch, duplicate tokens and unknown keys", async () => {
-		const hooked = await fixture()
-		;(hooked.bridge.tokens[0] as { pools?: unknown }).pools = {
-			weth: { fee: 3000, tickSpacing: 60, hooks: "0x0000000000000000000000000000000000000001" },
-		}
-		expect(() => parseManifestV2(hooked)).toThrow(/hooked pools are not routable/)
+	it("rejects the retired router's fields, a feeJuicePortal mismatch, duplicate tokens and unknown keys", async () => {
+		const pooled = await fixture()
+		;(pooled.bridge.tokens[0] as { pools?: unknown }).pools = { weth: { fee: 3000, tickSpacing: 60 } }
+		expect(() => parseManifestV2(pooled)).toThrow(/Unrecognized key/)
+		const routed = await fixture()
+		;(routed.bridge.l1 as { router?: string }).router = "0x00000000000000000000000000000000000000d9"
+		expect(() => parseManifestV2(routed)).toThrow(/Unrecognized key/)
 
 		const mismatch = await fixture()
 		mismatch.bridge.l1.feeJuicePortal = "0x0000000000000000000000000000000000000009"

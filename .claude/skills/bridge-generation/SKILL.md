@@ -397,12 +397,12 @@ inventory, the named token pre-creations, the smokes and promotion).
    rates in the arc's lessons.
 3. **Intent.** `bun packages/bridge-core/scripts/live-intent.ts build <intent> --router-only --pre-create <erc20> …`
    (one `--pre-create` per token the arc adds), then commit it. It pins the **committed** live
-   manifest's factory, implementation, registry, guardian, Permit2, FeeJuicePortal and hub (and the
-   retired router and its swap target while the live manifest still names them), each live token's portal and L2 address, and the conductor journal's
+   manifest's factory, implementation, registry, guardian, Permit2, FeeJuicePortal and hub, its
+   `legacyRouters`, each live token's portal and L2 address, and the conductor journal's
    committed length. Every later `verify` refuses a journal step other than the two contracts, the
    named pre-creations, calibration and the candidate; `verify --candidate` refuses a candidate that
-   moves a pinned field, drops or re-derives a live token, adds an unnamed one, or names no
-   `depositRouter`.
+   moves a pinned field, drops a legacy router, drops or re-derives a live token, adds an unnamed
+   one, or names no `depositRouter`.
 4. **Dry run, then deploy.** L1 only (no L2 account, no proofs), so the keyed run is
    `testnet-l1.env.example`, with `live-intent.ts verify <intent>` chained ahead of it:
    ```bash
