@@ -52,11 +52,8 @@ fields as optional until the live testnet manifest loses them. The gate results 
   `depositRouter` without moving the old one into `legacyRouters`.
 - **`lessons.md`'s v4-core `.env` entry stays until close-out.** Checkouts that installed v4-core before this
   phase still hold `lib/v4-core/.env`, which `env-exec request` refuses, and the A11 run may start from one.
-- **Three jsdom send smokes fail before and after this phase** (`tests/e2e/send-smoke.test.ts`: the unregistered
-  token, the portal without a hub binding, the private first send; 3 failed, 11 passed). They broke when the
-  claim's token check moved to the pinned Ethereum reader (D49): the smoke mocks the wallet's provider, never
-  reaches `claimViaHub`, and records no register transaction; the commit before that fix passes all 14. They
-  are not this phase's, but `_build-tools.yml` runs them, so `quality-status` fails until they are fixed.
+- **Resolved in arc 4: three jsdom send smokes failed** (`tests/e2e/send-smoke.test.ts`) once the claim's token
+  check moved to the pinned Ethereum reader (D49). The smoke now mocks that reader; see Phase 9's lessons.
 
 ## Gate
 
