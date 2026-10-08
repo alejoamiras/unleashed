@@ -437,7 +437,6 @@ interface ArcOptions {
 	routerOnly?: { preCreate: string[] }
 }
 
-/** What a scoped arc adds to its intent. */
 function arcOf(opts: ArcOptions): { scope: Pick<DeployIntent, "routerOnly">; label: string } {
 	if (opts.routerOnly) return { scope: { routerOnly: routerOnlyScopeAtHead(opts.routerOnly.preCreate) }, label: ", router-only" }
 	return { scope: {}, label: "" }
