@@ -830,6 +830,23 @@ describe("discoverCrossChain", () => {
 		},
 	)
 
+	it("Stargate: Executor-paid dust deposits and replays of our LI.FI id, each in its own transaction, never crowd out the delivery", async () => {
+		const rec = stargateRecord()
+		const replayed = marker(RECOVERED, STARGATE_CTX.rail.receiver, rec.route.lifiTxId)
+		const noise = await Promise.all(
+			Array.from(
+				{ length: 9 },
+				async (_, i): Promise<Tx> => ({
+					hash: pad(toHex(0xdead00 + i)),
+					block: ETH_BLOCK,
+					logs: [await gift(1n, 700n + BigInt(i), { payer: STARGATE_CTX.ethereum.executor }), replayed],
+				}),
+			),
+		)
+		const d = await discover(rec, baseReads([...noise, fillTx(composed(ROUTED, PUBLIC))]), STARGATE_CTX)
+		expect(d).toMatchObject({ verdict: "deposited", deposit: FACTS })
+	})
+
 	it("matches the Inbox's deployed MessageSent shape per network", async () => {
 		const artifactShape = ROUTED.destination.logs.find((l) => eq(l.address, INBOX))?.topics[0]
 		// The older line indexes the checkpoint and the hash; the leaf index moves into the data.
