@@ -6,10 +6,54 @@ eli5_mode: artifact
 code_review: off
 claude_model: opus
 codex_model: sol
-status: approved; arc 1 in progress; G-UX-1 and G-UX-2 signed
+status: closed
 base: main
 budget: "research: lead 4 subagents + the fable and codex drafts' own; code-review: off; foreign reviewer at high"
 ---
+
+## Outcome
+
+- **Closed; delivered** as a six-arc stack plus this close-out (stack #13: #7 contracts, #8 core, #9 testnet live,
+  #10 app, #11 Uniswap removal, #12 discovery windows); it reaches `main` only through the owner's merge. Phases
+  0–11 are ✓. `main` (#5, #6,
+  the `@nulo-sh` scope) was merged up through the stack before the PRs opened, and the full gate passed at its tip,
+  the browser suite's 75 cells included.
+- **Shipped: the contracts.** `DepositRouter` is one swap seam for the fuel leg: LI.FI same-chain calldata on mainnet,
+  `TestnetFuelSwapper` (a fixed owner-set rate per token, refuses chain 1) elsewhere. Two entrypoints settle the same
+  way: `bridgeWithPermit` for Ethereum accounts and `bridgeFromCaller` for LI.FI's destination Executor. The
+  proofs are 15 halmos proofs, the invariant suite and mainnet and Sepolia forks of LI.FI's real contracts.
+- **Shipped: the core.** `verifyRoute` holds every byte the user signs to a stated policy and fails closed.
+  `discoverCrossChain` re-derives a send's state from both chains on every run, over budgeted, reorg-checked reads.
+  Arc 6 bounds its windows by Across's deadlines, so a record of any age finishes. The arc also brought the
+  schema-4 journal, the keyless li.quest client, our own Across V4 builder, the operator tooling and the sandbox's
+  cross-chain half.
+- **Shipped: testnet live.** These were keyed runs under A3 and A11.
+  - `DepositRouter` `0x6698c147c6596b8dd6352f1e429703c638ffb49b` and `TestnetFuelSwapper`
+    `0x2b2c5690e8c442c6a7e9cba2938d453585aa9f85` were deployed beside the old router.
+  - Circle USDC and WETH portals were pre-created (`0x0b56c297c320c3c6cdfc4f3a6122aa1b251c4319`,
+    `0x75988b1cd1ff2d014acc8589f6fbda2621a34d64`).
+  - The canary matrix passed on fixed terms with exclusive self-fills.
+  - Arc 5 retired the old router `0xb6d603f425519a5009d7d426f31d92177da7cfab` into `legacyRouters`.
+- **Shipped: the app.** The app sends cross-chain from Base Sepolia through `verifyRoute`, watches the send over
+  pinned read RPCs and claims, all to the signed hybrid boards. Every Phase 8 deviation was signed by the owner
+  (D48, D50).
+- **Deployment record** (`lessons/intent.json`, `intent-gates.json`, `promotion-receipt.json`, `arc5/`):
+  - Caps: deployer 2.0 ETH; canary 0.05 ETH on Base Sepolia and 0.2 ETH on Sepolia.
+  - Canary spend: 18 of 24 USDC at the source.
+  - Promoted candidates: `1fb9b646…4a85d` (arc 3), `6d8fa238…f748` (arc 5, zero spend).
+  - Timestamps and commit ids are blanked: a branch commit does not survive the squash, so these records can never
+    authorise a run.
+- **Reviews.** The Codex loops converged in every arc: 3, 6, 4, 5, 3 and 3 rounds (D43, D44, D47, D51, D52, D53).
+  The final cross-arc pass converged in 3 (D54). `/code-review` was off.
+- **Dropped, and why:**
+  - Permit2Proxy source signing: two prompts anyway, with an unbound `msg.value` (D11).
+  - Sepolia $AZTEC pools: li.quest quotes no contract calls on testnets and lists no Uniswap venue there, and
+    the fixed-rate swapper replaces them.
+  - USD figures in v1 (D48).
+  - A manifest field for the testnet filler: the canary signer already is it.
+- **Open work** moved to `implementations-plan/follow-ups.md`; the generalizable gotchas are in
+  `implementations-plan/lessons.md`.
+- **Retired:** the `/goal` and `/loop` seeds below. This plan is a record, never a task list.
 
 # lifi-routing: deposits from any chain through LI.FI, token and gas, one provider
 
@@ -690,9 +734,9 @@ with `op-remote`, batched into one sitting.
 - **A3**: *"ok. As long as I can test on Testnet too (the UI, etc.) Yes."* Approved, with that condition: arc 4's
   testnet preview builds run against the live router, and `fill-testnet.ts` (A10) completes any send Across's test
   relayer leaves unfilled. The owner also asked about retiring the test tokens and seeding Sepolia $AZTEC pools. No
-  pools: the testnet fuel leg is `TestnetFuelSwapper` (fixed rate, minted inventory), li.quest does not quote
-  testnets so a Sepolia pool would never be on the route, and a Uniswap pool would rebuild what arc 5 removes; the
-  swap leg's fidelity comes from mainnet forks with real $AZTEC liquidity. Retiring Test USDC/USDT/EURC/GBPC is
+  pools: the testnet fuel leg is `TestnetFuelSwapper` (fixed rate, minted inventory), li.quest quotes no contract
+  calls on testnets and lists no Uniswap venue there, so a Sepolia pool would never be on the route, and a Uniswap
+  pool would rebuild what arc 5 removes; the swap leg's fidelity comes from mainnet forks with real $AZTEC liquidity. Retiring Test USDC/USDT/EURC/GBPC is
   outside this plan (the Drip faucet and Ethereum-origin testnet sends use them); it is a follow-up candidate.
 - **A4**: *"I trust you."* Accepted as written.
 - **A5**: *"please, fetch base sepolia's and sepolia's free RPC online."* Probed for chain id, `eth_getLogs` range

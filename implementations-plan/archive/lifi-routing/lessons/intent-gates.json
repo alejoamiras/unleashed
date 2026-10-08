@@ -1,5 +1,5 @@
 {
-	"builtAt": "2026-10-06T17:30:18.916Z",
+	"builtAt": "",
 	"primaryRpc": "https://lb.drpc.live/aztec-testnet/Ak_eT5HA2kbyqamqGTF702daoH37vEsR8YYxjmVXwXgc",
 	"identity": {
 		"nodeVersion": "6.0.0-rc.1",
@@ -40,7 +40,7 @@
 		}
 	},
 	"source": {
-		"commit": "e9944127de36cd15c8ff954c5e361a2107de2aa7",
+		"commit": "",
 		"treeClean": true,
 		"operationalAllowlist": [
 			"apps/tools/public/testnet-bridge.candidate.json",
