@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("@alejoamiras/nulo-wallet-sdk-schema-patch/register", () => ({}))
+vi.mock("@nulo-sh/wallet-sdk-schema-patch/register", () => ({}))
 vi.mock("@/lib/chain-info", () => ({ readChainInfo: () => ({ chainId: 1 }) }))
 vi.mock("@/lib/emoji", () => ({ hashToEmoji: () => "🟢🔵🟡🟣🔴⚪⚫🟠🟤" }))
 

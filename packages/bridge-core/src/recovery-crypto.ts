@@ -1,12 +1,12 @@
-import { EncryptionKey } from "@alejoamiras/nulo-wallet-crypto"
+import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 
-export type { EncryptionKey } from "@alejoamiras/nulo-wallet-crypto"
+export type { EncryptionKey } from "@nulo-sh/wallet-crypto"
 
 /**
  * Recovery-secret encryption for the no-server private bridge. The key is derived from a deterministic
  * L1 signature over a PER-RECORD message (recoveryKeyMessage) — binding chain + portal + bridge + the
  * record's secretHash, so EACH sealed blob has its own key: a leaked signature exposes only that one
- * record, never all of them. Reuses @alejoamiras/nulo-wallet-crypto's PBKDF2 + AES-GCM (never roll your
+ * record, never all of them. Reuses @nulo-sh/wallet-crypto's PBKDF2 + AES-GCM (never roll your
  * own crypto).
  *
  * The sealed blob is a BEARER credential for PRIVATE transfers (the L2 claim chooses the recipient),

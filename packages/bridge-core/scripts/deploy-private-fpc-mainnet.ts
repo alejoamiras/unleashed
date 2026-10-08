@@ -1,4 +1,4 @@
-import { deriveNuloAccountKeys } from "@alejoamiras/nulo-wallet-crypto"
+import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { preexistingFeeJuicePayment } from "../src/fee-juice"
 import { deployCanonicalPrivateFpc } from "./deploy-canonical-private-fpc"
 import { resolveDeployerKeys } from "./deployer-keys"

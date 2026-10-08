@@ -1,6 +1,6 @@
 // Patch WalletSchema before wallet-sdk reads it (the wallet-specific `registerToken`).
-// Must be the first import in this module - see @alejoamiras/nulo-wallet-sdk-schema-patch.
-import "@alejoamiras/nulo-wallet-sdk-schema-patch/register"
+// Must be the first import in this module - see @nulo-sh/wallet-sdk-schema-patch.
+import "@nulo-sh/wallet-sdk-schema-patch/register"
 
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"

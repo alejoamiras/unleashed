@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { resolvePackageAsset } from "@alejoamiras/nulo-resolve-asset"
+import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 
 import { poseidon2HashBytes } from "@aztec-labs/foundation/crypto/sync"
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
@@ -37,7 +37,7 @@ import {
  */
 
 /** Resolve a file inside a package WITHOUT its exports map (which blocks ./target/*) —
- *  layout-agnostic via @alejoamiras/nulo-resolve-asset, anchored at this declaring workspace. */
+ *  layout-agnostic via @nulo-sh/resolve-asset, anchored at this declaring workspace. */
 function resolvePackageFile(pkg: string, file: string): string {
 	return resolvePackageAsset(pkg, file, { from: import.meta.url })
 }

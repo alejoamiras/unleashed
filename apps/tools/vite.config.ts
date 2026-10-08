@@ -6,7 +6,7 @@ import { fileURLToPath, URL } from "node:url"
 import vue from "@vitejs/plugin-vue"
 import { defineConfig, type Plugin, type UserConfig } from "vite"
 import { nodePolyfills } from "vite-plugin-node-polyfills"
-import { resolvePackageAsset } from "@alejoamiras/nulo-resolve-asset"
+import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { componentsPlugin } from "./scripts/components-plugin"
 import { type LocalTargetConfig, type ToolsTarget, TESTNET_TARGET } from "./src/lib/network-targets"
 

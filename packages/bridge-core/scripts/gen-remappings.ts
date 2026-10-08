@@ -17,7 +17,7 @@
 import { existsSync, renameSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { resolvePackageAsset } from "@alejoamiras/nulo-resolve-asset"
+import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { run } from "./run"
 
 const here = dirname(fileURLToPath(import.meta.url))
