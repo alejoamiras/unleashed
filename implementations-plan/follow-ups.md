@@ -36,3 +36,4 @@ Open work lifted out of closed plans, one entry each; delete an entry when it re
 - **Delete `legacy-router-abi.ts` at the next testnet reset**, when no old-router deposit can still be in flight.
 - **Retire the Test USDC/USDT/EURC/GBPC faucet tokens?** The Drip faucet and Ethereum-origin testnet sends use them.
 - **A stale comment.** `packages/bridge-core/src/journal.ts` says the FPC-address salt is always `Fr.zero()`; the canonical salt is `0x…01` (`private-fpc-canonical.json`).
+- **The e2e port resolver can draw a port Chromium refuses.** `apps/tools/scripts/e2e/resolve-ports.ts` picks random ports in the static window without skipping Chromium's restricted list, so a run that draws one (10080 did, on a CI shard) fails every cell at `page.goto` with `net::ERR_UNSAFE_PORT`. Skip that list when drawing.
