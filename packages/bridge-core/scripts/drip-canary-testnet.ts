@@ -24,7 +24,7 @@ import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { DripperContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Dripper.js"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
-import { deriveNuloAccountKeys } from "@alejoamiras/nulo-wallet-crypto"
+import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { catalogMismatches } from "../src/faucet-catalog"
 import { stopwatch } from "./script-bootstrap"
 import { TESTNET_NODE_URL } from "../src/testnet-node"

@@ -14,9 +14,6 @@
       "name": "@unleashed/tools",
       "version": "0.1.0",
       "dependencies": {
-        "@alejoamiras/nulo-resolve-asset": "0.2.0",
-        "@alejoamiras/nulo-wallet-crypto": "0.2.0",
-        "@alejoamiras/nulo-wallet-sdk-schema-patch": "0.2.0",
         "@aztec-foundation/aztec-standards": "6.0.0-rc.1",
         "@aztec-foundation/bb.js": "6.0.0-rc.1",
         "@aztec-foundation/l1-artifacts": "6.0.0-rc.1",
@@ -34,6 +31,9 @@
         "@aztec-labs/stdlib": "6.0.0-rc.1",
         "@aztec-labs/wallet-sdk": "6.0.0-rc.1",
         "@aztec-labs/wallets": "6.0.0-rc.1",
+        "@nulo-sh/resolve-asset": "0.1.0",
+        "@nulo-sh/wallet-crypto": "0.1.0",
+        "@nulo-sh/wallet-sdk-schema-patch": "0.1.0",
         "@unleashed/bridge-core": "workspace:*",
         "@unleashed/design": "workspace:*",
         "viem": "^2.52.2",
@@ -60,8 +60,6 @@
       "name": "@unleashed/bridge-core",
       "version": "0.1.0",
       "dependencies": {
-        "@alejoamiras/nulo-resolve-asset": "0.2.0",
-        "@alejoamiras/nulo-wallet-crypto": "0.2.0",
         "@alejoamiras/private-fee-juice": "6.0.0-rc.1",
         "@aztec-foundation/aztec-standards": "6.0.0-rc.1",
         "@aztec-foundation/l1-artifacts": "6.0.0-rc.1",
@@ -74,6 +72,8 @@
         "@aztec-labs/protocol-contracts": "6.0.0-rc.1",
         "@aztec-labs/stdlib": "6.0.0-rc.1",
         "@aztec-labs/wallets": "6.0.0-rc.1",
+        "@nulo-sh/resolve-asset": "0.1.0",
+        "@nulo-sh/wallet-crypto": "0.1.0",
         "viem": "npm:@aztec/viem@2.38.3",
         "zod": "^4.4.3",
       },
@@ -110,12 +110,6 @@
   },
   "packages": {
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
-
-    "@alejoamiras/nulo-resolve-asset": ["@alejoamiras/nulo-resolve-asset@0.2.0", "", {}, "sha512-XfPhxzpop5/gmOuSAJVjyzkGEOA96ZX1w2GpyuLUPIciuqghL4Wggleuipc5uKC1IwAnH9dKM1+jChkGTOGiGA=="],
-
-    "@alejoamiras/nulo-wallet-crypto": ["@alejoamiras/nulo-wallet-crypto@0.2.0", "", { "peerDependencies": { "@aztec-labs/accounts": "6.0.0-rc.1", "@aztec-labs/foundation": "6.0.0-rc.1" } }, "sha512-4NrRR4tAEdhTnqCozlkRdL2mxvN2DAR/ArY1ufPI3jniALgpcamSL+gVm3AjZcagMVEeOadxTx9GwyFJtCLSAg=="],
-
-    "@alejoamiras/nulo-wallet-sdk-schema-patch": ["@alejoamiras/nulo-wallet-sdk-schema-patch@0.2.0", "", { "dependencies": { "zod": "^4.4.3" }, "peerDependencies": { "@aztec-labs/aztec.js": "6.0.0-rc.1", "@aztec-labs/stdlib": "6.0.0-rc.1" } }, "sha512-fzU8n+PYHuv90vjNfbAE8pOK4RVyzHc4m3ZYkLBwNaI4aqasXcuspIDGhuFrhdsDH1nlCrmXDGjMor4+56SheQ=="],
 
     "@alejoamiras/private-fee-juice": ["@alejoamiras/private-fee-juice@6.0.0-rc.1", "", { "peerDependencies": { "@aztec-labs/aztec.js": "6.0.0-rc.1", "@aztec-labs/protocol-contracts": "6.0.0-rc.1", "@aztec-labs/stdlib": "6.0.0-rc.1" } }, "sha512-GwKXLlITPinKY11Mp4DJK+sZ96tby1I5Z4sWa6JYfeVX2CBnYuIwCNLXRNnE1z2NCIQXLdUaSUXKrxAZuRGasQ=="],
 
@@ -528,6 +522,12 @@
     "@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 
     "@nodable/entities": ["@nodable/entities@3.0.0", "", {}, "sha512-8L9xFeTYKhm49xfIypoe2W5wV1m/3Z58kT+7kR9A8OyFxcPduI4VmxaUMQyKYrRjUoLLSXv6EKKID5Tvj9cUVw=="],
+
+    "@nulo-sh/resolve-asset": ["@nulo-sh/resolve-asset@0.1.0", "", {}, "sha512-V/JAciw8SfG8CUwyEbUNlea1EvkGqjEIBFsq64dQA8C5b/MvAXE5nEF9T28lBku9RkefV1pjKlfEzZCdWZ7uPg=="],
+
+    "@nulo-sh/wallet-crypto": ["@nulo-sh/wallet-crypto@0.1.0", "", { "peerDependencies": { "@aztec-labs/accounts": "6.0.0-rc.1", "@aztec-labs/foundation": "6.0.0-rc.1" } }, "sha512-suQba2olCwxOXYMz05K3vqVLpJm39wuBsQ1rlnRyrEHmHt/RUBUT70uTKMzRUEU/cgSD4elDMYyjggu9EXEczw=="],
+
+    "@nulo-sh/wallet-sdk-schema-patch": ["@nulo-sh/wallet-sdk-schema-patch@0.1.0", "", { "dependencies": { "zod": "^4.4.3" }, "peerDependencies": { "@aztec-labs/aztec.js": "6.0.0-rc.1", "@aztec-labs/stdlib": "6.0.0-rc.1" } }, "sha512-NQy9yXlgjV9xBmdQHC8GI9WKI9Ze6uoRhMiJ6A+0axFJEVBp6a9icT0Dyt3m0igyy542gHWHgYWmAFPe7z5TkQ=="],
 
     "@one-ini/wasm": ["@one-ini/wasm@0.1.1", "", {}, "sha512-XuySG1E38YScSJoMlqovLru4KTUNSjgVTIjyh7qMX6aNN5HY5Ct5LhRJdxO79JtTzKfzV/bnWpz+zquYrISsvw=="],
 
