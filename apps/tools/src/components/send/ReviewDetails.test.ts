@@ -1,12 +1,6 @@
 import { mount } from "@vue/test-utils"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import type { ExitPlan, GasLegPlan, ResolvedToken, SendPlan } from "@/lib/send-model"
-
-// The route's currencies are named against this network's WETH and Fee Juice.
-vi.mock("@/contracts/bridge-generation", () => ({
-	SWAP: { weth: "0x00000000000000000000000000000000000000e7" },
-	FEE_JUICE: { asset: "0x000000000000000000000000000000000000fee0" },
-}))
 import { TESTIDS } from "@/lib/testids"
 import ReviewDetails, { type PortalState } from "./ReviewDetails.vue"
 
@@ -31,24 +25,9 @@ function token(kind: "registered" | "portal-only" | "first-time" = "registered")
 	} as unknown as ResolvedToken
 }
 
-const WETH = "0x00000000000000000000000000000000000000e7"
-const FJ = "0x000000000000000000000000000000000000fee0"
-const OTHER = "0x0000000000000000000000000000000000000abc"
-
-/** USDC → ETH → Fee Juice: the token enters the first pool as currency0, ETH the second as currency1. */
-function gas(hops: number): GasLegPlan {
-	const path = [
-		{ currency0: USDC, currency1: WETH, fee: 500, tickSpacing: 10, hooks: OTHER },
-		{ currency0: FJ, currency1: WETH, fee: 3000, tickSpacing: 60, hooks: OTHER },
-	].slice(0, hops)
-	return {
-		fuelAmount: 1_000_000n,
-		fuelFj: 1n,
-		quote: 1n,
-		minFuelOutput: 1n,
-		route: { path, zeroForOnes: [true, false].slice(0, hops) },
-		capped: null,
-	} as unknown as GasLegPlan
+/** A gas leg swapped at `venue`; null is the fee asset's, which swaps nothing. */
+function gas(venue: GasLegPlan["venue"]): GasLegPlan {
+	return { fuelAmount: 1_000_000n, fuelFj: 1n, quote: 1n, minFuelOutput: 1n, venue, capped: null }
 }
 
 const DEPOSIT: SendPlan = { direction: "l1-to-l2", intent: "token", token: token(), amount: 5_000_000n, isPrivate: true }
@@ -95,13 +74,17 @@ describe("ReviewDetails", () => {
 		w.unmount()
 	})
 
-	it("names the currencies a gas leg swaps through, in order, and counts the pools", async () => {
-		const w = await open(details({ plan: { ...DEPOSIT, intent: "token+gas", gas: gas(2) } }))
-		expect(w.find(sel(TESTIDS.sendReviewRoute)).text()).toContain("USDC → ETH → Fee Juice on Uniswap v4 (2 pools)")
-		const one = await open(details({ plan: { ...DEPOSIT, intent: "token+gas", gas: gas(1) } }))
-		expect(one.find(sel(TESTIDS.sendReviewRoute)).text()).toContain("USDC → ETH on Uniswap v4 (1 pool)")
+	it("names the pair and the venue the gas leg swaps through", async () => {
+		const w = await open(details({ plan: { ...DEPOSIT, intent: "token+gas", gas: gas({ provider: "lifi", tool: "1inch" }) } }))
+		expect(w.find(sel(TESTIDS.sendReviewRoute)).find("dd").text()).toBe(
+			"USDC → AZTEC through LI.FI (1inch), then the gas leg is bridged.",
+		)
+		const testnet = await open(details({ plan: { ...DEPOSIT, intent: "token+gas", gas: gas({ provider: "testnetSwapper" }) } }))
+		expect(testnet.find(sel(TESTIDS.sendReviewRoute)).find("dd").text()).toBe(
+			"USDC → AZTEC through the testnet fuel swapper, then the gas leg is bridged.",
+		)
 		w.unmount()
-		one.unmount()
+		testnet.unmount()
 	})
 
 	it("shows neither Route nor Slippage for a token-only send — there is nothing swapped to describe", async () => {
@@ -109,7 +92,7 @@ describe("ReviewDetails", () => {
 		expect(w.find(sel(TESTIDS.sendReviewRoute)).exists()).toBe(false)
 		expect(w.find(sel(TESTIDS.sendReviewSlippage)).exists()).toBe(false)
 		// The fee asset's gas leg swaps through no pool at all: a route line, saying so.
-		const direct = await open(details({ plan: { ...DEPOSIT, intent: "token+gas", gas: gas(0) } }))
+		const direct = await open(details({ plan: { ...DEPOSIT, intent: "token+gas", gas: gas(null) } }))
 		expect(direct.find(sel(TESTIDS.sendReviewRoute)).text()).toContain("no swap")
 		w.unmount()
 		direct.unmount()
@@ -122,7 +105,9 @@ describe("ReviewDetails", () => {
 	})
 
 	it("prints slippage as a percentage on a send that buys gas", async () => {
-		const w = await open(details({ plan: { ...DEPOSIT, intent: "token+gas", gas: gas(1) }, slippageBps: 125 }))
+		const w = await open(
+			details({ plan: { ...DEPOSIT, intent: "token+gas", gas: gas({ provider: "testnetSwapper" }) }, slippageBps: 125 }),
+		)
 		expect(w.find(sel(TESTIDS.sendReviewSlippage)).text()).toContain("1.25%")
 		w.unmount()
 	})

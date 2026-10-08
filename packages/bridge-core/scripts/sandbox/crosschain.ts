@@ -3,23 +3,33 @@
  *  context a cross-chain flow signs and reads with. */
 import { readFileSync } from "node:fs"
 import { FEE_JUICE_ADDRESS } from "@aztec-labs/constants"
-import { type Abi, type Address, concat, encodeDeployData, getContractAddress, type Hex, keccak256, pad, toHex } from "viem"
+import {
+	type Abi,
+	type Address,
+	concat,
+	createWalletClient,
+	custom,
+	encodeDeployData,
+	getContractAddress,
+	type Hex,
+	keccak256,
+	pad,
+	toHex,
+} from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import type { CrossChainDiscoveryContext, DiscoveryChainReads, DiscoveryReads } from "../../src/crosschain-discovery"
 import type { L1Ctx } from "../../src/flows"
 import { evmArtifact } from "../script-artifacts"
 import { createL1Clients } from "../script-bootstrap"
-import { CHAIN_ID, lc, PERMIT2, SOURCE_CHAIN_ID, sandboxChain, sandboxSourceChain, ZERO_L1 } from "./constants"
+import { CHAIN_ID, lc, PERMIT2, SOURCE_CHAIN_ID, SWAPPER_FJ_PER_WHOLE_TOKEN, sandboxChain, sandboxSourceChain, ZERO_L1 } from "./constants"
 import { lifiArtifactPath } from "./forge"
 import type { SandboxHandle } from "./handle"
 import { deployEvm, mint, mintFeeAsset, writeL1 } from "./l1"
-import { type FillWallet, type Relayer, type RelayMode, startRelayer } from "./relayer"
+import { type Destination, type FillWallet, type Relayer, type RelayMode, startRelayer } from "./relayer"
 
 /** Arachnid's deterministic deployer, which anvil installs at genesis. */
 export const CREATE2_DEPLOYER: Address = "0x4e59b44847b379578588920cA78FbF26c0B4956C"
 
-/** The swapper's rate for every fixture token: one whole Fee Juice per whole token, the old mock venue's rate. */
-export const SWAPPER_FJ_PER_WHOLE_TOKEN = 10n ** 18n
 const SWAPPER_INVENTORY = 10n ** 30n
 
 export interface CrossChainDeployment {
@@ -166,6 +176,20 @@ export function openCrossChain(handle: SandboxHandle): CrossChainClients {
 	return { handle: cc, source, relayer, l1 }
 }
 
+/** Gas money for an impersonated filler; anvil funds only its mnemonic's keys. */
+const IMPERSONATED_BALANCE = 10n ** 20n
+
+/**
+ * The exclusive relayer a deposit names (the testnet filler every fixed-terms send names), impersonated on the L1 anvil:
+ * `TestSpokePool` lets only that address fill before the deadline, and the sandbox holds no key for it.
+ */
+async function impersonatedFiller(cc: CrossChainClients, relayer: Address): Promise<Destination> {
+	await cc.relayer.pub.request({ method: "anvil_impersonateAccount", params: [relayer] } as never)
+	await cc.relayer.pub.request({ method: "anvil_setBalance", params: [relayer, toHex(IMPERSONATED_BALANCE)] } as never)
+	const wallet = createWalletClient({ account: relayer, chain: cc.relayer.wallet.chain, transport: custom(cc.relayer.pub) })
+	return { public: cc.relayer.pub, wallet: wallet as FillWallet }
+}
+
 /** The relay loop on the sandbox's two anvils; the filler mints the output it pays before each fill. */
 export function startSandboxRelayer(cc: CrossChainClients, mode?: RelayMode): Promise<Relayer> {
 	return startRelayer({
@@ -174,7 +198,8 @@ export function startSandboxRelayer(cc: CrossChainClients, mode?: RelayMode): Pr
 		sourceSpokePool: cc.handle.source.spokePool as Address,
 		destinationSpokePool: cc.handle.destination.spokePool as Address,
 		mode,
-		fund: (token, amount) => mint(cc.relayer, token, cc.relayer.account.address, amount),
+		fund: (token, amount, to) => mint(cc.relayer, token, to, amount),
+		exclusiveFiller: (relayer) => impersonatedFiller(cc, relayer),
 	})
 }
 

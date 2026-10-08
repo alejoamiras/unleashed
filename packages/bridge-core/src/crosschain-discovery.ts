@@ -198,8 +198,11 @@ export interface DepositExpectation {
 	recipient: Hex
 	/** Absent for a gas-only intent. */
 	token?: { erc20: Address; secretHash: Hex }
-	/** Absent when the intent bridges no gas. `fpc` defaults to the pinned PrivateFPC. */
-	fuel?: { secretHash: Hex; fpc?: Hex }
+	/**
+	 * Absent when the intent bridges no gas. The leg pays `recipient` when set (an Ethereum-origin send names its
+	 * own), else `fpc` (default the pinned PrivateFPC) for private fuel and the intent's recipient for public.
+	 */
+	fuel?: { secretHash: Hex; fpc?: Hex; recipient?: Hex }
 }
 
 /** The Ethereum addresses that authenticate a deposit's logs. */
@@ -700,8 +703,9 @@ async function tokenLeaf(d: DepositedArgs, x: DepositExpectation, eth: DepositLo
 	})
 }
 
-/** Who `x`'s Fee Juice is claimed for: the PrivateFPC for private fuel, the recipient otherwise. */
-const fuelRecipient = (x: DepositExpectation): Hex => (x.isPrivate ? (x.fuel?.fpc ?? PRIVATE_FPC_ADDRESS) : x.recipient)
+/** Who `x`'s Fee Juice is claimed for. */
+const fuelRecipient = (x: DepositExpectation): Hex =>
+	x.fuel?.recipient ?? (x.isPrivate ? (x.fuel?.fpc ?? PRIVATE_FPC_ADDRESS) : x.recipient)
 
 /** The leaf `d`'s fuel leg inserts when it pays `x`'s Fee Juice recipient. */
 async function fuelLeaf(d: DepositedArgs, x: DepositExpectation, eth: DepositLogContext): Promise<string> {
@@ -755,7 +759,12 @@ async function fuelLeg(
 	return { consumed: d.fuelIn.toString(), received: d.fuelOut.toString(), leafIndex: d.fuelIndex.toString(), messageHash: d.fuelKey }
 }
 
-function expectationOf(rec: CrossChainDepositRecord): DepositExpectation {
+/** The record facts a deposit's expectation is built from; every schema-3 and schema-4 deposit has them. */
+export type DepositRecordFacts = Pick<CrossChainDepositRecord, "chainId" | "isPrivate" | "recipient" | "secretHashHex" | "fuel"> &
+	({ intent: "gas" } | { intent: "token" | "token+gas"; token: { erc20: string } })
+
+/** What the router's `Deposited` must carry for a journal record, whichever chain the send started on. */
+export function depositExpectationOf(rec: DepositRecordFacts): DepositExpectation {
 	return {
 		l1ChainId: rec.chainId,
 		isPrivate: rec.isPrivate,
@@ -819,7 +828,7 @@ async function intendedDeposit(logs: readonly RawLog[], span: Span, markerIndex:
 	while (at > span.start && !eventFrom(router, DEPOSITED, logs[at])) at--
 	if (at <= span.start) throw new ScanIncomplete("a completed transfer without the router's Deposited")
 	const d = eventFrom(router, DEPOSITED, logs[at]) as unknown as DepositedArgs
-	const x = expectationOf(c.rec)
+	const x = depositExpectationOf(c.rec)
 	if (!isIntent(d, x)) throw new ScanIncomplete("the router's Deposited is not this record's intent")
 	return depositFacts(logs.slice(span.start + 1, at), d, x, c.ctx.ethereum, txHash)
 }
@@ -907,7 +916,7 @@ async function claimableBy(d: DepositedArgs, x: DepositExpectation, eth: Deposit
 }
 
 async function claimableDeposits(c: Ctx, deposits: RouterDeposit[]): Promise<RouterDeposit[]> {
-	const x = expectationOf(c.rec)
+	const x = depositExpectationOf(c.rec)
 	const keep = await Promise.all(deposits.map(({ args }) => claimableBy(args, x, c.ctx.ethereum)))
 	return deposits.filter((_, i) => keep[i])
 }
@@ -1044,12 +1053,19 @@ function withFacts(route: CrossChainRoute, d: DiscoveryFacts): CrossChainRoute {
 	}
 }
 
-const withoutOutcome = (route: CrossChainRoute): CrossChainRoute => ({
+/** The route with neither provisional verdict on it: no outcome, and no deposit marked final. */
+const undecided = (route: CrossChainRoute): CrossChainRoute => ({
 	...route,
+	depositFinal: undefined,
 	outcome: undefined,
 	outcomeTxHash: undefined,
 	outcomeAmount: undefined,
 })
+
+/** Heights are compared only on the record's own Ethereum chain; any other chain reads as not final. */
+function depositSettled(rec: CrossChainDepositRecord, decidedAt: ChainBlock, finalized: ChainBlock): boolean {
+	return decidedAt.chainId === rec.chainId && finalized.chainId === rec.chainId && decidedAt.blockNumber <= finalized.blockNumber
+}
 
 function depositPatch(rec: CrossChainDepositRecord, deposit: DepositedFacts): Partial<CrossChainDepositRecord> {
 	const fuel =
@@ -1080,9 +1096,10 @@ function withoutDeposit(rec: CrossChainDepositRecord): Partial<CrossChainDeposit
 /**
  * The journal patch a discovery implies, or `undefined` for `incomplete` (a partial run proves nothing).
  * Facts merge (extras are only ever added, so a lying read cannot make a record retirable). A final
- * record (`completedAt`) keeps its outcome and deposit; otherwise every run replaces both provisional
- * facts: a deposit clears the outcome, `pending` clears both, an outcome goes through `outcomePatch`
- * and clears the deposit.
+ * record (`completedAt`) keeps its outcome and deposit, and a deposit marked final keeps its deposit;
+ * otherwise every run replaces both provisional facts: a deposit clears the outcome and is marked final
+ * once its block is finalized, `pending` clears both, an outcome goes through `outcomePatch` and clears
+ * the deposit.
  */
 export function discoveryPatch(
 	rec: CrossChainDepositRecord,
@@ -1091,8 +1108,11 @@ export function discoveryPatch(
 ): Partial<CrossChainDepositRecord> | undefined {
 	if (d.verdict === "incomplete") return undefined
 	const route = withFacts(rec.route, d)
-	if (rec.completedAt !== undefined) return { route }
-	if (d.verdict === "deposited") return { route: withoutOutcome(route), ...depositPatch(rec, d.deposit) }
-	if (d.verdict === "pending") return { route: withoutOutcome(route), ...withoutDeposit(rec) }
+	if (rec.completedAt !== undefined || rec.route.depositFinal) return { route }
+	if (d.verdict === "deposited") {
+		const final = depositSettled(rec, d.decidedAt, d.finalized) ? { depositFinal: true as const } : {}
+		return { route: { ...undecided(route), ...final }, ...depositPatch(rec, d.deposit) }
+	}
+	if (d.verdict === "pending") return { route: undecided(route), ...withoutDeposit(rec) }
 	return { ...withoutDeposit(rec), ...outcomePatch({ ...rec, route }, d.observation, now) }
 }

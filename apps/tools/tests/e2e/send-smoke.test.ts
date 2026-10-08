@@ -1,6 +1,6 @@
 /*
  * Send-wizard smoke e2e. Mounts SendView in jsdom over the REAL wizard composables (catalog,
- * selection, grant, route, gas share, send, exit) and the REAL journal engine on jsdom's
+ * selection, grant, fuel quote, gas share, send, exit) and the REAL journal engine on jsdom's
  * localStorage; only the chain/wallet boundary is faked — the generation manifest, the two wallet
  * sessions, and the bridge-core functions that would talk to a chain. Everything between the click
  * and those boundaries is production code.
@@ -43,7 +43,9 @@ const h = vi.hoisted(() => ({
 		registrations: new Map<string, unknown>(),
 		hubTokens: new Map<string, string>(),
 		portals: new Map<string, string>(),
-		route: null as unknown,
+		/** The fuel swapper's answer to `quote`: FJ-wei per token base unit, a revert (no rate), or null for a
+		 *  read that never answers. */
+		fuelRate: null as bigint | "revert" | null,
 		withdrawsPaused: false,
 		exitsPaused: false,
 		/** What the exit's read-only preflight sees on Aztec before it authorises a burn. */
@@ -78,20 +80,8 @@ vi.mock("@/contracts/bridge-generation", async () => {
 	// the stability of the mapping matters to the wizard and the engine.
 	const derived = (erc20: string) => `0x00${keccak256(stringToHex(`l2:${erc20}`)).slice(4)}`
 	const bridge = manifest.bridge as NonNullable<typeof manifest.bridge>
-	// The sandbox fixture has no venue; the wizard's gas leg needs one to have anything to price.
-	const swap = {
-		poolManager: bridge.l1.swapTarget,
-		quoter: bridge.l1.swapTarget,
-		multicall3: bridge.l1.swapTarget,
-		weth: bridge.l1.router,
-		feeJuice: manifest.feeJuice.asset,
-		tiers: [{ fee: 3000, tickSpacing: 60 }],
-		ethFj: { fee: 3000, tickSpacing: 60 },
-		slippageBps: 300,
-		minFuelFj: "1000000000000000",
-		fjPerTx: "100000000000000000",
-		fjRegister: "500000000000000000",
-	}
+	// Budgets small enough that a one-unit send can carry a slice.
+	const fuel = { slippageBps: 300, minFuelFj: "1000000000000000", fjPerTx: "100000000000000000", fjRegister: "500000000000000000" }
 	const placeholder = { on: false }
 	const gen = {
 		MANIFEST: manifest,
@@ -107,13 +97,14 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		HUB: { toString: () => bridge.l2.hub.address },
 		TOKEN_CLASS_ID: bridge.l2.tokenClassId,
 		MANIFEST_TOKENS: bridge.tokens,
-		SWAP: swap,
+		FUEL: fuel,
+		LEGACY_ROUTERS: [bridge.l1.router],
 		HUB_ARTIFACT: {},
 		HUB_TOKEN_ARTIFACT: {},
 		rebuildHubInstance: async () => ({ address: { toString: () => bridge.l2.hub.address } }),
 		rebuildHubTokenInstance: async (erc20: string) => ({ address: { toString: () => derived(erc20) } }),
 	}
-	h.wire.gen = { ...gen, placeholder, swap }
+	h.wire.gen = { ...gen, placeholder }
 	// A getter, so one case can turn this network into a placeholder without a module reset.
 	return {
 		...gen,
@@ -124,6 +115,16 @@ vi.mock("@/contracts/bridge-generation", async () => {
 })
 
 vi.mock("@/composables/useL1Wallet", () => ({ useL1Wallet: () => h.wire.l1 }))
+// The pinned per-chain readers would otherwise build real RPC clients; every chain read answers from the fake.
+vi.mock("@/composables/useEthereumReader", () => {
+	const readClientFor = () => (h.wire.l1 as { publicClient: unknown }).publicClient
+	return {
+		readClientFor,
+		discoveryReadsFor: () => undefined,
+		useEthereumReader: () => ({ ethereum: readClientFor, forChain: readClientFor, discoveryReadsFor: () => undefined }),
+		__resetReadClientsForTests: () => {},
+	}
+})
 vi.mock("@/composables/useWalletConnection", () => ({
 	useWalletConnection: () => h.wire.session,
 	requestHubToken: (token: { l2Token: string }) => {
@@ -207,7 +208,6 @@ vi.mock("@unleashed/bridge-core", async (orig) => {
 			return { name: "Wrapped BTC", symbol: "WBTC", decimals: 8, nameRaw: raw, symbolRaw: raw }
 		},
 		readErc20Balances: async (_pub: unknown, _owner: string, tokens: readonly string[]) => new Map(tokens.map((t) => [t, 10n ** 12n])),
-		discoverFuelRoute: async () => h.state.route,
 	}
 })
 
@@ -282,7 +282,22 @@ function markRegistered(erc20: string, decimals: number): void {
 	h.state.portals.set(erc20.toLowerCase(), portalOf(erc20))
 }
 
-const ROUTE = { kind: "route", route: { path: [{ fee: 3000, tickSpacing: 60 }], zeroForOnes: [true] }, quoteOut: 10n ** 21n }
+/** 10^21 FJ-wei for one whole WBTC (8 decimals). */
+const FUEL_RATE = 10n ** 13n
+
+/** The revert viem raises for a swapper without a rate for the token. */
+async function swapperRevert(): Promise<never> {
+	const { BaseError, ContractFunctionRevertedError } = await import("viem")
+	throw new BaseError("quote reverted", { cause: new ContractFunctionRevertedError({ abi: [], functionName: "quote" }) })
+}
+
+/** `TestnetFuelSwapper.quote(token, amountIn)` as `h.state.fuelRate` says it answers. */
+function swapperQuote(amountIn: unknown): Promise<bigint> {
+	const rate = h.state.fuelRate
+	if (rate === null) return new Promise(() => {})
+	if (rate === "revert") return swapperRevert()
+	return Promise.resolve(BigInt(amountIn as bigint) * rate)
+}
 
 // ── the faked wallet sessions ────────────────────────────────────────────────────────────────────
 
@@ -475,7 +490,7 @@ describe("send wizard smoke", () => {
 		h.state.registrations.clear()
 		h.state.hubTokens.clear()
 		h.state.portals.clear()
-		h.state.route = null
+		h.state.fuelRate = null
 		h.state.gasHeld.value = 10n ** 18n
 		h.state.withdrawsPaused = false
 		h.state.exitsPaused = false
@@ -506,6 +521,7 @@ describe("send wizard smoke", () => {
 		}))
 		h.fn.readContract.mockImplementation(async (args: { functionName: string; args?: readonly string[] }) => {
 			if (args.functionName === "withdrawsPaused") return h.state.withdrawsPaused
+			if (args.functionName === "quote") return swapperQuote(args.args?.[1])
 			return h.state.portals.get(String(args.args?.[0]).toLowerCase()) ?? "0x0000000000000000000000000000000000000000"
 		})
 		// The real session answers whether the prompt RAN (false = another flow owned it); this stub
@@ -620,7 +636,7 @@ describe("send wizard smoke", () => {
 
 	it("a token with no fuel route closes the gas choices but still sends the token", async () => {
 		markRegistered(LIST_WBTC, LIST_DECIMALS)
-		h.state.route = { kind: "no-route", tried: 2 }
+		h.state.fuelRate = "revert"
 		const w = await mountView()
 		await pick(w, LIST_WBTC)
 		await toAmount(w, "1", { route: true })
@@ -688,7 +704,7 @@ describe("send wizard smoke", () => {
 
 	it("an account with no gas cannot choose the token alone: the card is greyed out with its reason and the choice moves to token + gas", async () => {
 		markRegistered(LIST_WBTC, LIST_DECIMALS)
-		h.state.route = ROUTE
+		h.state.fuelRate = FUEL_RATE
 		h.state.gasHeld.value = 0n
 		const w = await mountView()
 		await pick(w, LIST_WBTC)
@@ -703,7 +719,7 @@ describe("send wizard smoke", () => {
 
 	it("a gas-only send journals no token block and claims with the secret in its fuel block", async () => {
 		markRegistered(LIST_WBTC, LIST_DECIMALS)
-		h.state.route = ROUTE
+		h.state.fuelRate = FUEL_RATE
 		const w = await mountView()
 		await pick(w, LIST_WBTC)
 		await toAmount(w, "1", { route: true })

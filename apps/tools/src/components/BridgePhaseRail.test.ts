@@ -18,6 +18,7 @@ vi.mock("@/lib/clock", () => ({
 }))
 
 import { TESTIDS } from "@/lib/testids"
+import { XC_SRC_TX, xcRecord } from "@/test/crosschain-record"
 import BridgePhaseRail from "./BridgePhaseRail.vue"
 
 const sel = (t: string) => `[data-testid="${t}"]`
@@ -68,9 +69,9 @@ describe("BridgePhaseRail", () => {
 		expect(sync.text()).not.toMatch(/usually 1-4 min/)
 		expect(w.find('[role="progressbar"]').exists()).toBe(false)
 		expect(w.text()).not.toContain("102 / 103")
-		// Pending phases that wait on the chain show their short estimate.
+		// Pending phases show their short estimate; the claim's is the signature it waits on, in words.
 		expect(w.get(`${sel(TESTIDS.stepperPhase)}[data-phase="confirm"] .time`).text()).toBe("~1–2 min")
-		expect(w.find(`${sel(TESTIDS.stepperPhase)}[data-phase="claim"] .time`).exists()).toBe(false)
+		expect(w.get(`${sel(TESTIDS.stepperPhase)}[data-phase="claim"] .time.words`).text()).toBe("your signature + a few sec")
 		w.unmount()
 	})
 
@@ -199,5 +200,60 @@ describe("BridgePhaseRail", () => {
 		const w = mount(BridgePhaseRail, { props: { record: dep({ depositTxHash: "0xt", leafIndex: "7" }) } })
 		expect(w.find(sel(TESTIDS.sendStepperRegister)).exists()).toBe(false)
 		w.unmount()
+	})
+})
+
+describe("BridgePhaseRail - a cross-chain send", () => {
+	const TRANSPORT = { kind: "across", originChainId: 84532, depositId: "1", relayHash: `0x${"4e".repeat(32)}` } as const
+
+	beforeEach(() => {
+		runtime.value = {}
+		__resetPhaseClockForTests()
+	})
+
+	it("compact: six weighted segments, an outcome's words after its label and in its spoken state", () => {
+		const expired = xcRecord({ completedAt: 9 }, { transport: TRANSPORT, outcome: "expired-on-source" })
+		const w = mount(BridgePhaseRail, { props: { record: expired, compact: true } })
+		const cells = w.findAll(sel(TESTIDS.journalPhase))
+		expect(cells.map((c) => c.find(".seg-label").text())).toEqual(["Send", "Bridge · expired", "Deposit", "Cross", "Claim", "Done"])
+		expect(cells[1].attributes()).toMatchObject({ "aria-label": "Bridge, expired", "data-state": "ended" })
+		expect(cells[1].attributes("style")).toContain("--weight: 1.6")
+		expect(cells[0].find("svg").exists()).toBe(false)
+		w.unmount()
+		const finalizing = mount(BridgePhaseRail, {
+			props: { record: xcRecord({}, { transport: TRANSPORT, outcome: "delivered-to-wallet" }), compact: true },
+		})
+		expect(finalizing.find('[data-phase="deposit"]').attributes("aria-label")).toBe("Deposit, finalizing")
+		expect(finalizing.find('[data-phase="deposit"] .seg-label').text()).toBe("Deposit · finalizing")
+		finalizing.unmount()
+	})
+
+	it("full: the bridging phase is powered by LI.FI and tracked there; the done send links its source transaction", () => {
+		const w = mount(BridgePhaseRail, { props: { record: xcRecord({}, { transport: TRANSPORT }) } })
+		expect(w.find(sel(TESTIDS.stepperXcLifi)).attributes()).toMatchObject({ href: "https://li.fi", rel: "noopener noreferrer" })
+		expect(w.findAll(sel(TESTIDS.stepperXcLink)).map((a) => [a.text(), a.attributes("href")])).toEqual([
+			["0x5757…5757", `https://sepolia.basescan.org/tx/${XC_SRC_TX}`],
+			["Track on LI.FI0x5757…5757", `https://scan.li.fi/tx/${XC_SRC_TX}`],
+		])
+		w.unmount()
+	})
+
+	it("full: a send not found yet says so on its phase and offers a new send; an idle claim offers the claim", async () => {
+		const w = mount(BridgePhaseRail, { props: { record: xcRecord({}, { srcTxHash: undefined }) } })
+		const box = w.find(sel(TESTIDS.stepperXcNotFound))
+		expect(box.attributes("role")).toBe("status")
+		expect(box.text()).toContain("We haven’t found your send on Base Sepolia yet.")
+		expect(box.text()).toContain("Your wallet didn’t confirm it, so we keep looking. Sending again may move your funds twice.")
+		await w.find(sel(TESTIDS.stepperXcNewSend)).trigger("click")
+		expect(w.emitted("new-send")).toHaveLength(1)
+		w.unmount()
+
+		const deposited = xcRecord({ leafIndex: "7" }, { transport: TRANSPORT })
+		runtime.value = { [deposited.id]: { claimable: true } }
+		const claim = mount(BridgePhaseRail, { props: { record: deposited } })
+		expect(claim.find('[data-phase="claim"] .sr-only').text()).toBe("needs you")
+		await claim.find(sel(TESTIDS.stepperXcClaim)).trigger("click")
+		expect(claim.emitted("claim")).toHaveLength(1)
+		claim.unmount()
 	})
 })

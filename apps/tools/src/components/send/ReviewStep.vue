@@ -3,12 +3,13 @@
 import { Button, Icon } from "@unleashed/design"
 import { computed } from "vue"
 import { formatCompact, formatDisplayAmount, trimAddress } from "@/lib/format"
-import { type ExitPlan, type SendPlan, tokenRemainder } from "@/lib/send-model"
+import { type ExitPlan, NO_GAS_ROUTE, type SendPlan, tokenRemainder } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { safeDisplay, safeSentence } from "@/lib/token-display"
 
 /** Components */
 import ReviewDetails, { type PortalState } from "./ReviewDetails.vue"
+import WrongChainNotice from "./WrongChainNotice.vue"
 
 /** What the view states about the plan, frozen with it: the clock, the fee model, the transaction
  *  count the gas was sized for. Strings and a count, so this step only repeats them. */
@@ -34,8 +35,12 @@ const props = defineProps<{
 	error: string | null
 	/** Set when a pause refused the exit before anything was authorised; the balance is untouched. */
 	paused?: "l1" | "l2" | null
+	/** No route could buy gas when the amount step was left, so this send carries none. */
+	gasUnavailable?: boolean
+	/** The wallet sits on another chain than the one this send signs on: the switch replaces Sign and send. */
+	wrongChain?: { walletChainId: number; needChainId: number } | null
 }>()
-const emit = defineEmits<{ back: []; confirm: [] }>()
+const emit = defineEmits<{ back: []; confirm: []; "switch-chain": [] }>()
 
 const isExit = computed(() => props.plan.direction === "l2-to-l1")
 
@@ -112,7 +117,7 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 			</div>
 			<div class="line" :data-testid="TESTIDS.sendReviewNetworkFee">
 				<dt>Fee</dt>
-				<dd class="fee"><span v-if="estimate.networkFee">{{ estimate.networkFee }}</span> <span class="fee-note">{{ estimate.networkFeeNote }}</span></dd>
+				<dd class="fee"><span v-if="estimate.networkFee" class="fee-figure">{{ estimate.networkFee }}</span> <span class="fee-note">{{ estimate.networkFeeNote }}</span></dd>
 			</div>
 			<div class="line" :data-testid="TESTIDS.sendReviewTakes">
 				<dt>Takes</dt>
@@ -120,6 +125,9 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 			</div>
 		</dl>
 
+		<p v-if="gasUnavailable" class="note attention ul-notch" :data-testid="TESTIDS.sendReviewNoGas">
+			<Icon name="warning-diamond" :size="24" />{{ NO_GAS_ROUTE }}
+		</p>
 		<p v-if="firstTime" class="note soft ul-notch" :data-testid="TESTIDS.sendReviewFirstTime">
 			<Icon name="info-box" :size="24" color="secondary" />
 			First time for this token here — the send takes a little longer and costs a bit more than the next one will.
@@ -165,9 +173,22 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 			<Icon name="square-alert" :size="24" />{{ safeSentence(error) }}
 		</p>
 
+		<WrongChainNotice
+			v-if="wrongChain"
+			:wallet-chain-id="wrongChain.walletChainId"
+			:need-chain-id="wrongChain.needChainId"
+			@switch="emit('switch-chain')"
+		/>
 		<div class="nav">
 			<Button variant="secondary" size="large" :disabled="busy" :data-testid="TESTIDS.sendReviewBack" @click="emit('back')">Back</Button>
-			<Button size="large" :disabled="confirmDisabled" :loading="busy" :data-testid="TESTIDS.sendReviewConfirm" @click="emit('confirm')">
+			<Button
+				v-if="!wrongChain"
+				size="large"
+				:disabled="confirmDisabled"
+				:loading="busy"
+				:data-testid="TESTIDS.sendReviewConfirm"
+				@click="emit('confirm')"
+			>
 				<Icon v-if="!busy" name="key" :size="24" />
 				{{ busy ? "Sending" : "Sign and send" }}
 			</Button>
@@ -189,11 +210,12 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 	margin: 0;
 }
 
+/* A value with no room beside its label drops under it, as on a phone. */
 .line {
-	display: grid;
-	grid-template-columns: 104px minmax(0, 1fr);
-	gap: 16px;
+	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
+	gap: 4px 16px;
 	padding: 11px 16px;
 }
 
@@ -205,16 +227,19 @@ const confirmDisabled = computed(() => props.busy || props.grant === "pending" |
 
 .send dd {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
-	gap: 12px;
+	gap: 6px 12px;
 }
 
 dt {
+	flex: 0 0 104px;
 	font: 400 14px/1.4 var(--ul-font-body);
 	color: var(--ul-ink-3);
 }
 
 dd {
+	flex: 1 1 260px;
 	margin: 0;
 	min-width: 0;
 	font: 400 15px/1.4 var(--ul-font-mono);
@@ -262,15 +287,18 @@ dd {
 	font-weight: 700;
 }
 
+/* Body face, so the space before the note is a body space; only the figure is mono. */
 .fee {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
+	font-family: var(--ul-font-body);
+}
+
+.fee-figure {
+	font-family: var(--ul-font-mono);
 }
 
 .fee-note {
 	font: 400 13px/1.4 var(--ul-font-body);
-	color: var(--ul-ink-3);
+	color: var(--ul-ink-2);
 }
 
 .prose {
@@ -300,6 +328,17 @@ dd {
 	--ul-notch: var(--ul-notch-2);
 	padding: 12px 14px;
 	color: var(--ul-ink-2);
+}
+
+.attention {
+	--ul-fill: var(--ul-attention-bg);
+	--ul-notch: var(--ul-notch-2);
+	padding: 12px 14px;
+	color: var(--ul-ink);
+}
+
+.attention > :first-child {
+	color: var(--ul-attention);
 }
 
 .status {

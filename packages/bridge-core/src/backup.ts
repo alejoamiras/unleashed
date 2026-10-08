@@ -313,8 +313,9 @@ function assertExtraDeposits(extras: unknown): void {
 	}
 }
 
-/** The outcome union, and its two facts only beside an outcome. */
+/** The outcome union, and its two facts only beside an outcome; a final deposit is never beside one. */
 function assertOutcome(r: Partial<CrossChainRoute>): void {
+	if (r.depositFinal !== undefined && (r.depositFinal !== true || r.outcome !== undefined)) throw new Error(INVALID)
 	if (r.outcome === undefined) {
 		if (r.outcomeTxHash !== undefined || r.outcomeAmount !== undefined) throw new Error(INVALID)
 		return
@@ -355,11 +356,17 @@ function assertRouteDestination(r: Partial<CrossChainRoute>): void {
 	}
 }
 
+/** Fixed terms carry a fill deadline, so they exist only on Across. */
+function assertTerms(r: Partial<CrossChainRoute>): void {
+	if (r.terms !== undefined && (r.terms !== "fixed" || r.rail !== "acrossV4" || r.fillDeadline === undefined)) throw new Error(INVALID)
+}
+
 function validateRoute(route: unknown): CrossChainRoute {
 	const r = route as Partial<CrossChainRoute> | null
 	if (!r || typeof r !== "object") throw new Error(INVALID)
 	assertRouteSource(r)
 	assertRouteDestination(r)
+	assertTerms(r)
 	assertTransport(r.transport, r.rail as CrossChainRoute["rail"])
 	assertOutcome(r)
 	assertExtraDeposits(r.extraDeposits)
@@ -376,6 +383,7 @@ export function validateCrossChainRecord(rec: unknown): CrossChainDepositRecord 
 	if (!r || typeof r !== "object" || r.schema !== 4 || r.direction !== "deposit") throw new Error(INVALID)
 	const route = validateRoute(r.route)
 	const shared = validateSendRecord({ ...r, schema: 3, route: undefined })
+	if (route.depositFinal && (r as { leafIndex?: unknown }).leafIndex === undefined) throw new Error(INVALID)
 	return { ...shared, schema: 4, route } as CrossChainDepositRecord
 }
 

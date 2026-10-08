@@ -5,7 +5,15 @@ import { type Address, createPublicClient, getAddress, type Hex, http, isAddress
 import { describe, expect, it } from "vitest"
 import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR } from "./across-v4"
 import { SWAP_TOKENS_MULTIPLE_V3_SELECTOR, SWAP_TOKENS_SINGLE_V3_SELECTOR } from "./lifi-abi"
-import { LIFI_BOOK, type LifiChainBook, type LifiCodeHashes, lifiBook, type StargatePool, stargatePoolFor } from "./lifi-addresses"
+import {
+	LIFI_BOOK,
+	type LifiChainBook,
+	type LifiCodeHashes,
+	lifiBook,
+	registerSandboxLifi,
+	type StargatePool,
+	stargatePoolFor,
+} from "./lifi-addresses"
 import {
 	START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR,
 	STARGATE_POOL_ABI,
@@ -57,6 +65,28 @@ describe("lifi-addresses", () => {
 		expect(CHAINS.map((b) => b.chainId).sort((a, b) => a - b)).toEqual([1, 10, 8453, 42161, 84532, 11155111])
 		for (const b of CHAINS) expect(lifiBook(b.chainId)).toBe(b)
 		expect(() => lifiBook(137)).toThrow(/no LI.FI book for chain 137/)
+	})
+
+	it("books a sandbox's contracts on its two anvils only, and never shadows a live chain", () => {
+		const at = (n: number) => getAddress(`0x${n.toString(16).padStart(40, "0")}`)
+		const sandbox = (src: number, eth: number) => ({
+			source: { chainId: src, diamond: at(1), spokePool: at(2) },
+			ethereum: { chainId: eth, executor: at(3), receiverAcrossV4: at(4), spokePool: at(5) },
+		})
+		const sepolia = lifiBook(11155111)
+		expect(() => registerSandboxLifi(sandbox(31338, 11155111))).toThrow(/chain 11155111 is not a sandbox chain/)
+		expect(() => registerSandboxLifi(sandbox(84532, 31337))).toThrow(/chain 84532 is not a sandbox chain/)
+		expect(() => lifiBook(31337), "a refused pair books neither chain").toThrow(/no LI.FI book/)
+		expect(lifiBook(11155111)).toBe(sepolia)
+
+		registerSandboxLifi(sandbox(31338, 31337))
+		expect(lifiBook(31338)).toMatchObject({
+			diamond: at(1),
+			acrossSpokePool: at(2),
+			facets: { [START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR]: at(1) },
+		})
+		expect(lifiBook(31337)).toMatchObject({ executor: at(3), receiverAcrossV4: at(4), acrossSpokePool: at(5), facets: {} })
+		expect(Object.keys(LIFI_BOOK)).toHaveLength(6)
 	})
 
 	it("holds only checksummed addresses, 32-byte code hashes, and a code hash for every receiver it lists", () => {

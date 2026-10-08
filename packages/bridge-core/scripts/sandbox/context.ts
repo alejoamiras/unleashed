@@ -24,15 +24,14 @@ import {
 	privateFpcFeeLimit,
 	privateMintAndPayFee,
 } from "../../src/private-fuel"
-import { buildFuelRoute } from "../../src/route"
 import { runSend, type SendGasLeg, type SendParams, type SendResult } from "../../src/send-flow"
 import type { CalibrationSample } from "../calibration"
 import { feeJuiceFor } from "../fee-juice-l2"
 import { type L2Ctx, waitForL1ToL2Message } from "../generation"
 import { ensureRouterPermit2 } from "../script-l1"
 import { claimTokensUntilSynced, registerHub, registerHubToken } from "../script-l2"
-import { sendGenerationOf } from "../script-send"
-import { deadline, FEE_CEILING, PERMIT2, rndNonce, SANDBOX_ETH_FJ, SANDBOX_TIER } from "./constants"
+import { planFuelLeg, sendGenerationOf } from "../script-send"
+import { deadline, FEE_CEILING, PERMIT2, rndNonce } from "./constants"
 import type { SandboxClients } from "./handle"
 import { mintFeeAsset } from "./l1"
 import { l2CtxFor } from "./l2"
@@ -219,10 +218,18 @@ export async function balanceOf(contract: ContractBase, from: AztecAddress, kind
 
 const generationOf = (s: SmokeContext) => sendGenerationOf(s.manifest, s.bridge)
 
-/** The explicit two-hop shape the mock accepts. The mock ignores the pools entirely, but the router
- *  hashes them into the witness and refuses an empty path for anything but the fee asset. */
-export function mockRoute(erc20: Address, feeJuice: Address, weth: Address) {
-	return buildFuelRoute({ token: erc20, weth, feeJuice, tokenWeth: SANDBOX_TIER, ethFj: SANDBOX_ETH_FJ })
+/** The deposit router's fuel swapper; a sandbox booted before the router existed has none. */
+export function fuelSwapperOf(s: Pick<SmokeContext, "clients">): Address {
+	const swapper = s.clients.deployment.fuelSwapper
+	if (!swapper) throw new Error("this sandbox has no fuel swapper — boot a fresh one")
+	return swapper
+}
+
+/** The fuel swapper's floored quote for `slice` of `erc20`: the call the router hands it and the floor
+ *  that call carries. Throws for a token the swapper has no rate for. */
+export async function fuelLeg(s: SmokeContext, erc20: Address, slice: bigint): Promise<Pick<SendGasLeg, "swapData" | "minFuelOutput">> {
+	const plan = await planFuelLeg(s.l1.pub, s.manifest, erc20, slice)
+	return { swapData: plan.swapData, minFuelOutput: plan.minFuelOutput }
 }
 
 export async function send(s: SmokeContext, l1: L1Ctx, p: Omit<SendParams, "nonce" | "deadline">): Promise<SendResult> {
@@ -384,15 +391,15 @@ export async function mintPrivateGasNote(s: SmokeContext, fpc: ContractBase, amo
 	const feeAsset = s.clients.deployment.feeJuice
 	await mintFeeAsset(s.l1, feeAsset, s.l1.account.address, amount)
 	await ensureRouterPermit2(s.l1, { usdc: feeAsset, usdcAbi: TestERC20Abi, permit2: PERMIT2, needed: amount, mins: s.mins })
-	return mintPrivateGasVia(s, fpc, { erc20: feeAsset, amount, minFuelOutput: amount, path: [], zeroForOnes: [] })
+	return mintPrivateGasVia(s, fpc, { erc20: feeAsset, amount, minFuelOutput: amount, swapData: "0x" })
 }
 
 /** The gas leg of a private gas-only deposit: whatever the venue turns `amount` of `erc20` into. */
-export type PrivateGasLeg = { erc20: Address; amount: bigint } & Pick<SendGasLeg, "minFuelOutput" | "path" | "zeroForOnes">
+export type PrivateGasLeg = { erc20: Address; amount: bigint } & Pick<SendGasLeg, "minFuelOutput" | "swapData">
 
 /** The private half of any gas-only shape: the Fee Juice the leg buys lands at the PrivateFPC under
  *  a claimer-bound secret, is claimed into the FPC's public balance, then minted into the actor's
- *  credit. Returns the credit gained, which the mock venue's fixed rate makes exact. */
+ *  credit. Returns the credit gained, which the swapper's fixed rate makes exact. */
 export async function mintPrivateGasVia(s: SmokeContext, fpc: ContractBase, leg: PrivateGasLeg): Promise<bigint> {
 	const salt = Fr.random()
 	const res = await send(s, s.l1, {
@@ -405,8 +412,7 @@ export async function mintPrivateGasVia(s: SmokeContext, fpc: ContractBase, leg:
 			fuelAmount: leg.amount,
 			fuelRecipient: PRIVATE_FPC_ADDRESS as Hex,
 			minFuelOutput: leg.minFuelOutput,
-			path: leg.path,
-			zeroForOnes: leg.zeroForOnes,
+			swapData: leg.swapData,
 			// The FPC rebuilds this secret from the claimer inside `mint`; a random one would strand the Fee Juice.
 			fuelSecret: deriveBridgeSecret(salt, s.l2.from),
 		},

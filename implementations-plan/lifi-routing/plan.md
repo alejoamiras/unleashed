@@ -267,6 +267,7 @@ type CrossChainDepositRecord = Omit<SendDepositRecord, "schema"> & { schema: 4; 
   fillDeadline?: number                           // Across only
   outcome?: "not-sent" | "delivered-to-wallet" | "expired-on-source"; outcomeTxHash?: Hex; outcomeAmount?: string
   extraDeposits?: { txHash: Hex; leafIndex: string; amount: string }[]   // authenticated gifts to the same secret
+  depositFinal?: true      // the deposit's block is at or below Ethereum `finalized`; never beside an outcome
 } }
 ```
 
@@ -703,13 +704,15 @@ with `op-remote`, batched into one sitting.
   - Refused: the Tenderly gateways truncate silently (a 50k-block Sepolia query returned 685 logs where its own
     10k-block tail returned 13,964), which would make discovery miss a deposit; `1rpc.io` caps logs at 50 blocks;
     dRPC's free tier serves no Sepolia; `rpc.sepolia.org` answers 404; thirdweb answers rate-limit text.
-  - The Across testnet API (`https://testnet.across.to`) needs no key or sign-up and answers with CORS `*`. It is in
-    the CSP because the browser asks it for the relay fee and limits, the job li.quest does on mainnet.
+  - The Across testnet API (`https://testnet.across.to`) needs no key or sign-up and answers with CORS `*`. It was in
+    the CSP for the browser to ask it for the relay fee and limits; once every testnet send rode fixed terms (D45,
+    D46) the app never asked it, and it left the testnet CSP.
   - Discovery pages `eth_getLogs` by block range, halves the range on a provider error, and reads logs only from
     these pinned providers; `verify-l1` defaults `BASE_SEPOLIA_RPC_URL` to the PublicNode endpoint, so the
     1Password item needs no new field.
 - **A6**: *"Yes. Still show it."* Cross-chain fuel-only is offered and stays visible above the fee ceiling, with
-  its fee in USD and an over-ceiling warning; the ceiling blocks token sends, it only warns on fuel-only.
+  its fee in USD and an over-ceiling warning; the ceiling blocks token sends, it only warns on fuel-only. Amended by
+  D50: no ceiling warning on testnet's fixed terms (USD per D48).
 - **A7, A8, A11**: *"Ok."* Approved as written.
 - **A9**: *"Yes. I think it has 0.25% integration fee by default since we are on the fee tier."* Approved. That
   0.25 % is LI.FI's own FeeCollector step (`research/lead-lifi-api-shapes.md:29`), already bounded by the
@@ -744,14 +747,14 @@ with `op-remote`, batched into one sitting.
 - **A4 LI.FI's LGPL-3.0 code in tests and the sandbox**: a pinned, gitignored forge lib compiled under its own
   profile, never committed, never in production contracts. Confirm; otherwise twins only (lower fidelity).
 - **A5 Read RPCs and CSP. Resolved** (owner answers above): PublicNode for Sepolia and Base Sepolia,
-  `sepolia.base.org` as the Base Sepolia fallback, `testnet.across.to`. Mainnet providers (and `li.quest`) are
+  `sepolia.base.org` as the Base Sepolia fallback (`testnet.across.to` left with fixed terms). Mainnet providers (and `li.quest`) are
   decided in the mainnet plan.
 - **A6 v1 scope.** Testnet source Base Sepolia (USDC; WETH when Across testnet routes it with a message);
   mainnet-ready sources Base, Arbitrum, Optimism (USDC, WETH) via Stargate V2; no source-side swaps;
   smart-contract source accounts refused. Cross-chain **fuel-only**: the contract and core support it; offer it in
   the UI only when its fees stay under the ceiling (mainnet ≈ $5.7 fixed LayerZero fee for a ~$2 slice), or hide it?
 - **A7 Thresholds.** Fee ceiling: proposed 10 % on mainnet, warn-only on testnet (Across testnet charges ~24 % at
-  5 USDC). Cross-chain fuel slippage from the warp test (proposed 300 bps); Ethereum-origin `fuel.slippageBps`
+  5 USDC); amended by D50: testnet's fixed terms show no ceiling warning. Cross-chain fuel slippage from the warp test (proposed 300 bps); Ethereum-origin `fuel.slippageBps`
   unchanged.
 - **A8 Guardian and owner powers.** The new router honours `depositsPaused` for every leg, fuel-only included
   (today's router lets fuel-only through a pause); the owner keeps only `sweep`; rotating the swap target means a
@@ -846,6 +849,14 @@ hashes and amounts on the boards are illustrative data, not the specification. A
 - No gas route: "No route can buy Aztec gas on this network right now, so this send can't include gas."
 - Signature step, unchanged: "Sign the bridge intent in your Ethereum wallet — one signature covers the swap and the
   deposit."
+
+**Phase 7 sign-offs** (strings Phase 7 built that no board draws). The owner, *"Approve both as written"*:
+- Testnet Route row: "USDC → AZTEC through the testnet fuel swapper, then the gas leg is bridged." The swapper has
+  no tool name for G-UX-1's parentheses.
+- `GAS_QUOTE_MOVED`: "The gas price moved since you reviewed this send — go back and review it again. Nothing was
+  sent."
+
+And for the Addresses tab's Router row, *"Only the deposit router (Recommended)"*.
 
 ## Phases
 
@@ -1032,7 +1043,7 @@ committed; the live app (old router) still green on `verify:deployments`. Layer:
 
 ### Arc 4: the app switches routers and goes multi-chain
 
-#### Phase 7: Plumbing and the Ethereum-origin switch (after G-UX-1)
+#### Phase 7: Plumbing and the Ethereum-origin switch (after G-UX-1) ✓
 
 Source registry; `useEthereumReader` and per-chain read clients; CSP per target (A5); `useCrossChainRoute`
 (debounce, latest wins, TTL); `crosschain-deposit-flow.ts` (journal first, seal, verify, sign, persist);
@@ -1045,7 +1056,7 @@ verify:build-target` (the built `_headers` list exactly the intended new origins
 existing specs with Ethereum-origin flows on the new router. Pass also: composable tests for decoder refusal,
 chain mismatch, reload while bridging and each outcome; G-UX-1 quoted in this plan. Layers: unit, build, e2e.
 
-#### Phase 8: Visible cross-chain UI (after G-UX-2)
+#### Phase 8: Visible cross-chain UI (after G-UX-2) ✓
 
 Open by reading the signed boards and checking their digests (Design binding 2). S-1…S-11, S-15, S-16 built to
 those boards; testids; `bridge-steps.ts` stays exhaustive; component tests per surface; build-beside-board
@@ -1055,7 +1066,7 @@ screenshot pairs for every surface, light and dark, 390 px and desktop.
 pairs attached for the PR; a fresh reviewer's deviation list (Design binding 6) empty or each item signed by the
 owner; every surface no board draws listed in the PR with its approval. Layers: unit, design review.
 
-#### Phase 9: Browser e2e for the multi-chain flow
+#### Phase 9: Browser e2e for the multi-chain flow ✓
 
 `l1-wallet.ts` chain → RPC map and a real `wallet_switchEthereumChain`; `wallet_getCapabilities` reporting no
 atomic batch by default and one cell with it (`atomicRequired: true`, reload before its receipts exist); a pre-existing MAX source allowance replaced by the
@@ -1445,6 +1456,118 @@ code or the chain.
 
 Rejected: none; two sub-suggestions declined with reasons (round 1, item 2). Accepted residue: `fillGas` is a
 simulation check, and the block a fill lands in can differ from the one it simulated.
+
+**D48 Phase 8 sign-offs, first batch (owner).** Two fresh reviewers compared the build with the signed boards;
+these answers settle the questions that do not need a screenshot:
+- **USD.** *"Token units in v1, USD later (Recommended)"*. S-7's and A6's USD figures are a plan change: every fee,
+  minimum and gas figure shows token units, as `H-Review-Testnet` draws them. LI.FI's mainnet quotes carry USD
+  amounts for the mainnet plan; the below-minimum token row and the "ETH needed for fees" row wait for a price.
+- **Copy D46 made false.** *"Approve as proposed (Recommended)"*:
+  - Review notice: "Testnet: this send waits for a manual fill on Ethereum · Sepolia. If it isn't filled within
+    2 hours, it is refunded to you on Base Sepolia."
+  - Takes row: "Up to 2 hours for a manual fill on Ethereum · Sepolia, a few minutes for Aztec to pick it up,
+    then your claim."
+  - S-Refunded: "This transfer waited 2 hours for a manual fill on Ethereum · Sepolia and wasn't filled, so it
+    expired."
+  - Activity expired card: "It wasn't filled on Ethereum · Sepolia within 2 hours. Refund pending …"
+  - Expiry guide: "{What} wasn't filled on {l1} within {window}".
+- **Existing features no board draws stay**, all four checked: *"Addresses tab and header chrome"*, *"Testnet mint
+  strip"*, *"Backup and Restore"*, *"Add-to-wallet, Clear, footer"*.
+- **Testnet fills.** *"Manual for now, follow-up (Recommended)"*: a fixed-terms send is capped at 8 whole tokens,
+  the figure `H-Review-Testnet` draws, so the filler can always cover it; an operator alert or an auto-filler is a
+  follow-up.
+
+**D49 Phase 9 in the sandbox (lead).** What the browser suite met that the table assumed otherwise:
+- **Decoder refusal before signing has no browser path off mainnet.** Under D45 every byte `verifyRoute` checks on
+  testnet and in the sandbox is the app's own (self-built terms, the swapper call from `sliceSwapData`), so no
+  fixture response can make it refuse without a test-only fault in app code. The cell is held one layer down:
+  `useCrossChainRoute.test.ts` ("never offers bytes the decoder refuses"), `crosschain-deposit-flow.test.ts`
+  ("refuses a stale, tampered or wrong-chain route…") and the refused notice in `testid-coverage.test.ts`. The
+  mainnet plan, whose routes carry LI.FI's bytes, owns a browser cell for it.
+- **Starve-gas never reaches the receiver's recovery.** A fill starved to 250k gas reverts whole under the sandbox
+  SpokePool, so the deposit expires (cell 54). Delivered-to-wallet (cell 53) pauses factory deposits before the
+  fill instead; `ReceiverAcrossV4` catches the revert and pays out on Ethereum.
+- **Exclusive fills.** The relay loop impersonates the relayer a deposit names (`TESTNET_FILLER` under fixed terms) on
+  the L1 anvil, and cell 50 checks that `FilledRelay` names it.
+- **A claim never waits on the wallet's chain.** The suite found that a wallet left on the source chain after a
+  cross-chain send failed the claim's token check (`validateTokenBlock`) with the wrong-chain error, and the app
+  offers no switch away from a source chain. The check now reads the factory registration through the build's
+  pinned Ethereum reader (`readClientFor`), and the wallet's transport only where the build pins none. The trust bar
+  is unchanged: an RPC that lies about the registration defeats the check either way, and the pinned RPCs are the
+  ones cross-chain discovery already trusts for Ethereum facts.
+
+**D50 Phase 8 sign-offs, second batch (owner).** The two fresh reviewers' remaining deviations went to the owner as
+29 cards, each with the build beside its board. Answers, verbatim:
+- *"Approve all recommendations"* for every card but one:
+  - **Copy no board draws.** The over-cap notice and the testnet progress wording and the small strings, approved
+    as built. The review's fixed-terms line becomes "Fixed testnet terms: the relay fee is 25.0 % of the amount, and
+    one send carries at most 8.00 USDC." Testnet says terms where the boards say quote: "These terms expired.
+    They're rebuilt from the latest block; nothing was signed." [Rebuild terms] · [Get new terms] · "Try again
+    with new terms." · "Get new terms and sign again."; mainnet keeps the boards' words. The testnet no-route body
+    is "The gas swap on Ethereum · Sepolia has no price for this amount right now. Nothing was signed." A deposit
+    approved but never signed reads "The approval on Base Sepolia went through, but the deposit was never signed,
+    so nothing was sent." / "Your USDC never left your wallet, but the approval for it is still open. Revoke it
+    below." / "Revoke the approval, or get new terms and sign again."
+  - **Plan over board.** No fee-ceiling warning on testnet (A6 and A7 amended); the itemised You-sign line without
+    a prompt count; six phases when nothing needs approving; no footnote under All; the design system's field and
+    switch edges; the mainnet cross-chain copy revisited in the mainnet plan; the address on pasted and catalogue
+    Ethereum token rows.
+  - **Boards that disagree.** The build's choice kept on all nine: phone wallet chips with × and chevron, no Portal
+    row on the cross-chain review, one stepper for Ethereum-origin sends, Bridging · Not sent · ✓ beside every
+    Arrived, the red Not sent box, "Deposit · to your wallet", a pink badge, the dock chrome on every page, the
+    short phone chip label.
+  - **What the app can't know.** All five gaps accepted, with a follow-up to keep phase times across reloads. A
+    reverted send states its network fee in ETH, read from its receipt (execution gas plus the OP-stack L1 fee):
+    "…the Base Sepolia network fee for the attempt, 0.000041 ETH."
+  - **Leftovers.** Show receipt kept on the another-deposit card; "Testnet build only" is a canvas note, not built;
+    the four behaviour changes (newest first, the phone's open gas breakdown, the filled Claim, the badge that
+    counts without opening the dock) approved.
+- **Finality.** *"Claim early"*, over the card's recommendation. The claim starts when Aztec has the message, as
+  Ethereum-origin sends do. Accepted risk: before Ethereum finalizes a deposit, a reorg that moves it can leave a
+  claim built on the old position failing, or marked done while Aztec dropped it (the arc 4 review's round 2,
+  findings 1–3: completion ends the watch before finality, a submitted claim is not bound to its deposit snapshot,
+  re-included fuel keeps the old message's settlement). The funds stay claimable at the new position; nothing
+  rebuilds the claim for it. A follow-up covers both paths.
+- **Derived to keep the signed words true** (no new wording): the wizard's panel for a deposit never signed carries
+  the existing revoke offer, which "Revoke it below" names (a reverted send's panel stays as S-Reverted draws it); its approval clauses show only while that offer reads the allowance
+  open, so past a revoke, or for an approval the wallet never answered and that never landed, the panel keeps the
+  signed sentences' other clauses ("The deposit was never signed, so nothing was sent." / "Your USDC never left your
+  wallet." / "Get new terms and sign again."). The Activity card's not-sent line says "The deposit was never signed"
+  in place of "The send reverted on Base Sepolia" for such a send. Neither the panel nor the card lists a rejected
+  transaction it never had.
+
+**D51 Arc 4 Codex loop (`gpt-6.1-sol` at `high`, over the arc 4 diff).** Every finding was verified against the
+code before it was triaged; the fixes are logged in `lessons/phase-9.md` § Arc 4 review fixes.
+- Round 1 (four, all accepted and fixed): discovery stopped before the deposit was final (`route.depositFinal`, the
+  watch until final, claim material dropped when the deposit moves); a refused deposit discarded a live approval
+  (hashes journaled as returned, such a send ends `not-sent` with the revoke offer); the account check compared
+  captured values (the live account before every signature, inside `withOperation`); the route's TTL was checked at
+  entry only (checked before each wallet request).
+- Round 2 (six): 1–3 (a claim before Ethereum finality, a submitted claim not bound to its deposit snapshot,
+  re-included fuel keeping the old message's settlement) all need the deposit to move before finality; the owner
+  ruled *"Claim early"* and accepted them as a risk with a follow-up (D50). 4–6 accepted and fixed: an approval
+  whose reply the wallet lost keeps its record; the route's age is read after the live account, right before each
+  request; a restored file's `depositFinal` is refused without a deposit and stripped on restore.
+- Round 3 (two medium, one low), the plan's hard stop; the owner chose *"Fix the real ones, accept forged backups
+  (Recommended)"*:
+  1. The unanswered-approval marker lived in memory and was cleared before the hash was written. The hash is now
+     journaled first. A reload with a wallet prompt open leaves the send "not found yet" for good, with no revoke
+     and no Dismiss; see round 4 for why that stays.
+  2. A restored record's outcome is trusted, and a batch send with no hash read as never signed. A batch is never
+     called never signed. Accepted with a follow-up: a backup that decrypts can carry a false outcome or completion,
+     and producing one needs the user's backup key.
+  3. (low) A Base receipt without its L1 fee showed execution gas alone as the attempt's fee; the figure is now left
+     out.
+- Round 4 (past the cap; one high, one medium, both against the round 3 fix that ended a never-found send as
+  `not-sent` at its `fillDeadline`): absence is not proof. An RPC that drops `Transfer` logs, or a source reorg that
+  mines the send below the saved scan start, made a real deposit final `not-sent`, and Dismiss could then delete its
+  recovery secret. And the premise was false: Across's `deposit` (SpokePool v5.0.26) bounds the quote's age and the
+  deadline's upper limit only, so a stale prompt can still land after the deadline. The verdict is reverted. The
+  owner chose *"Revert it, accept the stuck card (Recommended)"*: after a reload with a wallet prompt open, the card
+  stays "not found yet" with no revoke offer and no Dismiss, and the exact approval stays open until revoked
+  elsewhere; a follow-up designs a journaled "deposit requested" marker, with cross-tab care, that lets a send never
+  asked for its deposit end safely. The other round 3 fixes held.
+- Round 5 (resumed): "no new material findings". Arc 4 converged in five rounds.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's

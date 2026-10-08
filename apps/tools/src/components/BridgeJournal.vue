@@ -6,16 +6,14 @@ import EmptyChannel from "./EmptyChannel.vue"
 /** Composables */
 import { useBridgeBackup } from "@/composables/useBridgeBackup"
 import { useBridgeJournal } from "@/composables/useBridgeJournal"
-import { useBridgeWallet } from "@/composables/useBridgeWallet"
 import { useToast } from "@/composables/useToast"
 
 /** Utils */
-import { type BridgeJournalRecord, assetKindOf } from "@unleashed/bridge-core"
+import { assetKindOf } from "@unleashed/bridge-core"
 import { Button, Icon } from "@unleashed/design"
 import { computed, ref } from "vue"
-import { classify } from "@/lib/activity"
-import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
-import { recordState } from "@/lib/record-policy"
+import { rowStrings } from "@/lib/activity"
+import { crossChainPhase, sendView } from "@/lib/crosschain-activity"
 import { TESTIDS } from "@/lib/testids"
 
 // `source` picks the record set: `visible` omits the record the wizard is foregrounding (its stepper
@@ -53,11 +51,10 @@ async function onRestorePick(event: Event) {
 	restoring.value = true
 	try {
 		const rec = await backup.restoreFile(await file.text())
-		const d = displayAmountOf(rec)
-		const q = amountQualifier(d)
+		const { amount, symbol, qualifier: q } = rowStrings(rec, crossChainPhase(rec))
 		push({
 			kind: "ok",
-			text: `Restored: ${displayAmountText(d)} ${d.symbol}${q ? ` (${q})` : ""} ${rec.direction === "deposit" ? "to Aztec" : "to Ethereum"}.`,
+			text: `Restored: ${amount} ${symbol}${q ? ` (${q})` : ""} ${rec.direction === "deposit" ? "to Aztec" : "to Ethereum"}.`,
 		})
 	} catch (e) {
 		push({ kind: "error", text: e instanceof Error ? e.message : "Restore failed." })
@@ -66,25 +63,18 @@ async function onRestorePick(event: Event) {
 	}
 }
 
-const wallet = useBridgeWallet()
-
+/** Newest first: the dock is where what needs you ranks first. */
 const sorted = computed(() => {
-	const all = props.source === "all" ? journal.records.value : journal.visibleRecords.value
-	const recs = props.kind ? all.filter((r) => assetKindOf(r) === props.kind) : all
-	const view = { status: wallet.status.value, selectedAccount: wallet.selectedAccount.value, accounts: wallet.accounts.value }
-	const rank = new Map(recs.map((r) => [r.id, classify(r, recordState(r, journal.runtime.value[r.id] ?? {}, view)).rank]))
-	return [...recs].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0) || b.createdAt - a.createdAt)
+	const all = props.source === "all" ? journal.listedRecords.value : journal.visibleRecords.value
+	const recs = props.kind ? all.filter((r) => assetKindOf(sendView(r)) === props.kind) : all
+	return [...recs].sort((a, b) => b.createdAt - a.createdAt)
 })
-const countWords = computed(() => `${sorted.value.length} ${sorted.value.length === 1 ? "record" : "records"}`)
 </script>
 
 <template>
 	<Flex tag="section" direction="column" gap="16" class="journal" :data-testid="TESTIDS.journal">
 		<Flex tag="header" align="center" justify="between" gap="12">
-			<span class="heading">
-				<h2>{{ props.title }}</h2>
-				<span v-if="sorted.length" class="count">{{ countWords }}</span>
-			</span>
+			<h2>{{ props.title }}</h2>
 			<Button
 				size="small"
 				variant="secondary"
@@ -139,22 +129,11 @@ const countWords = computed(() => `${sorted.value.length} ${sorted.value.length 
 </template>
 
 <style scoped>
-.heading {
-	display: flex;
-	align-items: baseline;
-	gap: 12px;
-}
-
 .journal h2 {
 	margin: 0;
-	font: 700 17px/1.2 var(--ul-font-body);
+	font: 700 20px/1.2 var(--ul-font-body);
 	letter-spacing: var(--ul-tracking-heading);
 	color: var(--ul-ink);
-}
-
-.count {
-	font: 400 13px/1 var(--ul-font-mono);
-	color: var(--ul-ink-3);
 }
 
 .restore {

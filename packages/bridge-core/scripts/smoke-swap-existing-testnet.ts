@@ -2,9 +2,10 @@
  * Pre-promotion FUELED smoke for a candidate manifest: send + swap → self-paying hub claim.
  *
  * The fueled sibling of smoke-existing-testnet.ts (which does the plain send→claim). Registers the
- * manifest's hub and the hub-derived L2 token (NO deploy), then runs ONE public fueled send: swap a
- * slice of the bridged token → Fee Juice, bridge the rest into the token's factory portal, and claim
- * through the hub in a single self-paying tx (the claimed Fee Juice pays that tx's own gas).
+ * manifest's hub and the hub-derived L2 token (NO deploy), then runs ONE public fueled send through the
+ * deposit router: swap a slice of the bridged token → Fee Juice at the fuel swapper's quote, bridge the
+ * rest into the token's factory portal, and claim through the hub in a single self-paying tx (the
+ * claimed Fee Juice pays that tx's own gas).
  *
  * This is the lean candidate gate; fuel-testnet.ts is the heavier validator (public + private +
  * minFuelFj/fjPerTx calibration). Both compose the same flows (runSend / claimViaHub).
@@ -34,7 +35,7 @@ import {
 	registerHubToken,
 	sponsoredFpcFee,
 } from "./script-l2"
-import { claimTokenBlock, planFuelLeg, requireSwap, selectToken, sendGenerationOf } from "./script-send"
+import { claimTokenBlock, planFuelLeg, requireFuel, selectToken, sendGenerationOf } from "./script-send"
 import {
 	createL1Clients,
 	createL2Wallet,
@@ -56,7 +57,7 @@ const CONFIG = loadManifestV2FromConfigArg(process.argv, {
 	requiredHint: "apps/tools/public/testnet-bridge.candidate.json",
 })
 const BRIDGE = requireBridge(CONFIG)
-const SWAP = requireSwap(BRIDGE)
+requireFuel(BRIDGE)
 const TOKEN = selectToken(BRIDGE, process.argv)
 const GENERATION = sendGenerationOf(CONFIG, BRIDGE)
 
@@ -65,8 +66,8 @@ const sepolia = sepoliaChain(SEPOLIA_RPC)
 // Amounts are DECIMALS-DRIVEN from the manifest token: an 18-dec assumption against a 6-dec token
 // requests 10^19 base units into a 10^9 mint cap and reverts on the spot.
 const TOTAL = 10n * 10n ** BigInt(TOKEN.decimals)
-// Env-tunable: the slice must buy ENOUGH FJ for the self-paying claim at the CURRENT pool rate
-// (quote >= minFuelFj) — a fresh pool's pricing can put the default under the floor.
+// Env-tunable: the slice must buy ENOUGH FJ for the self-paying claim at the swapper's CURRENT rate
+// (quote >= minFuelFj) — a low rate can put the default under the floor.
 const FUEL_SLICE = BigInt(process.env.FUEL_SLICE_UNITS ?? (10n ** BigInt(TOKEN.decimals)).toString())
 
 const rndNonce = () => BigInt(`0x${crypto.randomUUID().replaceAll("-", "")}`)
@@ -136,7 +137,7 @@ async function main() {
 	console.log(`fuel smoke: ${TOKEN.displaySymbol} ${TOKEN.erc20} → portal ${TOKEN.portal}, router ${GENERATION.router}`)
 
 	await mintIfPermissionless(l1, TOTAL, mins)
-	const fuel = await planFuelLeg(pub, SWAP, GENERATION.feeAsset, TOKEN.erc20 as Address, FUEL_SLICE)
+	const fuel = await planFuelLeg(pub, CONFIG, TOKEN.erc20 as Address, FUEL_SLICE)
 	console.log(`quote: ${FUEL_SLICE} ${TOKEN.displaySymbol}-units → ${fuel.quote} FJ-wei (floor ${fuel.minFuelOutput}) (${mins()})`)
 
 	const { hub, l2Token, feeJuice, from } = await buildL2Leg(mins)
@@ -162,8 +163,7 @@ async function main() {
 				fuelAmount: FUEL_SLICE,
 				fuelRecipient: from.toString() as `0x${string}`,
 				minFuelOutput: fuel.minFuelOutput,
-				path: fuel.path,
-				zeroForOnes: fuel.zeroForOnes,
+				swapData: fuel.swapData,
 			},
 			nonce: rndNonce(),
 			deadline: BigInt(Math.floor(Date.now() / 1000) + 1800),

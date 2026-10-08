@@ -2,12 +2,12 @@ import { signedMinFuelOutput, type TokenState } from "@unleashed/bridge-core"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { type GasShareOutcome, type UseGasShareHandle, useGasShare } from "./useGasShare"
 
-/** The generation's swap block; `undefined` stands in for a network with no venue. */
-const h = vi.hoisted(() => ({ swap: { value: undefined as unknown } }))
+/** The generation's fuel budgets; `undefined` stands in for a network with no venue. */
+const h = vi.hoisted(() => ({ fuel: { value: undefined as unknown } }))
 
 vi.mock("@/contracts/bridge-generation", () => ({
-	get SWAP() {
-		return h.swap.value
+	get FUEL() {
+		return h.fuel.value
 	},
 }))
 vi.mock("@/lib/network", () => ({ NETWORK: { nodeUrl: "http://node.test" } }))
@@ -23,14 +23,7 @@ const FJ_REGISTER = 500_000_000_000_000_000n
 const MIN_FUEL_FJ = 1_000_000_000_000_000_000n
 const SLIPPAGE_BPS = 100
 
-const SWAP_FIXTURE = {
-	poolManager: "0x0000000000000000000000000000000000000001",
-	quoter: "0x0000000000000000000000000000000000000002",
-	multicall3: "0x0000000000000000000000000000000000000003",
-	weth: "0x0000000000000000000000000000000000000004",
-	feeJuice: "0x0000000000000000000000000000000000000005",
-	tiers: [{ fee: 3000, tickSpacing: 60 }],
-	ethFj: { fee: 3000, tickSpacing: 60 },
+const FUEL_FIXTURE = {
 	slippageBps: SLIPPAGE_BPS,
 	minFuelFj: MIN_FUEL_FJ.toString(),
 	fjPerTx: FJ_PER_TX.toString(),
@@ -70,7 +63,7 @@ function sizedGasShare(): Omit<UseGasShareHandle, "propose"> & {
 
 describe("useGasShare", () => {
 	beforeEach(() => {
-		h.swap.value = SWAP_FIXTURE
+		h.fuel.value = FUEL_FIXTURE
 	})
 
 	it("sizes a registered token's slice to txTarget × fjPerTx", () => {
@@ -167,11 +160,11 @@ describe("useGasShare", () => {
 		expect(floorFor(MIN_FUEL_FJ)).toBe(MIN_FUEL_FJ)
 	})
 
-	it("proposes nothing and refuses a floor when the network has no swap venue", () => {
-		h.swap.value = undefined
+	it("proposes nothing and refuses a floor when the network has no fuel venue", () => {
+		h.fuel.value = undefined
 		const { propose, floorFor } = sizedGasShare()
 		expect(propose({ amount: AMOUNT, decimals: 6, state: REGISTERED, rate: RATE })).toBeNull()
-		expect(() => floorFor(MIN_FUEL_FJ)).toThrow(/no swap venue/)
+		expect(() => floorFor(MIN_FUEL_FJ)).toThrow(/No route can buy Aztec gas/)
 	})
 
 	it("propagates bridge-core's input validation rather than inventing a slice", () => {

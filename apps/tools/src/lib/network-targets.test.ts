@@ -1,4 +1,4 @@
-import { TESTNET_NODE_URL, TOKEN_LIST_URL } from "@unleashed/bridge-core"
+import { SOURCE_CHAINS, TESTNET_NODE_URL, TOKEN_LIST_URL } from "@unleashed/bridge-core"
 import { describe, expect, it } from "vitest"
 import { localTarget, MAINNET_TARGET, resolveToolsTarget, TESTNET_TARGET } from "./network-targets"
 
@@ -22,6 +22,24 @@ describe("cspConnectSrc", () => {
 	it("mainnet no longer reaches its node or the token list", () => {
 		expect(MAINNET_TARGET.cspConnectSrc).not.toContain("drpc.live")
 		expect(MAINNET_TARGET.cspConnectSrc).not.toContain(TOKEN_LIST_URL)
+	})
+
+	it("testnet reaches exactly the read RPCs a cross-chain send is built and watched through, and never Across's API", () => {
+		const remote = TESTNET_TARGET.cspConnectSrc.split(" ").filter((s) => s.startsWith("https://"))
+		expect(remote.sort()).toEqual(
+			[
+				TESTNET_NODE_URL,
+				TOKEN_LIST_URL,
+				"https://ethereum-sepolia-rpc.publicnode.com",
+				"https://base-sepolia-rpc.publicnode.com",
+				"https://sepolia.base.org",
+			].sort(),
+		)
+		// The Node-safe copies stay equal to the catalogue the decoder and discovery use.
+		expect(TESTNET_TARGET.readRpcUrls[84532]).toEqual(SOURCE_CHAINS[84532].rpcUrls)
+		expect(TESTNET_TARGET.acrossApiUrl).toBeUndefined()
+		expect(MAINNET_TARGET.readRpcUrls).toEqual({})
+		expect(MAINNET_TARGET.acrossApiUrl).toBeUndefined()
 	})
 
 	it("both targets keep the self/data/blob base every build needs", () => {
@@ -57,6 +75,18 @@ describe("local target", () => {
 		expect(csp).toContain("http://127.0.0.1:17777")
 		expect(csp.split(" ")).toContain(TOKEN_LIST_URL)
 		expect(csp).not.toContain("aztec")
+	})
+
+	it("reads its own two anvils, and asks its own Across API", () => {
+		const t = localTarget({
+			...cfg,
+			l1RpcUrl: "http://127.0.0.1:18545",
+			source: { chainId: 31338, rpcUrl: "http://127.0.0.1:18546" },
+			acrossApiUrl: "http://127.0.0.1:18600",
+		})
+		expect(t.readRpcUrls).toEqual({ 31337: ["http://127.0.0.1:18545"], 31338: ["http://127.0.0.1:18546"] })
+		expect(t.acrossApiUrl).toBe("http://127.0.0.1:18600")
+		expect(localTarget(cfg).readRpcUrls).toEqual({})
 	})
 
 	it("is the only target that lists web wallets", () => {

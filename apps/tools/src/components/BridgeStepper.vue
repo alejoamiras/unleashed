@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** Services */
-import { type BridgeJournalRecord, type DepositJournalRecord, isProvisionalRecordId } from "@unleashed/bridge-core"
+import { type AnyJournalRecord, type DepositJournalRecord, isCrossChainRecord, isProvisionalRecordId } from "@unleashed/bridge-core"
 import { Button, Icon, ProgressBar } from "@unleashed/design"
 import { computed, useId } from "vue"
 
@@ -8,21 +8,23 @@ import { computed, useId } from "vue"
 import { type RecordRuntime, useBridgeJournal } from "@/composables/useBridgeJournal"
 
 /** Utils */
-import { amountQualifier, displayAmountOf, displayAmountText } from "@/lib/asset-label"
+import { amountQualifier, displayAmountText, sentAmountOf } from "@/lib/asset-label"
 import { isTerminalAttention, overallProgress, stepperPhases } from "@/lib/bridge-steps"
 import { useNow } from "@/lib/clock"
+import { crossChainRoute, sourceAmountText } from "@/lib/crosschain-steps"
 import { formatClock } from "@/lib/phase-clock"
 import type { Direction } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 
 /** Components */
+import BridgeLog from "./BridgeLog.vue"
 import BridgePhaseRail from "./BridgePhaseRail.vue"
 import DirectionSegment from "./send/DirectionSegment.vue"
 
 // `withDefaults`: an absent boolean prop is cast to false, and backgrounding must stay the default.
 const props = withDefaults(
 	defineProps<{
-		record: BridgeJournalRecord
+		record: AnyJournalRecord
 		/** Narration for a record the journal does not hold yet (the wizard's permission phase). */
 		runtime?: RecordRuntime
 		/** False while nothing is running in the journal yet: there is nothing to background. */
@@ -35,7 +37,8 @@ const props = withDefaults(
 	}>(),
 	{ runtime: undefined, canBackground: true, walletLabel: undefined, startedAt: undefined },
 )
-const emit = defineEmits<{ background: []; backup: [record: BridgeJournalRecord] }>()
+/** `new-send`: the user starts over while a source send that never confirmed may still be on its way. */
+const emit = defineEmits<{ background: []; backup: [record: AnyJournalRecord]; "new-send": [] }>()
 const exportable = computed(() => {
 	if (isProvisionalRecordId(props.record.id)) return false
 	const r = props.record
@@ -72,33 +75,50 @@ function onRetry() {
 	else void journal.runWithdrawConsume(props.record.id)
 }
 
+function onClaim() {
+	void journal.runDepositClaim(props.record.id)
+}
+
 /** The stepper's copy of the switch answers none of the wizard's selectors. */
 const LOCKED_TESTIDS = { root: TESTIDS.stepperDirection }
 const direction = computed<Direction>(() => (props.record.direction === "deposit" ? "l1-to-l2" : "l2-to-l1"))
-const route = computed(() => (props.record.direction === "deposit" ? "Ethereum → Aztec" : "Aztec → Ethereum"))
+const route = computed(() => {
+	const r = props.record
+	if (isCrossChainRecord(r)) return crossChainRoute(r)
+	return r.direction === "deposit" ? "Ethereum → Aztec" : "Aztec → Ethereum"
+})
+/** A send is headed by what left the wallet: a cross-chain one in its source token, a token + gas one with its gas slice. */
 const amount = computed(() => {
-	const d = displayAmountOf(props.record)
+	const r = props.record
+	if (isCrossChainRecord(r)) return sourceAmountText(r) ?? "—"
+	const d = sentAmountOf(r)
 	return `${displayAmountText(d)} ${d.symbol}`
 })
-const qualifier = computed(() => amountQualifier(displayAmountOf(props.record)))
-
-const liveName = computed(() => {
-	const { state, index } = overall.value
-	if (state === "done") return "Done"
-	return `${phases.value[index - 1]?.label ?? ""}${state === "failed" ? " failed" : ""}`
+const qualifier = computed(() => {
+	const r = props.record
+	return isCrossChainRecord(r) ? null : amountQualifier(sentAmountOf(r))
 })
-const caption = computed(() => `${liveName.value} · phase ${overall.value.index} of ${overall.value.total}`)
+
+const livePhase = computed(() => phases.value[overall.value.index - 1])
+const liveName = computed(() => {
+	const { state } = overall.value
+	if (state === "done") return "Done"
+	const label = livePhase.value?.label ?? ""
+	if (state === "failed") return `${label} failed`
+	return state === "ended" && livePhase.value?.suffix ? `${label} · ${livePhase.value.suffix}` : label
+})
+const caption = computed(() => {
+	const asks = overall.value.state === "running" && livePhase.value?.needsYou ? " · needs you" : ""
+	return `${liveName.value} · phase ${overall.value.index} of ${overall.value.total}${asks}`
+})
 const valuetext = computed(() => `${Math.round(overall.value.fraction * 100)} percent, ${liveName.value}`)
-const TONE = { running: "signal", failed: "lost", done: "carrier" } as const
+const TONE = { running: "signal", failed: "lost", ended: "ended", done: "carrier" } as const
 const clockStart = computed(() => props.startedAt ?? props.record.createdAt)
 const elapsed = computed(() => formatClock((props.record.completedAt ?? now.value) - clockStart.value))
 
 /** The permission prompt has no record yet, so nothing to log. The region mounts before its first
  *  row, since a live region added together with its content is not announced. */
 const hasLog = computed(() => props.runtime === undefined)
-/** The well is a notch host, which cannot scroll, so it shows only the latest rows. */
-const LOG_ROWS = 8
-const logRows = computed(() => (rt.value.log ?? []).slice(-LOG_ROWS))
 const logTitleId = useId()
 </script>
 
@@ -151,15 +171,18 @@ const logTitleId = useId()
 			</div>
 
 			<div class="split" :class="{ 'with-log': hasLog }">
-				<BridgePhaseRail :record="record" :runtime="runtime" :wallet-label="walletLabel" :retryable="canRetry" @retry="onRetry" />
+				<BridgePhaseRail
+					:record="record"
+					:runtime="runtime"
+					:wallet-label="walletLabel"
+					:retryable="canRetry"
+					@retry="onRetry"
+					@claim="onClaim"
+					@new-send="emit('new-send')"
+				/>
 				<div v-if="hasLog" class="log-panel">
 					<p :id="logTitleId" class="log-title">Log <span class="log-sub">· what actually happened</span></p>
-					<div class="log ul-notch" role="log" :aria-labelledby="logTitleId" :data-testid="TESTIDS.stepperLog">
-						<p v-for="(row, i) in logRows" :key="row.seq" class="row" :class="{ last: i === logRows.length - 1 }">
-							<span class="at">{{ formatClock(row.at - clockStart) }}</span>
-							<span class="text">{{ row.text }}<span v-if="i === logRows.length - 1" class="cursor" aria-hidden="true">_</span></span>
-						</p>
-					</div>
+					<BridgeLog :rows="rt.log ?? []" :started-at="clockStart" :labelledby="logTitleId" />
 				</div>
 			</div>
 		</div>
@@ -209,11 +232,13 @@ const logTitleId = useId()
 	padding: 24px;
 }
 
+/* Wrapping drops Backup under the sub line once the titles need the row. */
 .head-row {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: flex-start;
 	justify-content: space-between;
-	gap: 16px;
+	gap: 12px 16px;
 }
 
 .titles {
@@ -240,6 +265,7 @@ const logTitleId = useId()
 .amount {
 	font-family: var(--ul-font-mono);
 	color: var(--ul-ink);
+	white-space: nowrap;
 }
 
 .backup {
@@ -306,46 +332,6 @@ const logTitleId = useId()
 .log-sub {
 	font-weight: 400;
 	color: var(--ul-ink-3);
-}
-
-.log {
-	--ul-fill: var(--ul-field);
-	--ul-notch: var(--ul-notch-2);
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	padding: 14px 16px;
-	font: 400 12.5px/1.5 var(--ul-font-mono);
-}
-
-/* Before the first row the region stays mounted for assistive tech but draws nothing. */
-.log:empty {
-	padding: 0;
-}
-
-.row {
-	display: flex;
-	gap: 14px;
-	margin: 0;
-	color: var(--ul-ink-2);
-}
-
-.row.last {
-	color: var(--ul-ink);
-}
-
-.at {
-	flex: none;
-	color: var(--ul-ink-3);
-}
-
-.text {
-	min-width: 0;
-	overflow-wrap: anywhere;
-}
-
-.cursor {
-	color: var(--ul-accent-text);
 }
 
 /* The card's own bottom steps, so a plain background would square its corners. */

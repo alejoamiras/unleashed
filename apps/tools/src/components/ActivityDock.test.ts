@@ -1,3 +1,4 @@
+import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { computed, nextTick, ref } from "vue"
@@ -7,10 +8,14 @@ import { __resetShellForTests, useShell } from "@/composables/useShell"
 import { groupRecords, needsYouCount } from "@/lib/activity"
 import { TESTIDS } from "@/lib/testids"
 import { rowModel } from "@/test/activity-row"
+import { xcRecord } from "@/test/crosschain-record"
 
 const runDepositClaim = vi.fn(async (_id: string) => {})
 const runWithdrawConsume = vi.fn(async (_id: string) => {})
-vi.mock("@/composables/useBridgeJournal", () => ({ useBridgeJournal: () => ({ runDepositClaim, runWithdrawConsume }) }))
+const crossChainRecords = ref<CrossChainDepositRecord[]>([])
+vi.mock("@/composables/useBridgeJournal", () => ({
+	useBridgeJournal: () => ({ runDepositClaim, runWithdrawConsume, crossChainRecords }),
+}))
 const opsBusy = ref(false)
 vi.mock("@/composables/useOpsInFlight", () => ({ useOpsInFlight: () => ({ busy: opsBusy }) }))
 const switchActiveAccount = vi.fn((_address: string) => true)
@@ -125,6 +130,24 @@ describe("ActivityDock", () => {
 		expect(document.activeElement).toBe(w.get(sel(TESTIDS.dockOpen)).element)
 	})
 
+	it("stacked under a phone's page it shows without the strip, folds to its heading in place, and never writes the choice", async () => {
+		viewport(true)
+		rows.value = [rowModel({ id: "a", group: "running", action: null })]
+		const w = mount(ActivityDock, { props: { feed, stacked: true }, attachTo: document.body })
+		expect(w.find(sel(TESTIDS.dockStrip)).exists()).toBe(false)
+		expect(w.get(sel(TESTIDS.dock)).attributes("role")).toBeUndefined()
+		expect(w.findAll(sel(TESTIDS.activityRow))).toHaveLength(1)
+		const toggle = w.get(sel(TESTIDS.dockHide))
+		await toggle.trigger("click")
+		expect(toggle.text()).toBe("Show")
+		expect(toggle.attributes("aria-expanded")).toBe("false")
+		expect(w.findAll(sel(TESTIDS.activityRow))).toHaveLength(0)
+		expect(localStorage.getItem(DOCK_KEY)).toBeNull()
+		await toggle.trigger("click")
+		expect(toggle.text()).toBe("Hide")
+		expect(w.findAll(sel(TESTIDS.activityRow))).toHaveLength(1)
+	})
+
 	it("opens itself once for a record that starts needing you — never for another account's, never twice, never touching the choice", async () => {
 		rows.value = [rowModel({ id: "theirs", group: "other-account", action: "switch", counts: false })]
 		const w = dock()
@@ -160,6 +183,34 @@ describe("ActivityDock", () => {
 		expect(groups.every((g) => g.find("ul[role='list'] > li").exists())).toBe(true)
 		expect(w.text()).not.toContain("Nothing on this channel yet")
 		expect(w.text()).toContain("3 records")
+	})
+
+	it("a send that ended without arriving makes the group read Ended; Continue hands the wizard its prefill", async () => {
+		useDockState().show()
+		const delivered = xcRecord({ id: "0xd" }, { outcome: "delivered-to-wallet", outcomeAmount: "4900000" })
+		crossChainRecords.value = [delivered]
+		rows.value = [
+			rowModel({ id: "0xd", action: "continue", detail: "in your Ethereum wallet", route: "Base Sepolia → Aztec" }),
+			rowModel({
+				id: "x",
+				group: "done",
+				status: "lost",
+				action: null,
+				word: { text: "Not sent", tone: "lost" },
+				detail: "nothing moved",
+			}),
+			rowModel({ id: "a", group: "done", action: null }),
+		]
+		const w = dock()
+		const groups = w.findAll(sel(TESTIDS.dockGroup))
+		expect(groups.map((g) => g.get("h3").text())).toEqual(["Needs you · 1", "Ended · 2"])
+		const [continueRow, notSent] = w.findAll(sel(TESTIDS.activityRow))
+		expect(notSent?.get(".side").text()).toBe("Not sent")
+		expect(continueRow?.get(sel(TESTIDS.activityRowAction)).text()).toBe("Continue")
+		await continueRow?.get(sel(TESTIDS.activityRowAction)).trigger("click")
+		expect(useShell().section.value).toBe("send")
+		expect(useShell().takePrefill()).toMatchObject({ amount: 4_900_000n, fromRecordId: "0xd" })
+		expect(runDepositClaim).not.toHaveBeenCalled()
 	})
 
 	it("a lost row sits first in Needs you; another account's rows trail in their own group", async () => {

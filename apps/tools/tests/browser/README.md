@@ -27,11 +27,12 @@ artifacts, both `dist`s, logs, traces.
 | `global-setup.ts` | the handle names chain 31337, the build is `local`, the sandbox's drip record equals the committed one |
 | `fixtures/test.ts` | the `test` every spec uses: sandbox access, an actor pool per file, a fresh actor per test, the L1 shim, the egress fence, the parked wallet panel |
 | `fixtures/sandbox.ts` | the Node side: `openSandbox` on the handle, `newActor()` (sponsor-deployed, own flow context) |
-| `fixtures/l1-wallet.ts` | `window.ethereum` → `exposeFunction` → viem over anvil; `setChainId`, `setAccount`, `rejectNext`, `holdNext(kind, { to })` (a request that never answers, narrowable to one transaction target), `calls(method)` per-method counts, `permits()` (every Permit2 permit as signed) |
+| `fixtures/l1-wallet.ts` | `window.ethereum` → `exposeFunction` → viem over the anvil of the chain it is on (the sandbox's L1 and its source chain; `wallet_switchEthereumChain` to any other answers 4902); `setChainId`, `setAccount`, `rejectNext`, `holdNext(kind, { to })` (a request that never answers, narrowable to one transaction target), `calls(method)` per-method counts, `permits()` (every Permit2 permit as signed); EIP-5792: no atomic batching unless `atomicOn(chainId)`, `batches()` as the page sent them, `holdBatchReceipts()` (sent at once, receipts withheld); `sendOutside(chainId, call)` for state another app left |
+| `fixtures/relayer.ts` | the cross-chain half: steers the relay loop `sandbox:up` runs (`setMode`: `now`, `delay`, `never`, `starve-gas`, back to `now` after each test), levels the source anvil's clock with Ethereum's before a quote (`syncSourceClock`), and forces L2 blocks until Ethereum's finalized clock passes a deadline (`passOnEthereum`) |
 | `fixtures/egress.ts` | aborts every non-loopback request, answers the token list from `../e2e/fixtures/token-list.json` (or `token-list-hostile.json` under `test.use({ tokenList: "hostile" })`); the record must be empty at teardown |
 | `fixtures/wallet-panel.ts` | parks the SDK's floating session panel in a corner so it covers no testid |
-| `pages/*.ts` | testid-only page helpers: connect, drip, the Send wizard's deposit and exit directions, the journal (records + the fees their transactions billed), `fees.ts` (the ceiling the wallet will price — see below) |
-| `specs/*.spec.ts` | the cells, one file per family (`deposit-token`, `fee-states`, `deposit-token-gas`, `deposit-gas-only`, `tokens`, `tokens-hostile` (the community list served from the hostile fixture), `recovery`, `l1-wallet`, `exits`, `drip`, `activity`, `accounts` — the multi-account path, pair cells take a second actor from the pool — and `accounts-single`, a one-seed wallet with `spares: 0`; `spike` keeps the discovery / grant / isolation checks and the narrow-viewport pass); `test.use({ cells: N, l1Index: i })` at the top of each file |
+| `pages/*.ts` | testid-only page helpers: connect, drip, the Send wizard's deposit and exit directions, a deposit from the source chain (`crosschain.ts`: its review signed after the switch, its schema-4 record, its card's phase), the journal (records + the fees their transactions billed), `fees.ts` (the ceiling the wallet will price — see below) |
+| `specs/*.spec.ts` | the cells, one file per family (`deposit-token`, `deposit-crosschain`, `fee-states`, `deposit-token-gas`, `deposit-gas-only`, `tokens`, `tokens-hostile` (the community list served from the hostile fixture), `recovery`, `l1-wallet`, `exits`, `drip`, `activity`, `accounts` — the multi-account path, pair cells take a second actor from the pool — and `accounts-single`, a one-seed wallet with `spares: 0`; `spike` keeps the discovery / grant / isolation checks and the narrow-viewport pass); `test.use({ cells: N, l1Index: i })` at the top of each file |
 | `test-wallet/` | the wallet page: `profile.ts` (`plain` \| `selfpay` \| `full`), `wallet.ts` (the embedded wallet + grant + wallet-specific RPCs + self-pay routing), `main.ts` (the handler, the control hook `window.__unleashedTestWallet`: `addAccount`, `calls`, `submitted`, `failNext` / `holdNext` / `swallowNext` — refuse, park (until `release`), or run-but-never-answer the next matching call — `dropNextSubmission` (the next transaction is recorded at the node hand-off and never forwarded), `declineNextGrant`), its own `vite.config.mts` |
 
 ## How a spec gets its accounts
@@ -74,6 +75,22 @@ The wallet accepts only tools' app id and the sandbox's chain, is framed only by
   claim driven from the UI waits on an L1→L2 message no block would carry. The `test` fixture keeps
   a heartbeat for the worker's whole life (the relayer revokes a random public authwit every 3 s),
   the same nudge the harness uses. It is the one place this suite differs from a real network.
+
+## The source chain
+
+- **Routing exists only in the local build.** The local target routes the source anvil's token into
+  the manifest's rail token and books the sandbox's LI.FI stand-ins (the Diamond stub, both spoke
+  pools, the compiled Executor and `ReceiverAcrossV4`) for chains 31337 and 31338 only; a live
+  chain's book cannot be shadowed.
+- **The fill is exclusive.** Off mainnet every route rides fixed terms that name `TESTNET_FILLER`
+  as the exclusive relayer until the fill deadline, and cap a send at 8 whole tokens (the cells send
+  5). The relay loop fills as the relayer a deposit names, impersonated on the L1 anvil, so the
+  pool's exclusivity check runs as it does on a live chain.
+- **`starve-gas` never reaches the receiver's recovery.** Under the sandbox's rules the starved fill
+  reverts whole, so the deposit stays unfilled and expires on the source chain. A delivery to the
+  user's Ethereum address comes from pausing deposits on the factory before the fill lands.
+- **The wallet stays on the source chain after a send.** The claim's Ethereum checks read through
+  the wallet, so a cell that claims moves it back with `setChainId`, as a user would in the wallet.
 
 ## Screenshot tours
 

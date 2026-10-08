@@ -26,6 +26,7 @@ const LABELS: Record<Exclude<ActivityAction, null>, string> = {
 	retry: "Retry",
 	"claim-gas": "Claim gas",
 	switch: "Switch",
+	continue: "Continue",
 }
 
 const action = computed(() => props.row.action)
@@ -36,13 +37,18 @@ const title = computed(() => (action.value === "switch" && props.switchLocked ? 
  *  secondary, so one screen never shows two filled calls. */
 const filled = computed(() => props.row.group === "needs-you" && action.value !== "retry")
 
-/** Beside a button the second line has only its own column, so it keeps route and age: at the
- *  dock's width the visibility would truncate under the button. */
-const meta = computed(() => {
+/** The second line: the route, a middle (visibility, an outcome's detail) and a last (the age, or "this send"). It
+ *  clips at its end like one run of text, so the route survives; on the this-send row the route gives way first
+ *  instead, since the marker is that row's only identifier. Beside a button the line drops the visibility. */
+const meta = computed<{ route: string; middle?: string; last?: string }>(() => {
 	const r = props.row
-	if (r.foreground) return `${r.route} · this send`
-	return action.value ? `${r.route} · ${r.age}` : `${r.route} · ${r.visibility} · ${r.age}`
+	if (r.foreground) return r.detail ? { route: r.route, middle: r.detail } : { route: r.route, last: "this send" }
+	if (r.detail) return { route: r.route, middle: r.detail }
+	return action.value ? { route: r.route, last: r.age } : { route: r.route, middle: r.visibility, last: r.age }
 })
+
+/** The qualifier and the note share the third line. */
+const extra = computed(() => [props.row.qualifier, props.row.note].filter(Boolean).join(" · "))
 
 const SIDE: Record<ActivityRowModel["status"], { word?: string; icon?: IconName }> = {
 	lost: { word: "Lost signal", icon: "square-alert" },
@@ -51,6 +57,7 @@ const SIDE: Record<ActivityRowModel["status"], { word?: string; icon?: IconName 
 	running: {},
 }
 const side = computed(() => {
+	if (props.row.word) return { word: props.row.word.text, icon: undefined }
 	const s = SIDE[props.row.status]
 	return { word: s.word ?? props.row.phase, icon: s.icon }
 })
@@ -58,8 +65,11 @@ const side = computed(() => {
 const openLabel = computed(() => {
 	const r = props.row
 	const what = `${r.amount} ${r.symbol}${r.qualifier ? ` ${r.qualifier}` : ""}`
-	if (r.foreground) return `Show this send, ${what}, ${r.route}`
-	return `Open ${what}, ${r.route}, ${r.visibility}, ${r.age}`
+	const route = r.route.replace(" → ", " to ").replaceAll(" · ", " ")
+	if (r.foreground) return `Show this send, ${what}, ${route}${r.word?.spoken ? `, ${r.word.spoken}` : ""}`
+	const word = r.word?.spoken ?? r.word?.text.toLowerCase()
+	const tail = word && r.detail ? `${word}, ${r.detail}` : `${r.visibility}, ${r.ageSpoken}`
+	return `Open ${what}, ${route}, ${tail}${r.note ? `, ${r.note}` : ""}`
 })
 
 // Action clicks must not also open Activity.
@@ -71,12 +81,13 @@ function onAct(): void {
 <template>
 	<li
 		class="row ul-notch"
-		:class="{ 'has-button': !!action, foreground: row.foreground, qualified: !!row.qualifier }"
-		:aria-current="row.foreground || undefined"
+		:class="{ 'has-button': !!action, foreground: row.foreground, current: row.current, qualified: !!extra }"
+		:aria-current="row.current || undefined"
 		:data-testid="TESTIDS.activityRow"
 		:data-record-id="row.id"
 		:data-group="row.group"
 		:data-status="row.status"
+		:data-tone="row.word?.tone"
 		:data-action="action ?? undefined"
 		@click="emit('open', row.id)"
 	>
@@ -84,8 +95,11 @@ function onAct(): void {
 		<button type="button" class="amt" :aria-label="openLabel" :data-testid="TESTIDS.activityRowOpen" @click.stop="emit('open', row.id)">
 			{{ row.amount }} {{ row.symbol }}
 		</button>
-		<span class="meta">{{ meta }}</span>
-		<span v-if="row.qualifier" class="meta qualifier">{{ row.qualifier }}</span>
+		<span class="meta second" :class="{ marked: meta.last === 'this send' }"
+			><span class="route">{{ meta.route }}</span><span v-if="meta.middle" class="middle">{{ " · " }}{{ meta.middle }}</span
+			><span v-if="meta.last" class="last">{{ " · " }}{{ meta.last }}</span></span
+		>
+		<span v-if="extra" class="meta qualifier" :class="{ note: !row.qualifier }">{{ extra }}</span>
 		<button
 			v-if="action"
 			type="button"
@@ -151,7 +165,8 @@ function onAct(): void {
 	background: var(--ul-carrier);
 }
 
-.row.foreground[data-status="running"] .dot {
+/* A cross-chain row's tone words its own colour ("Slow" in attention); this is for the rest. */
+.row.foreground[data-status="running"]:not([data-tone]) .dot {
 	background: var(--ul-accent-text);
 }
 
@@ -206,9 +221,95 @@ function onAct(): void {
 	color: var(--ul-carrier);
 }
 
-.row.foreground[data-status="running"] .word {
+.row.foreground[data-status="running"]:not([data-tone]) .word {
 	font-weight: 700;
 	color: var(--ul-accent-text);
+}
+
+.meta.note {
+	color: var(--ul-ink-3);
+}
+
+/* A flex part would drop its leading " · " under `nowrap`. */
+.second {
+	white-space: pre;
+}
+
+.second.marked {
+	display: flex;
+}
+
+/* The route's weight dwarfs the middle's, so the middle's share of the shrink stays under a layout unit (any
+   share at all would clip it) until the route stops at its minimum. Factors under one would instead leave
+   the middle overflowing there. */
+.marked .route {
+	flex: 0 1000000 auto;
+	min-width: 4ch;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.marked .middle {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.marked .last {
+	flex: none;
+}
+
+/* A cross-chain phase's tone overrides its status's: an ended row is flat whatever its colour. */
+.row[data-tone="lost"],
+.row[data-tone="ended"] {
+	--ul-fill: transparent;
+}
+
+/* A claim waiting on you keeps the needs-you dot while its phase word runs. */
+.row[data-tone="run"]:not([data-status="needs-you"]) .dot {
+	background: var(--ul-accent-text);
+}
+
+.row[data-tone="run"] .word {
+	font-weight: 700;
+	color: var(--ul-accent-text);
+}
+
+.row[data-tone="need"] .dot {
+	background: var(--ul-attention);
+}
+
+.row[data-tone="need"] .word {
+	font-weight: 700;
+	color: var(--ul-attention);
+}
+
+.row[data-tone="wait"] .dot,
+.row[data-tone="ended"] .dot {
+	background: var(--ul-ink-2);
+}
+
+.row[data-tone="wait"] .word {
+	font-weight: 700;
+	color: var(--ul-ink-2);
+}
+
+.row[data-tone="lost"] .word {
+	font-weight: 400;
+}
+
+.row[data-tone="ended"] .word {
+	color: var(--ul-ink);
+}
+
+/* The send on screen is raised whatever its tone, and an outcome's word on it is bold. */
+.row.current[aria-current] {
+	--ul-fill: var(--ul-raised);
+}
+
+.row.foreground[data-tone] .word {
+	font-weight: 700;
 }
 
 .btn {

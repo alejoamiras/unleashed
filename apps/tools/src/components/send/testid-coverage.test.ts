@@ -18,7 +18,7 @@ vi.mock("@/contracts/bridge-generation", () => ({
 		{ erc20: "0x70e0ba845a1a0f2da3359c97e0285013525ffc49", decimals: 6, displaySymbol: "USDC", source: "permissionless-mint" },
 	],
 	FEE_JUICE: { asset: "0x000000000000000000000000000000000000fee0" },
-	SWAP: undefined,
+	FUEL: undefined,
 }))
 
 /**
@@ -29,19 +29,25 @@ vi.mock("@/contracts/bridge-generation", () => ({
  */
 const INTERACTIVE = 'button, input, select, textarea, [role="tab"], [role="option"], a[href], [tabindex]'
 
+import type { CrossChainFigures } from "@/lib/crosschain-figures"
 import AmountStep from "./AmountStep.vue"
 import ChoiceCards from "./ChoiceCards.vue"
+import CrossChainFees from "./CrossChainFees.vue"
+import CrossChainReview from "./CrossChainReview.vue"
+import CrossChainState from "./CrossChainState.vue"
 import DirectionSegment from "./DirectionSegment.vue"
 import GasBreakdown from "./GasBreakdown.vue"
 import MintStrip from "./MintStrip.vue"
 import ReviewDetails from "./ReviewDetails.vue"
 import ReviewStep from "./ReviewStep.vue"
+import StateNotice from "./StateNotice.vue"
 import StepStrip from "./StepStrip.vue"
 import TokenList from "./TokenList.vue"
 import TokenMark from "./TokenMark.vue"
 import TokenStep from "./TokenStep.vue"
 import TokenTile from "./TokenTile.vue"
 import WizardShell from "./WizardShell.vue"
+import WrongChainNotice from "./WrongChainNotice.vue"
 
 const TOKEN: SelectableToken = {
 	chainId: 11155111,
@@ -66,7 +72,7 @@ const GAS: GasLegPlan = {
 	fuelFj: 20_000_000_000_000_000_000n,
 	quote: 20_000_000_000_000_000_000n,
 	minFuelOutput: 19_000_000_000_000_000_000n,
-	route: { path: [], zeroForOnes: [] } as GasLegPlan["route"],
+	venue: null,
 	capped: null,
 }
 
@@ -79,6 +85,13 @@ const LOOKUP: LookupState = {
 	logoKey: "11155111:0x779877a7b0d9e8603169ddbd7836e478b4624789",
 	identity: { symbol: "LINK", name: "ChainLink Token", decimals: 18 },
 }
+const SOURCE_ROW: SelectableToken = {
+	...TOKEN,
+	chainId: 84532,
+	address: "0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+	logoKey: "84532:0x036cbd53842c5426634e7929541ec2318f3dcf7e",
+}
+const NATIVE_ROW: SelectableToken = { ...TOKEN, symbol: "ETH", source: "list", logoKey: "native:84532", chainId: 84532 }
 const TOKEN_STEP = {
 	direction: "l1-to-l2",
 	tokens: [TOKEN],
@@ -89,6 +102,43 @@ const TOKEN_STEP = {
 	addError: null,
 	selected: TOKEN,
 	selectionError: null,
+}
+const XC_FIGURES: CrossChainFigures = {
+	srcAmount: 1_000_000n,
+	delivered: 800_000n,
+	relayFee: 200_000n,
+	feeBps: 2000,
+	slice: null,
+	tokenArrives: 800_000n,
+	gasExpected: null,
+	gasFloor: null,
+	etaSeconds: 10,
+	refundAfterSeconds: 7_200,
+	limits: { min: 1n, max: 9_000_000n },
+	fixed: false,
+}
+const XC_REVIEW = {
+	plan: { ...PLAN, intent: "token", gas: undefined },
+	ask: {
+		srcChainId: 84532,
+		rail: "acrossV4",
+		srcToken: { address: SOURCE_ROW.address, decimals: 6, destToken: TOKEN.address },
+		srcAmount: 1_000_000n,
+		user: TOKEN.address,
+		intent: "token",
+		isPrivate: false,
+		recipient: `0x${"a".repeat(64)}`,
+	},
+	figures: XC_FIGURES,
+	symbol: "USDC",
+	account: `0x${"a".repeat(64)}`,
+	slippageBps: null,
+	txCovered: null,
+	expiresIn: 30_000,
+	state: null,
+	walletChainId: null,
+	busy: false,
+	error: null,
 }
 const REVIEW = {
 	plan: PLAN,
@@ -117,7 +167,7 @@ const CASES: Array<[string, Component, Record<string, unknown>]> = [
 			gasError: null,
 		},
 	],
-	["ChoiceCards", ChoiceCards, { intent: "token", exitOnly: false, feeAsset: false, gasBlock: null, txTarget: 2 }],
+	["ChoiceCards", ChoiceCards, { intent: "token", exitOnly: false, feeAsset: false, gasBlock: null }],
 	["DirectionSegment", DirectionSegment, { direction: "l1-to-l2", locked: false }],
 	[
 		"GasBreakdown",
@@ -176,6 +226,52 @@ const CASES: Array<[string, Component, Record<string, unknown>]> = [
 	["TokenMark", TokenMark, { token: TOKEN }],
 	["TokenStep", TokenStep, TOKEN_STEP],
 	["TokenStep (lookup)", TokenStep, { ...TOKEN_STEP, lookup: LOOKUP }],
+	["TokenStep (cross-chain)", TokenStep, { ...TOKEN_STEP, sources: [SOURCE_ROW], natives: [NATIVE_ROW], contractChains: [84532] }],
+	[
+		"StateNotice",
+		StateNotice,
+		{ tone: "lost", icon: "square-alert", title: "Refused.", action: "Change wallet", actionTestid: TESTIDS.sendChangeWallet },
+	],
+	["WrongChainNotice", WrongChainNotice, { walletChainId: 42161, needChainId: 84532 }],
+	[
+		"CrossChainFees",
+		CrossChainFees,
+		{ figures: XC_FIGURES, decimals: 6, symbol: "USDC", srcChainId: 84532, rail: "acrossV4", intent: "token", expiresIn: 30_000 },
+	],
+	["CrossChainState", CrossChainState, { state: { kind: "contract" }, srcChainId: 84532, sendText: "5.00 USDC", symbol: "USDC" }],
+	[
+		"CrossChainState (expired)",
+		CrossChainState,
+		{ state: { kind: "expired" }, srcChainId: 84532, sendText: "5.00 USDC", symbol: "USDC" },
+	],
+	["CrossChainReview", CrossChainReview, XC_REVIEW],
+	["CrossChainReview (blocked)", CrossChainReview, { ...XC_REVIEW, state: { kind: "no-route" }, walletChainId: 1 }],
+	[
+		"AmountStep (cross-chain)",
+		AmountStep,
+		{
+			direction: "l1-to-l2",
+			token: SOURCE_ROW,
+			balances: BALANCES,
+			intent: "token",
+			amount: "1",
+			isPrivate: false,
+			gas: null,
+			routeKind: "route",
+			routeLoading: false,
+			txTarget: 3,
+			fjPerTx: 1n,
+			gasError: null,
+			crossChain: {
+				srcChainId: 84532,
+				rail: "acrossV4",
+				figures: XC_FIGURES,
+				ceiling: { over: true, blocks: true, minimum: 2_000_000n },
+				notice: null,
+				expiresIn: 1,
+			},
+		},
+	],
 	["TokenTile", TokenTile, { token: TOKEN, selected: false }],
 	["WizardShell", WizardShell, { direction: "l1-to-l2", step: 0, completed: 2, canSwitchDirection: true }],
 ]
@@ -199,21 +295,8 @@ describe("send-step testid coverage", () => {
 		const { missing, seen } = await sweep(mount(component, { props, attachTo: document.body }))
 		expect(missing).toEqual([])
 		// A selector that stops matching would otherwise pass silently; only the gas-only card (two
-		// read-only lines) and the token mark are inert.
-		expect(seen > 0 || name === "GasBreakdown (gas)" || name === "TokenMark").toBe(true)
-	})
-
-	it("the phone's gas hint button carries its testid", async () => {
-		vi.stubGlobal("matchMedia", (query: string) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} }))
-		try {
-			const props = { intent: "token+gas" as const, exitOnly: false, feeAsset: false, gasBlock: null, txTarget: 2, breakdownId: "b" }
-			const w = mount(ChoiceCards, { props, attachTo: document.body })
-			expect(w.find(`[data-testid="${TESTIDS.sendGasDisclosure}"]`).exists()).toBe(true)
-			expect((await sweep(w)).missing).toEqual([])
-			w.unmount()
-		} finally {
-			vi.unstubAllGlobals()
-		}
+		// read-only lines), the fee lines and the token mark are inert.
+		expect(seen > 0 || ["GasBreakdown (gas)", "CrossChainFees", "TokenMark"].includes(name)).toBe(true)
 	})
 
 	it("the orchestrators own no bare controls of their own", () => {

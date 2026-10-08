@@ -3,8 +3,9 @@
  * the user has chosen, and the outcomes the grant and route steps can produce. Every composable
  * and every step component speaks these types; none of them re-declares a token shape of its own.
  */
-import type { FuelRoute, Registration, TokenState } from "@unleashed/bridge-core"
+import type { FuelProvider, Registration, TokenState } from "@unleashed/bridge-core"
 import type { Address, Hex } from "viem"
+import { formatCompact } from "./format"
 
 export type Direction = "l1-to-l2" | "l2-to-l1"
 
@@ -85,7 +86,8 @@ export interface GasLegPlan {
 	/** What the probe says `fuelAmount` buys — display + floor input, never the claim amount. */
 	quote: bigint
 	minFuelOutput: bigint
-	route: FuelRoute
+	/** Where the slice is swapped; null for the fee asset, which needs no swap. */
+	venue: FuelProvider | null
 	capped: "min" | "half" | null
 }
 
@@ -95,39 +97,36 @@ export function tokenRemainder(amount: bigint, gas: Pick<GasLegPlan, "fuelAmount
 	return amount > slice ? amount - slice : 0n
 }
 
+/** Who swaps a gas slice: LI.FI names the venue its quote routed through. `tool` is provider-supplied text, so the
+ *  caller strips it for display. */
+export function venueText(venue: FuelProvider, display: (s: string) => string): string {
+	return venue.provider === "lifi" ? `LI.FI (${display(venue.tool)})` : "the testnet fuel swapper"
+}
+
+/** Why a send cannot include gas when no fuel venue is reachable on this network. */
+export const NO_GAS_ROUTE = "No route can buy Aztec gas on this network right now, so this send can't include gas."
+
+/** A token + gas split whose slice would take the whole amount. */
+export const GAS_TOO_SMALL = "The amount is too small to buy gas and still send a token."
+
+/** A private claim forfeits its fee ceilings before any gas reaches the user, so a slice whose guaranteed floor
+ *  cannot cover them would cross only for the claim to refuse it, after the deposit is irreversible. */
+export const PRIVATE_SLICE_SHORT =
+	"The gas slice is too small to cover the fees a private claim sets aside — send a larger amount, or send it publicly."
+
+/** The bridge refuses gas under its claim minimum on Ethereum (the swap reverts at the router's floor), so a quote
+ *  under it is a deposit that cannot go through; null when the quote clears it. */
+export function gasMinimumShortfall(quote: bigint, minFuelFj: bigint): string | null {
+	if (quote >= minFuelFj) return null
+	return `This amount buys only ≈ ${formatCompact(quote, 18)} FJ of gas, under the ≈ ${formatCompact(minFuelFj, 18)} FJ minimum a claim needs — send a larger amount.`
+}
+
 /** A route outcome that closes both gas choices. */
 export type GasBlock = "no-route" | "unavailable"
 
 export const GAS_BLOCK_REASON: Record<GasBlock, string> = {
 	"no-route": "This token can't buy Aztec gas on the way in.",
 	unavailable: "Gas options can't be checked right now.",
-}
-
-export interface ChoiceHintState {
-	exit: boolean
-	/** Transactions the token + gas slice is sized for. */
-	txTarget: number
-	gasBlock: GasBlock | null
-	/** The token alone cannot be claimed: the account holds no gas. */
-	tokenBlocked: boolean
-}
-
-/** A phone row's short hint; `count`, when present, sits between `lead` and `tail` as a figure. */
-export interface ChoiceHint {
-	lead: string
-	count?: number
-	tail?: string
-}
-
-/** The one-line hint a phone row shows in place of its caption: what arrives, or why it cannot. */
-export function hintOf(choice: SendIntent, s: ChoiceHintState): ChoiceHint {
-	if (choice === "token") {
-		if (s.exit) return { lead: "back to Ethereum" }
-		return { lead: s.tokenBlocked ? "needs gas first" : "only the token" }
-	}
-	if (s.gasBlock) return { lead: s.gasBlock === "no-route" ? "not for this token" : "can't check right now" }
-	if (choice === "gas") return { lead: "all of it as gas" }
-	return { lead: "gas for ", count: s.txTarget, tail: s.txTarget === 1 ? " transaction" : " transactions" }
 }
 
 /** Everything "Sign and send" acts on. */

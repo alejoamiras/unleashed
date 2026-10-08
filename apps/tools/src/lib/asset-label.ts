@@ -1,5 +1,5 @@
 import { type BridgeJournalRecord, assetKindOf, isSendRecord } from "@unleashed/bridge-core"
-import { formatStoredAmount } from "@/lib/format"
+import { formatStoredAmount, isStoredAmount } from "@/lib/format"
 import { safeDisplay } from "@/lib/token-display"
 
 /** The journal's asset discriminant (mirrors `@unleashed/bridge-core`'s `assetKindOf` return). */
@@ -70,6 +70,15 @@ export function displayAmountOf(rec: BridgeJournalRecord): DisplayAmount {
 		symbol: safeDisplay(assetSymbol(kind, rec.isPrivate, token)),
 		gross: false,
 	}
+}
+
+/** What left the wallet: a token + gas deposit's token claim plus the slice it swapped for gas, as its review
+ *  showed it. A gas-only send and a withdrawal read as `displayAmountOf`. */
+export function sentAmountOf(rec: BridgeJournalRecord): DisplayAmount {
+	const d = displayAmountOf(rec)
+	const slice = rec.direction === "deposit" && !d.gross ? rec.fuel?.amount : undefined
+	if (slice === undefined || !isStoredAmount(slice) || !isStoredAmount(d.raw)) return d
+	return { ...d, raw: (BigInt(d.raw) + BigInt(slice)).toString() }
 }
 
 /** The figure alone: "≥ " before a floor, "—" when there is nothing to show. */

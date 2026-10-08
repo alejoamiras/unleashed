@@ -2,10 +2,9 @@
 /** Utils */
 import { Icon } from "@unleashed/design"
 import { computed, ref } from "vue"
-import { FEE_JUICE, SWAP } from "@/contracts/bridge-generation"
 import { etherscanAddressUrl } from "@/lib/explorer"
 import { trimAddress } from "@/lib/format"
-import type { ExitPlan, SendPlan } from "@/lib/send-model"
+import { type ExitPlan, type SendPlan, venueText } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { checksumAddress, safeDisplay } from "@/lib/token-display"
 
@@ -29,33 +28,14 @@ const props = defineProps<{
 // never opens it must still be able to act on the five lines above.
 const open = ref(false)
 
-const NATIVE = "0x0000000000000000000000000000000000000000"
-
-/** A pool currency in the user's words: the token they chose, ETH (native or wrapped), Fee Juice. */
-function currencyLabel(address: string): string {
-	const lower = address.toLowerCase()
-	if (lower === props.plan.token.address.toLowerCase()) return safeDisplay(props.plan.token.symbol)
-	if (lower === NATIVE || lower === SWAP?.weth.toLowerCase()) return "ETH"
-	if (lower === FEE_JUICE.asset.toLowerCase()) return "Fee Juice"
-	return trimAddress(checksumAddress(address))
-}
-
-/** The currencies the swap walks through, in order: each pool is entered on one side and left on the other. */
-function routeHops(route: { path: readonly { currency0: string; currency1: string }[]; zeroForOnes: readonly boolean[] }): string[] {
-	const first = route.path[0]
-	if (!first) return []
-	const entry = route.zeroForOnes[0] ? first.currency0 : first.currency1
-	const exits = route.path.map((pool, i) => (route.zeroForOnes[i] ? pool.currency1 : pool.currency0))
-	return [entry, ...exits].map(currencyLabel)
-}
+/** The fee asset's name on Ethereum, the side the swap runs on. */
+const FEE_ASSET_L1 = "AZTEC"
 
 const routeText = computed(() => {
 	if (props.plan.direction === "l2-to-l1") return "Direct: the hub burns your tokens, the portal releases them on Ethereum."
-	const route = props.plan.gas?.route
-	const pools = route?.path.length ?? 0
-	if (!route || pools === 0) return "Direct: no swap, the whole amount is bridged."
-	const hops = routeHops(route)
-	return `${hops.join(" → ")} on Uniswap v4 (${pools} ${pools === 1 ? "pool" : "pools"}), then the gas leg is bridged.`
+	const venue = props.plan.gas?.venue
+	if (!venue) return "Direct: no swap, the whole amount is bridged."
+	return `${safeDisplay(props.plan.token.symbol)} → ${FEE_ASSET_L1} through ${venueText(venue, safeDisplay)}, then the gas leg is bridged.`
 })
 
 const slippageText = computed(() => (props.slippageBps === null ? "—" : `${(props.slippageBps / 100).toFixed(2)}%`))
@@ -121,8 +101,7 @@ const validityText = computed(() => {
 				<dd class="full">
 					<a :href="etherscanAddressUrl(portalAddress)" target="_blank" rel="noopener noreferrer" :data-testid="TESTIDS.sendReviewPortalLink">
 						{{ portalAddress }}
-					</a>
-					<span class="state">· {{ portalState }}</span>
+					</a>{{ " " }}<span class="state">· {{ portalState }}</span>
 				</dd>
 			</div>
 			<div class="row" :data-testid="TESTIDS.sendReviewAccount">
@@ -180,19 +159,22 @@ const validityText = computed(() => {
 	padding: 4px 14px 14px;
 }
 
+/* A value with no room beside its label drops under it, as on a phone. */
 .row {
-	display: grid;
-	grid-template-columns: 104px minmax(0, 1fr);
-	column-gap: 16px;
+	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
+	gap: 2px 16px;
 }
 
 dt {
+	flex: 0 0 104px;
 	font: 400 13px/1.45 var(--ul-font-body);
 	color: var(--ul-ink-3);
 }
 
 dd {
+	flex: 1 1 260px;
 	margin: 0;
 	min-width: 0;
 	font: 400 13px/1.45 var(--ul-font-mono);
@@ -220,11 +202,5 @@ dd {
 
 .row[data-portal="mismatch"] dd {
 	color: var(--ul-attention);
-}
-
-@media (max-width: 760px) {
-	.hint {
-		display: none;
-	}
 }
 </style>

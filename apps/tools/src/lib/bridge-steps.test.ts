@@ -166,16 +166,17 @@ describe("stepperPhases - determinate progress + ETA (only where real targets ex
 		expect(live?.detail).toBe("2 checkpoints until your funds arrive")
 	})
 
-	it("pending phases that wait on the chain carry a short estimate; signature phases and the live phase carry none", () => {
+	it("pending phases carry a short estimate, a claim the signature it waits on; the live phase carries none", () => {
 		const phases = stepperPhases(dep({ depositTxHash: "0xt" }))
 		expect(Object.fromEntries(phases.map((p) => [p.key, p.estimate]))).toEqual({
 			seal: undefined,
 			sign: undefined,
 			deposit: undefined,
 			sync: "~1–4 min",
-			claim: undefined,
+			claim: "your signature + a few sec",
 			confirm: "~1–2 min",
 		})
+		expect(phases.find((p) => p.key === "claim")?.signs).toBe(true)
 		expect(stepperPhases(dep({ isPrivate: false })).find((p) => p.key === "deposit")?.estimate).toBe("~1 min")
 		const exit = stepperPhases(wd({ exitTxHash: undefined }))
 		expect(exit.map((p) => p.estimate)).toEqual([undefined, "tens of min", undefined, "~2 min"])
@@ -564,31 +565,23 @@ describe("overallProgress over a private deposit", () => {
 			["claim", crossed, { ...ran, step: "sending", claimable: true }, 7, 8],
 			["confirm", { ...crossed, claimTxHash: "0xc" }, { ...ran, step: "confirming", confirmLandedTxHash: "0xc" }, 8, 8],
 		]
-		let previous = -1
 		for (const [step, rec, rt, index, total] of table) {
 			const o = overall(rec, rt)
 			expect({ step, index: o.index, total: o.total, state: o.state }).toEqual({ step, index, total, state: "running" })
-			expect(o.fraction).toBeGreaterThan(previous)
-			expect(o.fraction).toBeLessThan(1)
-			previous = o.fraction
+			// The bar marks the live phase's start; the rail's meter shows progress inside it.
+			expect(o.fraction).toBeCloseTo((index - 1) / total)
 		}
-		expect(overall({ depositTxHash: "0xt", leafIndex: "7" }, { ...ran, step: "syncing", syncBlock: 101 }).fraction).toBeCloseTo(5 / 8)
-		expect(overall(crossed, { ...ran, step: "syncing", syncBlock: 101 }).fraction).toBeCloseTo((5 + 1 / 3) / 8)
 		expect(overall({ ...crossed, claimTxHash: "0xc", completedAt: 9 }, ran)).toEqual({ fraction: 1, index: 8, total: 8, state: "done" })
 	})
 
-	it("a failed phase keeps its position and share; a retry back to Crossing lowers the fraction to that attempt's", () => {
+	it("a failed phase keeps its position; a retry back to Crossing lowers the fraction to that phase's start", () => {
 		const failed = overall(crossed, { ...ran, claimable: true, attention: "error", note: "timed out" })
 		expect(failed).toEqual({ fraction: 6 / 8, index: 7, total: 8, state: "failed" })
 		const failedCrossing = overall(crossed, { ...ran, syncBlock: 102, attention: "error", note: "timed out" })
-		expect(failedCrossing).toEqual({ fraction: (5 + 2 / 3) / 8, index: 6, total: 8, state: "failed" })
+		expect(failedCrossing).toEqual({ fraction: 5 / 8, index: 6, total: 8, state: "failed" })
 		const retried = overall(crossed, { ...ran, step: "syncing", syncBlock: 100 })
 		expect(retried).toEqual({ fraction: 5 / 8, index: 6, total: 8, state: "running" })
 		expect(retried.fraction).toBeLessThan(failed.fraction)
-	})
-
-	it("a finished sync never fills its slot before the phase is done", () => {
-		expect(overall(crossed, { ...ran, step: "syncing", syncBlock: 110 }).fraction).toBeLessThan(6 / 8)
 	})
 })
 

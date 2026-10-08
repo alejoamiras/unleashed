@@ -1,5 +1,13 @@
-import { type Address, createPublicClient, createWalletClient, custom, type EIP1193Provider, type WalletClient } from "viem"
-import { NETWORK } from "@/lib/network"
+import {
+	type AddEthereumChainParameter,
+	type Address,
+	createPublicClient,
+	createWalletClient,
+	custom,
+	type EIP1193Provider,
+	type WalletClient,
+} from "viem"
+import { NETWORK, readChainOf } from "@/lib/network"
 import { computed, ref, shallowRef } from "vue"
 
 /**
@@ -96,14 +104,61 @@ function disconnect() {
 	walletClient.value = null
 }
 
-async function switchL1Network() {
-	const provider = getProvider()
-	if (!provider) return
-	try {
-		await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${NETWORK.l1ChainId.toString(16)}` }] })
-	} catch (e) {
-		error.value = e instanceof Error ? e.message : "Failed to switch network"
+/** EIP-3326: the wallet does not know the chain it was asked to switch to. Some mobile wallets nest the code. */
+const UNKNOWN_CHAIN = 4902
+
+function isUnknownChain(e: unknown): boolean {
+	const err = e as { code?: unknown; data?: { originalError?: { code?: unknown } } } | null
+	return err?.code === UNKNOWN_CHAIN || err?.data?.originalError?.code === UNKNOWN_CHAIN
+}
+
+/** EIP-3085 parameters for a chain this build reads: its own pinned RPCs first, so the wallet reads what the app does. */
+function addChainParams(target: number): AddEthereumChainParameter | undefined {
+	const read = readChainOf(target)
+	if (!read) return undefined
+	const { chain, rpcUrls } = read
+	const explorer = chain.blockExplorers?.default.url
+	return {
+		chainId: `0x${target.toString(16)}`,
+		chainName: chain.name,
+		nativeCurrency: chain.nativeCurrency,
+		rpcUrls: rpcUrls.length > 0 ? [...rpcUrls] : [...chain.rpcUrls.default.http],
+		...(explorer ? { blockExplorerUrls: [explorer] } : {}),
 	}
+}
+
+/**
+ * Asks the wallet onto `target`, offering to add it first where the wallet does not know it. Resolves true once the
+ * wallet accepted; a refusal is left in `error` and resolves false. The wallet's `chainChanged` moves `chainId`.
+ */
+async function switchChain(target: number): Promise<boolean> {
+	const provider = getProvider()
+	if (!provider) return false
+	const chainId = `0x${target.toString(16)}`
+	let params: AddEthereumChainParameter | undefined
+	try {
+		await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] })
+		return true
+	} catch (e) {
+		params = isUnknownChain(e) ? addChainParams(target) : undefined
+		if (!params) {
+			error.value = e instanceof Error ? e.message : "Failed to switch network"
+			return false
+		}
+	}
+	try {
+		await provider.request({ method: "wallet_addEthereumChain", params: [params] })
+		// EIP-3085 leaves switching to the wallet; asking again is a no-op where it already did.
+		await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] })
+		return true
+	} catch (e) {
+		error.value = e instanceof Error ? e.message : "Failed to add the network"
+		return false
+	}
+}
+
+async function switchL1Network(): Promise<boolean> {
+	return switchChain(NETWORK.l1ChainId)
 }
 
 /** Return the L1 wallet client, rebuilding it from the live provider if a transient `accountsChanged`
@@ -132,6 +187,7 @@ export function useL1Wallet() {
 		publicClient,
 		connect,
 		disconnect,
+		switchChain,
 		switchL1Network,
 	}
 }

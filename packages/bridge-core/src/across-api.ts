@@ -1,12 +1,12 @@
 /**
- * Across `/suggested-fees`, read for the canary's own Across deposits: the relay fee and timing a quote
+ * Across `/suggested-fees`, read for our own Across deposits (the app's testnet route and the canary's): the relay fee and timing a quote
  * prices for our exact message (the relayer's gas depends on it), and the deposit limits. Every answer is
  * hostile input: a bounded read, the fields we use parsed, echoes checked, and amounts and times bounded.
  * No quote is a normal testnet answer (a message too expensive for the deposit cap), never an error.
  */
 import { type Address, type Hex, isAddress } from "viem"
 import z from "zod"
-import { cappedFetchJson } from "../src/capped-fetch"
+import { cappedFetchJson } from "./capped-fetch"
 
 /** Across's testnet API; a sandbox serves the same paths from its own base. */
 export const ACROSS_TESTNET_API = "https://testnet.across.to/api"

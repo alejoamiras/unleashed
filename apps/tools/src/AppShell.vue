@@ -20,16 +20,16 @@ import WalletPickerModal from "./components/WalletPickerModal.vue"
 import { useActivityFeed } from "@/composables/useActivityFeed"
 import { useCompletionToasts } from "@/composables/useCompletionToasts"
 import { PHONE_QUERY, useMediaQuery } from "@/composables/useMediaQuery"
-import { useShell } from "@/composables/useShell"
+import { type Section, useShell } from "@/composables/useShell"
 
 /** Utils */
 import { computed } from "vue"
+import { appSources, fromChainsLine } from "@/composables/useSourceChain"
 import { IS_PLACEHOLDER } from "@/contracts/bridge-generation"
 import { TESTIDS } from "@/lib/testids"
 
 const shell = useShell()
 const section = shell.section
-const bridgeForm = shell.bridgeForm
 
 // The one place completion toasts come from, whichever section is visible. A network with no
 // bridge generation instantiates none of the journal machinery, here or anywhere: the feed is
@@ -43,13 +43,41 @@ const phone = useMediaQuery(PHONE_QUERY)
  *  everywhere; no-wallet has the install CTA on the faucet only (the others have no CTA, so it shows here). */
 const stripExclude = computed(() => (section.value === "drip" ? ["no-wallet", "capability-rejected"] : ["capability-rejected"]))
 
-const HEADERS = {
-	send: { title: "Bridge", subline: "Any ERC-20 · Ethereum ↔ Aztec · public or private · arrive with gas" },
+/** "Base Sepolia or Ethereum · Sepolia" where the registry offers a source; "" on an Ethereum-only build. */
+const sendFrom = fromChainsLine(appSources())
+const HEADERS: Record<Section, { title: string; subline: string; phone?: string }> = {
+	send: {
+		title: "Bridge",
+		subline: sendFrom
+			? `From ${sendFrom} · public or private · arrive with gas`
+			: "Any ERC-20 · Ethereum ↔ Aztec · public or private · arrive with gas",
+		// A phone keeps only where a send can start from.
+		phone: sendFrom ? `From ${sendFrom}` : "Any ERC-20 · Ethereum ↔ Aztec",
+	},
 	drip: { title: "Faucet", subline: "Alpha-testnet only · fixed amounts · permissionless dripper · no rate limit" },
 	activity: { title: "Activity", subline: "Every bridge this browser started or restored, with its next step" },
 	addresses: { title: "Addresses", subline: "Every contract this build talks to" },
-} as const
+}
 const header = computed(() => HEADERS[section.value])
+const subline = computed(() => (phone.value && header.value.phone) || header.value.subline)
+
+/** Activity and a receipt reopened from it list the contracts; the form keeps only the real-funds
+ *  line; the stepper, a fresh receipt and an outcome panel have no footer. SendView is v-shown, so
+ *  its flags outlive a switch to another section. */
+const footer = computed(() => {
+	if (section.value === "activity") return { contracts: true }
+	if (section.value !== "send") return null
+	if (shell.receiptFromActivity.value) return { contracts: true }
+	return shell.bridgeForm.value ? { contracts: false } : null
+})
+
+/** On Activity the page IS the dock, so it is unmounted there, not merely hidden. A phone stacks it
+ *  under a send in progress or done, and has none beside a form or the other sections: the rail's
+ *  count is the signal there. */
+const dockShown = computed(() => {
+	if (section.value === "activity") return false
+	return !phone.value || (section.value === "send" && !shell.bridgeForm.value)
+})
 
 /** The 8×8 mark: dither resolving to a solid signal band in columns 6–7. public/favicon.svg draws the same grid. */
 const MARK_INK =
@@ -73,7 +101,7 @@ const MARK_INK =
 		</aside>
 
 		<main class="main">
-			<SectionHeader :title="header.title" :subline="header.subline">
+			<SectionHeader :title="header.title" :subline="subline">
 				<template #wallets>
 					<template v-if="section === 'drip'">
 						<AztecWalletPanel variant="faucet" />
@@ -100,14 +128,11 @@ const MARK_INK =
 			</div>
 
 			<div class="foot">
-				<!-- SendView is v-shown, so its form flag outlives a switch to another section. -->
-				<BridgeFooter v-if="section === 'send' && bridgeForm" />
+				<BridgeFooter v-if="footer" :contracts="footer.contracts" />
 			</div>
 		</main>
 
-		<!-- On Activity the page IS the dock, so it is unmounted there, not merely hidden. A phone has
-		     no dock at all, whatever was persisted: the rail's count is its signal. -->
-		<ActivityDock v-if="feed && section !== 'activity' && !phone" :feed="feed" />
+		<ActivityDock v-if="feed && dockShown" :feed="feed" :stacked="phone" />
 
 		<AppToastRegion />
 		<!-- ONE picker for the shared session — the panels only trigger connect(). -->

@@ -3,7 +3,7 @@ import { flowGasOnly, flowNoRoute, flowTokenPlusGas } from "../../scripts/sandbo
 import {
 	flowGasOnlyPrivate,
 	flowGasOnlySwapped,
-	flowGasOnlyWethSingleHop,
+	flowGasOnlyWeth,
 	flowMinFuelFloorBinds,
 	flowTokenPlusGasPrivate,
 	flowTokenPlusGasWithCreditHeld,
@@ -62,17 +62,17 @@ describe.skipIf(!INTEGRATION)("the gas leg", () => {
 		expect(await flowGasOnlySwapped(a.s, usdt, true)).toContain("private gas")
 	})
 
-	it("a WETH deposit discovers and settles the single-hop route, public (cell 21)", async () => {
+	it("an 18-decimal WETH deposit settles at its own rate, public (cell 21)", async () => {
 		const a = await freshActor()
-		expect(await flowGasOnlyWethSingleHop(a.s)).toContain("single-hop")
+		expect(await flowGasOnlyWeth(a.s)).toContain("public gas")
 	})
 
-	it("a WETH deposit discovers and settles the single-hop route, private credit (cell 21)", async () => {
+	it("an 18-decimal WETH deposit settles at its own rate, private credit (cell 21)", async () => {
 		const a = await freshActor()
-		expect(await flowGasOnlyWethSingleHop(a.s, true)).toContain("private gas")
+		expect(await flowGasOnlyWeth(a.s, true)).toContain("private gas")
 	})
 
-	it("a routeless token is refused before anything is signed (cell 22)", async () => {
+	it("a token the swapper cannot price is refused before anything is signed (cell 22)", async () => {
 		const a = await freshActor()
 		const { clients } = await sandbox()
 		expect(await flowNoRoute(a.s, clients.deployment.tokens.nort)).toContain("no-route")
