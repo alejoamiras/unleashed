@@ -402,8 +402,9 @@ export async function installL1Wallet(context: BrowserContext, o: L1WalletOption
 		batches: () => batches.all(),
 		sendOutside: async (id, call) => {
 			const hash = await clientOn(id).sendTransaction(call)
-			const receipt = await readerOn(id).request({ method: "eth_getTransactionReceipt", params: [hash] })
-			if (receipt?.status !== "0x1") throw new Error(`the outside transaction ${hash} on chain ${id} did not succeed`)
+			// Anvil can answer the send before the block holding it is queryable; a bare receipt read is then null.
+			const receipt = await readerOn(id).waitForTransactionReceipt({ hash, pollingInterval: 250, timeout: 30_000 })
+			if (receipt.status !== "success") throw new Error(`the outside transaction ${hash} on chain ${id} did not succeed`)
 			return hash
 		},
 		async setAccount(privateKey) {
