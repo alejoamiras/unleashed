@@ -14,7 +14,18 @@ forge install \
   foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
   OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
   Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
+forge install --no-git lifi-contracts=lifinance/contracts@rev=65bae143b249a5fba3dd27d506e9e1d6d8538899
+# Upstream agent instruction files and .env templates must never reach an agent session or env-exec:
+find lib \( -name .claude -o -name .agents -o -name .cursor \) -prune -exec rm -rf {} +
+find lib \( -name .env -o -name '.env.*' -o -name CLAUDE.md -o -name AGENTS.md -o -name .mcp.json \
+  -o -name '.cursorrules*' -o -path '*/.github/copilot-instructions.md' \) -exec rm -f {} +
 ```
+
+> **LI.FI's destination half (`lib/lifi-contracts`, LGPL-3.0-only) is test and sandbox code only.**
+> `[profile.lifi]` compiles Executor, ERC20Proxy, ReceiverAcrossV4 and ReceiverStargateV2 unmodified
+> into `out-lifi/`, with LI.FI's own compiler settings, from one entry file (`lifi-build/LifiArtifacts.sol`).
+> The default profile turns remapping auto-detection off, so the lib adds no remapping there and its
+> contracts cannot resolve their own imports outside `[profile.lifi]`; suites load its artifacts by path.
 
 > **v4-core MUST be `@v4.0.0`** (commit `e50237c4…`). The fuel contracts (`UniswapFuelSwap.sol`,
 > `PoolSetupHelper.sol`) use the pre-1.0 `IPoolManager.SwapParams` /
@@ -32,8 +43,11 @@ sandbox's forge step generate it; `verify-l1.ts` does not, so run this before `v
 # from this directory (contracts/bridge/evm):
 bun --cwd ../../../packages/bridge-core scripts/gen-remappings.ts   # writes ./remappings.txt
 forge build
+FOUNDRY_PROFILE=lifi forge build                                     # LI.FI's destination half → out-lifi/ (CI)
 forge test --no-match-contract Fork                                  # hermetic (CI)
 SEPOLIA_RPC_URL=… AZTEC_REGISTRY=… forge test --match-contract Fork   # live Sepolia (opt-in; two suites skip without the registry)
+LIFI_LIVE=1 bun ../../../packages/bridge-core/scripts/lifi-fixtures.ts --run   # LI.FI: fresh fixtures, then every Lifi*Fork at their blocks (opt-in)
+ETH_RPC_URL=… BASE_RPC_URL=… forge test --match-contract '^Lifi(Destination|StargateCompose|Replay)Fork$'   # replay the committed mainnet fixtures (archive RPCs)
 forge build --ast --force && halmos --match-contract '^Formal'       # symbolic proofs (CI)
 forge snapshot --match-test test_gas_ --no-match-contract Fork --check --tolerance 2   # .gas-snapshot (CI)
 ```
@@ -74,20 +88,21 @@ nonce-pinned factory prediction, journalled, candidate-first; runbook in
 
 ## Tests
 
-**157 hermetic forge tests** (`forge test --no-match-contract Fork`), **12 halmos proofs**
-(`FormalRouterTest 8 · FormalFactoryTest 2 · FormalCloneTest 2`; the guard-shaped ones carry a
+**243 hermetic forge tests** (`forge test --no-match-contract Fork`), **23 halmos proofs**
+(`FormalDepositRouterTest 11 · FormalRouterTest 8 · FormalFactoryTest 2 · FormalCloneTest 2`; the guard-shaped ones carry a
 forge canary proving the property fails without the guard), **live Sepolia fork suites** (real registry/Inbox/FeeJuicePortal, real
 Permit2, real V4 pools, live token metadata), and a committed `.gas-snapshot` for the metered
-first-time vs known `bridge()` calls.
+first-time vs known `bridge()`, `bridgeWithPermit()` and `bridgeFromCaller()` calls.
 
 | Layer | Suites |
 |---|---|
-| unit | `PortalFactory`, `CloneWithdrawRealOutbox` (a clone against Aztec's real `Outbox`: replay, caller binding, cross-clone proofs — the other suites' capturing fake accepts anything), `SwapBridgeRouter`, `Keystone` (3-way vectors with Noir + TS), `ContentHash`, `WitnessHash`, `RouteValidation` |
-| fuzz | `PortalFactoryFuzz`, `CloneRoundtripFuzz`, `SwapBridgeRouterFuzz`, `RouteGrammarFuzz` |
-| invariant | `PortalFactoryInvariant`, `SwapBridgeRouterInvariant` (handler drives create/pause/bridge/fuel-only/identity/donate/sweep/rotate) |
-| symbolic | `FormalFactory`, `FormalClone`, `FormalRouter` — see the header of each for what halmos can and cannot model (it has no sha256, so `createPortal` itself is forge-only) |
-| adversarial | `BlackhatFactory` (F-1…F-9), `BlackhatAudit` (F-A…F-M), `BlackhatV4Fork` |
-| fork | `FactoryFork`, `SwapBridgeRouterPermit2Fork`, `DeployFuelLive.fork`, `MainnetFuel.fork`, `BlackhatV4Fork` |
+| unit | `PortalFactory`, `CloneWithdrawRealOutbox` (a clone against Aztec's real `Outbox`: replay, caller binding, cross-clone proofs — the other suites' capturing fake accepts anything), `SwapBridgeRouter`, `DepositRouter`, `TestnetFuelSwapper`, `Keystone` (3-way vectors with Noir + TS), `ContentHash`, `WitnessHash`, `DepositWitness` (the vector the TS witness pins), `RouteValidation` |
+| fuzz | `PortalFactoryFuzz`, `CloneRoundtripFuzz`, `SwapBridgeRouterFuzz`, `DepositRouterFuzz`, `RouteGrammarFuzz` |
+| invariant | `PortalFactoryInvariant`, `SwapBridgeRouterInvariant` (handler drives create/pause/bridge/fuel-only/identity/donate/sweep/rotate), `DepositRouterInvariant` (Executor, Permit2 user, donor, hostile venue, pause, sweep) |
+| symbolic | `FormalFactory`, `FormalClone`, `FormalRouter`, `FormalDepositRouter` — see the header of each for what halmos can and cannot model (it has no sha256, so `createPortal` itself is forge-only) |
+| adversarial | `BlackhatFactory` (F-1…F-9), `BlackhatAudit` (F-A…F-M), `DepositRouterBlackhat`, `BlackhatV4Fork` |
+| fork | `FactoryFork`, `SwapBridgeRouterPermit2Fork`, `DepositRouterPermit2Fork` (real Permit2 on a mainnet fork, `ETH_RPC_URL`), `DeployFuelLive.fork`, `MainnetFuel.fork`, `BlackhatV4Fork` |
+| LI.FI fork | `LifiTestnetRailFork` (Base Sepolia → Across → Sepolia through LI.FI's deployed Diamond, receiver and Executor, into a portal or the router and swapper), `LifiDestinationFork` (Ethereum's receiver and Executor into the router: venue set, RFQ expiry, gas pin, recovery), `LifiStargateComposeFork` (compose gas floor and recovery), `LifiReplayFork` (a Base source transaction replayed into Ethereum's `lzCompose`) |
 
 ## Threat model — the factory-bound portal
 
@@ -120,6 +135,21 @@ freeze deposits or withdrawals indefinitely, but never move funds) and the route
 `setSwapTarget`/`sweep` (the target is in the signed witness and cannot rotate mid-bridge; sweep
 reaches only donated residue).
 
+## Threat model — `DepositRouter`
+
+The successor router keeps the derived-portal rule (token leg into the token's own clone, fuel into the
+canonical `FeeJuicePortal`, a partial fee-asset remainder into the fee asset's clone) and adds two:
+
+- **The caller path spends only the caller's funds.** `bridgeFromCaller` is unsigned and permissionless,
+  so it pulls from `msg.sender` alone, at most `min(balance, allowance, maxPull)`; `bridgeWithPermit`
+  passes `msg.sender` to Permit2 as the owner, so nobody else can spend a user's witness signature.
+  Accounting is by deltas: a donation never joins or reverts a deposit, and the owner's `sweep` is the
+  only thing that reaches it.
+- **The swap call is fixed at construction.** `SWAP_TARGET` is immutable, `swapData` must carry one of
+  two pinned `GenericSwapFacetV3` selectors with `_receiver` equal to the router (a full-word compare),
+  and a non-zero `minFuelOutput` floors the router's own Fee Juice delta, so a selector-valid call that
+  pays someone else reverts. The target's `fuelSlice` approval is exact and revoked after the call.
+
 ## Value-token hard-blockers (MUST clear before any non-testnet deployment)
 
 - **INFO-1 — `MintableERC20` / `TestUsdc` are not value tokens.** `mint` is permissionless (capped
@@ -128,5 +158,7 @@ reaches only donated residue).
   Faucet-by-design and **not** a theft path (Permit2 still needs the holder's signature), but a
   severe footgun if copied to a real asset. A value deployment MUST use a token with
   access-controlled mint and no forced allowance.
+- **INFO-2 — `TestnetFuelSwapper` is testnet-only.** It pays Fee Juice at an owner-set rate from inventory
+  and the testnet faucet, and its constructor refuses chain id 1; mainnet's `SWAP_TARGET` is LI.FI's Diamond.
 - **Rebasing tokens are unsupported** (the clone's reserve accounting assumes a static balance);
   fee-on-transfer tokens are refused on chain.

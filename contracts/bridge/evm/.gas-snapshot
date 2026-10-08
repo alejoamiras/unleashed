@@ -1,2 +1,5 @@
+DepositRouterTest:test_gas_fromCaller_withFuel() (gas: 405177)
+DepositRouterTest:test_gas_permit_firstTime() (gas: 652346)
+DepositRouterTest:test_gas_permit_known() (gas: 234782)
 SwapBridgeRouterTest:test_gas_bridge_firstTime() (gas: 655910)
 SwapBridgeRouterTest:test_gas_bridge_known() (gas: 240769)

@@ -6,3 +6,5 @@ foundry.lock
 remappings.txt
 remappings.txt.*.tmp
 halmos.log
+out-lifi/
+cache-lifi/

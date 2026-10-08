@@ -55,6 +55,24 @@ jobs:
             OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
             Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
 
+      # LI.FI's destination half (Executor, ERC20Proxy, ReceiverAcrossV4, ReceiverStargateV2;
+      # LGPL-3.0-only), compiled only by the `lifi` profile; suites load it by artifact path. A
+      # commit on main at least 7 days old, per the dependency policy; its nested libs (solady,
+      # OpenZeppelin) come in at LI.FI's own submodule pins.
+      - name: Install LI.FI contracts
+        working-directory: contracts/bridge/evm
+        run: forge install --no-git lifi-contracts=lifinance/contracts@rev=65bae143b249a5fba3dd27d506e9e1d6d8538899
+
+      # Upstream libs ship agent instruction files and .env templates. Third-party instructions must
+      # never reach an agent session, and env-exec refuses any untracked .env*, so the contributor
+      # install deletes them; CI runs the same command so both build the same tree.
+      - name: Remove agent files and .env files from lib/
+        working-directory: contracts/bridge/evm
+        run: |
+          find lib \( -name .claude -o -name .agents -o -name .cursor \) -prune -exec rm -rf {} +
+          find lib \( -name .env -o -name '.env.*' -o -name CLAUDE.md -o -name AGENTS.md -o -name .mcp.json \
+            -o -name '.cursorrules*' -o -path '*/.github/copilot-instructions.md' \) -exec rm -f {} +
+
       # foundry.toml's @aztec/ and @aztec-blob-lib/ remaps assume a hoisted node_modules;
       # this repo uses bun's isolated linker, so the generated remappings.txt is what makes
       # the project resolve at all.
@@ -64,6 +82,15 @@ jobs:
       - name: forge build
         working-directory: contracts/bridge/evm
         run: forge build
+
+      # A profile foundry.toml lacks silently builds the default one, so the artifacts are asserted.
+      - name: forge build (lifi profile)
+        working-directory: contracts/bridge/evm
+        run: |
+          FOUNDRY_PROFILE=lifi forge build
+          for c in Executor ERC20Proxy ReceiverAcrossV4 ReceiverStargateV2; do
+            test -f "out-lifi/${c}.sol/${c}.json"
+          done
 
       - name: forge test (hermetic)
         working-directory: contracts/bridge/evm
@@ -103,14 +130,12 @@ jobs:
           8 FormalRouterTest
           2 FormalFactoryTest
           2 FormalCloneTest
+          11 FormalDepositRouterTest
           EXPECTED
 
-          while read -r proof; do
-            grep -qE "^\[PASS\] ${proof}\(" halmos.clean || {
-              echo "::error::symbolic proof ${proof} did not pass (missing, renamed, or failed)"
-              fail=1
-            }
-          done <<'PROOFS'
+          # A name listed twice is proved by two contracts, so it must pass twice: one passing
+          # line cannot cover the other contract's renamed proof.
+          cat > proofs.want <<'PROOFS'
           check_bridge_conservesUserFunds
           check_bridge_rejectsForeignPortal
           check_bridgeWithFuel_conservesUserFunds
@@ -118,16 +143,34 @@ jobs:
           check_bridgeWithFuel_identity_conservesUserFunds
           check_bridgeWithFuel_partialRejectsFeeJuicePortal
           check_deposit_revertsWhenPaused
+          check_fromCaller_boundedPull
+          check_fromCaller_conservesReceived
+          check_fromCaller_pullsOnlyFromCaller
+          check_fuelOnly_noTokenLeg
+          check_noStandingApproval
+          check_partialFeeAssetNeverIntoFeeJuicePortal
+          check_permit_conservesUserFunds
           check_predictPortal_isCreate2OfInitcode
+          check_revertsWhenPaused
           check_setPaused_revertsForNonOwner
           check_setSwapTarget_revertsForNonOwner
+          check_swap_rejectsUnpinnedSelectorOrReceiver
           check_sweep_revertsForNonOwner
+          check_sweep_revertsForNonOwner
+          check_tokenLegIntoDerivedPortal
           check_withdraw_revertsWhenPaused
           PROOFS
+          while read -r want proof; do
+            got=$(grep -cE "^\[PASS\] ${proof}\(" halmos.clean || true)
+            if [ "$got" -lt "$want" ]; then
+              echo "::error::symbolic proof ${proof} passed ${got} of ${want} times (missing, renamed, or failed)"
+              fail=1
+            fi
+          done < <(sort proofs.want | uniq -c)
 
           summaries=$(grep -c '^Symbolic test result: ' halmos.clean || true)
-          if [ "$summaries" -ne 3 ]; then
-            echo "::error::expected 3 proof contracts to run, saw ${summaries}"
+          if [ "$summaries" -ne 4 ]; then
+            echo "::error::expected 4 proof contracts to run, saw ${summaries}"
             fail=1
           fi
           if grep -qE '^Symbolic test result: [0-9]+ passed; [1-9]' halmos.clean; then
@@ -145,7 +188,8 @@ jobs:
           test -f contracts/bridge/evm/out/PortalFactory.sol/PortalFactory.json
           test -f contracts/bridge/evm/out/SwapBridgeRouter.sol/SwapBridgeRouter.json
           test -f contracts/bridge/evm/out/TokenPortalImpl.sol/TokenPortalImpl.json
-          bun run --cwd packages/bridge-core test -- factory-abi router-abi quoter-abi
+          test -f contracts/bridge/evm/out/DepositRouter.sol/DepositRouter.json
+          bun run --cwd packages/bridge-core test -- factory-abi router-abi quoter-abi deposit-router-abi
 
   noir:
     name: nargo test (keystone)
