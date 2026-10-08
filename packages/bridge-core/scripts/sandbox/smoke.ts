@@ -34,6 +34,7 @@ import {
 	flowTokenPlusGasPrivate,
 	flowTokenPlusGasWithCreditHeld,
 } from "./flows-matrix"
+import { flowCrossChainFuelOnly, flowCrossChainPausedRecovers, flowCrossChainTokenPlusGas, withCrossChainRig } from "./flows-crosschain"
 import type { SandboxClients } from "./handle"
 import type { Actor } from "./l2"
 
@@ -140,6 +141,18 @@ export async function runSmoke(clients: SandboxClients, manifest: ManifestV2, ac
 	await step("(i) gas only, WETH single hop", () => flowGasOnlyWethSingleHop(s))
 	await step("(i) gas only, WETH single hop, private", () => flowGasOnlyWethSingleHop(s, true))
 	await step("(i) outbox: not consumed at proposal, consumed after finalization", () => flowOutboxRoundTrip(s, usdc, usdcL2))
+	// From the source anvil through Across's stand-ins and LI.FI's compiled receiver and Executor into the router.
+	await withCrossChainRig(clients.handle, async (rig) => {
+		await step("(j) cross-chain token+gas, public, claim paid by its fuel", () =>
+			flowCrossChainTokenPlusGas(s, rig, usdc, usdcL2, false),
+		)
+		await step("(j) cross-chain token+gas, private, claim paid by its fuel", () =>
+			flowCrossChainTokenPlusGas(s, rig, usdc, usdcL2, true),
+		)
+		await step("(j) cross-chain gas only, public, self-paid", () => flowCrossChainFuelOnly(s, rig, usdc, false))
+		await step("(j) cross-chain gas only, private credit", () => flowCrossChainFuelOnly(s, rig, usdc, true))
+		await step("(j) cross-chain into paused deposits, recovered on L1", () => flowCrossChainPausedRecovers(s, rig, usdc))
+	})
 	const notes = [fuelBudgetNote(s.samples), ...exitGasNotes(s.samples)]
 	for (const n of notes) console.log(n)
 	return { results, samples: s.samples, notes }

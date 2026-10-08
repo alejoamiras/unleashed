@@ -1,6 +1,6 @@
 /** Boots the sandbox once for the whole suite and hands every file the JSON handle. Attaches to
- *  a running network when `SANDBOX_L1_RPC` + `SANDBOX_NODE_URL` are set (a `sandbox:up` kept
- *  alive), which is how a developer iterates without paying the boot per run. */
+ *  a running network when `SANDBOX_L1_RPC` + `SANDBOX_NODE_URL` + `SANDBOX_SOURCE_RPC` are set (a
+ *  `sandbox:up` kept alive), which is how a developer iterates without paying the boot per run. */
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

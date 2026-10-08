@@ -1,6 +1,7 @@
-/** The sandbox deploys the bridge from Foundry's `out/` artifacts, which are gitignored. Every boot
- *  runs an incremental `forge build` with the same remappings the contract suite uses — a no-op
- *  when nothing changed, and the only thing that keeps a stale checkout's mocks current. */
+/** The sandbox deploys the bridge from Foundry's `out/` artifacts and LI.FI's destination half from the `lifi`
+ *  profile's `out-lifi/`, all gitignored. Every boot runs an incremental `forge build` of both with the same
+ *  remappings the contract suite uses — a no-op when nothing changed, and the only thing that keeps a stale
+ *  checkout's mocks current. */
 import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
@@ -19,11 +20,26 @@ function forgeBin(): string {
 	return existsSync(bundled) ? bundled : "forge"
 }
 
-export function ensureForgeArtifacts(): void {
-	if (!existsSync(join(EVM_ROOT, "lib", "forge-std"))) {
-		throw new Error(`${EVM_ROOT}/lib is missing — run the pinned \`forge install\` from contracts/bridge/evm/README.md first`)
+function requireLib(name: string): void {
+	if (!existsSync(join(EVM_ROOT, "lib", name))) {
+		throw new Error(
+			`${EVM_ROOT}/lib/${name} is missing — run the pinned \`forge install\` lines from contracts/bridge/evm/README.md first`,
+		)
 	}
-	console.log("[sandbox] forge build (incremental)")
+}
+
+export function ensureForgeArtifacts(): void {
+	requireLib("forge-std")
+	requireLib("lifi-contracts")
+	console.log("[sandbox] forge build (incremental), default and lifi profiles")
 	execFileSync("bun", ["scripts/gen-remappings.ts"], { cwd: PACKAGE_ROOT, stdio: "inherit" })
 	execFileSync(forgeBin(), ["build", "--root", EVM_ROOT], { stdio: "inherit" })
+	// A profile foundry.toml lacks would silently build the default one, so the artifact is checked.
+	execFileSync(forgeBin(), ["build", "--root", EVM_ROOT], { stdio: "inherit", env: { ...process.env, FOUNDRY_PROFILE: "lifi" } })
+	if (!existsSync(lifiArtifactPath("ReceiverAcrossV4"))) throw new Error("the lifi profile built no ReceiverAcrossV4 artifact")
+}
+
+/** A `lifi` profile artifact by contract name (`out-lifi/<name>.sol/<name>.json`). */
+export function lifiArtifactPath(name: string): string {
+	return join(EVM_ROOT, "out-lifi", `${name}.sol`, `${name}.json`)
 }

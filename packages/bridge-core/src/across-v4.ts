@@ -1,6 +1,21 @@
 import { type Address, encodeAbiParameters, encodeFunctionData, type Hex, pad, size, zeroAddress } from "viem"
 import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_RECEIVER_MESSAGE_PARAMS, type LifiBridgeData, type LifiSwapData } from "./lifi-abi"
 
+/** `AcrossFacetV4.AcrossV4Data`, field for field. */
+export const ACROSS_V4_DATA_COMPONENTS = [
+	{ name: "receiverAddress", type: "bytes32" },
+	{ name: "refundAddress", type: "bytes32" },
+	{ name: "sendingAssetId", type: "bytes32" },
+	{ name: "receivingAssetId", type: "bytes32" },
+	{ name: "outputAmount", type: "uint256" },
+	{ name: "outputAmountMultiplier", type: "uint128" },
+	{ name: "exclusiveRelayer", type: "bytes32" },
+	{ name: "quoteTimestamp", type: "uint32" },
+	{ name: "fillDeadline", type: "uint32" },
+	{ name: "exclusivityParameter", type: "uint32" },
+	{ name: "message", type: "bytes" },
+] as const
+
 /**
  * LI.FI's `AcrossFacetV4.startBridgeTokensViaAcrossV4`. Our own builder, not an API quote: li.quest quotes no
  * testnet, so the testnet rail encodes the Diamond call itself and the client decoder checks it like any quote.
@@ -12,29 +27,28 @@ export const ACROSS_V4_FACET_ABI = [
 		stateMutability: "payable",
 		inputs: [
 			{ name: "_bridgeData", type: "tuple", components: LIFI_BRIDGE_DATA_COMPONENTS },
-			{
-				name: "_acrossData",
-				type: "tuple",
-				components: [
-					{ name: "receiverAddress", type: "bytes32" },
-					{ name: "refundAddress", type: "bytes32" },
-					{ name: "sendingAssetId", type: "bytes32" },
-					{ name: "receivingAssetId", type: "bytes32" },
-					{ name: "outputAmount", type: "uint256" },
-					{ name: "outputAmountMultiplier", type: "uint128" },
-					{ name: "exclusiveRelayer", type: "bytes32" },
-					{ name: "quoteTimestamp", type: "uint32" },
-					{ name: "fillDeadline", type: "uint32" },
-					{ name: "exclusivityParameter", type: "uint32" },
-					{ name: "message", type: "bytes" },
-				],
-			},
+			{ name: "_acrossData", type: "tuple", components: ACROSS_V4_DATA_COMPONENTS },
 		],
 		outputs: [],
 	},
 ] as const
 
 export const START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR = "0xa1f1ce43"
+
+/** `AcrossFacetV4.AcrossV4Data` as viem encodes and decodes it. */
+export interface AcrossV4Data {
+	receiverAddress: Hex
+	refundAddress: Hex
+	sendingAssetId: Hex
+	receivingAssetId: Hex
+	outputAmount: bigint
+	outputAmountMultiplier: bigint
+	exclusiveRelayer: Hex
+	quoteTimestamp: number
+	fillDeadline: number
+	exclusivityParameter: number
+	message: Hex
+}
 
 export interface AcrossV4DepositParams {
 	/** The LI.FI Diamond on the source chain; the user approves it for exactly `inputAmount`. */
@@ -76,45 +90,50 @@ function assertDepositShape(p: AcrossV4DepositParams): void {
 }
 
 /**
- * Encodes the Diamond call for an Across V4 deposit that carries a LI.FI destination message.
+ * The two structs {@link buildAcrossV4Deposit} encodes, for a decoder to compare a route against field by field.
  *
  * `BridgeData.receiver` is the user: with a message present the facet does not compare it to `receiverAddress`.
- * `outputAmountMultiplier` is 0 because only the swap-and-bridge entrypoint reads it. Throws on a shape no
- * route of ours can have (see {@link assertDepositShape}); it does not check addresses against any book.
+ * `outputAmountMultiplier` is 0 because only the swap-and-bridge entrypoint reads it; there is no exclusive relayer.
+ * Throws on a shape no route of ours can have; it does not check addresses against any book.
  */
-export function buildAcrossV4Deposit(p: AcrossV4DepositParams): { to: Address; data: Hex; value: bigint } {
+export function acrossV4Call(p: AcrossV4DepositParams): { bridgeData: LifiBridgeData; acrossData: AcrossV4Data } {
 	assertDepositShape(p)
-	const bridgeData: LifiBridgeData = {
-		transactionId: p.transactionId,
-		bridge: "acrossV4",
-		integrator: p.integrator,
-		referrer: zeroAddress,
-		sendingAssetId: p.inputToken,
-		receiver: p.user,
-		minAmount: p.inputAmount,
-		destinationChainId: p.destinationChainId,
-		hasSourceSwaps: false,
-		hasDestinationCall: true,
+	return {
+		bridgeData: {
+			transactionId: p.transactionId,
+			bridge: "acrossV4",
+			integrator: p.integrator,
+			referrer: zeroAddress,
+			sendingAssetId: p.inputToken,
+			receiver: p.user,
+			minAmount: p.inputAmount,
+			destinationChainId: p.destinationChainId,
+			hasSourceSwaps: false,
+			hasDestinationCall: true,
+		},
+		acrossData: {
+			receiverAddress: word(p.destinationReceiver),
+			refundAddress: word(p.user),
+			sendingAssetId: word(p.inputToken),
+			receivingAssetId: word(p.outputToken),
+			outputAmount: p.outputAmount,
+			outputAmountMultiplier: 0n,
+			exclusiveRelayer: pad("0x", { size: 32 }),
+			quoteTimestamp: p.quoteTimestamp,
+			fillDeadline: p.fillDeadline,
+			exclusivityParameter: 0,
+			message: encodeLifiReceiverMessage(p.transactionId, p.steps, p.user),
+		},
 	}
+}
+
+/** Encodes the Diamond call for an Across V4 deposit that carries a LI.FI destination message ({@link acrossV4Call}). */
+export function buildAcrossV4Deposit(p: AcrossV4DepositParams): { to: Address; data: Hex; value: bigint } {
+	const { bridgeData, acrossData } = acrossV4Call(p)
 	const data = encodeFunctionData({
 		abi: ACROSS_V4_FACET_ABI,
 		functionName: "startBridgeTokensViaAcrossV4",
-		args: [
-			bridgeData,
-			{
-				receiverAddress: word(p.destinationReceiver),
-				refundAddress: word(p.user),
-				sendingAssetId: word(p.inputToken),
-				receivingAssetId: word(p.outputToken),
-				outputAmount: p.outputAmount,
-				outputAmountMultiplier: 0n,
-				exclusiveRelayer: pad("0x", { size: 32 }),
-				quoteTimestamp: p.quoteTimestamp,
-				fillDeadline: p.fillDeadline,
-				exclusivityParameter: 0,
-				message: encodeLifiReceiverMessage(p.transactionId, p.steps, p.user),
-			},
-		],
+		args: [bridgeData, acrossData],
 	})
 	return { to: p.diamond, data, value: 0n }
 }

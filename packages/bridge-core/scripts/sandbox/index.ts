@@ -2,8 +2,10 @@
  *  the browser suite reaches it through the CLI's written artifacts and this module in fixtures. */
 export * from "./constants"
 export * from "./context"
+export * from "./crosschain"
 export * from "./deploy"
 export * from "./flows"
+export * from "./flows-crosschain"
 export * from "./handle"
 export * from "./l1"
 export * from "./l2"
@@ -17,6 +19,7 @@ export {
 	startLocalNetwork,
 } from "./local-network"
 export * from "./manifest"
+export * from "./relayer"
 export * from "./smoke"
 export * from "./flows-matrix"
 export * from "./forge"

@@ -12,35 +12,30 @@
  * Run: bun run scripts/fuel-testnet.ts --config <manifest> [--token <erc20>]
  *      (PRIVATE_KEY + SEPOLIA_RPC_URL in packages/bridge-core/.env)
  */
-import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { loadContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { Contract, type ContractBase, getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js/contracts"
+import { Contract, type ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { PublicKeys } from "@aztec-labs/aztec.js/keys"
 import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas, type GasFees } from "@aztec-labs/stdlib/gas"
-import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { predictedWorstMinFees, publicFeeJuicePayment } from "../src/fee-juice"
+import { predictedWorstMinFees } from "../src/fee-juice"
 import type { L1Ctx } from "../src/flows"
-import { claimViaHub, type HubClaimOutcome, hubTokenFor } from "../src/hub-l2"
+import type { HubClaimOutcome } from "../src/hub-l2"
 import {
 	PRIVATE_FPC_ADDRESS,
-	PRIVATE_FPC_SALT,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	deriveBridgeSecret,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
-	privateMintAndPayFee,
 } from "../src/private-fuel"
 import type { SendResult } from "../src/send-flow"
 import { runSend } from "../src/send-flow"
 import { runFpcGate } from "./check-fpc-version"
+import { type FueledClaimResult, registerPrivateFpc, settleFueledClaim } from "./fuel-claim-l2"
 import { requirePinnedSigner } from "./live-intent"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
@@ -123,131 +118,29 @@ async function landedTx(ctx: VariantCtx, txHash: string): Promise<{ fee: bigint;
 
 const gasNote = (tx: { l2GasApprox?: bigint }): string => (tx.l2GasApprox === undefined ? "" : ` (≈${tx.l2GasApprox} L2 gas)`)
 
-/** The PrivateFPC has no public functions and no initializer, so it needs no on-chain deploy — but
- *  the private kernel oracle needs both preimages locally, and the canonical salt must reproduce the
- *  pinned address or the artifact has drifted. */
-async function registerPrivateFpc(ewallet: unknown, mins: () => string) {
-	const artifact = loadContractArtifact(
-		JSON.parse(
-			readFileSync(
-				resolvePackageAsset("@alejoamiras/private-fee-juice", "target/private_contract-PrivateFPC.json", { from: import.meta.url }),
-				"utf8",
-			),
-		),
-	)
-	const instance = await getContractInstanceFromInstantiationParams(artifact, {
-		salt: Fr.fromHexString(PRIVATE_FPC_SALT),
-		publicKeys: PublicKeys.default(),
-		deployer: AztecAddress.ZERO,
-	})
-	if (instance.address.toString() !== PRIVATE_FPC_ADDRESS) {
-		throw new Error(`PrivateFPC rebuilt ${instance.address} != pinned ${PRIVATE_FPC_ADDRESS} (artifact/version drift)`)
-	}
-	try {
-		await (ewallet as { registerContract: (i: unknown, a: unknown) => Promise<unknown> }).registerContract(instance, artifact)
-	} catch {}
-	console.log(`PrivateFPC ${PRIVATE_FPC_ADDRESS.slice(0, 12)}… registered (${mins()})`)
-	return { instance, artifact }
-}
-
-/** PUBLIC fuel pays the ACTUAL fee, so its payment is static. PRIVATE-FPC fuel asserts
- *  `amount >= getFeeLimit` against the COMMITTED maxFeesPerGas, and the protocol rejects a tx whose
- *  committed cap fell below the live base fee by inclusion time — a claim proves for minutes, so the
- *  cap is re-priced on every attempt rather than reused. */
-async function buildVariantClaimFee(
-	ctx: VariantCtx,
-	result: SendResult,
-	viaFpc: boolean,
-	bridgeSalt: Fr | undefined,
-	registers: boolean,
-): Promise<{ fee: unknown; registerFee?: unknown; registeredClaimFee?: unknown; maxFees?: GasFees }> {
-	const fuelReceived = result.fuelReceived ?? 0n
-	if (!viaFpc) {
-		return {
-			fee: {
-				paymentMethod: publicFeeJuicePayment(ctx.from, {
-					claimAmount: fuelReceived,
-					claimSecret: Fr.fromHexString(result.fuelSecretHex as string),
-					messageLeafIndex: result.fuelLeafIndex as bigint,
-				}),
-			},
-		}
-	}
-	const maxFees = (await predictedWorstMinFees(ctx.node)).mul(RELIABILITY_PAD)
-	const fpc = AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS)
-	const fuelPayment = privateMintAndPayFee(
-		fpc,
-		fuelReceived,
-		deriveBridgeSecret(bridgeSalt as Fr, ctx.from),
-		bridgeSalt as Fr,
-		new Fr(result.fuelLeafIndex as bigint),
-	)
-	const gasSettings = (gas: { daGas: number; l2Gas: number }) => ({
-		gasLimits: Gas.from(gas),
-		teardownGasLimits: Gas.from({ daGas: 0, l2Gas: 0 }),
-		maxFeesPerGas: maxFees,
-	})
-	// The fuel message is spent by whichever transaction goes first — a first-time token's own
-	// registration, sized for one, else the claim — and a claim after such a registration draws on
-	// the credit the FPC kept, exactly as the app's ladder does it.
-	return {
-		fee: { paymentMethod: fuelPayment, gasSettings: gasSettings(PRIVATE_HUB_CLAIM_GAS) },
-		...(registers
-			? {
-					registerFee: { paymentMethod: fuelPayment, gasSettings: gasSettings(PRIVATE_HUB_REGISTER_GAS) },
-					registeredClaimFee: { paymentMethod: privateFeeJuicePayment(fpc), gasSettings: gasSettings(PRIVATE_HUB_CLAIM_GAS) },
-				}
-			: {}),
-		maxFees,
-	}
-}
-
-/** An FPC budget assert means the bridged FJ is below the committed getFeeLimit — a real failure,
- *  never a sync/fee-drift wait to retry through. */
-function throwIfFpcBudgetAssert(label: string, fuelReceived: bigint, msg: string): void {
-	if (/Amount too low to cover gas cost|max_gas_cost/.test(msg)) {
-		throw new Error(`${label}: FPC budget assert — bridged FJ ${fuelReceived} < committed getFeeLimit. ${msg}`)
-	}
-}
-
-/** The self-paying claim, retried on the message-sync cadence. It cannot use the shared fixed-options
- *  claim loop: the FPC fee has to be rebuilt per attempt (see buildVariantClaimFee). */
-async function settleVariantClaim(
+/** The send's self-paying claim, through the shared fueled-claim loop. */
+function settleVariantClaim(
 	ctx: VariantCtx,
 	p: { label: string; isPrivate: boolean; result: SendResult; viaFpc: boolean; bridgeSalt?: Fr },
-): Promise<{ outcome: HubClaimOutcome; committedMaxFees?: GasFees; registered: boolean }> {
-	const claim = {
+): Promise<FueledClaimResult> {
+	const received = p.result.fuelReceived ?? 0n
+	const leafIndex = p.result.fuelLeafIndex as bigint
+	return settleFueledClaim({
+		label: p.label,
+		hub: ctx.hub,
+		node: ctx.node,
+		from: ctx.from,
 		token: claimTokenBlock(TOKEN, p.result.token as NonNullable<SendResult["token"]>),
-		recipient: ctx.from.toString(),
 		amount: BRIDGED,
 		claimValue: Fr.fromHexString(p.result.tokenClaimValueHex as string),
 		leafIndex: p.result.tokenLeafIndex as bigint,
 		isPrivate: p.isPrivate,
-		from: ctx.from.toString(),
-	}
-	for (let i = 0; i < 300; i++) {
-		try {
-			// Whether this claim registers the token is a live fact, re-read per attempt like the app does.
-			const registers = p.viaFpc && (await hubTokenFor(ctx.hub, TOKEN.erc20, ctx.from.toString())) === undefined
-			const built = await buildVariantClaimFee(ctx, p.result, p.viaFpc, p.bridgeSalt, registers)
-			const sendOpts = {
-				from: ctx.from,
-				fee: built.fee,
-				...(built.registerFee ? { registerFee: built.registerFee, registeredClaimFee: built.registeredClaimFee } : {}),
-				onRegistered: (hash: string) =>
-					console.log(
-						`${p.label}: register_token ${hash} landed — waiting for the claim to pass in this wallet's view (${ctx.mins()})`,
-					),
-				wait: { waitForStatus: TxStatus.PROPOSED },
-			}
-			return { outcome: await claimViaHub(ctx.hub, claim, sendOpts), committedMaxFees: built.maxFees, registered: registers }
-		} catch (e) {
-			throwIfFpcBudgetAssert(p.label, p.result.fuelReceived ?? 0n, e instanceof Error ? e.message : String(e))
-			if (i % 10 === 0) console.log(`${p.label}: claim not ready / re-pricing… (${ctx.mins()})`)
-			await sleep(6000)
-		}
-	}
-	throw new Error(`${p.label}: self-paying claim never SETTLED within budget`)
+		fuel: p.viaFpc
+			? { via: "private-fpc", received, leafIndex, bridgeSalt: p.bridgeSalt as Fr }
+			: { via: "public", received, leafIndex, secret: Fr.fromHexString(p.result.fuelSecretHex as string) },
+		reliabilityPad: RELIABILITY_PAD,
+		mins: ctx.mins,
+	})
 }
 
 /** The FPC ceiling (`getFeeLimit`) the claim committed to: the explicit limits × the committed

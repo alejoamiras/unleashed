@@ -27,14 +27,16 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Address, PublicClient } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
+import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import { type BridgeBlock, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
 import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
+import { type DeployStep, readDeployJournal } from "./deploy-manifest"
 import { git, resolveBin, run } from "./run"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
-import { FACTORY_CONSTANTS_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI } from "./script-l1"
+import { FACTORY_CONSTANTS_ABI, FUEL_SWAPPER_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI, sourceRpcUrl } from "./script-l1"
 import { deriveHubInstance } from "./script-l2"
 import { verifyL1Manifest } from "./verify-l1"
 import { walletChainIdOf } from "../src/wallet-chain-id"
@@ -66,6 +68,35 @@ export function requirePinnedSigner(network: "testnet" | "mainnet"): string {
 
 /** The testnet pin — the single-network export every testnet script asserts against. */
 export const PLAN_PINNED_L1_SIGNER = requirePinnedSigner("testnet")
+
+/**
+ * The disposable canary key's public address per network, pinned here for the same reason as the deploy signers.
+ * It is single-purpose and never a deploy signer. `null` until the key exists, and every canary-signed run is
+ * refused while it is: pin the address and commit it before building the intent that covers the canary.
+ */
+export const PLAN_PINNED_CANARY_SIGNERS: Record<"testnet" | "mainnet", string | null> = {
+	testnet: null,
+	mainnet: null,
+}
+
+/** Fail-closed canary lookup — throws while the network's canary key is unpinned. */
+export function requirePinnedCanarySigner(network: "testnet" | "mainnet"): string {
+	const pinned = PLAN_PINNED_CANARY_SIGNERS[network]
+	if (!pinned) {
+		throw new Error(`no pinned canary signer for ${network} — pin the canary key's address in PLAN_PINNED_CANARY_SIGNERS first. STOP.`)
+	}
+	return pinned
+}
+
+/**
+ * What the canary key may spend per chain it signs on, in ether: the source deposits on Base Sepolia, the
+ * self-fills and Ethereum-origin rows on Sepolia. Its funding is the hard ceiling; these are the tally `verify`
+ * reconciles against the balances `build` recorded, so an overspend stops the next row.
+ */
+export const CANARY_CAPS: Readonly<Record<string, { maxEthSpend: string }>> = {
+	"84532": { maxEthSpend: "0.05" },
+	"11155111": { maxEthSpend: "0.2" },
+}
 
 /** Hard exposure ceilings for one arc, sized for a ~1.25 WETH pool seed (price impact ~1.5% at a
  *  25-token fill). Testnet ETH only; a mainnet arc re-reviews these from scratch. */
@@ -163,6 +194,27 @@ export interface DeployIntent {
 	artifacts: { privateFpc: { address: string; salt: string; sha256: string }; noirTargets: Record<string, string> }
 	source: { commit: string; treeClean: boolean; operationalAllowlist: string[] }
 	candidateSha256?: string
+	/** Present on a router-only intent: the generation the arc may not move, and the only changes it may make. */
+	routerOnly?: RouterOnlyScope
+	/** The canary key the intent covers; `signer: null` refuses every canary-signed run. */
+	canary?: { signer: string | null; caps: typeof CANARY_CAPS; startingBalancesEth?: Record<string, number> }
+}
+
+/**
+ * A router-only arc deploys the DepositRouter and its fuel swapper beside the generation and pre-creates the named
+ * tokens; everything promotion locks (identity, factory, hub) and the legacy router stay as `build` found them.
+ */
+export interface RouterOnlyScope {
+	generation: Record<
+		"factory" | "implementation" | "registry" | "guardian" | "router" | "swapTarget" | "permit2" | "feeJuicePortal" | "hub",
+		string
+	>
+	/** The live manifest's tokens by the addresses their generation derives; each stays in the candidate unchanged. */
+	tokens: Array<{ erc20: string; portal: string; l2Token: string }>
+	/** The only tokens the candidate may add. */
+	preCreate: string[]
+	/** The conductor's journal (repo-relative) and its length at build: every later step must be one this scope allows. */
+	journal: { path: string; steps: number }
 }
 
 const OPERATIONAL_ALLOWLIST = [
@@ -177,13 +229,17 @@ const OPERATIONAL_ALLOWLIST = [
 	"implementations-plan/archive/tools-two-network/lessons/",
 	"implementations-plan/archive/any-erc20-bridge/lessons/",
 	"implementations-plan/archive/protocol-labels/lessons/",
+	"implementations-plan/lifi-routing/lessons/",
 	"apps/tools/public/testnet-bridge.journal.jsonl",
 ]
+
+/** The conductor's testnet journal, repo-relative: the router-only scope reads what was appended since `build`. */
+const TESTNET_JOURNAL = "packages/bridge-core/deploy-journal/testnet-generation.jsonl"
 
 /** A file entry matches exactly; only an entry ending in `/` matches by prefix — `deployments.json.ts`
  *  is not `deployments.json`. The reset baseline sits in an allowlisted lessons dir but is a trust
  *  anchor, so changing it after an intent is built is source drift. */
-const isAllowlistedPath = (p: string): boolean =>
+export const isAllowlistedPath = (p: string): boolean =>
 	p !== NO_RESET_BASELINE && OPERATIONAL_ALLOWLIST.some((a) => (a.endsWith("/") ? p.startsWith(a) : p === a))
 
 /** A porcelain line is allowlisted only when EVERY path on it is: a rename (`R  old -> new`) names
@@ -246,7 +302,137 @@ export async function authenticatedNode(nodeUrl: string): Promise<NodeIdentity> 
 	return identity
 }
 
-async function build(intentPath: string): Promise<void> {
+const lcAddr = (v: string) => v.toLowerCase()
+const sameAddr = (a: string | undefined, b: string | undefined) => (a ?? "").toLowerCase() === (b ?? "").toLowerCase()
+
+/** The scope a router-only intent pins: the live generation as committed, the tokens the arc may add, and how long
+ *  the conductor's journal was. */
+export function routerOnlyScopeOf(live: ManifestV2, preCreate: readonly string[], journalSteps: number): RouterOnlyScope {
+	const { l1, l2, tokens } = requireBridge(live)
+	const generation = {
+		factory: l1.factory,
+		implementation: l1.implementation,
+		registry: l1.registry,
+		guardian: l1.guardian,
+		router: l1.router,
+		swapTarget: l1.swapTarget,
+		permit2: l1.permit2,
+		feeJuicePortal: l1.feeJuicePortal,
+		hub: l2.hub.address,
+	}
+	return {
+		generation: Object.fromEntries(Object.entries(generation).map(([k, v]) => [k, lcAddr(v)])) as RouterOnlyScope["generation"],
+		tokens: tokens.map((t) => ({ erc20: lcAddr(t.erc20), portal: lcAddr(t.portal), l2Token: lcAddr(t.l2Token) })),
+		preCreate: preCreate.map((t) => lcAddr(requireAddress(t, "--pre-create token"))),
+		journal: { path: TESTNET_JOURNAL, steps: journalSteps },
+	}
+}
+
+/** The candidate moves nothing promotion locks, nor the legacy router; keeps every live token as its generation
+ *  derives it; adds only the named tokens; and names the arc's two contracts. */
+export function assertRouterOnlyScope(scope: RouterOnlyScope, candidate: ManifestV2): void {
+	const { l1, l2, tokens } = requireBridge(candidate)
+	const now: Record<keyof RouterOnlyScope["generation"], string> = { ...l1, hub: l2.hub.address }
+	for (const [field, want] of Object.entries(scope.generation) as Array<[keyof RouterOnlyScope["generation"], string]>) {
+		if (!sameAddr(now[field], want)) throw new Error(`router-only: candidate ${field} ${now[field]} != the generation's ${want} — STOP`)
+	}
+	if (!l1.depositRouter || !l1.fuelSwapper) throw new Error("router-only: the candidate names no depositRouter and fuelSwapper — STOP")
+	const byErc20 = new Map(tokens.map((t) => [lcAddr(t.erc20), t]))
+	for (const t of scope.tokens) {
+		const c = byErc20.get(t.erc20)
+		if (!c || !sameAddr(c.portal, t.portal) || !sameAddr(c.l2Token, t.l2Token)) {
+			throw new Error(`router-only: live token ${t.erc20} is missing from the candidate or derives elsewhere — STOP`)
+		}
+	}
+	const allowed = new Set([...scope.tokens.map((t) => t.erc20), ...scope.preCreate])
+	const extra = tokens.filter((t) => !allowed.has(lcAddr(t.erc20))).map((t) => t.erc20)
+	if (extra.length > 0) throw new Error(`router-only: the candidate adds tokens the intent did not name: ${extra.join(", ")} — STOP`)
+}
+
+/** What a router-only arc may journal: its two contracts, the named pre-creations, calibration and the candidate. */
+const ROUTER_ONLY_STEPS: ReadonlySet<DeployStep["kind"]> = new Set([
+	"fuel-swapper-deployed",
+	"deposit-router-deployed",
+	"token-precreated",
+	"calibrated",
+	"candidate-written",
+])
+
+/** Every step appended since `build` is one the router-only scope allows: a factory, hub or legacy router deploy
+ *  under this intent would be a new generation the owner never authorized. */
+export function assertRouterOnlyJournal(scope: RouterOnlyScope, steps: readonly DeployStep[]): void {
+	if (steps.length < scope.journal.steps) {
+		throw new Error(
+			`the conductor journal has ${steps.length} step(s), fewer than the ${scope.journal.steps} at build — it was rewritten; STOP`,
+		)
+	}
+	for (const s of steps.slice(scope.journal.steps)) {
+		if (!ROUTER_ONLY_STEPS.has(s.kind)) throw new Error(`journal step ${s.kind} is outside this router-only intent — STOP`)
+		if (s.kind === "token-precreated" && !scope.preCreate.includes(lcAddr(s.erc20))) {
+			throw new Error(`journal pre-created ${s.erc20}, which this router-only intent does not name — STOP`)
+		}
+	}
+}
+
+/** A canary chain's read RPC: Sepolia's is the keyed one; a source chain's is its override or the catalogue's. */
+function canaryChainRpc(chainId: string, sepolia: string): string {
+	if (chainId === "11155111") return sepolia
+	const url = sourceRpcUrl(Number(chainId))
+	if (!url) throw new Error(`no read RPC for chain ${chainId} to reconcile the canary's spend against — STOP`)
+	return url
+}
+
+function balanceEth(address: string, rpcUrl: string): number {
+	const balance = Number(cast(["balance", requireAddress(address, "canary signer"), "--rpc-url", rpcUrl, "--ether"]))
+	if (!Number.isFinite(balance)) throw new Error(`could not read ${address}'s balance — STOP`)
+	return balance
+}
+
+/** The canary the intent covers, with its pre-spend balances when its key is pinned. */
+function canaryRecord(sepolia: string): NonNullable<DeployIntent["canary"]> {
+	const signer = PLAN_PINNED_CANARY_SIGNERS.testnet
+	if (!signer) return { signer: null, caps: CANARY_CAPS }
+	const startingBalancesEth = Object.fromEntries(
+		Object.keys(CANARY_CAPS).map((id) => [id, balanceEth(signer, canaryChainRpc(id, sepolia))]),
+	)
+	return { signer, caps: CANARY_CAPS, startingBalancesEth }
+}
+
+/** A canary-signed run needs a pinned canary that the intent recorded; its spend per chain stays within the caps the
+ *  intent recorded, measured from the balances recorded at build. */
+function assertCanary(intent: DeployIntent, sepolia: string): void {
+	const signer = intent.canary?.signer ?? null
+	const key = process.env.CANARY_PRIVATE_KEY
+	if (key) {
+		const pinned = requirePinnedCanarySigner("testnet")
+		const derived = signerOf(key)
+		if (!sameAddr(derived, pinned) || !sameAddr(derived, signer ?? undefined)) {
+			throw new Error(`canary key ${derived} != pinned ${pinned} / intent ${signer} — STOP`)
+		}
+	}
+	const start = intent.canary?.startingBalancesEth
+	if (!signer || !start) return
+	for (const [chainId, before] of Object.entries(start)) {
+		const spent = before - balanceEth(signer, canaryChainRpc(chainId, sepolia))
+		const cap = Number(intent.canary?.caps[chainId]?.maxEthSpend)
+		if (!(spent <= cap)) throw new Error(`canary spend ${spent.toFixed(6)} ETH on chain ${chainId} exceeds its ${cap} ETH cap — STOP`)
+		console.log(`✓ canary spend on chain ${chainId}: ${spent.toFixed(6)}/${cap} ETH`)
+	}
+}
+
+/** The conductor journal's committed length: steps appended before `build` but never committed are checked too. */
+function committedJournalSteps(): number {
+	const blob = run("git", ["show", `HEAD:${TESTNET_JOURNAL}`], { cwd: repoRoot, check: false })
+	return blob.exitCode === 0 ? blob.stdout.split("\n").filter(Boolean).length : 0
+}
+
+/** The router-only scope from the COMMITTED live manifest: the working-tree copy is allowlisted and may be dirty. */
+function routerOnlyScopeAtHead(preCreate: readonly string[]): RouterOnlyScope {
+	const live = parseManifestV2(JSON.parse(git(["show", "HEAD:apps/tools/public/testnet-bridge.json"], repoRoot)))
+	return routerOnlyScopeOf(live, preCreate, committedJournalSteps())
+}
+
+async function build(intentPath: string, opts: { routerOnly?: { preCreate: string[] } } = {}): Promise<void> {
 	const sepolia = process.env.SEPOLIA_RPC_URL
 	if (!sepolia) throw new Error("SEPOLIA_RPC_URL required (source packages/bridge-core/.env)")
 	const pk = process.env.PRIVATE_KEY
@@ -328,6 +514,8 @@ async function build(intentPath: string): Promise<void> {
 			),
 		},
 		source: { commit, treeClean: dirty.length === 0, operationalAllowlist: OPERATIONAL_ALLOWLIST },
+		...(opts.routerOnly ? { routerOnly: routerOnlyScopeAtHead(opts.routerOnly.preCreate) } : {}),
+		canary: canaryRecord(sepolia),
 	}
 	if (!intent.l1Corroboration.rollupHasCode || !intent.l1Corroboration.portalHasCode) {
 		throw new Error("L1 corroboration FAILED: node-claimed rollup/portal has no code on Sepolia — HARD STOP")
@@ -337,7 +525,8 @@ async function build(intentPath: string): Promise<void> {
 	}
 	writeFileSync(intentPath, `${JSON.stringify(intent, null, "\t")}\n`)
 	console.log(
-		`✓ intent written to ${intentPath} (commit ${commit.slice(0, 8)}, rollupVersion ${identity.rollupVersion}, signer ${signer})`,
+		`✓ intent written to ${intentPath} (commit ${commit.slice(0, 8)}, rollupVersion ${identity.rollupVersion}, signer ${signer}` +
+			`${intent.routerOnly ? ", router-only" : ""})`,
 	)
 }
 
@@ -482,6 +671,29 @@ async function reportHubBindings(b: BridgeBlock, nodeUrl: string): Promise<void>
 	console.log("  hub initialization hash + class match the manifest's [token_class_id, l1_factory, guardian]; token class published")
 }
 
+/** The DepositRouter and its swapper, when the candidate names them: the owner, factory and swap target a
+ *  lookalike would get wrong. Returns `[label, on-chain, manifest]` rows. */
+async function depositRouterBindings(pub: PublicClient, b: BridgeBlock): Promise<Array<[string, unknown, string]>> {
+	const { depositRouter, fuelSwapper } = b.l1
+	if (!depositRouter) return []
+	const router = depositRouter as Address
+	const [owner, factory, swapTarget] = await Promise.all([
+		pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "owner" }),
+		pub.readContract({ address: router, abi: DEPOSIT_ROUTER_ABI, functionName: "FACTORY" }),
+		pub.readContract({ address: router, abi: DEPOSIT_ROUTER_ABI, functionName: "SWAP_TARGET" }),
+	])
+	const rows: Array<[string, unknown, string]> = [
+		// The router's owner can only sweep donated residue; the guardian is still the only acceptable holder.
+		["depositRouter owner", owner, b.l1.guardian],
+		["depositRouter FACTORY", factory, b.l1.factory],
+	]
+	if (!fuelSwapper) return rows
+	const swapperOwner = await pub.readContract({ address: fuelSwapper as Address, abi: FUEL_SWAPPER_ABI, functionName: "owner" })
+	// The swapper's owner sets the price of every fueled send.
+	rows.push(["depositRouter SWAP_TARGET", swapTarget, fuelSwapper], ["fuelSwapper owner", swapperOwner, b.l1.guardian])
+	return rows
+}
+
 /**
  * The generation's privileged bindings, read off the chains that hold them — a digest cannot catch
  * a wrong owner, a foreign swap target, or an implementation the factory does not clone — followed
@@ -495,7 +707,10 @@ async function verifyGenerationBindings(m: ManifestV2, rpcUrl: string, nodeUrl: 
 		["factory", b.l1.factory],
 		["implementation", b.l1.implementation],
 		["router", b.l1.router],
+		["depositRouter", b.l1.depositRouter],
+		["fuelSwapper", b.l1.fuelSwapper],
 	] as const) {
+		if (!address) continue
 		const code = await pub.getCode({ address: address as Address })
 		if (!code || code === "0x") throw new Error(`candidate ${label} ${address} has no code on L1 — STOP`)
 	}
@@ -516,6 +731,7 @@ async function verifyGenerationBindings(m: ManifestV2, rpcUrl: string, nodeUrl: 
 		// would ship a hub that never learns a token.
 		["factory L2_HUB", l2Hub, b.l2.hub.address],
 		["router swapTarget", swapTarget, b.l1.swapTarget],
+		...(await depositRouterBindings(pub, b)),
 	]
 	for (const [label, got, want] of bindings) {
 		if (String(got).toLowerCase() !== want.toLowerCase()) throw new Error(`${label} ${String(got)} != manifest ${want} — STOP`)
@@ -561,6 +777,7 @@ async function verifyCandidate(intent: DeployIntent, intentPath: string, candida
 	}
 	assertFeeJuicePins(candidate, intent, sepolia)
 	assertCandidateIdentity(intent, candidate, sepolia)
+	if (intent.routerOnly) assertRouterOnlyScope(intent.routerOnly, candidate)
 	await verifyGenerationBindings(candidate, sepolia, intent.primaryRpc)
 	console.log("✓ candidate strict-valid + privileged readbacks agree")
 }
@@ -597,8 +814,10 @@ async function verify(intentPath: string, candidatePath?: string): Promise<void>
 	const now = await assertIdentityUnmoved(intent)
 	assertSignerUnmoved(intent)
 	assertArtifactDigests(intent)
+	if (intent.routerOnly) assertRouterOnlyJournal(intent.routerOnly, readDeployJournal(join(repoRoot, TESTNET_JOURNAL)))
 	if (candidatePath) await verifyCandidate(intent, intentPath, candidatePath, sepolia)
 	assertSpendWithinCaps(intent, sepolia, now.rollupVersion)
+	assertCanary(intent, sepolia)
 }
 
 interface PromotionPaths {
@@ -785,15 +1004,18 @@ const isMain = process.argv[1] ? fileURLToPath(import.meta.url) === resolvePath(
 if (isMain) {
 	const [, , cmd, intentPath, ...rest] = process.argv
 	if (!cmd || !intentPath) {
-		console.error("usage: live-intent.ts build|verify|promote <intent-path> [--candidate <path>] [--bridge-only]")
+		console.error(
+			"usage: live-intent.ts build|verify|promote <intent-path> [--router-only [--pre-create <erc20>]…] [--candidate <path>] [--bridge-only]",
+		)
 		process.exit(1)
 	}
 	const candidateFlag = rest.indexOf("--candidate")
 	const candidatePath = candidateFlag !== -1 ? rest[candidateFlag + 1] : undefined
 	const bridgeOnly = rest.includes("--bridge-only")
+	const preCreate = rest.flatMap((arg, i) => (arg === "--pre-create" && rest[i + 1] ? [rest[i + 1] as string] : []))
 	const dispatch =
 		cmd === "build"
-			? build(intentPath)
+			? build(intentPath, rest.includes("--router-only") ? { routerOnly: { preCreate } } : {})
 			: cmd === "verify"
 				? verify(intentPath, candidatePath)
 				: cmd === "promote"

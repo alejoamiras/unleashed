@@ -117,7 +117,7 @@ async function depositDirectFj(d: CanaryL1, plan: Awaited<ReturnType<typeof plan
 	})
 	const depositReceipt = await d.pub.waitForTransactionReceipt({ hash: depositTx })
 	if (depositReceipt.status !== "success") throw new Error("depositToAztecPublic reverted on-chain")
-	const deposit = parseFeeJuiceDeposit(depositReceipt.logs as never)
+	const deposit = parseFeeJuiceDeposit(depositReceipt.logs as never, d.portal)
 	console.log(`deposited: ${deposit.amount} FJ-wei, leaf ${deposit.leafIndex} (${d.mins()})`)
 	if (deposit.amount !== d.minFj) throw new Error(`deposit event amount ${deposit.amount} != minFj ${d.minFj}`)
 	return deposit

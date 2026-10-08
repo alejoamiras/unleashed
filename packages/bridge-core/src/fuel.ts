@@ -15,7 +15,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { FeeJuicePortalAbi } from "@aztec-foundation/l1-artifacts"
 import { computeSecretHash } from "@aztec-labs/stdlib/hash"
 import { ExecutionPayload, mergeExecutionPayloads } from "@aztec-labs/stdlib/tx"
-import { type Hex, type Log, parseEventLogs } from "viem"
+import { type Address, type Hex, type Log, parseEventLogs } from "viem"
 import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, privateFuelSecretHash } from "./private-fuel"
 
 /** Re-exported so consumers get the canonical FeeJuicePortal ABI from one place (the bridge-core boundary). */
@@ -65,9 +65,12 @@ export interface FuelDepositReceipt {
 }
 
 /** Parse the FeeJuicePortal's `DepositToAztecPublic` event for the leaf index + amount. The leaf index
- *  is the portal event's `index` (the content-hash law), NOT an Inbox `MessageSent` read. */
-export function parseFeeJuiceDeposit(logs: Log[]): FuelDepositReceipt {
-	const events = parseEventLogs({ abi: FeeJuicePortalAbi, eventName: "DepositToAztecPublic", logs })
+ *  is the portal event's `index` (the content-hash law), NOT an Inbox `MessageSent` read. Only logs
+ *  emitted by `portal` count: a router or LI.FI transaction runs third-party code that can emit a
+ *  look-alike event from any address. */
+export function parseFeeJuiceDeposit(logs: Log[], portal: Address): FuelDepositReceipt {
+	const own = logs.filter((l) => l.address.toLowerCase() === portal.toLowerCase())
+	const events = parseEventLogs({ abi: FeeJuicePortalAbi, eventName: "DepositToAztecPublic", logs: own })
 	const e = events[0] as { args?: { index?: bigint; amount?: bigint; to?: Hex; key?: Hex } } | undefined
 	if (e?.args?.index === undefined || e.args.amount === undefined) {
 		throw new Error("Fee-Juice deposit emitted no DepositToAztecPublic event")

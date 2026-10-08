@@ -3,18 +3,23 @@
  * The sandbox from the command line.
  *
  *   run   [--smoke] [--keep]        boot, deploy, optionally smoke, tear down (unless --keep)
- *   up    --artifacts <dir>         boot, deploy, write <dir>/{manifest,handle}.json, then hold until SIGTERM/SIGINT
+ *   up    --artifacts <dir>         boot, deploy, write <dir>/{manifest,handle,relay-api}.json, run the relay loop and
+ *                                   the loopback Across API, then hold until SIGTERM/SIGINT
  *   smoke --artifacts <dir>         attach to the network a handle names and run the battery on the base actor
  *
- * `SANDBOX_L1_RPC` + `SANDBOX_NODE_URL` (both) attach `run` to a network already up instead of booting one.
+ * `SANDBOX_L1_RPC` + `SANDBOX_NODE_URL` + `SANDBOX_SOURCE_RPC` (all three) attach `run` to a network already up
+ * instead of booting one.
  */
+import { writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { stopwatch } from "../script-bootstrap"
 import { deployEverything } from "./deploy"
+import { openCrossChainRig } from "./flows-crosschain"
 import { openSandbox, readHandle, readManifest } from "./handle"
 import { actorAddress } from "./l2"
 import { startLocalNetwork } from "./local-network"
+import { ARTIFACT_FILES } from "./manifest"
 import { durationTable, runSmoke } from "./smoke"
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -42,7 +47,9 @@ async function commandRun(): Promise<void> {
 	}
 	if (table) console.log(`\n=== durations (${mins()}) ===\n${table}`)
 	if (process.argv.includes("--keep")) {
-		console.log(`\nnetwork kept — re-attach with:\n  SANDBOX_L1_RPC=${net.anvilUrl} SANDBOX_NODE_URL=${net.nodeUrl}`)
+		console.log(
+			`\nnetwork kept — re-attach with:\n  SANDBOX_L1_RPC=${net.anvilUrl} SANDBOX_NODE_URL=${net.nodeUrl} SANDBOX_SOURCE_RPC=${net.sourceUrl}`,
+		)
 	} else {
 		await net.stop()
 	}
@@ -56,13 +63,17 @@ async function commandUp(): Promise<void> {
 	const mins = stopwatch()
 	const runId = `bridge-sandbox-${process.pid}-${Date.now().toString(36)}`
 	const net = await startLocalNetwork({ runId })
+	let relayApi: string
 	try {
-		await deployEverything(net, { artifactsDir: dir, mins })
+		const { handle } = await deployEverything(net, { artifactsDir: dir, mins })
+		// Lives as long as this process: the signal handlers that stop the network exit it.
+		relayApi = (await openCrossChainRig(handle)).api.url
+		writeFileSync(join(dir, ARTIFACT_FILES.relayApi), `${JSON.stringify({ url: relayApi })}\n`)
 	} catch (e) {
 		await net.stop()
 		throw e
 	}
-	console.log(`\n✅ sandbox up (${mins()}) — artifacts in ${dir}; holding until SIGTERM/SIGINT`)
+	console.log(`\n✅ sandbox up (${mins()}) — artifacts in ${dir}; relay loop and Across API at ${relayApi}; holding until SIGTERM/SIGINT`)
 	// startLocalNetwork installed the signal handlers that tear the network down; this process just
 	// has to stay alive so the handle keeps pointing at something.
 	await new Promise(() => {})

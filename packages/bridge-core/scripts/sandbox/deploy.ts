@@ -3,18 +3,30 @@ import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { privateKeyToAccount } from "viem/accounts"
 import type { L1Ctx } from "../../src/flows"
-import type { ManifestV2 } from "../../src/manifest-v2"
-import { openDeployJournal, writeCandidateAtomically } from "../deploy-manifest"
-import { deployGeneration, preCreateToken } from "../generation"
+import type { ManifestToken, ManifestV2 } from "../../src/manifest-v2"
+import { type DeployJournal, openDeployJournal, writeCandidateAtomically } from "../deploy-manifest"
+import { deployGeneration, type GenerationRecord, type L2Ctx, preCreateToken } from "../generation"
 import { createL1Clients, stopwatch } from "../script-bootstrap"
-import { anvilKey, CHAIN_ID, HARNESS_INDEX, HARNESS_KEY, lc, PERMIT2, sandboxChain } from "./constants"
+import {
+	anvilKey,
+	CHAIN_ID,
+	CROSSCHAIN_USER_INDEX,
+	HARNESS_KEY,
+	lc,
+	PERMIT2,
+	RELAYER_INDEX,
+	SOURCE_CHAIN_ID,
+	sandboxChain,
+	sandboxSourceChain,
+} from "./constants"
 import { ensurePrivateFpc } from "./context"
+import { type CrossChainDeployment, deployCrossChain } from "./crosschain"
 import { deployDripFixture } from "./drip"
 import { ensureForgeArtifacts } from "./forge"
 import type { SandboxClients, SandboxHandle } from "./handle"
-import { copyCanonicalCode, deployL1Fixtures } from "./l1"
+import { copyCanonicalCode, deployL1Fixtures, type L1Deployment } from "./l1"
 import { type Actor, adoptGuardian, connectL2, createActor, l2CtxFor, SANDBOX_ACTOR_SALT, SANDBOX_ACTOR_SECRET } from "./l2"
-import { buildManifest, sandboxSwapBlock, type SwapBlock, writeArtifacts } from "./manifest"
+import { buildManifest, sandboxFuelBlock, sandboxSwapBlock, type SwapBlock, writeArtifacts } from "./manifest"
 
 export interface DeployedSandbox {
 	clients: SandboxClients
@@ -33,13 +45,65 @@ export interface DeployOptions {
 	mins?: () => string
 }
 
-export async function deployEverything(net: { anvilUrl: string; nodeUrl: string }, opts: DeployOptions): Promise<DeployedSandbox> {
+export interface SandboxNetwork {
+	anvilUrl: string
+	nodeUrl: string
+	/** The source-chain anvil cross-chain sends start on. */
+	sourceUrl: string
+}
+
+/** The harness key on the source anvil, which funds the same mnemonic. */
+function sourceHarness(url: string): L1Ctx {
+	const account = privateKeyToAccount(HARNESS_KEY)
+	return { ...createL1Clients({ chain: sandboxSourceChain(url), rpcUrl: url, account }), account }
+}
+
+/** The router, the swapper and the LI.FI rail beside the old router: the swapper rates every fixture token the
+ *  old router fuels, and the rail delivers the sandbox's USDC. */
+function deployRail(l1: L1Ctx, net: SandboxNetwork, gen: GenerationRecord, d: L1Deployment): Promise<CrossChainDeployment> {
+	return deployCrossChain(l1, sourceHarness(net.sourceUrl), {
+		factory: gen.l1.factory,
+		feeJuicePortal: d.feeJuicePortal,
+		feeJuice: d.feeJuice,
+		fuelTokens: [d.tokens.usdc, d.tokens.usdt, d.tokens.pxo],
+		railToken: d.tokens.usdc,
+	})
+}
+
+function crossChainHandle(net: SandboxNetwork, rail: CrossChainDeployment): NonNullable<SandboxHandle["crossChain"]> {
+	return {
+		sourceUrl: net.sourceUrl,
+		sourceChainId: SOURCE_CHAIN_ID,
+		userKey: anvilKey(CROSSCHAIN_USER_INDEX),
+		relayerKey: anvilKey(RELAYER_INDEX),
+		source: { spokePool: rail.source.spokePool, diamond: rail.source.diamond, token: rail.source.token },
+		destination: rail.destination,
+	}
+}
+
+async function deployTokens(
+	l1: L1Ctx,
+	l2: L2Ctx,
+	gen: GenerationRecord,
+	d: L1Deployment,
+	journal: DeployJournal,
+): Promise<ManifestToken[]> {
+	return [
+		await preCreateToken(l1, l2, gen, d.tokens.usdc, journal, { maxWholePerTx: 1_000_000 }),
+		await preCreateToken(l1, l2, gen, d.tokens.usdt, journal, { maxWholePerTx: 1_000_000 }),
+		await preCreateToken(l1, l2, gen, d.tokens.pxo, journal, { register: false, maxWholePerTx: 1_000_000 }),
+	]
+}
+
+export async function deployEverything(net: SandboxNetwork, opts: DeployOptions): Promise<DeployedSandbox> {
 	const mins = opts.mins ?? stopwatch()
 	ensureForgeArtifacts()
 	const chain = sandboxChain(net.anvilUrl)
 	const actorKeyCount = opts.actorKeys ?? 12
-	if (actorKeyCount >= HARNESS_INDEX) {
-		throw new Error(`actorKeys must stay below ${HARNESS_INDEX} (anvil indices 1..${HARNESS_INDEX - 1}); got ${actorKeyCount}`)
+	if (actorKeyCount >= CROSSCHAIN_USER_INDEX) {
+		throw new Error(
+			`actorKeys must stay below ${CROSSCHAIN_USER_INDEX} (anvil indices 1..${CROSSCHAIN_USER_INDEX - 1}); got ${actorKeyCount}`,
+		)
 	}
 	const account = privateKeyToAccount(HARNESS_KEY)
 	const second = privateKeyToAccount(anvilKey(1))
@@ -95,15 +159,15 @@ export async function deployEverything(net: { anvilUrl: string; nodeUrl: string 
 	)
 
 	console.log(`\n=== tokens (${mins()}) ===`)
-	const tokens = [
-		await preCreateToken(l1, l2, gen, deployment.tokens.usdc, journal, { maxWholePerTx: 1_000_000 }),
-		await preCreateToken(l1, l2, gen, deployment.tokens.usdt, journal, { maxWholePerTx: 1_000_000 }),
-		await preCreateToken(l1, l2, gen, deployment.tokens.pxo, journal, { register: false, maxWholePerTx: 1_000_000 }),
-	]
+	const tokens = await deployTokens(l1, l2, gen, deployment, journal)
+	console.log(`\n=== cross-chain rail (${mins()}) ===`)
+	const rail = await deployRail(l1, net, gen, deployment)
+	Object.assign(deployment, { depositRouter: rail.depositRouter, fuelSwapper: rail.fuelSwapper })
 	console.log(`\n=== faucet (${mins()}) ===`)
 	const drip = await deployDripFixture(l2)
 	const swap = opts.swap ? await opts.swap(deployment) : sandboxSwapBlock(deployment)
-	const manifest = buildManifest(gen, deployment, tokens, Number(info.rollupVersion), swap)
+	const router = { depositRouter: rail.depositRouter, fuelSwapper: rail.fuelSwapper, fuel: sandboxFuelBlock() }
+	const manifest = buildManifest(gen, deployment, tokens, Number(info.rollupVersion), swap, router)
 	const manifestPath = join(opts.artifactsDir, "manifest.json")
 	writeCandidateAtomically(manifestPath, manifest)
 	journal.append({ kind: "candidate-written", path: manifestPath })
@@ -115,10 +179,11 @@ export async function deployEverything(net: { anvilUrl: string; nodeUrl: string 
 		rollupVersion: Number(info.rollupVersion),
 		walletChainId: manifest.walletChainId,
 		artifactsDir: opts.artifactsDir,
-		// Keys 1..N of anvil's mnemonic: funded, below the harness's own index, and never the node's index 0.
+		// Keys 1..N of anvil's mnemonic: funded, below the relayer's and the harness's, and never the node's index 0.
 		l1: { deployerKey: HARNESS_KEY, actorKeys: Array.from({ length: actorKeyCount }, (_, i) => anvilKey(i + 1)) },
 		l2: { relayer: l2base.relayer.toString(), actorSecret: SANDBOX_ACTOR_SECRET, actorSalt: SANDBOX_ACTOR_SALT.toString() },
 		deployment,
+		crossChain: crossChainHandle(net, rail),
 	}
 	writeArtifacts(opts.artifactsDir, { manifest, handle, deployments: drip })
 	console.log(`\nwrote ${manifestPath} (${mins()})`)

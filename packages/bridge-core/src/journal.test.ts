@@ -1,19 +1,31 @@
 import { describe, expect, it } from "vitest"
 import {
+	type AnyJournalRecord,
 	type BridgeJournalRecord,
+	type CrossChainDepositRecord,
+	type CrossChainRoute,
 	type DepositJournalRecord,
 	type KV,
+	type OutcomeObservation,
 	type WithdrawJournalRecord,
+	CROSSCHAIN_JOURNAL_KEY,
+	CROSSCHAIN_QUARANTINE_KEY,
 	JOURNAL_KEY,
 	MAX_RECORDS,
 	QUARANTINE_KEY,
 	assetKindOf,
 	capRecords,
+	deriveCrossChainDepositStage,
 	deriveDepositStage,
 	deriveWithdrawStage,
+	loadAllRecords,
+	loadCrossChainJournal,
 	loadJournal,
 	loadQuarantine,
+	makeProvisionalDepositId,
 	makeProvisionalWithdrawId,
+	outcomeFinality,
+	outcomePatch,
 	patchRecord,
 	patchRecordWhen,
 	pruneCompleted,
@@ -23,6 +35,7 @@ import {
 	removeRecord,
 	upsertRecord,
 } from "./journal"
+import { SOURCE_CHAIN, crossChainRecord, word } from "./test/crosschain-record"
 
 function memKV(initial: Record<string, string> = {}): KV & { store: Map<string, string> } {
 	const store = new Map(Object.entries(initial))
@@ -406,5 +419,137 @@ describe("stage derivation (never persisted)", () => {
 		expect(deriveWithdrawStage(withdraw("a"), { proven: true })).toBe("consumable")
 		expect(deriveWithdrawStage(withdraw("a", { consumeTxHash: "0xc" }))).toBe("consuming")
 		expect(deriveWithdrawStage(withdraw("a", { consumeTxHash: "0xc", completedAt: 1 }))).toBe("done")
+	})
+})
+
+const ids = (records: AnyJournalRecord[]) => records.map((r) => r.id)
+
+describe("cross-chain records (schema 4, their own storage key)", () => {
+	it("old-tab sequence: today's JOURNAL_KEY writes leave the stored cross-chain records byte-identical", () => {
+		const kv = memKV()
+		upsertRecord(kv, crossChainRecord())
+		upsertRecord(kv, crossChainRecord({ id: word("c2"), secretHashHex: word("c2") }))
+		const stored = kv.store.get(CROSSCHAIN_JOURNAL_KEY)
+		const written = new Set<string>()
+		const tab: KV = {
+			...kv,
+			setItem: (k, v) => {
+				written.add(k)
+				kv.setItem(k, v)
+			},
+		}
+		upsertRecord(tab, deposit("0xaaa"))
+		patchRecord(tab, "0xaaa", { leafIndex: "42" })
+		upsertRecord(tab, withdraw("wd-pending-x", { exitTxHash: undefined }))
+		rekeyRecord(tab, "wd-pending-x", withdraw("0xexit"))
+		const legacy = JSON.parse(kv.store.get(JOURNAL_KEY) as string)
+		kv.setItem(JOURNAL_KEY, JSON.stringify({ ...legacy, records: [...legacy.records, { id: "0xjunk" }] }))
+		expect(quarantineInvalid(tab)).toBe(1)
+		removeRecord(tab, "0xaaa")
+		pruneCompleted(tab, 0, Number.MAX_SAFE_INTEGER)
+		expect(written).toEqual(new Set([JOURNAL_KEY, QUARANTINE_KEY]))
+		expect(kv.store.get(CROSSCHAIN_JOURNAL_KEY)).toBe(stored)
+		expect(ids(loadJournal(kv))).toEqual(["0xexit"])
+		expect(ids(loadCrossChainJournal(kv))).toEqual([word("c1"), word("c2")])
+	})
+
+	it("routes each mutation to the key that holds the record, and an id lives under one key", () => {
+		const kv = memKV()
+		const pending = makeProvisionalDepositId()
+		upsertRecord(kv, crossChainRecord({ id: pending }))
+		expect(kv.store.has(JOURNAL_KEY)).toBe(false)
+		rekeyRecord(kv, pending, crossChainRecord())
+		const patched = patchRecordWhen<CrossChainDepositRecord>(
+			kv,
+			word("c1"),
+			(cur) => cur.route.transport?.kind === "across",
+			(cur) => ({ route: { ...cur.route, srcTxHash: word("58") } }),
+		)
+		expect(patched?.route.srcTxHash).toBe(word("58"))
+		const before = kv.store.get(CROSSCHAIN_JOURNAL_KEY)
+		// A patch that would move the record to the other key is a no-op; a malformed one throws.
+		expect(patchRecord(kv, word("c1"), { schema: 3 })).toBeUndefined()
+		expect(() =>
+			patchRecord<CrossChainDepositRecord>(kv, word("c1"), { route: { ...crossChainRecord().route, maxPull: "1" } }),
+		).toThrow(/malformed/)
+		expect(() => upsertRecord(kv, deposit(word("c1")))).toThrow(/other journal key/)
+		expect(kv.store.get(CROSSCHAIN_JOURNAL_KEY)).toBe(before)
+		upsertRecord(kv, deposit("0xeth"))
+		expect(ids(loadAllRecords(kv))).toEqual(["0xeth", word("c1")])
+		// A schema-4 entry under JOURNAL_KEY is never a record there: the sweep parks it.
+		const misplaced = crossChainRecord({ id: word("c9"), secretHashHex: word("c9") })
+		kv.setItem(JOURNAL_KEY, JSON.stringify({ schema: 1, records: [deposit("0xeth"), misplaced] }))
+		expect(ids(loadJournal(kv))).toEqual(["0xeth"])
+		kv.setItem(
+			CROSSCHAIN_JOURNAL_KEY,
+			JSON.stringify({ schema: 1, records: [...JSON.parse(before as string).records, { id: "0xjunk" }] }),
+		)
+		expect(quarantineInvalid(kv)).toBe(2)
+		expect(JSON.parse(kv.store.get(CROSSCHAIN_QUARANTINE_KEY) as string).records).toEqual([{ id: "0xjunk" }])
+		expect(loadQuarantine(kv)).toEqual([misplaced, { id: "0xjunk" }])
+		removeRecord(kv, word("c1"))
+		expect(loadCrossChainJournal(kv)).toEqual([])
+	})
+
+	it("stages: depositing → bridging → syncing, then the Ethereum-origin rail", () => {
+		expect(deriveCrossChainDepositStage(crossChainRecord({}, { srcTxHash: undefined }))).toBe("depositing")
+		expect(deriveCrossChainDepositStage(crossChainRecord({}, { srcTxHash: undefined, srcBatchId: "batch" }))).toBe("bridging")
+		expect(deriveCrossChainDepositStage(crossChainRecord())).toBe("bridging")
+		expect(deriveCrossChainDepositStage(crossChainRecord({ leafIndex: "7" }))).toBe("syncing")
+		expect(deriveCrossChainDepositStage(crossChainRecord({ leafIndex: "7" }), { claimable: true })).toBe("claimable")
+		expect(deriveCrossChainDepositStage(crossChainRecord({ leafIndex: "7", claimTxHash: "0xc", completedAt: 2 }))).toBe("done")
+	})
+
+	it("an outcome before its deciding block is finalized stays provisional and never sets completedAt", () => {
+		const rec = crossChainRecord()
+		const eth = (blockNumber: bigint) => ({ chainId: rec.chainId, blockNumber })
+		const src = (blockNumber: bigint) => ({ chainId: SOURCE_CHAIN, blockNumber })
+		const seen: OutcomeObservation = {
+			outcome: "delivered-to-wallet",
+			txHash: word("de"),
+			amount: "100000000",
+			decidedAt: eth(100n),
+			finalized: eth(99n),
+		}
+		const kv = memKV()
+		upsertRecord(kv, rec)
+		const observe = (obs: OutcomeObservation, now: number) =>
+			patchRecordWhen<CrossChainDepositRecord>(
+				kv,
+				rec.id,
+				(cur) => outcomeFinality(cur) !== "final",
+				(cur) => outcomePatch(cur, obs, now),
+			)
+		const provisional = observe(seen, 5) as CrossChainDepositRecord
+		expect(provisional.completedAt).toBeUndefined()
+		expect(outcomeFinality(provisional)).toBe("provisional")
+		expect(deriveCrossChainDepositStage(provisional)).toBe("delivered-to-wallet")
+		const final = observe({ ...seen, finalized: eth(100n) }, 7) as CrossChainDepositRecord
+		expect([final.completedAt, outcomeFinality(final)]).toEqual([7, "final"])
+		expect(observe({ ...seen, outcome: "expired-on-source", finalized: eth(200n) }, 9)).toBeUndefined()
+		expect(() => outcomePatch(final, { ...seen, finalized: eth(200n) }, 9)).toThrow(/final/)
+		// Heights settle only on the chain that decides the outcome: the source chain for not-sent.
+		expect(() => outcomePatch(rec, { ...seen, outcome: "not-sent" }, 5)).toThrow(`chain ${SOURCE_CHAIN}`)
+		expect(() => outcomePatch(rec, { ...seen, finalized: src(1_000n) }, 5)).toThrow(`chain ${rec.chainId}`)
+		expect(outcomePatch(rec, { outcome: "not-sent", decidedAt: src(5n), finalized: src(5n) }, 9).completedAt).toBe(9)
+	})
+
+	it("only a deposited-and-claimed record with no extra is ever pruned or evicted", () => {
+		const claimed = (id: string, completedAt = 1000, route: Partial<CrossChainRoute> = {}) =>
+			crossChainRecord({ id, secretHashHex: id, leafIndex: "7", claimTxHash: word("cc"), completedAt }, route)
+		const kept = [
+			crossChainRecord({ id: word("d1"), secretHashHex: word("d1"), completedAt: 1000 }, { outcome: "delivered-to-wallet" }),
+			crossChainRecord({ id: word("d2"), secretHashHex: word("d2"), completedAt: 1000 }, { outcome: "expired-on-source" }),
+			crossChainRecord({ id: word("d3"), secretHashHex: word("d3"), completedAt: 1000 }, { outcome: "not-sent" }),
+			claimed(word("d4"), 1000, { extraDeposits: [{ txHash: word("ee"), leafIndex: "8", amount: "5" }] }),
+		]
+		const kv = memKV()
+		for (const r of [...kept, claimed(word("d5"))]) upsertRecord(kv, r)
+		pruneCompleted(kv, 1, 10_000)
+		expect(ids(loadCrossChainJournal(kv))).toEqual(ids(kept))
+		const flood = Array.from({ length: MAX_RECORDS + 10 }, (_, i) => claimed(`0xflood${i}`, 2000 + i))
+		const capped = capRecords([...flood, ...kept])
+		expect(capped).toHaveLength(MAX_RECORDS)
+		expect(ids(capped)).toEqual(expect.arrayContaining(ids(kept)))
 	})
 })

@@ -168,19 +168,30 @@ export function envelopeMatchesRecord(env: DepositEnvelopeV2, record: { recipien
  * `trusted: false` ⇒ the two-signature self-test; throws before any irreversible tx on a
  * non-deterministic wallet.
  */
-export async function sealDepositRecord(opts: {
+export function sealDepositRecord(opts: {
 	sign: (message: string) => Promise<string>
 	binding: RecoveryBinding
 	envelope: Omit<DepositEnvelopeV2, "v">
 	trusted: boolean
 }): Promise<{ blob: string; key: EncryptionKey }> {
+	return sealWithSelfTest(opts, opts.envelope.secret, (key) => sealDepositEnvelope(key, opts.envelope), openDepositEnvelope)
+}
+
+/** The seal half both envelope versions share: one signature when trusted, else the sign-twice
+ *  self-test, which must reopen `secret` from the blob. */
+async function sealWithSelfTest(
+	opts: { sign: (message: string) => Promise<string>; binding: RecoveryBinding; trusted: boolean },
+	secret: string,
+	seal: (key: EncryptionKey) => Promise<string>,
+	open: (key: EncryptionKey, blob: string) => Promise<{ secret: string }>,
+): Promise<{ blob: string; key: EncryptionKey }> {
 	const message = recoveryKeyMessage(opts.binding)
 	const key = await recoveryKeyFromSignature(await opts.sign(message))
-	const blob = await sealDepositEnvelope(key, opts.envelope)
+	const blob = await seal(key)
 	if (!opts.trusted) {
 		const retestKey = await recoveryKeyFromSignature(await opts.sign(message))
-		const reopened = await openDepositEnvelope(retestKey, blob).catch(() => null)
-		if (!reopened || reopened.secret !== opts.envelope.secret) {
+		const reopened = await open(retestKey, blob).catch(() => null)
+		if (!reopened || reopened.secret !== secret) {
 			throw new Error(
 				"Recovery self-test failed: this wallet signs non-deterministically, so a private claim could not be recovered. Aborting before the deposit.",
 			)
@@ -197,4 +208,132 @@ export async function openDepositRecord(
 ): Promise<{ envelope: DepositEnvelopeV2; key: EncryptionKey }> {
 	const key = await recoveryKeyFromSignature(await sign(recoveryKeyMessage(binding)))
 	return { envelope: await openDepositEnvelope(key, blob), key }
+}
+
+/**
+ * The v3 deposit envelope, sealed while a cross-chain private deposit is bridging: the amount that
+ * will land is known only as a window until the `Deposited` event names it. Same primitives and
+ * per-record key as v2; `v` keeps each version's opener from accepting the other. Once the key is in
+ * memory and the event is read, `resealExactEnvelope` replaces it with an exact v2.
+ */
+export interface DepositEnvelopeV3 {
+	v: 3
+	secret: string
+	recipient: string
+	/** Base units, canonical decimal strings, `minAmount ≤ maxAmount`. */
+	minAmount: string
+	maxAmount: string
+	sealerL1: string
+	salt?: string
+}
+
+const DECIMAL = /^\d+$/
+
+const isWindow = (minAmount: unknown, maxAmount: unknown): boolean =>
+	typeof minAmount === "string" &&
+	typeof maxAmount === "string" &&
+	DECIMAL.test(minAmount) &&
+	DECIMAL.test(maxAmount) &&
+	BigInt(minAmount) <= BigInt(maxAmount)
+
+function assertWindow(minAmount: string, maxAmount: string): void {
+	if (!isWindow(minAmount, maxAmount)) throw new Error("A v3 envelope needs a decimal window with minAmount ≤ maxAmount.")
+}
+
+/**
+ * The amount window a cross-chain deposit's token leg can land in: `[minReceived − fuelSlice,
+ * maxPull]`. The fuel slice is the token-unit `fuel.amount` (zero for a token-only intent). The upper
+ * bound is `maxPull`, never `maxPull − fuelSlice`: on the caller path the swap may consume almost
+ * none of the slice and the rest joins the token leg. Throws when the slice exceeds `minReceived` or
+ * a fueled intent carries no fuel block.
+ */
+export function crossChainAmountWindow(rec: {
+	intent: "token" | "token+gas" | "gas"
+	route: { minReceived: string; maxPull: string }
+	fuel?: { amount: string }
+}): { minAmount: string; maxAmount: string } {
+	const fuel = rec.intent === "token" ? { amount: "0" } : rec.fuel
+	if (!fuel) throw new Error("A fueled cross-chain intent needs its fuel slice.")
+	const floor = BigInt(rec.route.minReceived) - BigInt(fuel.amount)
+	if (floor < 0n) throw new Error("The fuel slice exceeds the route's minimum received amount.")
+	const window = { minAmount: floor.toString(), maxAmount: normalizeAmount(rec.route.maxPull) }
+	assertWindow(window.minAmount, window.maxAmount)
+	return window
+}
+
+export async function sealDepositEnvelopeV3(key: EncryptionKey, env: Omit<DepositEnvelopeV3, "v">): Promise<string> {
+	const payload: DepositEnvelopeV3 = {
+		...env,
+		v: 3,
+		minAmount: normalizeAmount(env.minAmount),
+		maxAmount: normalizeAmount(env.maxAmount),
+	}
+	assertWindow(payload.minAmount, payload.maxAmount)
+	return sealSecret(key, JSON.stringify(payload))
+}
+
+/** Decrypt + validate a v3 envelope. Throws on GCM failure AND on any non-v3 plaintext shape. */
+export async function openDepositEnvelopeV3(key: EncryptionKey, blob: string): Promise<DepositEnvelopeV3> {
+	const plaintext = await openSecret(key, blob)
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(plaintext)
+	} catch {
+		throw new Error("Sealed blob is not a v3 envelope — refusing to use it.")
+	}
+	const env = parsed as Partial<DepositEnvelopeV3> | null
+	if (
+		env?.v !== 3 ||
+		typeof env.secret !== "string" ||
+		typeof env.recipient !== "string" ||
+		!isWindow(env.minAmount, env.maxAmount) ||
+		typeof env.sealerL1 !== "string" ||
+		(env.salt !== undefined && typeof env.salt !== "string")
+	) {
+		throw new Error("Sealed blob is not a v3 envelope — refusing to use it.")
+	}
+	return env as DepositEnvelopeV3
+}
+
+/** The v3 tamper check: recipient equal and `minAmount ≤ amount ≤ maxAmount`, where `amount` must
+ *  come from the authenticated `Deposited` event, never from storage. */
+export function envelopeV3MatchesRecord(env: DepositEnvelopeV3, record: { recipient: string; amount: string }): boolean {
+	if (env.recipient.toLowerCase() !== record.recipient.toLowerCase()) return false
+	if (!DECIMAL.test(record.amount)) return false
+	const amount = BigInt(record.amount)
+	return BigInt(env.minAmount) <= amount && amount <= BigInt(env.maxAmount)
+}
+
+/**
+ * Turn a matched v3 envelope into an ordinary exact v2 under the same in-memory key (no signature).
+ * `deposited` is the event-derived amount and leaf; the sealed recipient, secret, sealer and salt
+ * carry over. Throws, sealing nothing, when the deposit falls outside the v3 window or names
+ * another recipient.
+ */
+export async function resealExactEnvelope(
+	key: EncryptionKey,
+	env: DepositEnvelopeV3,
+	deposited: { recipient: string; amount: string; leafIndex?: string },
+): Promise<string> {
+	if (!envelopeV3MatchesRecord(env, deposited)) {
+		throw new Error("The deposit does not match its sealed v3 envelope — refusing to re-seal.")
+	}
+	return sealDepositEnvelope(key, {
+		secret: env.secret,
+		recipient: env.recipient,
+		amount: deposited.amount,
+		sealerL1: env.sealerL1,
+		leafIndex: deposited.leafIndex,
+		salt: env.salt,
+	})
+}
+
+/** `sealDepositRecord` for a v3 envelope: same signature economics and self-test. */
+export function sealCrossChainDepositRecord(opts: {
+	sign: (message: string) => Promise<string>
+	binding: RecoveryBinding
+	envelope: Omit<DepositEnvelopeV3, "v">
+	trusted: boolean
+}): Promise<{ blob: string; key: EncryptionKey }> {
+	return sealWithSelfTest(opts, opts.envelope.secret, (key) => sealDepositEnvelopeV3(key, opts.envelope), openDepositEnvelopeV3)
 }

@@ -58,3 +58,38 @@ export const LIFI_RECEIVER_MESSAGE_PARAMS = [
 	{ name: "swapData", type: "tuple[]", components: LIFI_SWAP_DATA_COMPONENTS },
 	{ name: "receiver", type: "address" },
 ] as const
+
+const SWAP_V3_HEAD = [
+	{ name: "_transactionId", type: "bytes32" },
+	{ name: "_integrator", type: "string" },
+	{ name: "_referrer", type: "string" },
+	{ name: "_receiver", type: "address" },
+	{ name: "_minAmountOut", type: "uint256" },
+] as const
+
+/** `GenericSwapFacetV3.swapTokensSingleV3ERC20ToERC20`; `TestnetFuelSwapper` answers the same ABI. */
+export const SWAP_TOKENS_SINGLE_V3_ABI = [
+	{
+		type: "function",
+		name: "swapTokensSingleV3ERC20ToERC20",
+		stateMutability: "nonpayable",
+		inputs: [...SWAP_V3_HEAD, { name: "_swapData", type: "tuple", components: LIFI_SWAP_DATA_COMPONENTS }],
+		outputs: [],
+	},
+] as const
+
+/** `GenericSwapFacetV3.swapTokensMultipleV3ERC20ToERC20`, what li.quest's same-chain quotes call. */
+export const SWAP_TOKENS_MULTIPLE_V3_ABI = [
+	{
+		type: "function",
+		name: "swapTokensMultipleV3ERC20ToERC20",
+		stateMutability: "nonpayable",
+		inputs: [...SWAP_V3_HEAD, { name: "_swapData", type: "tuple[]", components: LIFI_SWAP_DATA_COMPONENTS }],
+		outputs: [],
+	},
+] as const
+
+/** The two entrypoints `DepositRouter` pins for its `SWAP_TARGET` call (`ILiFiSwap.sol`). */
+export const SWAP_TOKENS_SINGLE_V3_SELECTOR = "0x4666fc80"
+export const SWAP_TOKENS_MULTIPLE_V3_SELECTOR = "0x5fd9ae2e"
+export const FUEL_SWAP_SELECTORS: readonly Hex[] = [SWAP_TOKENS_SINGLE_V3_SELECTOR, SWAP_TOKENS_MULTIPLE_V3_SELECTOR]
