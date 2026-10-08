@@ -1079,7 +1079,7 @@ preview against the live router, against the signed boards (an unfilled send is 
 
 ### Arc 5: Uniswap and the old router removed
 
-#### Phase 10
+#### Phase 10 ✓
 
 Delete everything marked [5] in the change map; freeze `legacy-router-abi.ts` (events and calldata only, used by
 `deposit-reconcile.ts`). The schema change is two commits around one promotion, because `promote` strict-parses

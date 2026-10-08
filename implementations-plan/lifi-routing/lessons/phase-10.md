@@ -138,3 +138,6 @@ At the converged arc 5 tip, Foundry 1.7.1 and halmos 0.3.3, forge outputs in pla
 - `rg -ni 'uniswap|v4-core|PoolKey|IV4Quoter|swapTarget|routeHash' apps packages contracts .github scripts`: the
   DepositRouter's own swap target and its readers, the Uniswap-format token list, and gitignored sandbox outputs
   from an older run. No schema field, fixture or live manifest.
+- `bun run e2e:tools` on `f0f5594`: 75 passed in 1.4 h, playwright exit 0. The two commits after it, from the
+  cross-arc pass, change only Stargate candidate selection in discovery (unit-tested) and two doc strings; the
+  browser suite runs again on the stack's tip.
