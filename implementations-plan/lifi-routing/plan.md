@@ -1628,6 +1628,18 @@ certificate is the recorded idea); `deposit-reconcile`'s 50,000-block cap, which
 hash-less Ethereum-origin record older than about 7 days `incomplete`; an Arbitrum lost-hash record whose window
 spans more blocks than one run's 2,000-block chunks can read stays `incomplete` (mainnet is not live).
 
+**D54 The final cross-arc pass (a fresh Codex `gpt-6.1-sol` session at `high`, over `git diff
+origin/main...HEAD`).** Every finding was verified against the code.
+- Round 1 (two, both fixed on arc 5): anyone could pay LI.FI's permissionless Executor into the router with a
+  Stargate send's public secret hash nine times, pushing the real delivery past discovery's candidate cap for good,
+  so Stargate candidates are now only EndpointV2's `ComposeDelivered` for the send's guid (a replay of the LI.FI id
+  through someone else's transfer crowded it the same way, red/green tested); and `pause-factory.ts` and the
+  bridge-core README promised that gas-only sends survive a deposit pause, which the router's `_checkShape` refutes.
+- Round 2 (resumed; one): an old record exhausts discovery's read budget on every run and never offers its claim.
+  The owner had it fixed in this stack as arc 6 (D53).
+- Round 3 (resumed, over the whole stack with arc 6): "No new material findings (high confidence)." The pass
+  converged.
+
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
 signed order expires about 645 s after its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above
