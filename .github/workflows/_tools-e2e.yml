@@ -58,8 +58,7 @@ jobs:
         run: |
           forge install \
             foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
-            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
-            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
+            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3
 
       # The sandbox deploys LI.FI's Executor, ERC20Proxy and ReceiverAcrossV4 from the `lifi`
       # profile's artifacts: same commit and same clean-up as the forge job.

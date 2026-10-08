@@ -5,53 +5,30 @@
 	"walletChainId": 2613056719,
 	"bridge": {
 		"l1": {
-			"factory": "0xc3b46224b36dc119e0206a272b9fff4688ad5ac3",
-			"implementation": "0x2527b90c10bb1f9dde454acd76f0eaae7e6eb49b",
-			"router": "0x8fa7ffaf818b7157823340cbf3e0c5b3f0a5a0c0",
+			"factory": "0x6386430503cc0b986bafc59834bdedd9bfe31906",
+			"implementation": "0x15c500b4fb8e215fd6ef8490611a34749ac1ffe4",
 			"permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
 			"feeJuicePortal": "0x3e180b566a1ef3ad836ee42c9519be95b13e7473",
-			"swapTarget": "0x162459bb429a63d2e31fe2d1cdb5b058f2d31adf",
 			"registry": "0xa51c1fc2f0d1a1b8494ed1fe312d7c3a78ed91c0",
 			"guardian": "0xcd3b766ccdd6ae721141f452c550ca635964ce71",
-			"swap": {
-				"poolManager": "0xba39a2885ccaa6e139ef8a8ba833b140a3346f7c",
-				"quoter": "0xba39a2885ccaa6e139ef8a8ba833b140a3346f7c",
-				"multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
-				"weth": "0xc96ec6b304965cf1313c2f9c2bcfb3115b799b4c",
-				"feeJuice": "0x2279b7a0a67db372996a5fab50d91eaa73d2ebe6",
-				"tiers": [
-					{
-						"fee": 3000,
-						"tickSpacing": 60
-					}
-				],
-				"ethFj": {
-					"fee": 3000,
-					"tickSpacing": 60
-				},
+			"depositRouter": "0x3ec1d64ec1678ba1c008c9dbf7564058155fab23",
+			"fuelSwapper": "0x3a8e1e5669fea47f03478e945946aadf6889fd5f",
+			"fuel": {
 				"slippageBps": 300,
+				"crossChainSlippageBps": 100,
 				"minFuelFj": "1000000000000000000",
 				"fjPerTx": "3577823745897251607",
 				"fjRegister": "1967429819850912960"
-			},
-			"depositRouter": "0x0a10b46de02a303c922d2c0cb47bfe79c073dc0f",
-			"fuelSwapper": "0x5e13ad06a772cd0f9f3785bc98c4b36254661171",
-			"fuel": {
-				"slippageBps": 300,
-				"minFuelFj": "1000000000000000000",
-				"fjPerTx": "3577823745897251607",
-				"fjRegister": "1967429819850912960",
-				"crossChainSlippageBps": 100
 			}
 		},
 		"l2": {
 			"hub": {
-				"address": "0x2e003074133bbb58c9867fc956228eb9fafcf0c046259234c2fe96d74a726f0e",
-				"salt": "0x000000000000000000000000c3b46224b36dc119e0206a272b9fff4688ad5ac3",
+				"address": "0x205fc93ef6d1dee1f83e3235c808d47b08a2ad567a808b4e97aa4eca090ecdca",
+				"salt": "0x0000000000000000000000006386430503cc0b986bafc59834bdedd9bfe31906",
 				"constructorArtifact": "constructor",
 				"constructorArgs": [
 					"0x24c34002788720c941a327a20c369b12c8bdcff3b5a974673a8f618763471505",
-					"0xc3b46224b36dc119e0206a272b9fff4688ad5ac3",
+					"0x6386430503cc0b986bafc59834bdedd9bfe31906",
 					"0x170ff5d8b3b3ee094b9ca71367942fd283ac26e5114d23ed788bb901f1d346bc"
 				]
 			},
@@ -61,9 +38,9 @@
 		},
 		"tokens": [
 			{
-				"erc20": "0x7cb3dccd91a0723f61145b7a18e588771ca5a54d",
-				"portal": "0xcfe47eb09e1b9d14bdd1f99992334bec6098ce0b",
-				"l2Token": "0x2c564ad7cd0e7aff0c22a29032705ae93657862e7d4176c0a91a85839bc2af0f",
+				"erc20": "0xdaeab5ef86487b4f777a80dfa9bc0de6878d7607",
+				"portal": "0x6520808c751b252a89b1383fc3b31bd82b123b3b",
+				"l2Token": "0x14e151223bacbb59d409ede2fe58204f126ef996bc9a4ddd0b5970b769a565ab",
 				"nameWord": "0x0054657374205553444300000000000000000000000000000000000000000000",
 				"symbolWord": "0x0055534443000000000000000000000000000000000000000000000000000000",
 				"decimals": 6,
@@ -74,9 +51,9 @@
 				"maxWholePerTx": 1000000
 			},
 			{
-				"erc20": "0x016e5d3f654556ce0d8e10396c3b5f279f339c50",
-				"portal": "0xcb123ed9d8d0c98d80ba73ece893a181bb0facaa",
-				"l2Token": "0x0685260dfccf4cf00f7d81be0e10af763f1cbe52c73476481393e3a7349b47ab",
+				"erc20": "0xcd3bfd04f09d5d1230c7804a9358d6fedb3549a1",
+				"portal": "0xb5fa7fe3362dee59024310ce1e8a887f6c835180",
+				"l2Token": "0x28a63386398618c3c28683ae1ff0caf4c5686620f43f6f1a29d84bbeeb9e6371",
 				"nameWord": "0x0054657374205553445400000000000000000000000000000000000000000000",
 				"symbolWord": "0x0055534454000000000000000000000000000000000000000000000000000000",
 				"decimals": 6,
@@ -87,9 +64,9 @@
 				"maxWholePerTx": 1000000
 			},
 			{
-				"erc20": "0xd350458385565e0620c3e7252126903f44117af2",
-				"portal": "0xde05ba3f0f995aa3353c713241a92ca0374a1325",
-				"l2Token": "0x20dd7a4c4827dc4cce418e8a91ff690fe27d9619b35b41edef2eaf39d7c12fbc",
+				"erc20": "0x7cb3dccd91a0723f61145b7a18e588771ca5a54d",
+				"portal": "0x3c5b3e63375c83f639f50e9d587c74d0fa67d3e6",
+				"l2Token": "0x300c3c443d03914b85e89c0da8c9fb53f24700563bd46f8c514fdb38b0f5f5b2",
 				"nameWord": "0x00506f7274616c204f6e6c790000000000000000000000000000000000000000",
 				"symbolWord": "0x0050584f00000000000000000000000000000000000000000000000000000000",
 				"decimals": 18,

@@ -10,8 +10,9 @@
  * signer AND the factory's owner, with no transaction newer than the finalized block (about 15
  * minutes on Sepolia). Needs SEPOLIA_RPC_URL. Testnet only.
  *
- * A pause stops `depositToAztecPublic`/`depositToAztecPrivate` on every portal of the factory. It
- * does not stop a gas-only send, which never touches a token portal.
+ * A pause stops `depositToAztecPublic`/`depositToAztecPrivate` on every portal of the factory, and
+ * every DepositRouter send bound to it, gas-only included: a cross-chain delivery that reaches the
+ * router while paused recovers to the sender's wallet on Ethereum.
  */
 import {
 	type Abi,

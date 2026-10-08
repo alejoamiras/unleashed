@@ -1,8 +1,9 @@
 /**
- * One bridge GENERATION: the L1 PortalFactory + SwapBridgeRouter and the L2 TokenBridgeHub that is
- * salted with the factory's own address, plus the per-token portal pre-creation that fills the
- * manifest's `tokens[]`. Network-agnostic — the sandbox and the testnet conductor differ only in the
- * clients, the fee methods and the swap target they hand in.
+ * One bridge GENERATION: the L1 PortalFactory and the L2 TokenBridgeHub that is salted with the
+ * factory's own address, plus the per-token portal pre-creation that fills the manifest's `tokens[]`.
+ * Network-agnostic — the sandbox and the testnet conductor differ only in the clients and the fee
+ * methods they hand in. The DepositRouter binds the factory, so it deploys after it
+ * (`deployDepositRouter`).
  *
  * The ordering is forced by a circular binding: the hub's address derives from the factory address
  * (its salt) and the factory's constructor takes the hub. So the factory address is PREDICTED from
@@ -44,7 +45,6 @@ import { l1ToL2MessageReadiness } from "../src/l1-to-l2-readiness"
 import type { SendOpts } from "../src/hub-l2"
 import type { ManifestToken } from "../src/manifest-v2"
 import { fromWord } from "../src/register-hash"
-import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
 import type { DeployJournal, DeployStep, DeployStepKind } from "./deploy-manifest"
 import { evmArtifact } from "./script-artifacts"
 import { FUEL_SWAPPER_ABI, ROUTER_CONSTANTS_ABI } from "./script-l1"
@@ -69,21 +69,16 @@ export interface GenerationInputs {
 	registry: Address
 	permit2: Address
 	feeJuicePortal: Address
-	feeJuice: Address
 	guardianL1: Address
 	/** The L2 guardian, as an Aztec address hex. */
 	guardianL2: string
-	/** Already deployed: the sandbox passes its mock, the testnet passes UniswapFuelSwap. */
-	swapTarget: Address
 }
 
 export interface GenerationRecord {
 	l1: {
 		factory: Address
 		implementation: Address
-		router: Address
 		permit2: Address
-		swapTarget: Address
 		feeJuicePortal: Address
 		registry: Address
 		guardian: Address
@@ -160,7 +155,7 @@ function tokenArtifactSha256(): string {
 	return createHash("sha256").update(readFileSync(path)).digest("hex")
 }
 
-// ─── L1 factory + router ─────────────────────────────────────────────────────
+// ─── L1 factory ──────────────────────────────────────────────────────────────
 
 /** PENDING, not latest: a transaction of this key's already in the mempool owns the latest nonce, so
  *  a prediction made from it names an address the factory can never land at. */
@@ -256,14 +251,6 @@ async function deployFactory(
 	return { factory: address, implementation }
 }
 
-async function deployRouter(l1: L1Ctx, inputs: GenerationInputs, factory: Address, journal: DeployJournal): Promise<Address> {
-	const done = findStep(journal, "router-deployed")
-	if (done) return lc(done.router)
-	const { address, txHash } = await deployEvm(l1, "SwapBridgeRouter", [inputs.permit2, inputs.feeJuicePortal, inputs.swapTarget, factory])
-	journal.append({ kind: "router-deployed", router: address, txHash })
-	return address
-}
-
 // ─── L2 hub ──────────────────────────────────────────────────────────────────
 
 type HubArgs = [string, Address, string]
@@ -331,33 +318,6 @@ async function deployHub(
 
 // ─── Read-backs ──────────────────────────────────────────────────────────────
 
-type LegacyRouterBindings = Pick<GenerationRecord["l1"], "permit2" | "swapTarget" | "feeJuicePortal">
-
-/**
- * The router's immutables, read back rather than copied from the inputs: a resumed generation keeps
- * the router it deployed, and that router's swap target is the one every witness is bound to — a
- * candidate naming a fresher input would sign sends the router rejects.
- */
-async function readLegacyRouterBindings(
-	l1: L1Ctx,
-	inputs: GenerationInputs,
-	router: Address,
-	factory: Address,
-): Promise<LegacyRouterBindings> {
-	const read = (functionName: "FACTORY" | "FEE_ASSET" | "permit2" | "feeJuicePortal" | "swapTarget") =>
-		l1.pub.readContract({ address: router, abi: [...SWAP_BRIDGE_ROUTER_ABI, ...ROUTER_CONSTANTS_ABI], functionName, args: [] })
-	assertSame(String(await read("FACTORY")), factory, "router.FACTORY")
-	assertSame(String(await read("FEE_ASSET")), inputs.feeJuice, "router.FEE_ASSET")
-	const permit2 = lc(String(await read("permit2")))
-	const feeJuicePortal = lc(String(await read("feeJuicePortal")))
-	const swapTarget = lc(String(await read("swapTarget")))
-	assertSame(permit2, inputs.permit2, "router.permit2")
-	assertSame(feeJuicePortal, inputs.feeJuicePortal, "router.feeJuicePortal")
-	if (swapTarget !== lc(inputs.swapTarget))
-		console.log(`  router keeps its swap target ${swapTarget} (input ${inputs.swapTarget} ignored)`)
-	return { permit2, feeJuicePortal, swapTarget }
-}
-
 async function assertGeneration(l1: L1Ctx, l2: L2Ctx, record: GenerationRecord): Promise<void> {
 	assertSame(
 		String(await l1.pub.readContract({ address: record.l1.factory, abi: PORTAL_FACTORY_ABI, functionName: "L2_HUB", args: [] })),
@@ -368,7 +328,7 @@ async function assertGeneration(l1: L1Ctx, l2: L2Ctx, record: GenerationRecord):
 	if ((await hubTokenFor(hub, "0x0000000000000000000000000000000000000000", l2.from.toString())) !== undefined) {
 		throw new Error("hub token_for(0x0) answered a non-zero token — the hub is not the freshly-constructed one")
 	}
-	console.log("  ✓ factory.L2_HUB, router.FACTORY/FEE_ASSET/permit2/feeJuicePortal/swapTarget, hub.token_for")
+	console.log("  ✓ factory.L2_HUB, hub.token_for")
 }
 
 export async function deployGeneration(l1: L1Ctx, l2: L2Ctx, inputs: GenerationInputs, journal: DeployJournal): Promise<GenerationRecord> {
@@ -377,16 +337,14 @@ export async function deployGeneration(l1: L1Ctx, l2: L2Ctx, inputs: GenerationI
 	const args = hubConstructorArgs(tokenClassId, predicted.factory, inputs.guardianL2)
 	const hubInstance = await deriveHub(tokenClassId, predicted.factory, inputs.guardianL2)
 	const { factory, implementation } = await deployFactory(l1, inputs, predicted, hubInstance.address.toString(), journal)
-	const router = await deployRouter(l1, inputs, factory, journal)
 	await deployHub(l2, hubInstance, args, factory, journal)
-	const bindings = await readLegacyRouterBindings(l1, inputs, router, factory)
 
 	const record: GenerationRecord = {
 		l1: {
 			factory,
 			implementation,
-			router,
-			...bindings,
+			permit2: lc(inputs.permit2),
+			feeJuicePortal: lc(inputs.feeJuicePortal),
 			registry: lc(inputs.registry),
 			guardian: lc(inputs.guardianL1),
 		},

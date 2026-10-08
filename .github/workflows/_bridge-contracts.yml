@@ -44,16 +44,12 @@ jobs:
       # README's unpinned install is what a contributor runs locally, but CI resolving a different
       # forge-std than the one the suites were validated against is a silent divergence — an older
       # one made halmos abort in setUp with "Unsupported cheat code", passing nothing.
-      #
-      # v4-core MUST stay v4.0.0: >=1.0.0 moves the SwapParams and ModifyLiquidityParams structs
-      # the fuel contracts use.
       - name: Install forge libraries
         working-directory: contracts/bridge/evm
         run: |
           forge install \
             foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
-            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
-            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
+            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3
 
       # LI.FI's destination half (Executor, ERC20Proxy, ReceiverAcrossV4, ReceiverStargateV2;
       # LGPL-3.0-only), compiled only by the `lifi` profile; suites load it by artifact path. A
@@ -127,7 +123,6 @@ jobs:
               fail=1
             }
           done <<'EXPECTED'
-          8 FormalRouterTest
           2 FormalFactoryTest
           2 FormalCloneTest
           11 FormalDepositRouterTest
@@ -136,12 +131,6 @@ jobs:
           # A name listed twice is proved by two contracts, so it must pass twice: one passing
           # line cannot cover the other contract's renamed proof.
           cat > proofs.want <<'PROOFS'
-          check_bridge_conservesUserFunds
-          check_bridge_rejectsForeignPortal
-          check_bridgeWithFuel_conservesUserFunds
-          check_bridgeWithFuel_fuelOnly_conservesUserFunds
-          check_bridgeWithFuel_identity_conservesUserFunds
-          check_bridgeWithFuel_partialRejectsFeeJuicePortal
           check_deposit_revertsWhenPaused
           check_fromCaller_boundedPull
           check_fromCaller_conservesReceived
@@ -153,9 +142,7 @@ jobs:
           check_predictPortal_isCreate2OfInitcode
           check_revertsWhenPaused
           check_setPaused_revertsForNonOwner
-          check_setSwapTarget_revertsForNonOwner
           check_swap_rejectsUnpinnedSelectorOrReceiver
-          check_sweep_revertsForNonOwner
           check_sweep_revertsForNonOwner
           check_tokenLegIntoDerivedPortal
           check_withdraw_revertsWhenPaused
@@ -169,8 +156,8 @@ jobs:
           done < <(sort proofs.want | uniq -c)
 
           summaries=$(grep -c '^Symbolic test result: ' halmos.clean || true)
-          if [ "$summaries" -ne 4 ]; then
-            echo "::error::expected 4 proof contracts to run, saw ${summaries}"
+          if [ "$summaries" -ne 3 ]; then
+            echo "::error::expected 3 proof contracts to run, saw ${summaries}"
             fail=1
           fi
           if grep -qE '^Symbolic test result: [0-9]+ passed; [1-9]' halmos.clean; then
@@ -186,10 +173,9 @@ jobs:
         run: |
           # The pin suites skip when the artifacts are absent; here that would be a silent pass.
           test -f contracts/bridge/evm/out/PortalFactory.sol/PortalFactory.json
-          test -f contracts/bridge/evm/out/SwapBridgeRouter.sol/SwapBridgeRouter.json
           test -f contracts/bridge/evm/out/TokenPortalImpl.sol/TokenPortalImpl.json
           test -f contracts/bridge/evm/out/DepositRouter.sol/DepositRouter.json
-          bun run --cwd packages/bridge-core test -- factory-abi router-abi quoter-abi deposit-router-abi
+          bun run --cwd packages/bridge-core test -- factory-abi deposit-router-abi
 
   noir:
     name: nargo test (keystone)
@@ -343,8 +329,7 @@ jobs:
         run: |
           forge install \
             foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
-            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
-            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
+            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3
 
       # The sandbox deploys LI.FI's Executor, ERC20Proxy and ReceiverAcrossV4 from the `lifi`
       # profile's artifacts: same commit and same clean-up as the forge job.

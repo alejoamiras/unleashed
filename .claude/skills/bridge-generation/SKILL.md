@@ -1,6 +1,6 @@
 ---
 name: bridge-generation
-description: Runbook for the bridge's on-chain side across an Aztec-line bump — classifying the bump, the Noir surface and drift detectors, and deploying a new bridge generation (PortalFactory + SwapBridgeRouter + UniswapFuelSwap + TokenBridgeHub) when the network resets or a class id moves, or a router-only deploy (DepositRouter + TestnetFuelSwapper) on the current generation. Use when bumping Aztec, when a drift detector goes red, when pre-creating a token, calibrating fjPerTx, deploying a new router or refilling and re-pricing the testnet fuel swapper, promoting a candidate manifest, or running the live canaries.
+description: Runbook for the bridge's on-chain side across an Aztec-line bump — classifying the bump, the Noir surface and drift detectors, and deploying a new bridge generation (PortalFactory + TokenBridgeHub, then DepositRouter + TestnetFuelSwapper) when the network resets or a class id moves, or a router-only deploy (DepositRouter + TestnetFuelSwapper) on the current generation. Use when bumping Aztec, when a drift detector goes red, when pre-creating a token, calibrating fjPerTx, deploying a new router or refilling and re-pricing the testnet fuel swapper, promoting a candidate manifest, or running the live canaries.
 ---
 
 # Bridge generation
@@ -56,7 +56,7 @@ and release timing into the same round.
   `Prepare everything, hold before broadcasts`.
 
 No `--broadcast` or deploy step runs without Q2's authorization. A mid-run surprise that changes the
-shape of what was authorized (an unplanned pool re-seed, a redeploy of something not sanctioned) goes
+shape of what was authorized (an unplanned redeploy, a write to something not sanctioned) goes
 back to the owner: authorization for one scope does not extend to the next.
 
 ## Phase 1 — the bump (always)
@@ -117,11 +117,12 @@ first run) so the browser suite runs against the new line. `quality-status`, `to
 
 ## Branch B — network reset (the coupled redeploy)
 
-A reset means a **new bridge generation**: one L1 `PortalFactory` + `SwapBridgeRouter` +
-`UniswapFuelSwap`, one L2 `TokenBridgeHub`, and every manifest token pre-created against them.
-Nothing carries over except Sepolia itself (the mintable test tokens, the ETH/FJ pool): the hub's
-address is salted with the factory's, the factory's constructor takes the hub, and the router binds
-the factory and the moved `FeeJuicePortal` as immutables, so all four redeploy together, always.
+A reset means a **new bridge generation**: one L1 `PortalFactory`, one L2 `TokenBridgeHub`, a
+`DepositRouter` and its `TestnetFuelSwapper`, and every manifest token pre-created against them.
+Nothing carries over except Sepolia itself (the mintable test tokens): the hub's address is salted
+with the factory's, the factory's constructor takes the hub, the router binds the factory and the
+moved `FeeJuicePortal` as immutables, and the swapper the moved fee asset, so all four redeploy
+together, always.
 
 **The whole live arc runs under the deployment-intent tooling.** `bun packages/bridge-core/scripts/live-intent.ts build <intent-path>`
 runs after every source change (chainId cascade, L1 constants) has landed and before any signing: it
@@ -186,8 +187,8 @@ owner-approved create. A fresh L1 signer is pinned in `PLAN_PINNED_L1_SIGNERS` a
 
 The conductor records the L1 signer as `guardianL1` and the L2 deployer as `guardianL2`. Budget about 15 minutes of real proofs per
 conductor run, and install `~/.aztec/versions/<new JS pin>` completely (the sandbox rehearsal refuses
-a partial toolchain). Sepolia does not reset: the test tokens and the ETH/FJ pool persist;
-everything rollup-coupled does not.
+a partial toolchain). Sepolia does not reset: the test tokens persist; everything rollup-coupled
+does not.
 
 **Where paths resolve.** Every command runs from the repository root. A script invoked by path
 (`bun packages/bridge-core/scripts/<name>.ts`) reads its `--config` from the root, so pass
@@ -206,9 +207,10 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    with the build target, so the constants and the manifest move together. The Nulo wallet
    keeps its own copy of the chain identity and moves it on its own.
 2. **L1 constants.** The conductor reads `registry`, `feeJuice`, `feeJuicePortal` and
-   `feeAssetHandler` from `node_getNodeInfo` at run time. The fork fixtures (`DeployFuelLive.s.sol`,
-   `DeployFuelLive.fork.t.sol`, `MainnetFuel.fork.t.sol`) still carry literals: update them so the fork
-   suites keep testing the live topology.
+   `feeAssetHandler` from `node_getNodeInfo` at run time. The fork fixture
+   `contracts/bridge/evm/test/fixtures/lifi/testnet-rail.json` still carries the fee asset,
+   FeeJuicePortal and faucet as literals: re-record it (`bun packages/bridge-core/scripts/lifi-fixtures.ts
+   testnet-rail --run`) so `LifiTestnetRailFork` keeps testing the live topology.
 3. **Rehearse on the sandbox first**: `bun run --cwd packages/bridge-core deploy:sandbox --smoke` on
    the new JS line (drift detector 4): all 31 steps, the PrivateFPC credit flows included, through the
    production modules, real `register_*` publications, the calibration line at the end. Green here is
@@ -216,18 +218,19 @@ script: an assignment after it is just another argument. `pre-create` and `calib
 4. **Deploy the generation, candidate-first and journalled:**
    ```bash
    # from the repo root, like every command in this runbook
-   SEED_TOKENS=<fakeUSDC>,<fakeUSDT> bun run --cwd packages/bridge-core deploy:generation deploy --dry-run   # signer, identity, token list; no broadcast
-   SEED_TOKENS=<fakeUSDC>,<fakeUSDT> bun run --cwd packages/bridge-core deploy:generation deploy
+   SEED_TOKENS=<fakeUSDC>,<fakeUSDT> bun run --cwd packages/bridge-core deploy:generation deploy --rates <abs path>/rates.json --dry-run   # signer, identity, token list, rates; no broadcast
+   SEED_TOKENS=<fakeUSDC>,<fakeUSDT> bun run --cwd packages/bridge-core deploy:generation deploy --rates <abs path>/rates.json
    ```
-   Order inside one run: `UniswapFuelSwap` (no cross-binding) → publish the hub and Token classes →
+   `--rates` is the router-only rates file (below), with an entry for every seed token and for any
+   token the arc will pre-create later. Order inside one run: publish the hub and Token classes →
    **predict the factory from the signer's pending nonce** → derive the hub (`salt = Fr(factory)`) →
    deploy the factory (**it refuses to broadcast if the nonce moved**: a factory landing anywhere else
-   would bind a hub nothing can reach, and the race aborts before the hub exists) → router → hub →
-   readbacks (`factory.L2_HUB` ↔ hub; router `FACTORY`, `FEE_ASSET`, `permit2`, `feeJuicePortal`,
-   `swapTarget`; `hub.token_for(0) == 0`) → per token: `createPortal` (skipped when the clone
-   exists), `register_token` on the hub only if `token_for == 0`, then `SeedTokenPool.s.sol` for its
-   TOKEN/WETH leg (`SKIP_POOL_SEED=1` defers it) → `apps/tools/public/testnet-bridge.candidate.json`,
-   written atomically, with the live manifest's `fjPerTx` and `fjRegister` carried as placeholders.
+   would bind a hub nothing can reach, and the race aborts before the hub exists) → hub → readbacks
+   (`factory.L2_HUB` ↔ hub; `hub.token_for(0) == 0`) → per token: `createPortal` (skipped when the
+   clone exists), `register_token` on the hub only if `token_for == 0` → the router-only steps
+   (swapper, rates, inventory, `DepositRouter`, readbacks; below) →
+   `apps/tools/public/testnet-bridge.candidate.json`, written atomically, with the live manifest's
+   `fjPerTx` and `fjRegister` carried as placeholders.
    Live, the second command is the `testnet-generation` keyed run, with `live-intent.ts verify`
    chained ahead of it inside the same `bash -c`.
    **Every step is journalled** (`packages/bridge-core/deploy-journal/testnet-generation.jsonl`,
@@ -239,20 +242,14 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    - **Serialize with anything else that signs from the deployer.** The nonce pin is this step's whole
      safety; a forge broadcast from the same key between prediction and deploy is exactly what the
      abort exists to catch.
-   - **Delete forge's sensitive cache after every live `forge script --broadcast`** (the pool seeds,
-     `DeployFuelLive`): it writes `contracts/bridge/evm/cache/<script>/<chain>/run-*.json`, whose
-     `transactions[].rpc` is the keyed `SEPOLIA_RPC_URL`. The directory is gitignored, so nothing
-     else will notice it; the conductor's journal, not forge `--resume`, is the recovery.
    - Adding a token to a landed generation later:
-     `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> [--no-register] [--seed-pool] [--canonical]`.
+     `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> [--no-register] [--canonical]`.
      A real token (Circle USDC, WETH) takes `--canonical`; without it the manifest labels the token a mintable
      `MintableERC20`, and the app offers a mint that reverts or mints nothing.
    - `SEED_TOKENS` are the committed test-token addresses recorded in the arc's lessons
-     (`MintableERC20` deployments on Sepolia via `scripts/deploy-seed-tokens.ts`, which redeploys a spec
-     whose address sorts above WETH), never chosen ad hoc; `--dry-run` validates only their shape.
-     Before the live run confirm each has code, answers `decimals()` and `maxMintPerTx()`, and **sorts
-     below WETH** (`SeedTokenPool` requires `token < WETH` as `currency0`). Only these get pools. A real
-     ERC-20 needs no `pre-create`: the router creates its portal inline on the first send, and the hub
+     (`MintableERC20` deployments on Sepolia via `scripts/deploy-seed-tokens.ts`), never chosen ad hoc;
+     `--dry-run` validates only their shape. Before the live run confirm each has code and answers
+     `decimals()` and `maxMintPerTx()`. A real ERC-20 needs no `pre-create`: the router creates its portal inline on the first send, and the hub
      registers it on the first claim.
 5. **Faucet**: `bun run --cwd apps/tools deploy:testnet` (idempotent; writes
    `src/contracts/deployments.candidate.json`, which `promote` moves into the live `deployments.json`).
@@ -271,14 +268,7 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    unrecoverable loss**, and a version bump is exactly what opens that window. A red gate means the
    conscious re-pin and re-canary flow (drift detector 2), not a deploy. Only on green:
    `packages/bridge-core/scripts/deploy-private-fpc-testnet.ts` (idempotent; asserts the pinned address).
-7. **ETH/FJ pool.** Token-independent; it persists across resets unless the L1 Fee Juice asset moved
-   (compare `node_getNodeInfo.l1ContractAddresses.feeJuiceAddress` with the old manifest's
-   `feeJuice.asset`). If it moved, re-seed with `DeployFuelLive.s.sol` in seed-only mode
-   (`ROUTER_ADDRESS` and `FUEL_SWAP_ADDRESS` = the conductor's, `SEED_AZLO_WETH=false SEED_ETH_FJ=true`,
-   its `FEE_JUICE` literal updated in step 2). **Dry-run first (no `--broadcast`) and read the planned
-   actions**, then `--broadcast --slow`. Its price guard aborts on a pre-initialized mispriced pool
-   rather than seeding into it.
-8. **Candidate smokes → calibrate → promote.** The candidate's digest is recorded at the first
+7. **Candidate smokes → calibrate → promote.** The candidate's digest is recorded at the first
    `verify --candidate`, and any later change means never promote, so the candidate is final
    (calibrated) before that verify.
    - `live-intent.ts verify <intent>` (no `--candidate`) before each smoke group. Every smoke runs as
@@ -287,8 +277,8 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    - `smoke-existing-testnet.ts`: registers the hub and the first two tokens (no deploy) and bridges
      each publicly and privately through `runSend` and `claimViaHub`, proving the manifest
      self-consistent and the generation able to bridge more than one token.
-   - `smoke-swap-existing-testnet.ts`: the fueled smoke, one public send with a swapped gas slice into
-     a self-paying hub claim. Skipping it promotes an unproven fuel route.
+   - `smoke-fuel-existing-testnet.ts`: the fueled smoke, one public send whose gas slice the swapper
+     turns into Fee Juice for a self-paying hub claim. Skipping it promotes an unproven fuel route.
    - `fuel-testnet.ts`: the heavy validator (public and private-FPC fuel lanes); its landed claim fees
      are the calibration input.
    - **Calibrate** (a local file transform, no keys): collect the paid claims' `transactionFee`s by
@@ -297,7 +287,7 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      outside the repository** (a stray file inside it dirties the tree the next verify refuses), then
      `bun run --cwd packages/bridge-core deploy:generation calibrate --samples <absolute path>/fees.json`.
      A registering sample needs one first-time claim on a fresh test token:
-     `pre-create --no-register --seed-pool --token <third mintable>`, then
+     `pre-create --no-register --token <third mintable>` (its rate is in step 4's rates file), then
      `bun packages/bridge-core/scripts/fuel-testnet.ts --config apps/tools/public/testnet-bridge.candidate.json --token <third>`,
      whose claim lands as
      `register_and_claim_public` and leaves the token registered as an ordinary third token. Failing
@@ -316,7 +306,7 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      own commit (the path is allowlisted, so the intent stays valid), then re-run the same `promote`;
      with no live manifest it takes the first-promotion path. Never hand-edit the live manifest to
      get past the check.
-9. **The live canaries** (all green is the redeploy gate):
+8. **The live canaries** (all green is the redeploy gate):
    `bun run --cwd packages/bridge-core verify:l1 --config ../../apps/tools/public/testnet-bridge.json --strict` ·
    `BRIDGE_MANIFEST=public/testnet-bridge.json bun run --cwd apps/tools verify:deployments` ·
    `PRIVATE_RUNS=1 bun packages/bridge-core/scripts/fuel-testnet.ts --config apps/tools/public/testnet-bridge.json`
@@ -327,11 +317,10 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    origin (`TOKEN_LIST_LIVE=1` on `packages/bridge-core/src/token-list.test.ts`: origin, schema, chain
    filter, cache; never membership).
    - **`PRIVATE_RUNS=1` is the settle canary only**: its printed `minFuelFj` is a one-sample estimate
-     that may only ever raise the floor, never lower it. Size `FUEL_SLICE_UNITS` so the live quote
-     clears the manifest floor; a slice under it reverts at the router's guard
-     (`UniswapFuelSwap: insufficient output`) before anything moves. The default slice is a quarter
-     token: on the 6.0.0-rc.1 testnet 0.25 USDC quoted about 8 FJ against a 29.77 FJ floor, and
-     `FUEL_SLICE_UNITS=1500000` (about 48 FJ) cleared it. A run with no private lane prints
+     that may only ever raise the floor, never lower it. Size `FUEL_SLICE_UNITS` so the swapper's quote
+     clears the manifest floor; a slice whose quote is under it is refused or reverts whole. The
+     default slice is a quarter token: at 32 FJ per USD, 0.25 USDC buys about 8 FJ against a 29.77 FJ
+     floor, and `FUEL_SLICE_UNITS=1500000` (about 48 FJ) clears it. A run with no private lane prints
      `minFuelFj` from the `actual×4` proxy (16 × a fee), not from any FPC ceiling: ignore it.
    - The private lane's ceiling is `Σ gasLimit·committedMaxFee`: every FPC self-pay claim declares
      explicit `gasLimits` (`PRIVATE_HUB_CLAIM_GAS` for the hub claim, `PRIVATE_CLAIM_GAS` for the
@@ -340,19 +329,19 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      `Amount too low to cover gas cost`. The sandbox cannot show this; its fees make the maximum free.
    - To exercise the private first claim (`register_token` paid by the bridged fuel through the FPC,
      then the claim paid from the credit it kept) the validator needs a token the hub does not know:
-     `pre-create --no-register --seed-pool --token <fresh mintable>`, then
+     `pre-create --no-register --token <fresh mintable>` (with a swapper rate), then
      `PUBLIC_RUNS=0 PRIVATE_RUNS=1 bun packages/bridge-core/scripts/fuel-testnet.ts --config <manifest> --token <it>`.
      With the public lane on,
      `register_and_claim_public` registers the token first and the private lane degrades to a plain
      claim.
-   - Never let two scripts sign from the deployer at once. To change `l1.swap.minFuelFj`, run the
+   - Never let two scripts sign from the deployer at once. To change `l1.fuel.minFuelFj`, run the
      default full calibration (`PRIVATE_RUNS` unset, three or more runs), or leave the floor alone and
      record a follow-up.
-10. **Client-side reset.** The app's journal re-validates every record's token block against the live
+9. **Client-side reset.** The app's journal re-validates every record's token block against the live
     factory registration at boot, so a record from the old generation is withheld, never claimed
     against the new hub. The wallet's per-chain purge is the wallet's own; tell its repository the new
     generation's `tokens[].l2Token` addresses, which it mirrors (or not) as its own UI decision.
-11. **CSP check.** The page connects to the node host the wallet reports and to the token list:
+10. **CSP check.** The page connects to the node host the wallet reports and to the token list:
     `cspConnectSrc` per target lives in `apps/tools/src/lib/network-targets.ts` (the build generates
     `_headers` from it). Testnet's lists exactly `TESTNET_NODE_URL`, a path-exact source, so a moved
     node is a change to that constant; confirm the endpoint answers without a redirect (CSP stops
@@ -362,16 +351,13 @@ Then Branch A's delivery gates. Live-deploy discipline: fix forward carefully, n
 live step, and stop and surface after a few failures on one step.
 
 **A new generation on an unchanged network** (a class id moved, the network did not). The reset
-baseline stays where it is: the identity did not move, so `assertNoResetPins` passes. Three things
+baseline stays where it is: the identity did not move, so `assertNoResetPins` passes. Two things
 differ from a reset:
 
 - The journal's identity stamp is unchanged too, so the conductor would resume the previous
   generation's journal and stop at its recorded hub class id. Confirm that journal records a
   completed generation (its last steps match the live manifest), then remove it in its own commit
   before `build`; the conductor creates a fresh one at the same path.
-- Every token is unregistered on the new hub while its Sepolia pool already exists, and
-  `--seed-pool` on an existing pool adds liquidity instead of refusing. Deploy with
-  `SKIP_POOL_SEED=1`, and pre-create further tokens without `--seed-pool`.
 - The live manifest names the old hub until promotion. Retire it in its own commit after the
   candidate exists and immediately before `promote`; between those two commits the unit suite and
   the testnet build are red by construction, and nothing is validated in that interval.
@@ -379,21 +365,21 @@ differ from a reset:
 **Recovery after a partial landing.** The conductor's journal is the recovery: re-run the same
 `deploy` command and it skips every journalled step and adopts the two cross-bound contracts even
 when their line is missing (the factory by its recorded prediction and on-chain code, the hub by
-readback); each token resumes by `registrationOf` and `token_for`. The swap target, the router and
-each pool seed are journalled only after their receipt, so a crash between landing and the append
-re-sends that one step: a harmless orphan for the swap target or router, a second liquidity add for
-a pool seed. **After a crash, read the journal's last line against the chain before re-running**
-(`cast code` for a contract, the pool state for a seed); never pass addresses by hand, never edit
-the journal. The live `testnet-bridge.json` is untouched until step 8's smokes are green: **never
+readback); each token resumes by `registrationOf` and `token_for`. The swapper and the router are
+journalled only after their receipt, so a crash between landing and the append leaves a harmless
+orphan the re-run replaces. **After a crash, read the journal's last line against the chain before
+re-running** (`cast code`); never pass addresses by hand, never edit the journal. The live
+`testnet-bridge.json` is untouched until step 7's smokes are green: **never
 promote a candidate built over a partial landing**, and `live-intent verify` refuses a candidate
 whose digest changed after it was recorded.
 
 ## Router-only deploy (a new router on the current generation)
 
-When the router changes and the network does not (the `DepositRouter` arc, or a later router
-redeploy): promotion locks the identity, factory and hub only, so a router moves without a new
-generation. The `DepositRouter` and its `TestnetFuelSwapper` land **beside** the legacy router, which
-stays in `router` until the app switches. Run from the repository root, under the deployment-intent
+When the router changes and the network does not: promotion locks the identity, factory and hub
+only, so a router moves without a new generation. The candidate names the new `DepositRouter` and
+`TestnetFuelSwapper` in place of the base's, and the conductor does not yet move a replaced router
+into `legacyRouters` (`implementations-plan/follow-ups.md`): until it does, never replace a router
+that has deposits in flight. Run from the repository root, under the deployment-intent
 tooling, after the owner authorized exactly this scope (both contracts, the swapper's rates and
 inventory, the named token pre-creations, the smokes and promotion).
 
@@ -406,17 +392,17 @@ inventory, the named token pre-creations, the smokes and promotion).
    `{ "<erc20>": "<fee-asset base units per whole token>" }`, one entry for every live token and for
    every token the arc will pre-create. The conductor refuses a live token without one, and
    `verify:l1` fails a manifest token the swapper cannot price. Price like the legacy route users
-   know: the 6.0.0-rc.1 testnet quoted about 32 FJ per USD (0.25 USDC ≈ 8 FJ), so
+   know: the 6.0.0-rc.1 testnet's last venue quoted about 32 FJ per USD (0.25 USDC ≈ 8 FJ), so
    `32000000000000000000` for a USD-pegged token and that times the ETH price for WETH. Record the
    rates in the arc's lessons.
 3. **Intent.** `bun packages/bridge-core/scripts/live-intent.ts build <intent> --router-only --pre-create <erc20> …`
    (one `--pre-create` per token the arc adds), then commit it. It pins the **committed** live
-   manifest's factory, implementation, registry, guardian, legacy router and swap target, Permit2,
-   FeeJuicePortal and hub, each live token's portal and L2 address, and the conductor journal's
+   manifest's factory, implementation, registry, guardian, Permit2, FeeJuicePortal and hub, its
+   `legacyRouters`, each live token's portal and L2 address, and the conductor journal's
    committed length. Every later `verify` refuses a journal step other than the two contracts, the
    named pre-creations, calibration and the candidate; `verify --candidate` refuses a candidate that
-   moves a pinned field, drops or re-derives a live token, adds an unnamed one, or names no
-   `depositRouter`.
+   moves a pinned field, drops a legacy router, drops or re-derives a live token, adds an unnamed
+   one, or names no `depositRouter`.
 4. **Dry run, then deploy.** L1 only (no L2 account, no proofs), so the keyed run is
    `testnet-l1.env.example`, with `live-intent.ts verify <intent>` chained ahead of it:
    ```bash
@@ -430,8 +416,8 @@ inventory, the named token pre-creations, the smokes and promotion).
    `TestnetFuelSwapper(feeAsset, faucet, guardian)` → a rate for each token whose on-chain rate
    differs → inventory minted from the permissionless `FeeAssetHandler` up to `10 × fuel.minFuelFj`
    → `DepositRouter(Permit2, FeeJuicePortal, factory, swapper, guardian)` → readback of both → the
-   candidate: the base plus `depositRouter`, `fuelSwapper` and `fuel` (the legacy `swap` block's
-   budgets, `crossChainSlippageBps` 300), with `router` unchanged.
+   candidate: the base with the new `depositRouter` and `fuelSwapper`, carrying the base's own `fuel`
+   budgets (a base without them is refused).
    - **Journalled and resumable.** Both deploys append to `deploy-journal/testnet-generation.jsonl`
      (same identity stamp) with their creation-code hash and constructor arguments, sent at a pinned
      nonce. A re-run adopts a journalled contract only when both match exactly and its address has
@@ -458,8 +444,8 @@ inventory, the named token pre-creations, the smokes and promotion).
    for every token; inventory under the floor is a warning), both runtimes against the forge build,
    and LI.FI's address book on Sepolia and every routing source: code at each entry and the pinned
    runtime code hashes of the Executor, receivers and fee forwarder, while a facet moved behind the
-   Diamond is a warning to review. `BASE_SEPOLIA_RPC_URL` defaults to PublicNode. Then step 8 of
-   Branch B: smokes, calibration (it writes `fuel` beside `swap`), `live-intent.ts verify <intent> --candidate`,
+   Diamond is a warning to review. `BASE_SEPOLIA_RPC_URL` defaults to PublicNode. Then step 7 of
+   Branch B: smokes, calibration (it writes `fuel`), `live-intent.ts verify <intent> --candidate`,
    commit the intent, `promote --bridge-only`.
 
 Once deployed, `DepositRouter.sol` and `TestnetFuelSwapper.sol` are frozen: strict verification
@@ -546,8 +532,8 @@ CANARY_PRIVATE_KEY="$(cat ~/.cache/unleashed-canary/testnet.key)" bun packages/b
   version, so `cast run` replays a Sepolia fill under the old schedule. It once showed a clean deposit where the
   chain recovered to the wallet. Read the real receipt's logs first. No public Sepolia RPC serves
   `debug_traceTransaction`; `eth_simulateV1` at the parent block, varying only the call's gas, reproduces it.
-- **The old router's fuel smoke can fall under its own floor.** `smoke-swap-existing-testnet.ts` sizes a one-token
-  slice, and at 32 FJ per USD 1 USDC quoted 29.5 FJ against a 29.8 FJ floor (`UniswapFuelSwap: insufficient
-  output`). `FUEL_SLICE_UNITS=1500000` clears it.
+- **The fuel smoke can fall under its own floor.** `smoke-fuel-existing-testnet.ts` sizes a one-token slice, which
+  at 32 FJ per USD clears the 29.77 FJ floor by about 2 FJ: a raised floor or a lowered rate turns it into a
+  refusal. `FUEL_SLICE_UNITS=1500000` clears it.
 - **Run the unit suite after a promotion.** Tests that build candidates must read a frozen manifest
   (`packages/bridge-core/test/fixtures/`), never `apps/tools/public/*-bridge.json`, which every promotion rewrites.

@@ -10,7 +10,7 @@ import type { UseTokenSelectionHandle } from "./useTokenSelection"
 
 vi.mock(import("@/contracts/bridge-generation"), async (actual) => ({
 	...(await actual()),
-	FUEL: { slippageBps: 300, fjPerTx: "1", fjRegister: "1", minFuelFj: "1", swapTarget: "0x" } as never,
+	FUEL: { slippageBps: 300, fjPerTx: "1", fjRegister: "1", minFuelFj: "1" } as never,
 }))
 vi.mock("@/contracts/hub-binding", () => ({ readHubBinding: async () => undefined }))
 

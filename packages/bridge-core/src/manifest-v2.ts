@@ -25,16 +25,6 @@ const aztecAddress = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected a 32-byte
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected a 32-byte 0x hex word")
 const decimalString = z.string().regex(/^\d+$/, "expected a base-10 integer string")
 
-/** A V4 pool key without hooks: the router refuses any hooked pool, so the manifest may not name one. */
-export const poolV2Schema = z
-	.object({
-		fee: z.number().int().min(0).max(1_000_000),
-		tickSpacing: z.number().int().min(1),
-		hooks: evmAddressV2.optional(),
-	})
-	.strict()
-	.refine((p) => p.hooks === undefined || /^0x0{40}$/.test(p.hooks), { message: "hooked pools are not routable" })
-
 const l2RecordSchema = z
 	.object({
 		address: aztecAddress,
@@ -57,11 +47,10 @@ export const manifestTokenSchema = z
 		source: z.enum(["permissionless-mint", "canonical"]),
 		sourceContract: z.enum(["MintableERC20", "TestUsdc"]).optional(),
 		maxWholePerTx: z.number().positive().optional(),
-		pools: z.record(z.string(), poolV2Schema).optional(),
 	})
 	.strict()
 
-/** Gas-share budgets for the DepositRouter's fuel leg: the V4 `swap` block's budgets, without its pools. */
+/** Gas-share budgets for the DepositRouter's fuel leg. */
 export const fuelBudgetSchema = z
 	.object({
 		slippageBps: z.number().int().min(0).max(9_999),
@@ -109,26 +98,8 @@ export const bridgeBlockSchema = z
 				factory: evmAddressV2,
 				implementation: evmAddressV2,
 				guardian: evmAddressV2,
-				router: evmAddressV2,
 				permit2: evmAddressV2,
-				swapTarget: evmAddressV2,
 				feeJuicePortal: evmAddressV2,
-				swap: z
-					.object({
-						poolManager: evmAddressV2,
-						quoter: evmAddressV2,
-						multicall3: evmAddressV2,
-						weth: evmAddressV2,
-						feeJuice: evmAddressV2,
-						tiers: z.array(poolV2Schema).min(1),
-						ethFj: poolV2Schema,
-						slippageBps: z.number().int().min(0).max(9_999),
-						minFuelFj: decimalString,
-						fjPerTx: decimalString,
-						fjRegister: decimalString,
-					})
-					.strict()
-					.optional(),
 				depositRouter: evmAddressV2.optional(),
 				/** The router's `SWAP_TARGET` off mainnet; refused when `l1ChainId` is 1. */
 				fuelSwapper: evmAddressV2.optional(),

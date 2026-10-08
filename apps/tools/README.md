@@ -4,7 +4,7 @@ A standard Aztec dApp (it speaks `@aztec-labs/wallet-sdk`; it touches no wallet 
 sections on a left rail:
 
 - **Bridge** (the landing section) — move **any ERC-20** between Ethereum and Aztec through the generation the bundled
-  manifest names (an L1 `PortalFactory` + `SwapBridgeRouter`, one L2 `TokenBridgeHub`), with an
+  manifest names (an L1 `PortalFactory` + `DepositRouter`, one L2 `TokenBridgeHub`), with an
   optional **gas leg**: a slice of the amount is swapped to Fee Juice on the way in so the arriving
   account can pay for its own claim. Exits burn on L2 first, then consume on L1.
 - **Faucet** — self-mint the two test tokens (SIGNAL, 6 dec; NOISE, 18 dec) on testnet through

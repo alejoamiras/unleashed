@@ -81,7 +81,7 @@ describe("router-only intent", () => {
 
 	it("refuses a moved factory or legacy router, a dropped or re-derived live token, an unnamed token, or no new router", () => {
 		expect(() => assertRouterOnlyScope(scope, candidate({ factory: routerOnly.depositRouter }))).toThrow(/candidate factory/)
-		expect(() => assertRouterOnlyScope(scope, candidate({ router: routerOnly.depositRouter }))).toThrow(/candidate router/)
+		expect(() => assertRouterOnlyScope(scope, candidate({ legacyRouters: [] }))).toThrow(/drops legacy router/)
 		expect(() => assertRouterOnlyScope(scope, candidate({}, bridge.tokens.slice(1)))).toThrow(/live token .* missing/)
 		const rederived: ManifestToken = { ...(bridge.tokens[0] as ManifestToken), l2Token: `0x${"ab".repeat(32)}` }
 		expect(() => assertRouterOnlyScope(scope, candidate({}, [rederived, ...bridge.tokens.slice(1)]))).toThrow(/derives elsewhere/)

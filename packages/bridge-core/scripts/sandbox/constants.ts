@@ -8,11 +8,9 @@ export const CHAIN_ID = 31337
 export const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address
 export const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as Address
 export const ZERO_L1 = "0x0000000000000000000000000000000000000000" as Address
-/** The mock returns `in × 10^12` FeeJuice-wei, so one whole 6-decimal token buys one whole FeeJuice. */
-export const MOCK_RATE_NUM = 10n ** 12n
 /** 1 FJ — the floor the app refuses to bridge below. */
 export const MIN_FJ = 10n ** 18n
-/** The fuel swapper's rate for every fixture token: one whole Fee Juice per whole token, the old mock venue's rate. */
+/** The fuel swapper's rate for every fixture token: one whole Fee Juice per whole token. */
 export const SWAPPER_FJ_PER_WHOLE_TOKEN = 10n ** 18n
 /** The local sequencer prices L2 gas orders of magnitude above the old default; a lower ceiling
  *  rejects every setup tx with "maxFeesPerGas.feePerL2Gas must be >= gasFees". */
@@ -51,13 +49,9 @@ export const SPECS = {
 	usdt: { name: "Test USDT", symbol: "USDT", decimals: 6 },
 	nort: { name: "No Route Token", symbol: "NORT", decimals: 18 },
 	pxo: { name: "Portal Only", symbol: "PXO", decimals: 18 },
-	/** Stands in for WETH: a deposit of it takes the single-hop route, and it is the fake middle
-	 *  currency of every two-hop route (the mock swap never touches it). */
+	/** An 18-decimal token outside the manifest, which a test rates at the swapper on demand. */
 	weth: { name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
 } satisfies Record<string, TokenSpec>
-/** The pool parameters the sandbox manifest declares; the facade ignores them, the router hashes them. */
-export const SANDBOX_TIER = { fee: 3000, tickSpacing: 60 }
-export const SANDBOX_ETH_FJ = { fee: 3000, tickSpacing: 60 }
 export type SpecKey = keyof typeof SPECS
 
 export const sandboxChain = (rpcUrl: string) =>

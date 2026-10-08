@@ -1079,7 +1079,7 @@ preview against the live router, against the signed boards (an unfilled send is 
 
 ### Arc 5: Uniswap and the old router removed
 
-#### Phase 10
+#### Phase 10 ✓
 
 Delete everything marked [5] in the change map; freeze `legacy-router-abi.ts` (events and calldata only, used by
 `deposit-reconcile.ts`). The schema change is two commits around one promotion, because `promote` strict-parses
@@ -1568,6 +1568,21 @@ code before it was triaged; the fixes are logged in `lessons/phase-9.md` § Arc 
   elsewhere; a follow-up designs a journaled "deposit requested" marker, with cross-tab care, that lets a send never
   asked for its deposit end safely. The other round 3 fixes held.
 - Round 5 (resumed): "no new material findings". Arc 4 converged in five rounds.
+
+**D52 Arc 5: the A11 promotion and its Codex loop (`gpt-6.1-sol` at `high`).** A11 ran as three keyed runs
+(`build --retire-router`, `verify --candidate`, `promote --bridge-only`): the live testnet manifest moved the old
+router `0xb6d6…cfab` into `legacyRouters` and lost `router`, `swap` and `swapTarget`, with zero spend and nothing
+deployed; then the schema refused those fields and the one-off arc left `live-intent.ts`. Two decisions on the way:
+the router-only scope now pins the live `legacyRouters` (it pinned `l1.router`, which no longer exists), so a
+candidate that drops a retired router is refused; and Biome no longer formats `apps/tools/public/*-bridge*.json`,
+because the receipt pins the promoted bytes and Biome would collapse the writer's expanded one-element array.
+Details: `lessons/phase-10.md`.
+- Round 1 (four, all accepted and fixed): a retire-router promote could overwrite a live manifest that moved after
+  build; verify-l1 skipped the still-listed old router; `deploy` parsed `--routing` after broadcasting; a narrating
+  doc comment.
+- Round 2 (resumed): "No new material findings — confidence high".
+- Round 3 (resumed, over the promotion and the schema removal): "No new material findings (high confidence); one
+  comment-quality nit." The nit is fixed. Arc 5 converged.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's

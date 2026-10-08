@@ -11,7 +11,7 @@
  * minFuelFj/fjPerTx calibration). Both compose the same flows (runSend / claimViaHub).
  *
  * Real proofs: expect ~15-40 min. Run:
- *   bun run scripts/smoke-swap-existing-testnet.ts --config <manifest> [--token <erc20>]
+ *   bun run scripts/smoke-fuel-existing-testnet.ts --config <manifest> [--token <erc20>]
  * (needs PRIVATE_KEY + SEPOLIA_RPC_URL in packages/bridge-core/.env). `--token` defaults to the
  * manifest's first token.
  */

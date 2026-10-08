@@ -5,17 +5,16 @@
  *   bun packages/bridge-core/scripts/verify-l1.ts [--config <manifest path>] [--strict]
  *
  * Four passes, each read straight off the chain:
- *  - the generation: code at every `bridge.l1` address, and the factory/implementation/router
- *    cross-bindings (implementation, hub, guardian, rollup inbox+outbox+version, Permit2, fee asset,
- *    swap target, the router's Permit2 witness shape, and the swap target's own pool manager, fee
- *    asset and WETH); with the DepositRouter fields, that router's immutables and owner and the fuel
- *    swapper's bindings, a rate for every token and its inventory (a low one is a warning);
+ *  - the generation: code at every `bridge.l1` address, the factory/implementation cross-bindings
+ *    (implementation, hub, guardian, rollup inbox+outbox+version), the DepositRouter's immutables,
+ *    witness type string and owner, the fuel swapper's bindings, a rate for every token and its
+ *    inventory (a low one is a warning), and each legacy router's factory and owner;
  *  - each token: its portal is the factory's CREATE2, the frozen registration matches the manifest's
  *    words, and the live ERC-20 still sanitizes to exactly those words at exactly that `decimals()`;
  *  - with `routing`, LI.FI's address book on the manifest's L1 and every source chain: code at each
  *    entry and the pinned runtime code hashes (a facet moved behind the Diamond is a warning);
- *  - the deployed runtime code of the implementation, factory, routers and swap targets against this
- *    checkout's forge build, with each artifact's immutable slots (per-deployment values) and metadata
+ *  - the deployed runtime code of the implementation, factory, DepositRouter and fuel swapper against
+ *    this checkout's forge build, with each artifact's immutable slots (per-deployment values) and metadata
  *    trailer (per-checkout paths) masked out, so it passes from any checkout of the deployed sources.
  *
  * `--strict` is the promotion gate: the artifacts are rebuilt from source into a fresh directory first
@@ -43,12 +42,11 @@ import { FUEL_SWAP_SELECTORS } from "../src/lifi-abi"
 import { LIFI_BOOK, type LifiChainBook, type LifiCodeHashes } from "../src/lifi-addresses"
 import type { BridgeBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import { toWord } from "../src/register-hash"
-import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
+import { legacyRoutersOf } from "../src/send-generation"
 import { resolveBin, run } from "./run"
 import { createL1PublicClient, loadManifestV2FromConfigArg, requireBridge } from "./script-bootstrap"
 import {
 	assertFactoryPortal,
-	assertRouterWitnessShape,
 	ERC20_MIN_ABI,
 	FACTORY_CONSTANTS_ABI,
 	FUEL_SWAPPER_ABI,
@@ -63,8 +61,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..")
 const EVM_ROOT = join(repoRoot, "contracts", "bridge", "evm")
 
-/** The deterministic Multicall3 deployment, live at the same address on every chain we bridge from;
- *  a manifest that names its own (the swap block does) wins over it. */
+/** The deterministic Multicall3 deployment, live at the same address on every chain we bridge from. */
 const CANONICAL_MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
 
 /** The registry's canonical rollup, and the values the factory and the implementation each froze
@@ -78,19 +75,10 @@ const ROLLUP_MIN_ABI = [
 	{ type: "function", name: "getVersion", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const
 
-/** The three pointers UniswapFuelSwap froze at construction. */
-const SWAP_TARGET_ABI = [
-	{ type: "function", name: "poolManager", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "feeJuice", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "weth", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-] as const
-
 const DIAMOND_LOUPE_ABI = [
 	{ type: "function", name: "facetAddress", stateMutability: "view", inputs: [{ type: "bytes4" }], outputs: [{ type: "address" }] },
 ] as const
 
-/** The local sandbox's chain: its legacy router swaps through the harness's fixed-rate mock, never UniswapFuelSwap. */
-const SANDBOX_CHAIN_ID = 31337
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 let failures = 0
@@ -201,48 +189,15 @@ async function checkFactory(pub: PublicClient, b: BridgeBlock): Promise<void> {
 	await guarded("factory rollup binding", () => checkRegistryBinding(pub, b))
 }
 
-async function checkRouter(pub: PublicClient, m: ManifestV2, b: BridgeBlock): Promise<void> {
-	const router = b.l1.router as Address
-	const [factory, feeJuicePortal, feeAsset, permit2] = await Promise.all([
-		pub.readContract({ address: router, abi: SWAP_BRIDGE_ROUTER_ABI, functionName: "FACTORY" }),
-		pub.readContract({ address: router, abi: SWAP_BRIDGE_ROUTER_ABI, functionName: "feeJuicePortal" }),
-		pub.readContract({ address: router, abi: SWAP_BRIDGE_ROUTER_ABI, functionName: "FEE_ASSET" }),
-		pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "permit2" }),
+/** A retired router only answers reconcile's reads, but one bound to another factory or owner is not this
+ *  generation's: its events would credit deposits that never reached this generation's portals. */
+async function checkLegacyRouter(pub: PublicClient, b: BridgeBlock, router: Address): Promise<void> {
+	const [factory, owner] = await Promise.all([
+		pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "FACTORY" }),
+		pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "owner" }),
 	])
-	same("router.FACTORY", factory, b.l1.factory)
-	same("router.feeJuicePortal", feeJuicePortal, b.l1.feeJuicePortal)
-	same("router.FEE_ASSET", feeAsset, m.feeJuice.asset)
-	same("router.permit2", permit2, b.l1.permit2)
-	await guarded("router witness shape", () => assertRouterWitnessShape(pub, router, b.l1.swapTarget))
-}
-
-/** The contract the legacy router's swap target must be on this chain. */
-function legacySwapTargetContract(l1ChainId: number): "MockSwapTarget" | "UniswapFuelSwap" {
-	return l1ChainId === SANDBOX_CHAIN_ID ? "MockSwapTarget" : "UniswapFuelSwap"
-}
-
-/** The router hands the swap target the user's tokens, so a target bound to another pool manager or
- *  paying out another asset is a different contract however familiar its code looks. A manifest
- *  without a swap block leaves nothing to compare: strict verification refuses that, or dropping the
- *  block would skip every check here. The sandbox's mock binds only its payout asset. */
-async function checkSwapTarget(pub: PublicClient, m: ManifestV2, b: BridgeBlock, strict: boolean): Promise<void> {
-	const swap = b.l1.swap
-	if (!swap) {
-		unavailable(strict, "swapTarget bindings", "the manifest carries no swap block")
-		return
-	}
-	const address = b.l1.swapTarget as Address
-	const feeJuice = await pub.readContract({ address, abi: SWAP_TARGET_ABI, functionName: "feeJuice" })
-	// The router pays the portal in `feeJuice.asset`: a target paying out anything else strands the swap.
-	same("swapTarget.feeJuice against feeJuice.asset", feeJuice, m.feeJuice.asset)
-	if (legacySwapTargetContract(m.l1ChainId) === "MockSwapTarget") return
-	const [poolManager, weth] = await Promise.all([
-		pub.readContract({ address, abi: SWAP_TARGET_ABI, functionName: "poolManager" }),
-		pub.readContract({ address, abi: SWAP_TARGET_ABI, functionName: "weth" }),
-	])
-	same("swapTarget.poolManager", poolManager, swap.poolManager)
-	same("swapTarget.feeJuice", feeJuice, swap.feeJuice)
-	same("swapTarget.weth", weth, swap.weth)
+	same(`legacy router ${router} FACTORY`, factory, b.l1.factory)
+	same(`legacy router ${router} owner (the guardian)`, owner, b.l1.guardian)
 }
 
 /** The DepositRouter's swap target: the manifest's fuel swapper off mainnet, LI.FI's Diamond on it. */
@@ -303,26 +258,26 @@ async function checkFuelSwapper(pub: PublicClient, m: ManifestV2, b: BridgeBlock
 }
 
 async function checkGeneration(pub: PublicClient, m: ManifestV2, b: BridgeBlock, strict: boolean): Promise<void> {
+	const legacyRouters = legacyRoutersOf(b)
 	const deployed: Array<[string, string | undefined]> = [
 		["factory", b.l1.factory],
 		["implementation", b.l1.implementation],
-		["router", b.l1.router],
 		["permit2", b.l1.permit2],
-		["swapTarget", b.l1.swapTarget],
 		["feeJuicePortal", b.l1.feeJuicePortal],
 		["depositRouter", b.l1.depositRouter],
 		["fuelSwapper", b.l1.fuelSwapper],
+		...legacyRouters.map((a): [string, string] => ["legacy router", a]),
 	]
 	for (const [label, address] of deployed) {
 		if (address) await guarded(`code at ${label}`, () => checkCode(pub, label, address as Address))
 	}
 	await guarded("factory bindings", () => checkFactory(pub, b))
 	await guarded("implementation bindings", () => checkPortalImpl(pub, b))
-	await guarded("router bindings", () => checkRouter(pub, m, b))
-	await guarded("swapTarget bindings", () => checkSwapTarget(pub, m, b, strict))
 	const { depositRouter, fuelSwapper } = b.l1
 	if (depositRouter) await guarded("depositRouter bindings", () => checkDepositRouter(pub, m, b, depositRouter as Address))
+	else unavailable(strict, "depositRouter bindings", "the manifest names no depositRouter")
 	if (fuelSwapper) await guarded("fuelSwapper bindings", () => checkFuelSwapper(pub, m, b, fuelSwapper as Address))
+	for (const router of legacyRouters) await guarded(`legacy router ${router}`, () => checkLegacyRouter(pub, b, router))
 }
 
 /** The factory's frozen record, once the portal exists. Before that there is nothing to compare —
@@ -482,23 +437,14 @@ interface ForgeArtifact {
 
 interface CodeTarget {
 	contract: string
-	address: string | undefined
-	/** Why the target cannot be compared, when the manifest does not say what contract it is. */
-	unknown?: string
+	address: string
 }
 
 /** Each deployed contract the manifest names and the forge artifact its runtime must equal. */
-function codeTargets(m: ManifestV2, b: BridgeBlock): CodeTarget[] {
+function codeTargets(b: BridgeBlock): CodeTarget[] {
 	const targets: CodeTarget[] = [
 		{ contract: "TokenPortalImpl", address: b.l1.implementation },
 		{ contract: "PortalFactory", address: b.l1.factory },
-		{ contract: "SwapBridgeRouter", address: b.l1.router },
-		// Only a manifest with a swap block claims what its legacy target is.
-		{
-			contract: legacySwapTargetContract(m.l1ChainId),
-			address: b.l1.swapTarget,
-			...(b.l1.swap ? {} : { unknown: "the manifest carries no swap block" }),
-		},
 	]
 	if (b.l1.depositRouter) targets.push({ contract: "DepositRouter", address: b.l1.depositRouter })
 	if (b.l1.fuelSwapper) targets.push({ contract: "TestnetFuelSwapper", address: b.l1.fuelSwapper })
@@ -607,17 +553,15 @@ async function checkCodeHash(pub: PublicClient, out: string, contract: string, a
 	same(`${label} hash (immutables and metadata masked)`, hashes.onChain, hashes.built, "build")
 }
 
-async function checkCodeHashes(pub: PublicClient, m: ManifestV2, b: BridgeBlock, strict: boolean): Promise<void> {
+async function checkCodeHashes(pub: PublicClient, b: BridgeBlock, strict: boolean): Promise<void> {
 	const build = forgeBuild(strict)
 	if (!("out" in build)) {
 		unavailable(strict, "runtime code hashes", `no usable forge build of contracts/bridge/evm: ${build.why}`)
 		return
 	}
 	try {
-		for (const t of codeTargets(m, b)) {
-			const label = `${t.contract} runtime code`
-			if (t.unknown) unavailable(strict, label, t.unknown)
-			else await guarded(label, () => checkCodeHash(pub, build.out, t.contract, t.address as Address, strict))
+		for (const t of codeTargets(b)) {
+			await guarded(`${t.contract} runtime code`, () => checkCodeHash(pub, build.out, t.contract, t.address as Address, strict))
 		}
 	} finally {
 		build.dispose()
@@ -634,12 +578,12 @@ export interface VerifyL1Options {
 /**
  * Every L1 check over a manifest — the generation's bindings, each token, LI.FI's address book where the
  * manifest routes, the code hashes. Returns the failure count; warnings never count. `strict` fails on any
- * input a check cannot obtain, a missing swap block included.
+ * input a check cannot obtain, a missing deposit router included.
  */
 export async function verifyL1Manifest(manifest: ManifestV2, rpcUrl: string, options: VerifyL1Options = {}): Promise<number> {
 	const bridge = requireBridge(manifest)
 	const pub = createL1PublicClient({
-		chain: manifestL1Chain(manifest, rpcUrl, bridge.l1.swap?.multicall3 ?? CANONICAL_MULTICALL3),
+		chain: manifestL1Chain(manifest, rpcUrl, CANONICAL_MULTICALL3),
 		rpcUrl,
 	})
 	const strict = options.strict === true
@@ -652,7 +596,7 @@ export async function verifyL1Manifest(manifest: ManifestV2, rpcUrl: string, opt
 	await checkGeneration(pub, manifest, bridge, strict)
 	for (const token of bridge.tokens) await checkToken(pub, bridge, token)
 	await checkLifiBook(pub, manifest, bridge, strict, options.sourceRpcUrl ?? ((chainId) => sourceRpcUrl(chainId)))
-	await checkCodeHashes(pub, manifest, bridge, strict)
+	await checkCodeHashes(pub, bridge, strict)
 	const warned = warnings > 0 ? ` (${warnings} warning(s) to review)` : ""
 	console.log(failures === 0 ? `\n✓ L1 verification passed${warned}` : `\n✗ ${failures} check(s) FAILED${warned}`)
 	return failures

@@ -49,23 +49,12 @@ export function calibrateFuelBudgets(samples: readonly CalibrationSample[], marg
 }
 
 /**
- * `m` with `budgets` in every block that carries fuel budgets: the DepositRouter's `fuel` and the legacy router's
- * `swap`, side by side while both routers are live. The budgets measure L2 claim fees, so one calibration serves
- * both. Throws when `m` has neither block, since a manifest with no fuel route has nothing to calibrate.
+ * `m` with `budgets` in the DepositRouter's `fuel` block. Throws when `m` has none, since a manifest with no fuel
+ * route has nothing to calibrate.
  */
 export function applyFuelBudgets(m: ManifestV2, budgets: FuelBudgets): ManifestV2 {
-	const l1 = m.bridge?.l1
-	if (!m.bridge || !l1 || (!l1.fuel && !l1.swap)) throw new Error(`manifest for ${m.network} carries no fuel budgets to calibrate — STOP`)
+	const fuel = m.bridge?.l1.fuel
+	if (!m.bridge || !fuel) throw new Error(`manifest for ${m.network} carries no fuel budgets to calibrate — STOP`)
 	const measured = { fjPerTx: budgets.fjPerTx.toString(), fjRegister: budgets.fjRegister.toString() }
-	return {
-		...m,
-		bridge: {
-			...m.bridge,
-			l1: {
-				...l1,
-				...(l1.fuel ? { fuel: { ...l1.fuel, ...measured } } : {}),
-				...(l1.swap ? { swap: { ...l1.swap, ...measured } } : {}),
-			},
-		},
-	}
+	return { ...m, bridge: { ...m.bridge, l1: { ...m.bridge.l1, fuel: { ...fuel, ...measured } } } }
 }

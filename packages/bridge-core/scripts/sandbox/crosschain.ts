@@ -1,5 +1,5 @@
-/** The sandbox's cross-chain half: the DepositRouter and its TestnetFuelSwapper beside the old router, LI.FI's
- *  compiled destination contracts and the Across stand-ins at CREATE2 addresses, and the clients and discovery
+/** The sandbox's cross-chain half: the DepositRouter and its TestnetFuelSwapper, LI.FI's compiled destination
+ *  contracts and the Across stand-ins at CREATE2 addresses, and the clients and discovery
  *  context a cross-chain flow signs and reads with. */
 import { readFileSync } from "node:fs"
 import { FEE_JUICE_ADDRESS } from "@aztec-labs/constants"
@@ -121,8 +121,8 @@ export interface CrossChainDeployParams {
 }
 
 /**
- * The swapper (fixture rates, minted inventory, no faucet) and a `DepositRouter` swapping through it, beside the old
- * router; then LI.FI's destination half and the Across stand-ins. The harness must already mint the fee asset.
+ * The swapper (fixture rates, minted inventory, no faucet) and a `DepositRouter` swapping through it; then LI.FI's
+ * destination half and the Across stand-ins. The harness must already mint the fee asset.
  */
 export async function deployCrossChain(l1: L1Ctx, source: L1Ctx, p: CrossChainDeployParams): Promise<CrossChainDeployment> {
 	const owner = l1.account.address
