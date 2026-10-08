@@ -1066,7 +1066,7 @@ screenshot pairs for every surface, light and dark, 390 px and desktop.
 pairs attached for the PR; a fresh reviewer's deviation list (Design binding 6) empty or each item signed by the
 owner; every surface no board draws listed in the PR with its approval. Layers: unit, design review.
 
-#### Phase 9: Browser e2e for the multi-chain flow
+#### Phase 9: Browser e2e for the multi-chain flow ✓
 
 `l1-wallet.ts` chain → RPC map and a real `wallet_switchEthereumChain`; `wallet_getCapabilities` reporting no
 atomic batch by default and one cell with it (`atomicRequired: true`, reload before its receipts exist); a pre-existing MAX source allowance replaced by the

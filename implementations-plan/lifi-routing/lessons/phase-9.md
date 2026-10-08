@@ -164,3 +164,14 @@ a real RPC client and the register path never ran), and the on-screen send's row
 toward the badge while the shell smoke still asserted a read-only row. Both smokes now follow the
 built behaviour. Run `test:e2e`, and `build:mainnet` with `verify:build-target mainnet`, before a push
 that CI will gate.
+
+## Manual pre-release check
+
+The owner drove the testnet preview of the converged arc 4 tip with their own wallets: 8 USDC, the fixed terms'
+cap, from Base Sepolia as Token + gas, the approval and the deposit as two transactions (source
+`0x4577dcc87096f1ad9eb4f5d9dddf221014ad0f5ae51caa1e22b0a7b3cab996cc`, Base Sepolia block 47849121).
+`fill-testnet.ts` filled it from the canary as the exclusive testnet filler
+(`0x591c6b512fb17a3b8e045baefcbc83f1981db56866f507d0acbd8d43bdba2562`, Sepolia block 11870501): status 1, the
+DepositRouter's event and two Inbox messages, the token leg and the fuel leg. Discovery followed the fill, the owner
+claimed on Aztec and the claim landed. The owner reported no screen off its board: "Looks amazing, to be honest.
+The claim landed."
