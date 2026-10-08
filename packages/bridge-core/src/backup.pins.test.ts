@@ -12,7 +12,7 @@
  */
 
 import { createHash } from "node:crypto"
-import { EncryptionKey } from "@alejoamiras/nulo-wallet-crypto"
+import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
 	openAnyBridgeBackup,
