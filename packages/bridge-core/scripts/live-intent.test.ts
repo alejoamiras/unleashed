@@ -55,9 +55,9 @@ describe("assertNoSourceDrift", () => {
 		expect(() => assertNoSourceDrift(source("HEAD"))).toThrow(/not a 40-hex commit/)
 	})
 
-	it("lets the lifi-routing arc's lessons change mid-arc, but never the reset baseline", () => {
-		expect(isAllowlistedPath("implementations-plan/lifi-routing/lessons/phase-6.md")).toBe(true)
-		expect(isAllowlistedPath("implementations-plan/lifi-routing/plan.md")).toBe(false)
+	it("lets an archived plan's lessons change, but never the reset baseline", () => {
+		expect(isAllowlistedPath("implementations-plan/archive/lifi-routing/lessons/phase-6.md")).toBe(true)
+		expect(isAllowlistedPath("implementations-plan/archive/lifi-routing/plan.md")).toBe(false)
 		expect(isAllowlistedPath("implementations-plan/archive/aztec-v6/lessons/intent.json")).toBe(false)
 	})
 })

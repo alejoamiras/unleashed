@@ -228,7 +228,7 @@ const OPERATIONAL_ALLOWLIST = [
 	"implementations-plan/archive/tools-two-network/lessons/",
 	"implementations-plan/archive/any-erc20-bridge/lessons/",
 	"implementations-plan/archive/protocol-labels/lessons/",
-	"implementations-plan/lifi-routing/lessons/",
+	"implementations-plan/archive/lifi-routing/lessons/",
 	"apps/tools/public/testnet-bridge.journal.jsonl",
 ]
 
