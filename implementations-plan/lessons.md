@@ -27,3 +27,4 @@ What already bit this repository, one line each, linking to the detail. Read it 
 - Across's testnet relayer fills message-bearing deposits with too little gas, so the message reverts into recovery: testnet sends name an exclusive relayer we run (`fill-testnet.ts`) ([phase 6](archive/lifi-routing/lessons/phase-6.md)).
 - Chain facts the app trusts come through the build's pinned read RPCs, never the wallet's transport: a wallet left on another chain answers for that chain ([phase 9](archive/lifi-routing/lessons/phase-9.md)).
 - `gh stack submit --auto` opens drafts unless given `--open`.
+- Anvil can answer a send before the block holding it is queryable: wait for the receipt (`waitForTransactionReceipt`), never read it once ([phase 9](archive/lifi-routing/lessons/phase-9.md)).

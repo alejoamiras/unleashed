@@ -175,3 +175,11 @@ cap, from Base Sepolia as Token + gas, the approval and the deposit as two trans
 DepositRouter's event and two Inbox messages, the token leg and the fuel leg. Discovery followed the fill, the owner
 claimed on Aztec and the claim landed. The owner reported no screen off its board: "Looks amazing, to be honest.
 The claim landed."
+
+## CI after delivery
+
+The stack's first CI run failed cell 50 on #11 in 241 ms. `sendOutside` (`fixtures/l1-wallet.ts`) read the setup
+transaction's receipt once, right after the send, and anvil had not made the block queryable yet on the loaded
+runner, so a null receipt read as "did not succeed". It now waits for the receipt; cell 50 passed alone on the fix.
+The same run's other reds were the TXE oracle crash and a phone cell whose gas disclosure stayed disabled for 60 s
+on arc 2, which changes no app code; both were re-run.
