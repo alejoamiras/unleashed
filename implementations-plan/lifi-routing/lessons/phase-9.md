@@ -135,6 +135,9 @@ Run on the fixed branch's head, with the forge outputs in place:
   exit 0 in 1.3 h; the egress fixture blocked nothing in either run.
 - Re-run on the arc-4 review fixes: lint and `typecheck:all` exit 0; `test:all` design 242,
   bridge-core 705 passed and 11 skipped, tools 1755.
+- On the converged arc-4 tip: lint and `typecheck:all` exit 0; `test:all` design 242, bridge-core 705 passed
+  and 11 skipped, tools 1758; `audit:tools` exit 0; `test:e2e` 28 passed; `build:mainnet` with
+  `verify:build-target mainnet` exit 0; the full `bun run e2e:tools` 75 passed in 1.4 h, playwright exit 0.
 
 ### Arc 4 review, rounds 2 and 3
 
