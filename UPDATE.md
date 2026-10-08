@@ -21,8 +21,8 @@ hub's class ids depend on these inputs, so they move only with a new generation.
 
 ## Before you bump
 
-1. The Nulo wallet's repository publishes `@alejoamiras/nulo-wallet-crypto`,
-   `@alejoamiras/nulo-resolve-asset` and `@alejoamiras/nulo-wallet-sdk-schema-patch` on the new line
+1. The Nulo wallet's repository publishes `@nulo-sh/wallet-crypto`,
+   `@nulo-sh/resolve-asset` and `@nulo-sh/wallet-sdk-schema-patch` on the new line
    first. [`scripts/ci-cd/published-packages.test.ts`](scripts/ci-cd/published-packages.test.ts) holds each
    peer to this repository's pin, so the bump waits for those versions.
 2. Read the upstream `@aztec-labs/aztec.js` changelog for the target version, then scan

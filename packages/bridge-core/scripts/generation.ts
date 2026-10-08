@@ -23,7 +23,7 @@ import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { getContractClassFromArtifact } from "@aztec-labs/stdlib/contract"
-import { resolvePackageAsset } from "@alejoamiras/nulo-resolve-asset"
+import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
 import {
 	type Address,

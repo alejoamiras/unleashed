@@ -16,6 +16,10 @@ Do not file public issues for security bugs.
   7 days old, a `package.json` edit in a workspace that reaches it re-gates it and fails the install:
   wait, or add the exclude locally and do not commit it. A permanent exclude would switch the gate
   off for exactly the names where a publisher takeover matters.
+- **Standing exemption: the Nulo wallet's packages** (`@nulo-sh/resolve-asset`, `-wallet-crypto`,
+  `-wallet-sdk-schema-patch`), the owner's decision. They publish only from `nulo-sh/nulo`'s
+  workflow through npm trusted publishing with provenance, and the exact pins mean a new version
+  arrives only through a reviewed bump. Add no other name this way.
 - **First-party packages** (`@alejoamiras/*`) go through the same gate. Before a temporary exclude
   for one, verify its provenance: install the exact versions into a scratch npm project with
   `npm install --ignore-scripts`, then run `npm audit signatures --include-attestations` there and

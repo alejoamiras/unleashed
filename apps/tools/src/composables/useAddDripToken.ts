@@ -6,7 +6,7 @@ import { withOperation } from "./useOpsInFlight"
 
 /**
  * Local typed augmentation matching the runtime schema patch in
- * `@alejoamiras/nulo-wallet-sdk-schema-patch`. The cast in `addToken()` is the typed
+ * `@nulo-sh/wallet-sdk-schema-patch`. The cast in `addToken()` is the typed
  * boundary - the patch makes it true at runtime, this declaration makes
  * TypeScript agree.
  */
