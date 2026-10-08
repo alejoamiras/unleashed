@@ -105,6 +105,30 @@ export async function scanRange<T>(
 	return out
 }
 
+/**
+ * The first block in `[from, to]` stamped later than `timestamp`, or `to` when none is. A chain's timestamps
+ * never decrease, so a binary search finds it in about log2(to − from) reads. Callers read only blocks at or below
+ * a scan's head, which {@link ChainScan.close} pins.
+ */
+export async function firstBlockAfter(
+	client: { getBlock(args: { blockNumber: bigint }): Promise<{ timestamp: bigint }> },
+	read: BudgetedRead,
+	from: bigint,
+	to: bigint,
+	timestamp: bigint,
+): Promise<bigint> {
+	const stampOf = async (n: bigint) => (await read(() => client.getBlock({ blockNumber: n }))).timestamp
+	if ((await stampOf(to)) <= timestamp) return to
+	let lo = from
+	let hi = to
+	while (lo < hi) {
+		const mid = (lo + hi) / 2n
+		if ((await stampOf(mid)) > timestamp) hi = mid
+		else lo = mid + 1n
+	}
+	return lo
+}
+
 /** Throws {@link ScanIncomplete} when the canonical block at the receipt's height has another hash: the
  *  receipt came from a fork the chain has left. */
 export async function assertCanonical(

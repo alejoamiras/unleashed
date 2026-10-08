@@ -12,6 +12,7 @@ import {
 	type BudgetedRead,
 	budgetedReads,
 	DEPOSIT_ROUTER_ABI,
+	firstBlockAfter,
 	hexEq,
 	openChainScan,
 	PRIVATE_FPC_ADDRESS,
@@ -153,14 +154,7 @@ async function windowStart(
 	// A chain whose tip predates the window cannot answer for it (a stale node, or a clock ahead of
 	// the chain by more than the slack): its latest block is not the window.
 	if ((await tsOf(latest)) < targetTs) throw new ScanIncomplete("chain behind the window")
-	let lo = floor
-	let hi = latest
-	while (lo < hi) {
-		const mid = (lo + hi) / 2n
-		if ((await tsOf(mid)) >= targetTs) hi = mid
-		else lo = mid + 1n
-	}
-	return lo
+	return firstBlockAfter(l1, read, floor, latest, targetTs - 1n)
 }
 
 /** The router's own events over the window, kept only when the decoded secret hash(es) are this
