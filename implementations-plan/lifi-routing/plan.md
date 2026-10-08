@@ -1100,6 +1100,24 @@ apps/tools verify:deployments`; `rg -niE 'uniswap|v4-core|PoolKey|IV4Quoter|swap
 contracts .github scripts` returns only `legacy-router-abi.ts`, `deposit-reconcile.ts`'s legacy branch, the
 deployment-journal readers of old step kinds and history files. Layers: all hermetic layers plus e2e.
 
+### Arc 6: discovery that finishes at any age
+
+#### Phase 11
+
+The final cross-arc pass found that discovery re-scans every window from the record's planning height on every
+run, so a record its user returns to about 200,000 Ethereum blocks later (a lost source hash: days on Base, about a
+day on Arbitrum) is `incomplete` on every run and never offers its claim (D53). Every Across window now ends at a
+deadline the chains enforce, with no progress carried between runs: Ethereum's execution and extras scans at the
+first block stamped after the relay's `fillDeadline` (the record's while the source is unknown); the lost-hash
+source scan at the first source block stamped after `fillDeadline + max(depositQuoteTimeBuffer, 3,600 s)`, the
+buffer read from the pinned source SpokePool. `chain-scan.ts` gains `firstBlockAfter`, which
+`deposit-reconcile.ts`'s window search reuses. The sandbox `TestSpokePool` gains the getter and Across's quote-age
+check. Stargate keeps its window to the head (library only).
+
+**Validation gate.** G0 (the forge leg includes `TestSpokePool.t.sol`); `bun run audit:tools`; `bun run e2e:tools`;
+`bun run --cwd packages/bridge-core test:integration`; the "weeks later" discovery tests red on the arc 5 code
+(`incomplete: read budget`) and green on the fix. Layers: all hermetic layers plus e2e.
+
 ## Decision ledger
 
 Sources: **lead** (`plan-lead.md`), **fable** (`plan-fable.md`, its DISSENT lines), **codex** (`plan-codex.md`,
@@ -1584,6 +1602,32 @@ Details: `lessons/phase-10.md`.
 - Round 3 (resumed, over the promotion and the schema removal): "No new material findings (high confidence); one
   comment-quality nit." The nit is fixed. Arc 5 converged.
 
+**D53 Arc 6: discovery bounded by Across's deadlines (owner-ordered; Codex `gpt-6.1-sol` at `high`).** Cross-arc
+round 2 found the defect: "A user closes the app before destination discovery and returns 200,000 Ethereum blocks
+later. The two full-window log scans require over 200 reads before receipt verification. Every retry restarts from
+the original block, so discovery never supplies claim facts and the funds remain stuck through the app." The owner
+chose *"Fix it in this stack"*, then: *"Fix it as a new PR on the stack ,obviously."* Details: `lessons/phase-11.md`.
+- Design consult: paginating each run with in-memory progress drew "revise before implementing" (seven concerns,
+  every one from carrying progress across runs). Dropped for windows bounded by on-chain rules, with no state.
+- Round 1: the Ethereum bound ("sound") stands. The first source bound (`fillDeadline` + an hour of rollup clock
+  lead) could finalize a false `not-sent` after a reverted attempt and a late resend, and rested on a fill proving
+  its deposit was mined first. Replaced by Codex's suggestion: Across's `_depositV3` refuses a quote older than
+  `depositQuoteTimeBuffer` and our builder quotes before the deadline, so no deposit our calldata can make lands
+  after `fillDeadline + buffer`. Its objection that the record's deadline is unauthenticated was answered (the record
+  is written from the route that built the signed calldata; the scan already trusts fields of that provenance) and
+  withdrawn in round 2.
+- Round 2 (two, both fixed): the sandbox `TestSpokePool` lacked the getter, which would have left every lost-hash
+  sandbox search `incomplete`; and a SpokePool upgrade could shorten the immutable buffer mid-flight, so the bound
+  takes at least Across's deploy constant, 3,600 s (unchanged in every revision of its `consts.ts`; the four pinned
+  pools report it).
+- Round 3: "No new material findings (moderate confidence; browser and integration gates remain pending)". Arc 6
+  converged.
+
+Accepted, as follow-ups: Stargate discovery still scans to the head (library only; Codex's `composeQueue` state
+certificate is the recorded idea); `deposit-reconcile`'s 50,000-block cap, which predates this plan, leaves a
+hash-less Ethereum-origin record older than about 7 days `incomplete`; an Arbitrum lost-hash record whose window
+spans more blocks than one run's 2,000-block chunks can read stays `incomplete` (mainnet is not live).
+
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
 signed order expires about 645 s after its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above
@@ -1670,7 +1714,7 @@ journal rule, which closes the last condition.
 
 ## Delivery
 
-Five arcs and a docs-only close-out, stacked with `gh stack` on `main`; `/code-review` is off for every arc
+Six arcs and a docs-only close-out, stacked with `gh stack` on `main`; `/code-review` is off for every arc
 (`code_review: off`), the Codex fix loop is the review. **Every arc leaves `main` working when it merges; rollback is
 top-down.** A code revert never undoes a live deploy or promotion: reverting arc 3 after promotion also means
 re-promoting the previous manifest, and arc 4 reads the `depositRouter` field arc 3 promotes.
@@ -1682,6 +1726,7 @@ re-promoting the previous manifest, and arc 4 reads the `depositRouter` field ar
 | 3 live | `lifi-routing-live` | 6 | testnet router deployed beside the old one; manifest gains additive fields; the app still uses `l1.router` | `chore(bridge): deploy the deposit router on testnet and run the li.fi canary` |
 | 4 app | `lifi-routing-app` | 7, 8, 9 | app on `depositRouter`, cross-chain live; old router still deployed and listed | `feat(tools): deposit from l2s through li.fi` |
 | 5 removal | `lifi-routing-uniswap-removal` | 10 | no V4 anywhere; old router in `legacyRouters` | `refactor: remove the uniswap fuel leg and the old router` |
+| 6 discovery | `lifi-routing-discovery-window` | 11 | discovery's windows end at Across's deadlines, so an old record still finishes | `fix(bridge-core): bound discovery by across's deadlines so old transfers finish` |
 | close-out | `lifi-routing-close-out` | — | docs only | `docs: close the lifi-routing plan` |
 
 Arcs 3 and 5 run their live actions from their branches under live intent (A3, A11); nothing in them depends on
