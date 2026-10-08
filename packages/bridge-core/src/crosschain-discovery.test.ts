@@ -232,6 +232,9 @@ interface Tx {
 	to?: Address | null
 }
 
+/** Every source SpokePool the app pins answers `depositQuoteTimeBuffer()` with an hour. */
+const QUOTE_BUFFER = 3_600
+
 interface ChainOptions {
 	chainId: number
 	txs: Tx[]
@@ -243,6 +246,7 @@ interface ChainOptions {
 	epoch?: () => number
 	/** Logs a lying RPC adds to every `getLogs` answer. */
 	lie?: DiscoveryLog[]
+	quoteBuffer?: number
 }
 
 /** A chain whose head is ten blocks above its last transaction; `getLogs` filters by emitter and by the
@@ -297,6 +301,7 @@ function chain(o: ChainOptions): DiscoveryChainReads & { fillReads: unknown[] } 
 			return { input: tx.input ?? "0x", to: tx.to ?? null }
 		},
 		readContract: async (args) => {
+			if (args.functionName === "depositQuoteTimeBuffer") return o.quoteBuffer ?? QUOTE_BUFFER
 			fillReads.push(args)
 			return o.fillStatus ?? 0n
 		},
@@ -787,6 +792,52 @@ describe("discoverCrossChain", () => {
 		const d = await discover(lost, reads([other, ours], [fillTx(ROUTED.destination.logs)]))
 		expect(d).toMatchObject({ verdict: "deposited", srcTxHash: ours.hash })
 		expect(discoveryPatch(lost, d, 7)).toMatchObject({ route: { srcTxHash: ours.hash } })
+	})
+
+	describe("a record its user returns to weeks later: both heads far past what one run could scan from its start", () => {
+		const deadline = BigInt(RAIL.inputs.fillDeadline)
+		const ethAt = (fillStamp: bigint) => ({
+			finalized: ETH_BLOCK + 400_000n,
+			timestamp: (n: bigint) => fillStamp + 12n * (n - ETH_BLOCK),
+		})
+		const srcAt = (block: bigint, stamp: bigint) => ({
+			finalized: SRC_BLOCK + 2_000_000n,
+			timestamp: (n: bigint) => stamp + 2n * (n - block),
+		})
+
+		it("a lost hash still finishes, its fill in the block stamped exactly at the deadline", async () => {
+			const lost = record(PUBLIC, { srcTxHash: undefined })
+			const d = await discover(
+				lost,
+				reads([sourceTx(ROUTED)], [fillTx(ROUTED.destination.logs)], ethAt(deadline), srcAt(SRC_BLOCK, deadline - 600n)),
+			)
+			expect(d).toMatchObject({ verdict: "deposited", srcTxHash: SRC_TX })
+		})
+
+		it("Ethereum's window follows the relay's authenticated deadline, not an earlier one in the record", async () => {
+			const early = record(PUBLIC, { fillDeadline: RAIL.inputs.fillDeadline - 600 })
+			const d = await discover(early, reads([sourceTx(ROUTED)], [fillTx(ROUTED.destination.logs)], ethAt(deadline)))
+			expect(verdictOf(d)).toBe("deposited")
+		})
+
+		it("a resend the source accepted at its last moment outranks a reverted attempt: expired, never not-sent", async () => {
+			const reverted: Tx = {
+				hash: SRC_TX,
+				block: SRC_BLOCK,
+				logs: [],
+				status: "reverted",
+				input: PUBLIC.calldata,
+				to: RAIL.source.diamond,
+			}
+			const late: Tx = { hash: label("late resend"), block: SRC_BLOCK + 5n, logs: ROUTED.source.logs }
+			const src = srcAt(late.block, deadline + BigInt(QUOTE_BUFFER))
+			const d = await discover(record(), reads([reverted, late], [], ethAt(deadline + 1n), src))
+			expect(d).toMatchObject({ verdict: "expired-on-source", srcTxHash: late.hash })
+
+			// An upgrade since shortened the buffer: the send was accepted under the old one and is still found.
+			const shortened = await discover(record(), reads([reverted, late], [], ethAt(deadline + 1n), { ...src, quoteBuffer: 600 }))
+			expect(shortened).toMatchObject({ verdict: "expired-on-source", srcTxHash: late.hash })
+		})
 	})
 
 	it("a forged Across fill reusing our (originChainId, depositId) is not our delivery, and its deposit is only an extra", async () => {
