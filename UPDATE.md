@@ -101,6 +101,10 @@ hub's class ids depend on these inputs, so they move only with a new generation.
   `apps/tools/scripts/deploy.ts` records `constructorArgs.authContract`, and
   `apps/tools/src/contracts/deployments.ts` (`rebuildTokenInstanceFrom`) requires it. An arity change
   breaks derivation everywhere at once; `verify:deployments` is the detector.
+- **Cross-chain discovery ↔ the Inbox**: `packages/bridge-core/src/crosschain-discovery.ts` decodes the Inbox's
+  `MessageSent` (the line's `InboxAbi` shape, or the older checkpoint shape the caller names) and recomputes each
+  router deposit's leaf from the record. A bump that changes the event or the message hash leaves every deposit
+  unauthenticated; rerun the discovery tests and the testnet canary.
 - **Deploy-intent tooling**: `packages/bridge-core/scripts/live-intent.ts` (plan-pinned signer,
   caps, candidate digest, privileged readbacks, tree gate) and `manifest-v2.ts` (a strict zod
   manifest, re-derived on parse), with the testnet canaries. A reset re-runs the whole arc under them.

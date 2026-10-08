@@ -505,8 +505,9 @@ async function manifestTokenOf(
 		decimals: reg.decimals,
 		displayName: fromWord(reg.nameWord) || displaySymbol,
 		displaySymbol,
-		source: opts.source ?? "permissionless-mint",
-		sourceContract: opts.sourceContract ?? "MintableERC20",
+		...(opts.source === "canonical"
+			? { source: "canonical" as const }
+			: { source: "permissionless-mint" as const, sourceContract: opts.sourceContract ?? "MintableERC20" }),
 		...(opts.maxWholePerTx === undefined ? {} : { maxWholePerTx: opts.maxWholePerTx }),
 	}
 }

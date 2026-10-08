@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { type Address, type Hex, type PublicClient, pad, toHex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { describe, expect, it, vi } from "vitest"
-import { type AcrossRelayData, acrossRelayHash } from "../src/crosschain-discovery"
+import { type AcrossRelayData, acrossRelayHash, FILLED_RELAY_TOPIC } from "../src/crosschain-discovery"
 import { BASE_SEPOLIA_RPC_DEFAULT, FILL_ROUTE, fillCli, fillConfigFromEnv, fillSourceDeposit, SEPOLIA_RPC_DEFAULT } from "./fill-testnet"
 import { fillWay } from "./lifi-canary-run"
 import { AllowanceStillLive, type Destination, FILL_STATUS } from "./sandbox/relayer"
@@ -92,8 +92,13 @@ describe("fillSourceDeposit", () => {
 				return 10n ** 12n
 			},
 			simulateContract: async () => ({}),
+			estimateGas: async () => 100_000n,
+			getBlockNumber: async () => 1n,
+			simulateBlocks: async ({ blocks }: { blocks: { calls: { to: Address }[] }[] }) => [
+				{ calls: [{ status: "success", logs: [{ address: blocks[0].calls[0].to, topics: [FILLED_RELAY_TOPIC], data: "0x" }] }] },
+			],
 			waitForTransactionReceipt: async ({ hash }: { hash: Hex }) => {
-				if (confirms(hash)) return { status: "success" }
+				if (confirms(hash)) return { status: "success", blockNumber: 1n }
 				throw new Error(`timed out waiting for ${hash}`)
 			},
 			getTransaction: async ({ hash }: { hash: Hex }) => ({ from: fills.includes(hash) ? PINNED : RELAYER }),

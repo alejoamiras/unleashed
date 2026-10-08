@@ -505,8 +505,10 @@ does it in brackets.
   in the portal's `InexactTransfer` and therefore in recovery. `maxPull` is not an attacker defence (D7).
 - **Delta-only accounting.** A donation never reverts a deposit and never joins one; `sweep` reaches it. That
   includes a donation to the Diamond, which the facet forwards to us whole (the stray split above).
-- **Receiver differences.** ReceiverAcrossV4 reserves no recovery gas: an out-of-gas destination makes the whole
-  fill revert, the relayer does not fill and the deposit refunds at expiry. ReceiverStargateV2 reserves
+- **Receiver differences.** ReceiverAcrossV4 reserves no recovery gas. Under a pre-Amsterdam schedule an
+  out-of-gas destination makes the whole fill revert, the relayer does not fill and the deposit is refundable at expiry.
+  Under Amsterdam's (Sepolia today) an underfunded fill is recovered to the user instead, and a node's gas estimate
+  settles on that recovery (D46). ReceiverStargateV2 reserves
   `recoverGas = 100000`, so a starved compose recovers to Ethereum, and anyone can trigger that compose.
 - **The Executor forwards only deltas.** It sends `balance − start` of the bridged token to `receiver` after the
   steps; a Stargate surplus above `maxPull` therefore lands at the user's Ethereum address as dust, and
@@ -528,7 +530,7 @@ does it in brackets.
 | Compromised Executor or receiver | holds bridged funds before our call | pinned code hashes in `verify-l1`; accepted residual of the owner's choice of LI.FI |
 | Anyone calling `bridgeFromCaller` | permissionless entrypoint (the Executor is permissionless too) | spends only `msg.sender`'s funds (halmos); decoys are gifts filtered by floor and transport correlation |
 | Stargate compose griefer | `lzCompose` is permissionless; ReceiverStargateV2 hands the Executor `gasleft − recoverGas`, so any gas below the router's need forces recovery | forced delivery to the user's wallet; first-class outcome; accepted residual of LI.FI's receiver |
-| Across relayer | refuses or delays the fill | expiry refund on the source chain; a late fill is still bounded by the floors |
+| Across relayer | refuses or delays the fill; under Amsterdam's schedule, underfunds it | refundable at expiry, returned by Across's settlement; a late fill is still bounded by the floors; an underfunded fill is recovered to the user's wallet (D46) |
 | MEV searcher | sandwiches the destination swap | signed floor `quote·(1 − s)` on our own delta; loss bounded by the slippage the user accepted |
 | Decoy depositor | reuses the public secret hash | transport correlation picks the intended deposit; decoys are extra claimables, never ambiguity |
 | Hostile token | hooks, lying `balanceOf`, fee-on-transfer | transient lock, delta checks, exact portal pulls; cross-chain limited to manifest rail assets |
@@ -993,7 +995,7 @@ Layers: unit, sandbox integration, contract.
 
 ### Arc 3: testnet live (requires A2 and A3)
 
-#### Phase 6: Router-only deploy, promotion, canary
+#### Phase 6: Router-only deploy, promotion, canary ✓
 
 Order, so nothing voids the intent: G-A3 is quoted in this plan before `build`; `lessons/phase-6.md` is
 allowlisted (Phase 5); SKILL.md, `UPDATE.md` and the plan's ✓ marks land after the last `verify`. Under the runbook
@@ -1009,7 +1011,8 @@ quote means the app cannot build one, so the testnet app hides the path (A10) an
 amounts with `across-v4.ts` and self-fills. Canary matrix (`lifi-canary-testnet.ts` on the disposable key, A2):
 public token+gas; private token+gas with private fuel; Ethereum-origin plain and fueled through `bridgeWithPermit`;
 forced recovery (`minFuelOutput` above the swapper's quote → `LiFiTransferRecovered` on Sepolia); each cross-chain
-row with an organic-fill window, then `fill-testnet.ts`, recorded as which. `bridge-generation` SKILL.md and `UPDATE.md` updated.
+row exclusive to the canary and self-filled with `fill-testnet.ts`'s gas rule (D46), its fill recorded as self or
+organic by signer. `bridge-generation` SKILL.md and `UPDATE.md` updated.
 Delete forge's keyed broadcast cache after broadcasts.
 
 **Validation gate.** G0; `env-exec request --template packages/bridge-core/testnet-rpc.env.example --slug
@@ -1365,13 +1368,91 @@ Rejected: none. Accepted residue:
 - A submit that errors after the node already broadcast propagates without a revoke.
 - An unused revocation reserve tightens the current row's budget.
 
+**D45 The testnet cross-chain path is offered on fixed terms (owner).** Phase 6's fee check: Across's testnet
+`/suggested-fees` answers `AMOUNT_TOO_LOW` for the router message at 6, 7 and 8 USDC (8 is its `maxDeposit`), so the
+plan's default was to hide the path (A10). The owner asked: *"will we need to have a testnet relayer to test it?
+like the self-fill what's that? Also, if we hide it on testnet... Does all of this still work Ethereum => Aztec?"*
+and *"I am understanding right that it would have like "fixed" stuff? Also, would only Base sepolia work? Or any
+other testnet L2 that we enable?"* Answered: a self-fill means we act as Across's relayer with `fill-testnet.ts`, per
+send; Ethereum → Aztec is unaffected; the fixed terms are a 25 % fee and a two-hour deadline; any Across-testnet L2
+with LI.FI deployed could work, and v1 enables Base Sepolia only. Owner: *"Offer it with fixed terms
+(Recommended)"*. `selfBuiltTerms` moves into the core and is refused on mainnet.
+
+**D46 Testnet fills are exclusive to our filler (owner).** The canary's first live row (`crosschain-public`, source
+transaction `0x40019ab5…`) ended `delivered-to-wallet`. Across's testnet relayer filled it (`0xc2fa1630…`), and LI.FI's
+receiver recovered the 4.5 USDC to the canary's Sepolia wallet. Discovery read it correctly; the gas schedule is the
+cause. Sepolia runs Amsterdam: its headers carry `blockAccessListHash` and `slotNumber`.
+- **Sepolia, Amsterdam rules.** Re-simulated at the parent block with `eth_simulateV1`, the fill recovers at the
+  relayer's 1,237,723 gas (884,619 used, as on chain) and completes from about 1,395,000 (1,061,186 used). The
+  node's `eth_estimateGas` answers 1,076,281: the receiver catches the Executor's failure, so the estimate settles
+  on the recovery. The relayer sent exactly 1.15 times that estimate.
+- **The same block, Prague rules.** On an anvil fork the estimate (704,879) equals the completion threshold, an
+  underfunded fill reverts whole, and the "Receiver differences" model held.
+
+I2 is settled: testnet relayers do fill message-bearing deposits, but underfunded.
+
+Asked how testnet sends should work, the owner chose *"Exclusive to our filler (Recommended)"*:
+- Every testnet send's Across terms, quoted or fixed, name the pinned canary signer as `exclusiveRelayer`, passed
+  as an absolute exclusivity deadline equal to `fillDeadline`. `verifyRoute` polices both fields.
+- The canary self-fills without the organic window.
+- `sendFill` sends with the smallest doubling of the estimate whose outcome, simulated on one block, equals the one at
+  the EIP-7825 gas cap: status, then every log's emitter, topics and data. A fill that fails even at the cap is
+  refused, and its approval cleared.
+
+The option I offered named a manifest field for the filler. The pinned canary signer already is that address
+(`fill-testnet.ts` signs with it alone), so no manifest field was added.
+
+Mainnet is unchanged and does not run Amsterdam yet. Once it does, an organic fill at a relayer's estimate times its
+markup can recover in the same way. That is a mainnet launch gate (follow-up): measure the deposit path on an
+Amsterdam-rules mainnet fork before mainnet cross-chain opens.
+
+Exclusivity does not lock funds past an ordinary unfilled deposit: one the canary leaves unfilled becomes refundable
+after `fillDeadline`, and Across's settlement, not the deadline, returns the funds. No expired testnet deposit's
+refund has been observed yet (follow-up: observe one before relying on the lock's bound).
+
+**D47 Arc 3 Codex loop (`gpt-6.1-sol` at `high`, over the arc 3 diff).** Every finding was verified against the
+code or the chain.
+- Round 1 (three medium, one low):
+  1. The promoted manifest labelled Circle USDC and WETH `permissionless-mint` / `MintableERC20`, so Send offered a
+     "+100" mint that USDC reverts (`FiatToken: caller is not a minter`) and WETH's fallback accepts without
+     minting. `pre-create` labelled every token so. It now takes `--canonical` for a real token, which carries no
+     mint contract or cap. The corrected manifest was re-verified (`verify-l1 --strict`, the gate intent) and
+     re-promoted. The two buttons it removes were a defect, never a drawn surface.
+  2. `fillGas` compared probes simulated on separate `latest` states, kept only each log's emitter and first topic,
+     and accepted a cap simulation that failed. The estimate and every probe now read one block, the outcome
+     compares status and each log's emitter, topics and data, and a fill failing at the cap is refused. Declined:
+     re-checking against a fresh cap baseline before signing only moves the snapshot one call later, never to the
+     fill's block; and a delivery classification belongs to the caller, since the recovery row expects a recovery
+     at the cap, and the canary's discovery already refuses an outcome its row did not expect.
+  3. A failure after the source approval, its block-pinned read-back included, left the Diamond's allowance live.
+     The deposit now runs under an exact approval: anything short of a landed deposit sends `approve(0)` and reads
+     it back at its own block, never trusting a `latest` read a lagging backend answers without the approval; a
+     revoke that fails raises `AllowanceStillLive` with the original cause. The route is verified before the
+     approval.
+  4. (low) Docs called expiry a refund; reworded in `across-v4.ts` and above.
+- Round 2 (two medium, both in `fillGas`; the round 1 fixes held):
+  1. viem serves `getBlockNumber` from a cache as old as its polling interval, so the pinned block could predate the
+     approval the fill spends, and the cap simulation would fail without it. The head is read uncached, the pin is
+     never earlier than the approval's receipt block, and each probe retries a lagging backend.
+  2. A node that omits simulation logs made a cap deposit and an underfunded recovery compare equal. The cap's
+     outcome must now succeed and log the pool's own `FilledRelay`, or the fill is refused.
+- Round 3 (one medium; both round 2 fixes held): `fillOnce` still ran a `simulateContract` preflight on unpinned
+  `latest` before `fillGas`, so a backend behind the approval reported no allowance and aborted the fill (the
+  approval was revoked; the deposit stays exclusive and refundable). The preflight is gone: the pinned cap
+  simulation is the pre-send check, and its error carries the simulated revert reason. Round 3 is the plan's hard
+  stop; the owner chose *"Run round 4 (Recommended)"*, for this loop only.
+- Round 4 (resumed): "No new material findings." Arc 3 converged in four rounds.
+
+Rejected: none; two sub-suggestions declined with reasons (round 1, item 2). Accepted residue: `fillGas` is a
+simulation check, and the block a fill lands in can differ from the one it simulated.
+
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
 signed order expires about 645 s after its quote and takes the recovery path); I4 (Phase 2 replay: `amountLD` lands at the quote's arrival, 0 bps off, above
 `minAmountLD` ≥ T); I5 (Across fills are indexed by origin chain and deposit id; EndpointV2's `ComposeDelivered`
 carries the guid in its data, unindexed, so discovery filters by emitter and topic and decodes it); I7 (the worst
-shape measures 717,544 cold through sushiswap and 673,561 through nordstern; the constant is 1,000,000). **Still open:** I2 (Across testnet relayers fill
-message-bearing deposits).
+shape measures 717,544 cold through sushiswap and 673,561 through nordstern; the constant is 1,000,000); I2 (Phase 6:
+Across testnet relayers fill message-bearing deposits, underfunded under Amsterdam's schedule; D46).
 
 ## Audit verdicts
 

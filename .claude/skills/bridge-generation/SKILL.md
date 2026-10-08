@@ -244,7 +244,9 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      `transactions[].rpc` is the keyed `SEPOLIA_RPC_URL`. The directory is gitignored, so nothing
      else will notice it; the conductor's journal, not forge `--resume`, is the recovery.
    - Adding a token to a landed generation later:
-     `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> [--no-register] [--seed-pool]`.
+     `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> [--no-register] [--seed-pool] [--canonical]`.
+     A real token (Circle USDC, WETH) takes `--canonical`; without it the manifest labels the token a mintable
+     `MintableERC20`, and the app offers a mint that reverts or mints nothing.
    - `SEED_TOKENS` are the committed test-token addresses recorded in the arc's lessons
      (`MintableERC20` deployments on Sepolia via `scripts/deploy-seed-tokens.ts`, which redeploys a spec
      whose address sorts above WETH), never chosen ad hoc; `--dry-run` validates only their shape.
@@ -438,7 +440,8 @@ inventory, the named token pre-creations, the smokes and promotion).
      sends nothing. A step is appended after its receipt: a crash between landing and the append
      leaves an orphan the re-run replaces, so read the journal's last line against the chain first.
 5. **Pre-create** each named token into the candidate (`testnet-generation.env.example`: it
-   registers on the hub): `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20>`.
+   registers on the hub): `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> --canonical`
+   for a real token, the flag left off only for a test token with a public mint.
 6. **Routing.** Re-run the conductor on the candidate with the routing file. Nothing changed, so it
    adopts both, sends nothing, and writes `routing`; every `destToken` must already be a candidate
    token:
@@ -480,6 +483,26 @@ surplus inventory) are its only powers.
   `FeeAssetHandler.mint(<swapper>)` from any key. A network with no faucet gets an inventory-only
   swapper, funded by transfer.
 
+### The live canary
+
+After promotion, the matrix runs from the pinned canary key: public and private token+gas from Base Sepolia,
+Ethereum-origin plain and fueled through `bridgeWithPermit`, and a forced recovery.
+```bash
+CANARY_PRIVATE_KEY="$(cat ~/.cache/unleashed-canary/testnet.key)" bun packages/bridge-core/scripts/lifi-canary-testnet.ts \
+  --config apps/tools/public/testnet-bridge.json [--dry-run]
+```
+- **Testnet fills are the canary's alone.** Sepolia runs Amsterdam, where a node's gas estimate for a fill of the
+  router message settles on LI.FI's recovery, and Across's testnet relayer sends 1.15 times that estimate. Its fills
+  therefore pay the user's Sepolia wallet instead of depositing. Every testnet send's Across terms name the pinned
+  canary signer as `exclusiveRelayer` until `fillDeadline`, and only `fill-testnet.ts` fills.
+- **Fill gas.** `sendFill` sends with the smallest doubling of the estimate whose `eth_simulateV1` logs equal those
+  at the EIP-7825 cap. The Sepolia RPC must answer `eth_simulateV1` with per-call gas; PublicNode does.
+- **Terms.** Across's testnet API answers `AMOUNT_TOO_LOW` for the router message at 6 to 8 USDC, so rows run on
+  fixed terms: a 25 % fee and a two-hour deadline.
+- **Funding.** Base Sepolia: three cross-chain rows of 6 USDC, plus gas. Sepolia: each self-fill pays the row's
+  output (4.5 USDC), plus the Ethereum-origin rows' 5 USDC, plus gas. Base Sepolia's USDC faucet has a two-hour
+  cooldown.
+
 ## Gotchas
 
 - **Sweep version literals across the whole workspace**: `rg -l '<old-version>' --glob '!node_modules' --glob '!bun.lock'`
@@ -519,3 +542,12 @@ surplus inventory) are its only powers.
   own `Token.js` export, never the raw target JSON.
 - **Clear `<app>/node_modules/.vite` after a dependency-line swap**, before the first browser run;
   stale optimizer caches fail with `.vite/deps/*.js does not exist`, far from the cause.
+- **A replay is not the chain's trace once the chain forks ahead of foundry.** cast 1.4.1 has no `amsterdam` EVM
+  version, so `cast run` replays a Sepolia fill under the old schedule. It once showed a clean deposit where the
+  chain recovered to the wallet. Read the real receipt's logs first. No public Sepolia RPC serves
+  `debug_traceTransaction`; `eth_simulateV1` at the parent block, varying only the call's gas, reproduces it.
+- **The old router's fuel smoke can fall under its own floor.** `smoke-swap-existing-testnet.ts` sizes a one-token
+  slice, and at 32 FJ per USD 1 USDC quoted 29.5 FJ against a 29.8 FJ floor (`UniswapFuelSwap: insufficient
+  output`). `FUEL_SLICE_UNITS=1500000` clears it.
+- **Run the unit suite after a promotion.** Tests that build candidates must read a frozen manifest
+  (`packages/bridge-core/test/fixtures/`), never `apps/tools/public/*-bridge.json`, which every promotion rewrites.

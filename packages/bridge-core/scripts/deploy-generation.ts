@@ -365,7 +365,8 @@ async function commandPreCreate(): Promise<void> {
 	}
 	const token = await preCreateToken(l1, l2, gen, lc(erc20), journal, {
 		register: !process.argv.includes("--no-register"),
-		maxWholePerTx: 1_000_000,
+		// A real token has no public mint, so the app must not offer one.
+		...(process.argv.includes("--canonical") ? { source: "canonical" as const } : { maxWholePerTx: 1_000_000 }),
 	})
 	if (process.argv.includes("--seed-pool")) seedPool(lc(erc20), journal)
 	const next: ManifestV2 = { ...manifest, bridge: { ...bridge, tokens: [...bridge.tokens, token] } }

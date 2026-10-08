@@ -2,7 +2,8 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, decodeFunctionData, type Hex, pad } from "viem"
 import { describe, expect, it, vi } from "vitest"
-import type { AcrossRelayData } from "../src/crosschain-discovery"
+import { ACROSS_V4_FACET_ABI } from "../src/across-v4"
+import { type AcrossRelayData, FILLED_RELAY_TOPIC } from "../src/crosschain-discovery"
 import type { L1Ctx } from "../src/flows"
 import { SWAP_TOKENS_SINGLE_V3_ABI } from "../src/lifi-abi"
 import { lifiBook } from "../src/lifi-addresses"
@@ -18,7 +19,7 @@ import {
 } from "./lifi-canary-build"
 import { ethereumChain, FJ_PER_UNIT, fakeAcross, NOW_S, routedManifest, sourceChain } from "./lifi-canary-fixture"
 import { type CanaryCaps, CanaryRefusal, canaryBindings, formatCanaryRecord, GasBudget, planCanaryRows } from "./lifi-canary-plan"
-import { boundedSigner, type CanaryDeps, runCanary, runLiveRows } from "./lifi-canary-run"
+import { boundedSigner, type CanaryDeps, runCanary, runLiveRows, underExactApproval } from "./lifi-canary-run"
 import { canaryEdge } from "./lifi-canary-testnet"
 import { AllowanceStillLive, type Destination, sendFill } from "./sandbox/relayer"
 import { ERC20_MIN_ABI } from "./script-l1"
@@ -106,7 +107,7 @@ describe("the canary's transactions", () => {
 	const b = canaryBindings(routedManifest(), 84532)
 
 	it("refuse to sign a cross-chain transaction verifyRoute does not accept", async () => {
-		const terms = selfBuiltTerms(5_000_000n, NOW_S)
+		const terms = selfBuiltTerms(5_000_000n, NOW_S, CANARY)
 		const legs = await rowLegs(
 			{ kind: "crosschain-public", origin: "crosschain", isPrivate: false, fuel: "none", expect: "deposited" },
 			await AztecAddress.random(),
@@ -125,6 +126,18 @@ describe("the canary's transactions", () => {
 		const x = expectation(routerCall)
 		const tx = crossChainTx(x)
 		expect(() => verifiedRoute(tx, x)).not.toThrow()
+		// The fill is the canary's alone until the deadline; a route that frees it is not this row's.
+		const { args } = decodeFunctionData({ abi: ACROSS_V4_FACET_ABI, data: tx.data })
+		expect(args[1]).toMatchObject({ exclusiveRelayer: pad(CANARY).toLowerCase(), exclusivityParameter: terms.fillDeadline })
+		const open = crossChainExpectation(b, {
+			user: CANARY,
+			srcAmount: 5_000_000n,
+			lifiTxId: `0x${"11".repeat(32)}`,
+			routerCall,
+			hasFuel: false,
+			terms: { ...terms, exclusiveRelayer: undefined },
+		})
+		expect(() => verifiedRoute(crossChainTx(open), x)).toThrow(/verifyRoute refused call._acrossData.exclusiveRelayer/)
 		const notTheRouter = expectation("0x1234")
 		expect(() => verifiedRoute(crossChainTx(notTheRouter), notTheRouter)).toThrow(/verifyRoute refused router.selector/)
 		expect(() => verifiedRoute({ ...tx, approval: { ...tx.approval, amount: tx.approval.amount + 1n } }, x)).toThrow(
@@ -206,7 +219,11 @@ describe("the canary's gas ceilings", () => {
 			estimateGas: async () => 80_000n,
 			estimateFeesPerGas: async () => fees,
 			simulateContract: async () => ({}),
-			waitForTransactionReceipt: async () => ({ status: "success" }),
+			getBlockNumber: async () => 1n,
+			simulateBlocks: async ({ blocks }: { blocks: { calls: { to: Address }[] }[] }) => [
+				{ calls: [{ status: "success", logs: [{ address: blocks[0].calls[0].to, topics: [FILLED_RELAY_TOPIC], data: "0x" }] }] },
+			],
+			waitForTransactionReceipt: async () => ({ status: "success", blockNumber: 1n }),
 		}
 		const relay: AcrossRelayData = {
 			depositor: pad(CANARY),
@@ -232,8 +249,9 @@ describe("the canary's gas ceilings", () => {
 		await expect(fill(10n ** 14n)).rejects.toThrow(/may burn 100000000000000 wei \(and as much again to revoke it\) on Ethereum/)
 		expect(writeContract).not.toHaveBeenCalled()
 
-		// The approval and its held-back revoke take the whole budget: the fill is refused, the revoke still goes out.
-		await expect(fill(2n * 10n ** 14n)).rejects.toThrow(/may burn 100000000000000 wei on Ethereum, over the 0 wei its cap has left/)
+		// The approval and its held-back revoke take the whole budget: the fill, at twice its estimate, is refused and the
+		// revoke still goes out.
+		await expect(fill(2n * 10n ** 14n)).rejects.toThrow(/may burn 160000000000000 wei on Ethereum, over the 0 wei its cap has left/)
 		expect(writeContract.mock.calls.map(([w]) => [w.functionName, w.args[1]])).toEqual([
 			["approve", 5n],
 			["approve", 0n],
@@ -244,6 +262,49 @@ describe("the canary's gas ceilings", () => {
 		const live = await fill(2n * 10n ** 14n).catch((e: unknown) => e)
 		expect(live).toBeInstanceOf(AllowanceStillLive)
 		expect(live).toMatchObject({ message: expect.stringMatching(/still holds a live allowance/), cause: expect.any(CanaryRefusal) })
+	})
+
+	it("revoke a source approval whose deposit fails, though `latest` lags the approval, and say so when that fails too", async () => {
+		let allowance = 0n
+		let revokeFails = false
+		const approvals: bigint[] = []
+		const l1 = {
+			account: { address: CANARY },
+			wallet: {
+				chain: undefined,
+				writeContract: vi.fn(async ({ args }: { args: [Address, bigint] }) => {
+					if (revokeFails && args[1] === 0n) throw new Error("rpc down")
+					approvals.push(args[1])
+					allowance = args[1]
+					return `0x${"a1".repeat(32)}` as Hex
+				}),
+			},
+			pub: {
+				// `latest` never shows the approval; the approval's own block does.
+				readContract: vi.fn(async ({ blockNumber }: { blockNumber?: bigint }) => (blockNumber === 9n ? allowance : 0n)),
+				waitForTransactionReceipt: vi.fn(async () => ({ status: "success", blockNumber: 9n })),
+			},
+		} as unknown as L1Ctx
+		const approval = { token: `0x${"70".repeat(20)}` as Address, spender: `0x${"d1".repeat(20)}` as Address, amount: 6n }
+		const reverted = new CanaryRefusal("crosschain-public: the source transaction reverted")
+		const deposit = async () => {
+			throw reverted
+		}
+
+		expect(await underExactApproval(l1, approval, "source deposit", async () => "landed")).toBe("landed")
+		expect(approvals).toEqual([6n])
+
+		await expect(underExactApproval(l1, approval, "source deposit", deposit)).rejects.toBe(reverted)
+		expect(approvals).toEqual([6n, 6n, 0n])
+		expect(allowance).toBe(0n)
+
+		revokeFails = true
+		const live = await underExactApproval(l1, approval, "source deposit", deposit).catch((e: unknown) => e)
+		expect(live).toBeInstanceOf(AllowanceStillLive)
+		expect(live).toMatchObject({
+			message: expect.stringMatching(/^the source deposit failed .* still holds a live allowance/),
+			cause: reverted,
+		})
 	})
 
 	it("reconcile the gas burned against the caps after every row, the last included", async () => {
