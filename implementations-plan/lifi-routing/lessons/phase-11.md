@@ -62,3 +62,15 @@ assertion finds a resend at `fillDeadline + 3,600` while the pool reports 600. R
 record-deadline objection.
 
 Round 3: "No new material findings (moderate confidence; browser and integration gates remain pending)".
+
+## Gate
+
+At the arc 6 head, Foundry 1.7.1 and halmos 0.3.3:
+
+- G0: remappings, `forge build` and the `lifi` profile build exit 0; `forge test --no-match-contract Fork` 162
+  passed in 20 suites (the new `TestSpokePool` quote test included); the gas snapshot check passed;
+  `forge build --ast --force` exit 0; halmos 15 proofs passed (11, 2, 2). `bun run lint` checked 614 files with no
+  fixes applied, complexity baseline OK; `typecheck:all` exit 0; `test:all` design 242, bridge-core 662 passed and
+  11 skipped, tools 1759.
+- `bun run audit:tools` exit 0; `bun run --cwd packages/bridge-core test:integration` 8 files, 47 passed.
+- Red/green: the three "weeks later" tests fail on the arc 5 code with `incomplete: read budget` and pass on the fix.
