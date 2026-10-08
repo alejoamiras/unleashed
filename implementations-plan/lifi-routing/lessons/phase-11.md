@@ -74,3 +74,4 @@ At the arc 6 head, Foundry 1.7.1 and halmos 0.3.3:
   11 skipped, tools 1759.
 - `bun run audit:tools` exit 0; `bun run --cwd packages/bridge-core test:integration` 8 files, 47 passed.
 - Red/green: the three "weeks later" tests fail on the arc 5 code with `incomplete: read budget` and pass on the fix.
+- `bun run e2e:tools` on `1016a17`: 75 passed in 1.5 h, Playwright exit 0; the runner reaped its sandbox.

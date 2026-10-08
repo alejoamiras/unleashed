@@ -1102,7 +1102,7 @@ deployment-journal readers of old step kinds and history files. Layers: all herm
 
 ### Arc 6: discovery that finishes at any age
 
-#### Phase 11
+#### Phase 11 ✓
 
 The final cross-arc pass found that discovery re-scans every window from the record's planning height on every
 run, so a record its user returns to about 200,000 Ethereum blocks later (a lost source hash: days on Base, about a
