@@ -82,6 +82,12 @@
 	},
 	"overrides": [
 		{
+			"includes": ["apps/tools/public/*-bridge*.json"],
+			"formatter": {
+				"enabled": false
+			}
+		},
+		{
 			"includes": ["**/*.test.ts"],
 			"linter": {
 				"rules": {
