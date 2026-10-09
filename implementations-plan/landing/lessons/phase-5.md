@@ -15,4 +15,21 @@ landing build and `test:browser` (26 passed, 1 skipped).
 - **The landing's unit tests never read `dist/`.** `test:all` passes with the build removed, so the unit-test job
   needs no landing build before it.
 
+## Post-implementation Codex loop
+
+Session `01a12291-ac25-7e13-a1fc-1c62ededdf38`, gpt-6.1-sol at high, over `9725c08..HEAD` without
+`implementations-plan/`, with the plan's adversarial ask and its two rules verbatim.
+
+Round 1: material findings remain. Seven findings, all verified against the code, all adopted.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | `distDigest` framed files with NUL separators, so a file's bytes could pose as a boundary and two artifacts could share a digest | Adopted: every part is length-prefixed; a regression case pins it |
+| 2 | `verify-build.ts` skipped symlinks, which wrangler follows and uploads, so a symlink could ship unseen by the digest | Adopted: any entry that is not a plain file or directory fails the guard (checked by hand with a planted symlink) |
+| 3 | `--expect` or `--channel` with no value silently skipped its check | Adopted: each flag once, with a value of the right shape; unknown arguments fail (`verify-build.test.ts`) |
+| 4 | The smoke server sent 404 for an unmatched non-navigation request; an assets-only Worker in SPA mode sends `index.html` with a 200 for every unmatched request | Adopted after checking Miniflare 4.129.1's asset worker (`notFound` ignores the request mode) and Cloudflare's SPA routing page. Server and spec now expect the fallback, with page headers and no long cache. Inference 12 is refuted |
+| 5 | The link allowlist matched only lower-case, double-quoted `http(s):` values; `//host`, `HTTPS:`, `https&#58;` and single quotes passed | Adopted: every destination attribute must be an allowed URL or a plain local path; a `content` value that could name a place must be allowed. Five bypass cases pinned |
+| 6 | Only frame steps were guarded: a theme redraw or a resize of a failing engine threw uncaught and left its screen up; an engine joined the set before its first draw | Adopted: `Loop.guard` covers starts, resizes and redraws; one page-owned `ResizeObserver` replaces the per-engine ones, so a retired engine is unobserved; a browser case breaks a screen's `fillRect` and shows both paths retire it (it fails with the redraw guard removed) |
+| 7 | Two comments carried workflow history ("while the owner's pick is pending", "Not on the board") | Adopted: each keeps only its lasting reason |
+
 LESSONS_FILE=implementations-plan/landing/lessons/phase-5.md

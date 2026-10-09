@@ -84,8 +84,5 @@ export const EXPERIMENTS: readonly Experiment[] = [
 	},
 ]
 
-/**
- * Where a card's screen sits. Strip is built while the owner's pick is pending; Tile is a CSS rule
- * away, because every engine lays out from its canvas size.
- */
+/** Where a card's screen sits. Either needs no engine code: every engine lays out from its canvas size. */
 export const SCREEN_PLACEMENT: "strip" | "tile" = "strip"

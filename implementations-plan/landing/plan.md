@@ -376,7 +376,7 @@ landing filter does not list the action again.
 - **The smoke's server.** Playwright's global setup serves `dist/` from an in-process `node:http`
   server bound to port 0. It is not a Worker emulator. It implements only the `_headers` subset the
   build emits (exact paths and `/*`, headers of matching rules combined) and throws on any other
-  syntax. It serves `index.html` for an unmatched navigation and 404 for any other unmatched request.
+  syntax. It serves `index.html` with a 200 for any unmatched request, as an assets-only Worker does.
   The live smoke checks the real Worker gives the same answers. The owning process holds the socket
   from bind to teardown, so no port can race and nothing is left to reap. `vite preview` keeps the
   same headers for manual runs.
@@ -538,9 +538,10 @@ landing filter does not list the action again.
     Bun 1.4.2, Node 24; local is Node 24.21.0). Check: phase 6 step 9. If it is not, the live check
     compares the build id, the script and style URLs, and the set of `<script>` elements instead of
     every byte, and the change is logged.
-12. **An unmatched non-navigation request gets a 404** from an assets-only Worker in single-page
-    mode; the docs show it for a navigation fallback only. Check: the live smoke's
-    `/assets/nope.js` case.
+12. ~~An unmatched non-navigation request gets a 404~~ **Refuted** by the post-implementation audit:
+    with no Worker script, single-page mode serves `index.html` with a 200 for every unmatched
+    request (Miniflare 4.129.1's asset worker, and the Cloudflare SPA routing page). The smoke server
+    and its `/assets/nope.js` case now expect that. Check: the live smoke's `/assets/nope.js` case.
 
 ### Asks (the owner decides at the approval gate)
 
@@ -685,8 +686,8 @@ Steps:
    - **fonts fail**: with font requests aborted, the text still renders, and the wordmark appears
      within 2 s;
    - **fallbacks, in both modes**: a navigation to `/nope` gets the landing with status 200 and the
-     CSP; a fetch of `/assets/nope.js` gets a 404. Live mode therefore checks the local server's
-     rules against the Worker;
+     CSP; a fetch of `/assets/nope.js` gets the landing too, with the page headers and no long cache.
+     Live mode therefore checks the local server's rules against the Worker;
    - **live mode only**:
      - the response headers contain every header in `security-headers.ts`, with these values; extra
        headers from Cloudflare are allowed;

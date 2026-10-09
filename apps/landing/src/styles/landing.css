@@ -481,7 +481,7 @@ svg.ic {
 	color: var(--ul-ink-3);
 }
 
-/* Not on the board: below about 400 px the tags overlapped the name, so they drop under it. */
+/* Below about 400 px the tags would cover the name, so they drop under it. */
 @container land (max-width: 400px) {
 	.idx a,
 	.idx .empty,
