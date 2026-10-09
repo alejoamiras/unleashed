@@ -7,7 +7,7 @@
 		"dev": "vite",
 		"build": "vite build && bun scripts/verify-build.ts",
 		"preview": "vite preview",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tests/browser/tsconfig.json",
 		"test": "bun --bun vitest run",
 		"test:browser": "playwright test -c tests/browser/playwright.config.ts",
 		"verify:build": "bun scripts/verify-build.ts",
