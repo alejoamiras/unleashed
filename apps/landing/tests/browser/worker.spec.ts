@@ -19,12 +19,16 @@ test("loads clean: no CSP violation, no request to another origin, no console er
 	await expectClean(guard)
 })
 
-test("an unknown page shows the landing; a missing file is a 404", async ({ page, request }) => {
+test("any unknown path, a page or a file, gets the landing with the page headers and no long cache", async ({ page, request }) => {
 	const navigation = await page.goto("/nope")
 	expect(navigation?.status()).toBe(200)
 	expect(navigation?.headers()["content-security-policy"]).toBe(pageHeaders(reference.build.channel)["Content-Security-Policy"])
 	await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
-	expect((await request.get("/assets/nope.js")).status()).toBe(404)
+	const file = await request.get("/assets/nope.js")
+	expect(file.status()).toBe(200)
+	expect(file.headers()["content-type"]).toContain("text/html")
+	expect(file.headers()["content-security-policy"]).toBe(pageHeaders(reference.build.channel)["Content-Security-Policy"])
+	expect(file.headers()["cache-control"] ?? "").not.toContain("immutable")
 })
 
 test("sends every page header, and a year's cache on hashed files only", async ({ request }) => {

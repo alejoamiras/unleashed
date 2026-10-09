@@ -1,8 +1,9 @@
 /**
  * Serves a built dist/ the way the assets-only Worker does, for the browser smoke: the emitted
- * `_headers` rules for the request path, index.html for an unmatched navigation, and a 404 for any
- * other unmatched request. Binds port 0 on loopback and is closed by the process that opened it, so
- * parallel runs never share a port or leave a server behind.
+ * `_headers` rules for the request path, and index.html with a 200 for any unmatched request. With no
+ * Worker script, single-page-application mode falls back for every request, not only navigations.
+ * Binds port 0 on loopback and is closed by the process that opened it, so parallel runs never share
+ * a port or leave a server behind.
  */
 import { readFile, stat } from "node:fs/promises"
 import { createServer } from "node:http"
@@ -40,13 +41,8 @@ export async function serveDist(dist: string): Promise<StaticServer> {
 	const rules = parseHeadersFile(await readFile(join(root, "_headers"), "utf8"))
 	const server = createServer(async (req, res) => {
 		const path = decodeURIComponent(new URL(req.url ?? "/", "http://local").pathname)
-		const navigation = req.headers["sec-fetch-mode"] === "navigate"
-		const file = (await fileFor(root, path)) ?? (navigation ? join(root, "index.html") : null)
+		const file = (await fileFor(root, path)) ?? join(root, "index.html")
 		const headers = Object.fromEntries(headersFor(rules, path))
-		if (!file) {
-			res.writeHead(404, headers).end()
-			return
-		}
 		res.writeHead(200, { ...headers, "content-type": TYPES[extname(file)] ?? "application/octet-stream" })
 		res.end(await readFile(file))
 	})
