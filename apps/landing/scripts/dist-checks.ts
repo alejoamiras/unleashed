@@ -12,13 +12,20 @@ const MAX_JS_BYTES = 40_000
 const MAX_NON_FONT_BYTES = 200_000
 const FONT_FILES = ["AtkinsonHyperlegibleNext", "AtkinsonHyperlegibleMono", "SixtyfourConvergence-subset"]
 const ALLOWED_URLS = new Set<string>([...Object.values(LINKS), CANONICAL])
+/*
+ * The link rules catch a link nobody meant to ship. They are not the tamper boundary: code that runs
+ * at build time could navigate from the script bundle, which no HTML check sees. The digest a deploy
+ * is checked against is that boundary.
+ */
 // Anything else, an entity, a scheme in any case or a `//` host included, is refused rather than decoded.
 const LOCAL_PATH = /^\/(?!\/)[\w.~/-]*$/
-// Browsers also split attributes on `/`, as in `<a/href=…>`.
-const DESTINATION = /[\s/](href|src|srcset|action|formaction|poster|data|content)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
+// An attribute starts after whitespace, a `/` or a closing quote, as the HTML tokenizer reads it.
+const DESTINATION = /[\s/"'](href|xlink:href|src|srcset|action|formaction|poster|data|content)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
 // A `content` value is prose unless it could name a place.
-const URL_LIKE = /[:&]|\/\//
-const REFRESH = /<meta[^>]*http-equiv\s*=\s*["']?refresh/i
+const URL_LIKE = /[:&\\]|\/\//
+// The renderer escapes with these five only, so no other reference can spell a `/` or a `:`.
+const FOREIGN_ENTITY = /&(?!(?:amp|lt|gt|quot|#39);)/
+const HTTP_EQUIV = /[\s/"']http-equiv\s*=/i
 
 const text = (dist: Dist, path: string) => new TextDecoder().decode(dist.get(path) ?? new Uint8Array())
 const bytesOf = (dist: Dist, test: (path: string) => boolean) =>
@@ -55,7 +62,8 @@ function checkHtml(html: string): string[] {
 	const errors: string[] = []
 	if (/<script(?![^>]*\ssrc=)[^>]*>/.test(html)) errors.push("index.html has an inline <script>")
 	if (/\sstyle=/.test(html)) errors.push("index.html has a style= attribute")
-	if (REFRESH.test(html)) errors.push("index.html has a meta refresh")
+	if (HTTP_EQUIV.test(html)) errors.push("index.html has an http-equiv meta")
+	if (FOREIGN_ENTITY.test(html)) errors.push("index.html has a character reference the renderer never emits")
 	for (const [, name, ...quoted] of html.matchAll(DESTINATION)) {
 		const value = quoted.find((v) => v !== undefined) ?? ""
 		if (ALLOWED_URLS.has(value)) continue

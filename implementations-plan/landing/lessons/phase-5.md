@@ -40,4 +40,18 @@ Round 2 (resumed, over the fix commits): material findings remain. Three finding
 | 2 | A meta refresh could still leave the page: `url=http:evil.example` and `url=&sol;&sol;evil.example` passed | Adopted: any meta refresh fails the guard (the page has none), and a `content` value with `:`, `&` or `//` must be an allowed URL |
 | 3 | A retired field kept its `pointermove` listener, which still reached the host and held the engine | Adopted: `Engine.dispose` (optional) lets go of it, and `retire` calls it; checked by hand: after a forced draw failure the canvas is hidden and a pointer move makes no call |
 
+Round 3 (the plan's last round): material findings remain. Two findings, both verified, both adopted.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | An attribute right after a closing quote (`id="x"href=…`) and SVG's `xlink:href` passed the link check | Adopted: an attribute may start after whitespace, `/` or a quote, and `xlink:href` is a destination; both pinned |
+| 2 | `http-equiv="re&#102;resh"` passed, because the browser decodes the value and the check read its spelling | Adopted: any `http-equiv` fails, and any character reference other than the five the renderer emits fails, so no reference can spell a `/` or a `:` |
+
+Three rounds found nine ways past a regex reading of HTML. The class has no end short of a real HTML
+parser, which the guard cannot import beside the token. The guard now says what it is: a check against a
+link nobody meant to ship, not the tamper boundary, because code that runs at build time could navigate
+from the script bundle, which no HTML check sees. The deploy's boundary is the digest of a reference
+build. The cap was reached, so the scope call went to Codex as a consult (below) rather than a fourth
+audit round.
+
 LESSONS_FILE=implementations-plan/landing/lessons/phase-5.md

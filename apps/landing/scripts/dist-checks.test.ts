@@ -35,10 +35,17 @@ describe("build guard", () => {
 		["a single-quoted link", { "index.html": HTML.replace("<body>", "<body><a href='https://evil.example'>x</a>") }, "outside LINKS"],
 		["a slash-separated attribute", { "index.html": HTML.replace("<body>", '<body><a/href="//evil.example">x</a>') }, "outside LINKS"],
 		[
-			"a meta refresh",
-			{ "index.html": HTML.replace("<body>", '<body><meta http-equiv="refresh" content="0;url=&sol;&sol;evil.example">') },
-			"meta refresh",
+			"an attribute right after a quote",
+			{ "index.html": HTML.replace("<body>", '<body><a id="x"href="//evil.example">x</a>') },
+			"outside LINKS",
 		],
+		["an SVG link", { "index.html": HTML.replace("<body>", '<body><svg><a xlink:href="//evil.example">x</a></svg>') }, "outside LINKS"],
+		[
+			"a meta refresh",
+			{ "index.html": HTML.replace("<body>", '<body><meta http-equiv="refresh" content="0;url=/loop">') },
+			"http-equiv",
+		],
+		["an encoded refresh", { "index.html": HTML.replace("<body>", '<body><meta http-equiv="re&#102;resh">') }, "character reference"],
 		[
 			"a place in a content value",
 			{ "index.html": HTML.replace("<body>", '<body><meta property="og:url" content="x;url=http:evil.example">') },
