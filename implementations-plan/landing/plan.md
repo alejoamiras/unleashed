@@ -9,7 +9,7 @@ explainer: off
 eli5_mode: artifact
 budget: "recon 1 agent; code_review off; codex gpt-6.1-sol at high; fable leg on opus"
 harden: not scheduled (a static page with no secrets, no input and no backend)
-status: draft, awaiting the owner's approval
+status: conditionally approved; building phases 1-5, deploy decisions pending
 ---
 
 # Landing page for unleashed.systems
@@ -47,6 +47,34 @@ that sends both hosts to the testnet app goes away.
 - **Out of scope**: the tools app's behaviour, the mainnet app and its Access policy, the two
   existing Workers, new experiments, analytics or tracking of any kind.
 - **Open work** goes to `implementations-plan/follow-ups.md`, per this repository's AGENTS.md.
+
+## Owner verdict (approval gate)
+
+**Conditional approve** for building the landing now; the deploy decisions come later. The owner,
+verbatim: "my picks are B2, F1 and N1. A5: yes, let's do preview builds. Im going into the weekend
+though, I think I'll answer the other ones later. But mosr have to do with how are we going to
+deploy, so maybe you can already start implementing the landing and we do the deploy and rest
+afterwards"
+
+What it settles and what it leaves open:
+
+| Ask | State |
+|---|---|
+| A1 engines | **Picked**: B2 Both ways, F1 Drip, N1 Tuner. The placement was not picked: the page builds Strip, the recommendation, as **provisional, awaiting the owner**. Switching to Tile is one constant and its CSS, because every engine lays out from its canvas size |
+| A2 narrow phones | **Awaiting owner sign-off**: built as recommended |
+| A3 page details | **Awaiting owner sign-off**: each recommended default built as listed |
+| A4 tokens | **Unanswered**: K1 and O1 do not start |
+| A5 previews | **Changed to yes**: the landing Worker gets preview builds (D9) |
+| A6 zone features and NEL | **Unanswered**: O2 does not start |
+
+Scope until the owner returns:
+- Phases 1 to 5, then the Post-implementation Codex fix loop on that diff, then PR 1 opened so CI
+  runs.
+- Nothing merges. The merge authority above is suspended until the owner returns. The owner said
+  the deploy comes afterwards, and AFK mode forbids merges anyway.
+- PR 1 lists every provisional choice and every surface awaiting sign-off.
+- The owner is away, so AFK rules apply. Non-trivial forks go to `/codex` (`gpt-6.1-sol`, high), and
+  each consult is logged in the phase's lessons file.
 
 ## Outcome & Quality Bar
 
@@ -122,22 +150,24 @@ AGENTS.md: a change to what a user sees is the owner's decision. Every surface t
     board has the font inlined, so it never waits.
 17. A card engine that fails to start (no canvas context, a script error) leaves its row without a
     screen, as without JavaScript. A card font that fails to load draws in the fallback face.
+18. Preview builds (A5): the same page at a workers.dev preview host, which tells search engines not
+    to index it.
 
 **Not shipped from the board**: the option tabs, Desktop/Phone and Channel/Printout toggles, the
 notes, the comparison table and the verdict; the stage's outer notched corners.
 
-## Card engines (decided with the owner at the approval gate)
+## Card engines (picked by the owner; placement provisional)
 
 Board: https://claude.ai/artifact/BjzP75ugjcxiutFRjo7cFq (source:
 `implementations-plan/landing/design/cards.src.html`, fonts stripped). Every candidate runs live on
 option C, in both themes and at both widths.
 
-| Slot | Candidates | Recommendation |
-|---|---|---|
-| Placement | Strip (a 48 px screen across the row, under its copy) · Tile (a 216×72 screen at the row's right on desktop, a strip on phones) | Strip |
-| Bridge | B1 Portal (option B's lanes in miniature) · B2 Both ways (sends veil past the bar, exits clear again) · B3 Veil (one amount, a static sweep) | B1 Portal |
-| Faucet | F1 Drip (a tap drips SIGNAL and NOISE as coins that roll into the account) · F2 Two taps (one named tap per token) · F3 Rain | F1 Drip |
-| Next | N1 Tuner (a scan line looks for a signal) · N2 Off air (one still frame) · N3 Assembly (the mark builds cell by cell) | N1 Tuner |
+| Slot | Candidates | Recommendation | Owner's pick |
+|---|---|---|---|
+| Placement | Strip (a 48 px screen across the row, under its copy) · Tile (a 216×72 screen at the row's right on desktop, a strip on phones) | Strip | none yet: Strip is built, provisional |
+| Bridge | B1 Portal (option B's lanes in miniature) · B2 Both ways (sends veil past the bar, exits clear again) · B3 Veil (one amount, a static sweep) | B1 Portal | **B2 Both ways** |
+| Faucet | F1 Drip (a tap drips SIGNAL and NOISE as coins that roll into the account) · F2 Two taps (one named tap per token) · F3 Rain | F1 Drip | **F1 Drip** |
+| Next | N1 Tuner (a scan line looks for a signal) · N2 Off air (one still frame) · N3 Assembly (the mark builds cell by cell) | N1 Tuner | **N1 Tuner** |
 
 Rules every screen keeps:
 - It is `aria-hidden` decoration inside the row's link.
@@ -204,7 +234,7 @@ packages/design/src/core/mark.ts   MARK_INK and MARK_SIGNAL path data (new; pure
 // src/content.ts
 export const LINKS = { app: "https://testnet.app.unleashed.systems", source: "https://github.com/alejoamiras/unleashed" } as const
 export type TagKind = "live" | "private" | "lab"
-export type EngineId = "portal" | "drip" | "tuner" // the owner's picks; the registry maps each to a class
+export type EngineId = "both" | "drip" | "tuner" // the owner's picks; the registry maps each to a class
 export interface Experiment {
 	readonly name: string
 	readonly href: string | null // null renders the open slot (a div, not a link)
@@ -323,8 +353,17 @@ landing job.
 - **Workers routes instead of custom domains.** Routes ride the existing proxied records, so no DNS
   change at all. The repository's pattern is custom domains (Production only), and the dashboard
   replaces an existing record in one step. Routes are the fallback if it refuses.
-- **No previews.** `preview_urls: false` and no non-production builds. The PR's screenshots serve
-  review, and tools' preview uploader is coupled to the testnet target.
+- **Previews (the owner's call, A5).** `preview_urls: true`, and Workers Builds builds every
+  non-production branch.
+  - The build tells a preview from production by `WORKERS_CI_BRANCH`: set and not `main` means a
+    preview. A local or CI build has no branch variable, so it is production.
+  - A preview build adds `X-Robots-Tag: noindex` to every response and
+    `<meta name="robots" content="noindex">`, so search engines never index a preview host.
+  - `dist/build.json` records `{ buildId, channel }`. `worker:deploy` refuses a preview build, and
+    `worker:preview` refuses a production one. K1's guard takes `--channel production`.
+  - A preview uploads with `wrangler versions upload` and no alias of its own. It is served at its
+    version URL, plus whatever branch alias Workers Builds gives it. Unlike the tools app, nothing on
+    this page trusts its host, so an alias collision costs nothing.
 - **`not_found_handling: single-page-application`.** An unknown path shows the landing. That is the
   closest to today, where every path reaches the app, and it needs no undrawn 404 page (Ask A3).
 - **The smoke's server.** Playwright's global setup serves `dist/` from an in-process `node:http`
@@ -521,7 +560,8 @@ landing job.
     it, and PR 2 updates that entry to say per-Worker roles now exist.
   - The keyed run trusts this host as it stands after the unkeyed build (Security, ledger D13).
   - Workers Builds gets `SKIP_DEPENDENCY_INSTALL=1`, so its own install is off (O1).
-- **A5. No preview builds** for the landing Worker.
+- **A5. Preview builds** (answered: yes). Each non-production branch is built and uploaded as a
+  preview version on workers.dev, marked `noindex`.
 - **A6. Zone features and NEL.**
   - If the live check finds an injected script or request, the owner turns that feature off. Use a
     hostname-scoped rule where one exists; a zone-wide change is the owner's call.
@@ -558,7 +598,7 @@ Steps:
 5. Add `wrangler.jsonc`:
    - name `unleashed-landing`, `compatibility_date` `2026-08-01`;
    - assets `./dist` with `single-page-application`;
-   - `workers_dev: true`, `preview_urls: false`;
+   - `workers_dev: true`, `preview_urls: true`;
    - a header comment that lists the Workers Builds root directory, build and deploy commands;
    - a comment on why the custom domains are absent;
    - no `main`, `build` or `alias` (`wrangler-config.test.ts` pins this, since the keyed run deploys
@@ -871,7 +911,8 @@ Validation gate:
    - Build: `bun install --frozen-lockfile --filter @unleashed/landing && bun run --cwd apps/landing
      build` (or without `--filter`, if phase 1 says the filter fails).
    - Deploy: `bun run --cwd apps/landing worker:deploy`.
-   - Builds for non-production branches: off.
+   - Builds for non-production branches: on, with the same build command and the non-production
+     deploy command `bun run --cwd apps/landing worker:preview`.
 4. **Variables.** `BUN_VERSION` = `1.4.2`, `NODE_VERSION` = `24`, `SKIP_DEPENDENCY_INSTALL` = `1`.
    The last one stops Workers Builds' own install, so only the build command's install runs.
 5. **API token.**
@@ -1037,7 +1078,7 @@ owner's iPhone, recorded as release gates; the Chromium CI check claims no cross
 | D6 | Smoke server | An in-process `node:http` server on port 0, applying `dist/_headers` | `vite preview` on a probed port (a race); `wrangler dev` (workerd and its inspector port on a shared host) | lead, C11 |
 | D7 | WebKit | Local and live gates, plus the owner's iPhone, each recorded as a release gate | In CI (a longer required check; Linux WebKit is not iOS Safari anyway) | lead, after C8; upheld by the final pass |
 | D8 | Unknown paths | The landing (single-page fallback) | A 404 page (undrawn); Cloudflare's bare 404 | lead; A3 |
-| D9 | Previews | None | Testnet-style previews (tools' uploader is target-coupled; screenshots serve review) | lead; A5 |
+| D9 | Previews | Non-production branches upload preview versions, marked `noindex`, with no alias of the page's own | No previews (the owner chose previews); tools' hashed alias (nothing here trusts its host) | owner, A5 |
 | D10 | Delivery | Two sequential PRs | One PR (the docs would claim a state that is not yet live); a stack (PR 2 cannot be written before the cutover) | brief, lead |
 | D11 | Font gate | Hide the wordmark until its font loads, at most 1.5 s | The board's immediate animation (it would run on the fallback face) | C6 |
 | D12 | setup-playwright | Unchanged | A workspace input (CI's install already has the same Playwright pin) | F10 |
