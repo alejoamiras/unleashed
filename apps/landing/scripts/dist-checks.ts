@@ -12,6 +12,11 @@ const MAX_JS_BYTES = 40_000
 const MAX_NON_FONT_BYTES = 200_000
 const FONT_FILES = ["AtkinsonHyperlegibleNext", "AtkinsonHyperlegibleMono", "SixtyfourConvergence-subset"]
 const ALLOWED_URLS = new Set<string>([...Object.values(LINKS), CANONICAL])
+// Anything else, an entity, a scheme in any case or a `//` host included, is refused rather than decoded.
+const LOCAL_PATH = /^\/(?!\/)[\w.~/-]*$/
+const DESTINATION = /\s(href|src|srcset|action|formaction|poster|data|content)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
+// A `content` value is prose unless it could name a place.
+const URL_LIKE = /\/\/|&#|^\s*[a-z][\w+.-]*:/i
 
 const text = (dist: Dist, path: string) => new TextDecoder().decode(dist.get(path) ?? new Uint8Array())
 const bytesOf = (dist: Dist, test: (path: string) => boolean) =>
@@ -48,8 +53,11 @@ function checkHtml(html: string): string[] {
 	const errors: string[] = []
 	if (/<script(?![^>]*\ssrc=)[^>]*>/.test(html)) errors.push("index.html has an inline <script>")
 	if (/\sstyle=/.test(html)) errors.push("index.html has a style= attribute")
-	for (const [, url] of html.matchAll(/(?:href|src|content)="(https?:[^"]*)"/g)) {
-		if (!ALLOWED_URLS.has(url)) errors.push(`index.html links outside LINKS: ${url}`)
+	for (const [, name, ...quoted] of html.matchAll(DESTINATION)) {
+		const value = quoted.find((v) => v !== undefined) ?? ""
+		if (ALLOWED_URLS.has(value)) continue
+		if (name.toLowerCase() === "content" ? URL_LIKE.test(value) : !LOCAL_PATH.test(value))
+			errors.push(`index.html links outside LINKS: ${name}=${value}`)
 	}
 	return errors
 }
@@ -108,13 +116,16 @@ export function channelOfDist(dist: Dist): string | undefined {
 	return (JSON.parse(text(dist, "build.json") || "{}") as { channel?: string }).channel
 }
 
-/** sha256 over every path and its bytes, in path order: names the exact artifact a deploy ships. */
+/**
+ * sha256 over every path and its bytes, in path order: names the exact artifact a deploy ships. Each
+ * part is length-prefixed, so no file's bytes can pose as a file boundary.
+ */
 export function distDigest(dist: Dist): string {
 	const hash = createHash("sha256")
 	for (const path of [...dist.keys()].sort()) {
-		hash.update(`${path}\0`)
-		hash.update(dist.get(path) as Uint8Array)
-		hash.update("\0")
+		const name = new TextEncoder().encode(path)
+		const bytes = dist.get(path) as Uint8Array
+		hash.update(`${name.byteLength}:`).update(name).update(`:${bytes.byteLength}:`).update(bytes)
 	}
 	return hash.digest("hex")
 }
