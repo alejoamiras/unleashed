@@ -22,6 +22,7 @@ export const bandTop = (height: number) => snap((height - 48) / 2, 2)
 /** Hosts a model on a row's canvas: device-pixel sizing, the panel fill, and resizes. */
 export class CardScreen implements Engine {
 	readonly tick: number
+	readonly sizedBy: Element
 	visible = true
 	private readonly ctx: CanvasRenderingContext2D
 	private width = 0
@@ -33,8 +34,8 @@ export class CardScreen implements Engine {
 		private readonly model: CardModel,
 	) {
 		this.tick = model.tick
+		this.sizedBy = canvas
 		this.ctx = context2d(canvas)
-		new ResizeObserver(() => this.resize()).observe(canvas)
 	}
 
 	resize(force = false): void {

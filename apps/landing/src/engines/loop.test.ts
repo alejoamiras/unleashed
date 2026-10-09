@@ -6,6 +6,7 @@ function fakeEngine(tick: number, fail = false): Engine & { steps: number } {
 	return {
 		tick,
 		canvas: {} as HTMLCanvasElement,
+		sizedBy: {} as Element,
 		visible: true,
 		steps: 0,
 		resize() {},

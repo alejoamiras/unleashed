@@ -9,6 +9,7 @@ import { context2d, type Engine, type Palette, rgb } from "./engine.ts"
 export class DitherField implements Engine {
 	readonly tick = DITHER_TICK_MS
 	readonly canvas: HTMLCanvasElement
+	readonly sizedBy: Element
 	// The host is the whole page, so only the tab's visibility or a pause stops it.
 	visible = true
 	private readonly ctx: CanvasRenderingContext2D
@@ -22,12 +23,12 @@ export class DitherField implements Engine {
 		private readonly palette: Palette,
 		private readonly tracing: () => boolean,
 	) {
+		this.sizedBy = host
 		this.canvas = document.createElement("canvas")
 		this.canvas.className = "bg"
 		this.canvas.setAttribute("aria-hidden", "true")
 		this.ctx = context2d(this.canvas)
 		host.prepend(this.canvas)
-		new ResizeObserver(() => this.resize()).observe(host)
 		host.addEventListener("pointermove", (event) => this.trace(event))
 	}
 

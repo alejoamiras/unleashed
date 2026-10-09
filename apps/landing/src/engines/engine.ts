@@ -3,6 +3,8 @@ export interface Engine {
 	/** Milliseconds per step. */
 	readonly tick: number
 	readonly canvas: HTMLCanvasElement
+	/** The element whose size the engine follows; the page observes it and calls `resize`. */
+	readonly sizedBy: Element
 	/** Whether the canvas is on screen; the loop skips an engine that is not. */
 	visible: boolean
 	/** Re-measures the canvas; on a new size (or `force`) lays out again and draws. */

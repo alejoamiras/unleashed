@@ -91,3 +91,28 @@ test("a row inverts on hover and keeps its screen's own fill", async ({ page }) 
 	expect(await fill(".screen")).toBe(panel)
 	await expect(row.locator("canvas")).toHaveAttribute("data-state", "running")
 })
+
+test("a screen that fails on a resize or a redraw is retired, and the rest keep drawing", async ({ page }) => {
+	const uncaught: string[] = []
+	page.on("pageerror", (error) => uncaught.push(error.message))
+	await page.goto("/")
+	await page.getByRole("button", { name: COPY.pause }).click()
+	const breakFill = (id: string) =>
+		page.locator(screenOf(id)).evaluate((canvas: HTMLCanvasElement) => {
+			const ctx = canvas.getContext("2d") as CanvasRenderingContext2D
+			ctx.fillRect = () => {
+				throw new Error("injected")
+			}
+		})
+	const screen = (id: string) => page.locator(".screen").filter({ has: page.locator(screenOf(id)) })
+	const [resized, redrawn, ...rest] = ENGINES
+	await breakFill(resized)
+	await page.setViewportSize({ width: 600, height: 2000 })
+	await expect(screen(resized)).toBeHidden()
+	await breakFill(redrawn)
+	await page.emulateMedia({ colorScheme: "dark" })
+	await expect(screen(redrawn)).toBeHidden()
+	expect(rest.length).toBeGreaterThan(0)
+	for (const id of rest) await expect(screen(id)).toBeVisible()
+	expect(uncaught).toEqual([])
+})

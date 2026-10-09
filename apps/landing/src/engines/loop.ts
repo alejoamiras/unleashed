@@ -5,8 +5,8 @@ type Schedule = (callback: FrameRequestCallback) => number
 
 /**
  * The page's one animation loop. Each engine steps on its own tick. When no engine can run, the
- * loop requests no frames at all until `wake()`; an engine that throws is dropped and reported, and
- * the rest keep running.
+ * loop requests no frames at all until `wake()`. An engine that throws, here or in any `guard`ed
+ * call, is dropped and reported, and the rest keep running.
  */
 export class Loop {
 	private readonly engines = new Map<Engine, Ticker>()
@@ -49,13 +49,20 @@ export class Loop {
 		}
 	}
 
-	private stepOne(engine: Engine): void {
+	/** Runs one engine's work outside a frame (a start, a resize, a redraw) under the same failure rule. */
+	guard(engine: Engine, work: () => void): void {
 		try {
-			engine.step()
-			engine.draw()
+			work()
 		} catch (error) {
 			this.engines.delete(engine)
 			this.onFail(engine, error)
 		}
+	}
+
+	private stepOne(engine: Engine): void {
+		this.guard(engine, () => {
+			engine.step()
+			engine.draw()
+		})
 	}
 }
