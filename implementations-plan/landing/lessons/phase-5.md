@@ -54,4 +54,12 @@ from the script bundle, which no HTML check sees. The deploy's boundary is the d
 build. The cap was reached, so the scope call went to Codex as a consult (below) rather than a fourth
 audit round.
 
+Consult (same session, after the cap): **no material findings**. Codex agreed, at high confidence, that
+stopping the parser-differential class is right: the expected digest binds a deploy to the reference
+artifact, so another HTML bypass does not weaken it. Its stated limit: a compromised plugin could add
+a navigation before the reference digest is taken, and K1 would ship those same bytes; that is the
+build trust D13 already accepts, and a parser would not change it. It found no regression in the
+round-3 commit (build, 61 unit tests, `--expect` with `--channel production` all pass) and one Low:
+the comment should call the reference build trusted. Adopted. The loop has converged.
+
 LESSONS_FILE=implementations-plan/landing/lessons/phase-5.md

@@ -13,9 +13,9 @@ const MAX_NON_FONT_BYTES = 200_000
 const FONT_FILES = ["AtkinsonHyperlegibleNext", "AtkinsonHyperlegibleMono", "SixtyfourConvergence-subset"]
 const ALLOWED_URLS = new Set<string>([...Object.values(LINKS), CANONICAL])
 /*
- * The link rules catch a link nobody meant to ship. They are not the tamper boundary: code that runs
- * at build time could navigate from the script bundle, which no HTML check sees. The digest a deploy
- * is checked against is that boundary.
+ * The link rules catch a link nobody meant to ship. They are no defence against build tooling, which
+ * is trusted: it could navigate from the script bundle, where no HTML check looks. The expected digest
+ * binds a deploy to the trusted reference build.
  */
 // Anything else, an entity, a scheme in any case or a `//` host included, is refused rather than decoded.
 const LOCAL_PATH = /^\/(?!\/)[\w.~/-]*$/

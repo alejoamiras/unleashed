@@ -1076,6 +1076,25 @@ owner's iPhone, recorded as release gates; the Chromium CI check claims no cross
 | X7 Low | Mixed attach modes; HTTPS readiness; rollback to a version that may hold the fault | Adopted: one mode per host, certificates active before the switch, the rule stays the rollback until a version passes live |
 | X8 Low | The competing-outline trade-off misstated its header handling | Adopted: reworded |
 
+### Post-implementation, Codex (`gpt-6.1-sol`, high; session 01a12291-ac25-7e13-a1fc-1c62ededdf38)
+
+Over PR 1's diff from `9725c08`, with the adversarial ask and the two rules verbatim. Round 1: seven
+findings; round 2: three; round 3, the cap: two, all verified and adopted (each one, with its
+disposition, in `lessons/phase-5.md`). Five of the twelve, nine bypasses in all, got past a regex
+reading of HTML, a class with no end short of a parser, which the guard cannot import. A consult in the same session then
+returned `no material findings`: the expected digest binds a deploy to the trusted reference build, so
+another HTML bypass does not weaken it, and build tooling stays trusted (D13). The loop converged.
+
+| # | Finding | Disposition |
+|---|---|---|
+| P1 | Digest framing let two artifacts share a digest | Adopted: length-prefixed parts |
+| P2 | A symlink in `dist/` ships unseen by the digest | Adopted: any entry that is not a plain file fails |
+| P3 | A guard flag without a value skipped its check | Adopted: strict flags |
+| P4 | Inference 12 was wrong: with no Worker script, every unmatched request gets `index.html` | Adopted: smoke server and spec follow it; Inference 12 refuted |
+| P5 | Link-check bypasses (case, quotes, entities, `//`, separators, `xlink:href`, meta refresh) | Adopted across three rounds; the comment now calls the check a guard against mistakes, not against build tooling |
+| P6 | A redraw or resize of a failing engine threw uncaught | Adopted: `Loop.guard` for every engine call; one page-owned resize observer; `dispose` for the field's pointer listener |
+| P7 | Two comments carried workflow history | Adopted |
+
 ## Decision ledger
 
 | # | Decision | Chosen | Rejected, and why | Source |
