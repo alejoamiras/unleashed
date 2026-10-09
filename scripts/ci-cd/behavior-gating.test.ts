@@ -11,7 +11,7 @@ import { dirname, join, relative } from "node:path"
 
 const ROOT = join(import.meta.dir, "..", "..")
 // Deployable leaves live under apps/, libraries under packages/.
-const APPS = new Set(["tools"])
+const APPS = new Set(["tools", "landing"])
 const dirOf = (pkg: string): string => (APPS.has(pkg) ? "apps" : "packages")
 
 /** Direct `@unleashed/*` workspace deps of a package (runtime + dev — what it's built/tested from). */
@@ -159,6 +159,18 @@ describe("CI behavior-gating guard", () => {
     const wf = workflow("pr-quick.yml")
     expect(wf.jobs.changes.outputs["needs-tools-build"]).toBe("${{ steps.compute.outputs.needs-tools-build }}")
     expect(wf.jobs["build-tools"].if).toBe("needs.changes.outputs.needs-tools-build == 'true'")
+  })
+
+  test("the landing build covers the landing graph and its workflow, and shares the tools app's Playwright", () => {
+    const landing = filtersOf("pr-quick.yml")["landing"]
+    assertGraphCovered(landing, "landing", "landing")
+    expect(landing).toContain(".github/workflows/_build-landing.yml")
+    const wf = workflow("pr-quick.yml")
+    expect(wf.jobs.changes.outputs["needs-landing-build"]).toBe("${{ steps.compute.outputs.needs-landing-build }}")
+    expect(wf.jobs["build-landing"].if).toBe("needs.changes.outputs.needs-landing-build == 'true'")
+    // setup-playwright installs Chromium with the tools app's Playwright binary.
+    const pin = (app: string) => JSON.parse(readFileSync(join(ROOT, "apps", app, "package.json"), "utf8")).devDependencies["@playwright/test"]
+    expect(pin("landing")).toBe(pin("tools"))
   })
 
   test("bridge-contracts covers the contracts, the harness package, its graph, and the adopted manifests", () => {
