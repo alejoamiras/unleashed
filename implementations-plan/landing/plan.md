@@ -9,7 +9,7 @@ explainer: off
 eli5_mode: artifact
 budget: "recon 1 agent; code_review off; codex gpt-6.1-sol at high; fable leg on opus"
 harden: not scheduled (a static page with no secrets, no input and no backend)
-status: conditionally approved; building phases 1-5, deploy decisions pending
+status: conditionally approved; phases 1-5 built, deploy decisions pending
 ---
 
 # Landing page for unleashed.systems
@@ -198,7 +198,7 @@ control.
 ```
 apps/landing/
   package.json            @unleashed/landing; scripts dev, build, preview, typecheck, test,
-                          test:browser, verify:build, worker:deploy
+                          test:browser, verify:build, worker:deploy, worker:preview
   index.html              static head (title, meta, canonical, theme boot, favicon, noscript
                           stylesheet); <!--landing:body-->
   vite.config.ts          one plugin (body render, font preloads, _headers, build id), woff2 never
@@ -209,22 +209,28 @@ apps/landing/
                           <html class="js"> for the font gate
   public/noscript.css     hides the card screens when scripts are off
   public/favicon.svg      byte-identical to apps/tools/public/favicon.svg (pinned by a test)
-  scripts/verify-build.ts offline build guard over dist/; prints DIST_SHA256
+  scripts/dist-checks.ts  pure checks over a built dist/, and its digest
+  scripts/verify-build.ts the offline build guard's entry point; prints DIST_SHA256
+  scripts/worker.ts       Workers Builds' deploy commands; each refuses the other channel's dist/
+  README.md               commands, layout, hosting, the placement switch
   src/
     content.ts            LINKS, COPY, EXPERIMENTS (typed data)
     markup.ts             pure render functions (escape, icon, mark, page sections)
     main.ts               runtime boot: font gate, motion, engines, Pause button
     motion.ts             pure motion state and Ticker
     styles/landing.css    option C's rules, on top of @unleashed/design/base.css
-    testids.ts            data-testid constants for the browser smoke
     engines/
       engine.ts           canvas host: sizing, palette, ResizeObserver, IntersectionObserver
       loop.ts             the one rAF loop: steps each runnable engine on its own tick, idles when none can run
       dither-field.ts     pure: Bayer 4×4 thresholds, the field value, the cell colour
       dither.ts           the page background
-      <three picked>.ts   card engines: a pure model (state + step) and a draw function each
-  tests/browser/          playwright.config.ts, global-setup.ts (static server), smoke.spec.ts,
-                          tsconfig.json
+      card.ts, draw.ts    the card canvas host and the drawing helpers the three share
+      both.ts, drip.ts,   the picked card engines: a pure model (layout, step, draw) each
+      tuner.ts
+      registry.ts         EngineId to model
+  tests/server/           the in-process static server and its strict _headers parser
+  tests/browser/          playwright.config.ts, global-setup.ts, fixtures.ts, page, worker, motion
+                          and cards specs, tsconfig.json
 packages/design/src/core/mark.ts   MARK_INK and MARK_SIGNAL path data (new; pure TS)
 ```
 
@@ -336,8 +342,9 @@ export function shouldRun(s: MotionState, visible: boolean): boolean
 | `README.md`, `AGENTS.md`, `packages/design/README.md` | docs, in PR 2 (after the cutover) |
 
 `.github/actions/setup-playwright` stays as it is: CI's full install already provides tools'
-Playwright 1.63.0, the same pin, and the landing filter lists the action so a change to it runs the
-landing job.
+Playwright 1.63.0, the same pin, and `behavior-gating.test.ts` holds the two pins equal. The
+`workflows` filter covers `.github/actions/**` and already feeds `needs-landing-build`, so the
+landing filter does not list the action again.
 
 ### Trade-offs and alternatives not taken
 
@@ -576,7 +583,7 @@ The fast gate runs after every meaningful step and at every phase end:
 `bun run lint && bun run typecheck:all && bun run --cwd apps/landing test`.
 Locally, browser commands run with `PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright`.
 
-### Phase 1: workspace and build pipeline
+### Phase 1: workspace and build pipeline ✓
 
 Steps:
 1. Create `apps/landing/package.json` (`@unleashed/landing`, `private`, `type: module`). Declare every
@@ -604,7 +611,8 @@ Steps:
    - no `main`, `build` or `alias` (`wrangler-config.test.ts` pins this, since the keyed run deploys
      with this file).
 6. Add `public/theme-boot.js`, `public/noscript.css`, and `public/favicon.svg` copied from tools.
-7. Add `scripts/verify-build.ts`. It fails when any of these holds:
+7. Add `scripts/verify-build.ts` (the checks live in `scripts/dist-checks.ts`). It fails when any of
+   these holds:
    - `dist/index.html` or `dist/_headers` is missing;
    - the `/*` CSP in `_headers` is not `default-src 'none'`, or has an `'unsafe-` source or an
      `http:` source;
@@ -633,7 +641,7 @@ Validation gate:
   - the result of step 10 is logged.
 - Layers: install, lint, typecheck, unit, build, build guard, CI pins.
 
-### Phase 2: the page as drawn, and the browser smoke
+### Phase 2: the page as drawn, and the browser smoke ✓
 
 Steps:
 1. Write `src/content.ts` with the board's copy, word for word, and the three rows. Each row's
@@ -699,7 +707,7 @@ Validation gate:
   - the side-by-side shows no layout difference from the board, except the listed adjustments.
 - Layers: lint, typecheck, unit, build, build guard, browser smoke (Chromium and WebKit).
 
-### Phase 3: motion
+### Phase 3: motion ✓
 
 Steps:
 1. Write `motion.ts` (`Ticker`, `playing`, `shouldRun`) and its unit tests:
@@ -746,7 +754,7 @@ Validation gate:
   - reduced motion and Pause both leave a drawn, unchanging canvas.
 - Layers: lint, typecheck, unit, build, build guard, browser smoke.
 
-### Phase 4: the card engines the owner picked
+### Phase 4: the card engines the owner picked ✓
 
 Warning: write no code in this phase before the owner's pick is quoted in this file.
 
@@ -776,23 +784,24 @@ Validation gate:
   - the screenshots at 390 and 1440 px in both themes match the card board's picked set.
 - Layers: lint, typecheck, unit, build, build guard, browser smoke.
 
-### Phase 5: CI
+### Phase 5: CI ✓
 
 Steps:
 1. Add `.github/workflows/_build-landing.yml`:
    - `workflow_call` with input `ref`; `contents: read`; a 15-minute timeout;
-   - steps: checkout, setup-bun, build, `verify:build`, setup-playwright, `test:browser`;
+   - steps: checkout, setup-bun, build (its guard runs inside), setup-playwright, `test:browser`;
    - the Playwright report is uploaded on failure.
 2. In `pr-quick.yml`:
    - add a `landing` filter: `apps/landing/**`, `packages/design/src/**`,
-     `packages/design/package.json`, `.github/workflows/_build-landing.yml`,
-     `.github/actions/setup-playwright/**`;
+     `packages/design/package.json`, `.github/workflows/_build-landing.yml` (`workflows` already
+     covers the actions);
    - add the `needs-landing-build` output, true on dispatch, `landing`, `workflows` or `root-config`;
    - add a `build-landing` job;
    - add the job to `quality-status`'s `needs`, its env and its `expect` case (success when the flag
      is true, skipped when false, an error otherwise). Keep the name `quality-status`.
 3. In `behavior-gating.test.ts`: add `landing` to `APPS`, call `assertGraphCovered` on the landing
-   filter, and pin `_build-landing.yml` and the `needs-landing-build` wiring.
+   filter, and pin `_build-landing.yml`, the `needs-landing-build` wiring, and the landing's
+   Playwright pin equal to the tools app's.
 
 Validation gate:
 - Commands: `bun run lint:actions && bun run test:ci-gating`, then the fast gate.
@@ -807,7 +816,7 @@ Steps:
 1. Run the repository's PR gates: `bun run audit:tools && bun run test:all`.
 2. Commit, and push `worktree-landing`. The tree must be clean, and HEAD must equal the remote tip.
 3. Build and guard unkeyed: `bun install --frozen-lockfile && bun run --cwd apps/landing build &&
-   bun run --cwd apps/landing verify:build`. Note the printed `DIST_SHA256`.
+   bun run --cwd apps/landing verify:build --channel production`. Note the printed `DIST_SHA256`.
 4. File the keyed run (runbook K1) with that digest. Hand the owner the `op-remote alejo-box <id>`
    line, and watch it with `env-exec wait <id>`. The worktree's `dist/` is the reference build for the
    pre-merge live checks.
@@ -887,7 +896,7 @@ Validation gate:
 - Warning: if the 1Password item's token has expired, mint a fresh one before approving. Use the same
   scope and a TTL of hours, IP-filtered to `alejo-box`.
 - Request, from the worktree at the pushed HEAD, after phase 6 step 3:
-  `env-exec request --template apps/tools/cloudflare.env.example --slug landing-worker -- bash -c 'bun apps/landing/scripts/verify-build.ts --expect <DIST_SHA256> && apps/landing/node_modules/.bin/wrangler deploy -c apps/landing/wrangler.jsonc'`
+  `env-exec request --template apps/tools/cloudflare.env.example --slug landing-worker -- bash -c 'bun apps/landing/scripts/verify-build.ts --expect <DIST_SHA256> --channel production && apps/landing/node_modules/.bin/wrangler deploy -c apps/landing/wrangler.jsonc'`
 - Both entry points run directly, so no `package.json` script or hook runs beside the token.
 - Owner: `op-remote alejo-box <id>`. It shows the commit, the command with the digest, and the
   secret's reference. On `y` it runs.
