@@ -4,6 +4,7 @@ import { COPY } from "./content.ts"
 import { DitherField } from "./engines/dither.ts"
 import { type Engine, readPalette } from "./engines/engine.ts"
 import { Loop } from "./engines/loop.ts"
+import { createCard, isEngineId } from "./engines/registry.ts"
 import { FACES, fontsLoaded } from "./fonts.ts"
 import { type MotionState, motionLabel, playing, shouldRun } from "./motion.ts"
 
@@ -13,12 +14,14 @@ const lightQuery = window.matchMedia("(prefers-color-scheme: light)")
 const motion: MotionState = { reduce: reduceQuery.matches, userChoice: null, hidden: document.hidden }
 const palette = readPalette(getComputedStyle(root))
 const engines = new Set<Engine>()
+const cards = new Map<Element, Engine>()
 const button = document.querySelector<HTMLButtonElement>("[data-motion]")
 
 const loop = new Loop(
 	(engine) => shouldRun(motion, engine.visible),
 	(engine, error) => {
 		engines.delete(engine)
+		hideScreen(engine.canvas)
 		console.error("landing: a motion engine stopped", error)
 	},
 )
@@ -42,6 +45,40 @@ function start(make: () => Engine, onFail: () => void): Engine | null {
 		onFail()
 		return null
 	}
+}
+
+/** A row whose screen cannot be drawn shows no screen, as without scripts. */
+function hideScreen(canvas: Element): void {
+	const screen = canvas.closest<HTMLElement>(".screen")
+	if (screen) screen.hidden = true
+}
+
+/** Card screens draw text, so they start once their faces load or the wait runs out. */
+async function startCards(): Promise<void> {
+	await fontsLoaded([FACES.mono, FACES.body], "SIGNAL NOISE 250.00 USDC Ethereum Aztec")
+	const watcher = new IntersectionObserver((entries) => {
+		for (const entry of entries) {
+			const engine = cards.get(entry.target)
+			if (engine) engine.visible = entry.isIntersecting
+		}
+		sync()
+	})
+	for (const canvas of document.querySelectorAll<HTMLCanvasElement>("canvas[data-engine]")) {
+		const id = canvas.dataset.engine
+		const engine = isEngineId(id)
+			? start(
+					() => createCard(id, canvas, palette),
+					() => hideScreen(canvas),
+				)
+			: null
+		if (!engine) {
+			hideScreen(canvas)
+			continue
+		}
+		cards.set(canvas, engine)
+		watcher.observe(canvas)
+	}
+	sync()
 }
 
 function retheme(): void {
@@ -80,3 +117,4 @@ if (land)
 	)
 wireControls()
 sync()
+startCards()
