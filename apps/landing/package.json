@@ -1,0 +1,28 @@
+{
+	"name": "@unleashed/landing",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build && bun scripts/verify-build.ts",
+		"preview": "vite preview",
+		"typecheck": "tsc --noEmit",
+		"test": "bun --bun vitest run",
+		"test:browser": "playwright test -c tests/browser/playwright.config.ts",
+		"verify:build": "bun scripts/verify-build.ts",
+		"worker:deploy": "bun scripts/worker.ts deploy",
+		"worker:preview": "bun scripts/worker.ts preview"
+	},
+	"dependencies": {
+		"@unleashed/design": "workspace:*"
+	},
+	"devDependencies": {
+		"@playwright/test": "1.63.0",
+		"@types/node": "^24.13.2",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.16",
+		"vitest": "^4.1.9",
+		"wrangler": "4.129.1"
+	}
+}

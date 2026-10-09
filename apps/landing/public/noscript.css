@@ -1,0 +1,4 @@
+/* Without scripts nothing draws the card screens, so they take no space. */
+.screen {
+	display: none;
+}
