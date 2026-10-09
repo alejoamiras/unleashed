@@ -1,0 +1,822 @@
+<title>Unleashed Card Engines</title>
+<style>
+@font-face{font-family:"Atkinson Hyperlegible Next";font-style:normal;font-weight:200 800;font-display:swap;src:url(data:font/woff2;base64,%%F_NEXT%%) format("woff2")}
+@font-face{font-family:"Atkinson Hyperlegible Mono";font-style:normal;font-weight:200 800;font-display:swap;src:url(data:font/woff2;base64,%%F_MONO%%) format("woff2")}
+@font-face{font-family:"Sixtyfour Convergence";font-style:normal;font-weight:400;font-display:swap;src:url(data:font/woff2;base64,%%F_PIXEL%%) format("woff2")}
+
+/* Layout: a design board. Option C on one live stage, then one row of live candidates per experiment.
+   Tokens are Dead Channel A' from packages/design/src/base.css: dark "Channel" first, light "Printout". */
+:root{
+  color-scheme:dark;
+  --ul-font-body:"Atkinson Hyperlegible Next",system-ui,sans-serif;
+  --ul-font-mono:"Atkinson Hyperlegible Mono",ui-monospace,monospace;
+  --ul-font-pixel:"Sixtyfour Convergence","Atkinson Hyperlegible Mono",ui-monospace,monospace;
+  --ul-well:#08080a;--ul-bg:#0b0b0d;--ul-panel:#141418;--ul-raised:#1d1d23;--ul-line:#3a3a42;
+  --ul-ink:#ededea;--ul-ink-2:#b4b4af;--ul-ink-3:#8c8c93;
+  --ul-signal:#ff3dd2;--ul-signal-tint:#3a1234;--ul-accent-text:#ff3dd2;--ul-on-signal:#0b0b0d;--ul-ring:#ededea;
+  --ul-carrier:#3de8ff;--ul-carrier-bg:#0e2a30;--ul-attention:#ffc247;--ul-other:#b9a6ff;--ul-other-bg:#241e3a;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  color-scheme:light;
+  --ul-well:#fbf9f3;--ul-bg:#f4f1e8;--ul-panel:#fbf9f3;--ul-raised:#e9e4d6;--ul-line:#cfc9ba;
+  --ul-ink:#18171c;--ul-ink-2:#48464f;--ul-ink-3:#65636e;
+  --ul-signal:#ff3dd2;--ul-signal-tint:#f9d6f0;--ul-accent-text:#b3118e;--ul-on-signal:#18171c;--ul-ring:#18171c;
+  --ul-carrier:#00707f;--ul-carrier-bg:#d9ecec;--ul-attention:#8a5700;--ul-other:#5b45c2;--ul-other-bg:#e6e0f8;
+}}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --ul-well:#fbf9f3;--ul-bg:#f4f1e8;--ul-panel:#fbf9f3;--ul-raised:#e9e4d6;--ul-line:#cfc9ba;
+  --ul-ink:#18171c;--ul-ink-2:#48464f;--ul-ink-3:#65636e;
+  --ul-signal:#ff3dd2;--ul-signal-tint:#f9d6f0;--ul-accent-text:#b3118e;--ul-on-signal:#18171c;--ul-ring:#18171c;
+  --ul-carrier:#00707f;--ul-carrier-bg:#d9ecec;--ul-attention:#8a5700;--ul-other:#5b45c2;--ul-other-bg:#e6e0f8;
+}
+:root{
+  --ul-notch-2:polygon(2px 0,calc(100% - 2px) 0,calc(100% - 2px) 1px,calc(100% - 1px) 1px,calc(100% - 1px) 2px,100% 2px,100% calc(100% - 2px),calc(100% - 1px) calc(100% - 2px),calc(100% - 1px) calc(100% - 1px),calc(100% - 2px) calc(100% - 1px),calc(100% - 2px) 100%,2px 100%,2px calc(100% - 1px),1px calc(100% - 1px),1px calc(100% - 2px),0 calc(100% - 2px),0 2px,1px 2px,1px 1px,2px 1px);
+  --ul-notch-4:polygon(4px 0,calc(100% - 4px) 0,calc(100% - 4px) 2px,calc(100% - 2px) 2px,calc(100% - 2px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 2px) calc(100% - 4px),calc(100% - 2px) calc(100% - 2px),calc(100% - 4px) calc(100% - 2px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 2px),2px calc(100% - 2px),2px calc(100% - 4px),0 calc(100% - 4px),0 4px,2px 4px,2px 2px,4px 2px);
+  --ul-notch-6:polygon(6px 0,calc(100% - 6px) 0,calc(100% - 6px) 3px,calc(100% - 3px) 3px,calc(100% - 3px) 6px,100% 6px,100% calc(100% - 6px),calc(100% - 3px) calc(100% - 6px),calc(100% - 3px) calc(100% - 3px),calc(100% - 6px) calc(100% - 3px),calc(100% - 6px) 100%,6px 100%,6px calc(100% - 3px),3px calc(100% - 3px),3px calc(100% - 6px),0 calc(100% - 6px),0 6px,3px 6px,3px 3px,6px 3px);
+  --ul-fill:var(--ul-panel);--ul-notch:var(--ul-notch-2);
+  --ul-tracking-heading:-0.015em;
+  --ul-tick:90ms steps(3);--ul-converge:640ms steps(8);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0}
+body{background:var(--ul-bg);color:var(--ul-ink);font:400 15px/1.5 var(--ul-font-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:var(--ul-accent-text);text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--ul-ring);outline-offset:3px}
+:focus:not(:focus-visible){outline:none}
+svg.ic{display:block;flex:none;fill:currentColor;shape-rendering:crispEdges}
+.n{position:relative;isolation:isolate}
+.n::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:var(--ul-fill);clip-path:var(--ul-notch)}
+.lockup{display:inline-flex;align-items:center;gap:10px;color:var(--ul-ink)}
+.mark{width:20px;height:20px;flex:none}
+.mark .sig{fill:var(--ul-signal)}
+.wordmark{font:400 12px/1 var(--ul-font-pixel)}
+
+/* ---------- board ---------- */
+.board{max-width:1240px;margin-inline:auto;padding-inline:clamp(16px,4vw,40px);padding-block:24px 72px;display:grid;gap:28px}
+.b-head{display:flex;align-items:center;justify-content:space-between;gap:12px 20px;flex-wrap:wrap}
+.b-head .wordmark{font-size:14px}
+.b-head .crumb{font:600 15px/1 var(--ul-font-body);color:var(--ul-ink-3)}
+.b-tools{display:flex;gap:10px;flex-wrap:wrap}
+.seg{--ul-fill:var(--ul-raised);--ul-notch:var(--ul-notch-2);display:inline-flex;gap:2px;padding:3px}
+.seg button{--ul-fill:transparent;--ul-notch:var(--ul-notch-2);min-height:36px;padding:0 12px;font:600 14px/1 var(--ul-font-body);color:var(--ul-ink-2)}
+.seg button:hover{color:var(--ul-ink)}
+.seg button[aria-pressed="true"]{--ul-fill:var(--ul-ink);color:var(--ul-bg)}
+.b-intro{display:grid;gap:10px;max-width:48em}
+.b-intro h1{font:700 clamp(28px,4vw,40px)/1.1 var(--ul-font-body);letter-spacing:var(--ul-tracking-heading);text-wrap:balance}
+.b-intro p{font:500 18px/1.45 var(--ul-font-body);color:var(--ul-ink-2);text-wrap:pretty}
+
+.stage{--ul-fill:var(--ul-panel);--ul-notch:var(--ul-notch-6);display:grid;gap:10px;padding:10px}
+.stage-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:2px 2px 0 6px}
+.url{font:500 13px/1.3 var(--ul-font-mono);color:var(--ul-ink-3);min-width:0;overflow-wrap:anywhere}
+.url b{font-weight:500;color:var(--ul-ink-2)}
+.stage-view{container:land/inline-size;width:100%;margin-inline:auto}
+.stage-view[data-width="phone"]{max-width:390px}
+
+/* ---------- landing C (from the landing board) ---------- */
+.land{position:relative;isolation:isolate;overflow:hidden;background:var(--ul-bg);color:var(--ul-ink);clip-path:var(--ul-notch-4);--pad:clamp(16px,5cqi,56px)}
+.bg-host>canvas.bg{position:absolute;inset:0;width:100%;height:100%;z-index:-1;display:block}
+.land-in{display:grid;gap:clamp(44px,7cqi,72px);padding-inline:var(--pad);padding-block:16px 28px;min-width:0}
+.land-in>*{min-width:0}
+.l-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px}
+.l-links{display:flex;align-items:center;gap:6px}
+.l-links .txt{--ul-fill:var(--ul-bg);--ul-notch:var(--ul-notch-2);display:inline-flex;align-items:center;min-height:36px;padding:0 10px;font:600 15px/1 var(--ul-font-body);color:var(--ul-ink-2)}
+.l-links .txt:hover{color:var(--ul-ink)}
+@container land (max-width:600px){.l-links .txt{display:none}}
+.btn{--ul-fill:var(--ul-raised);--ul-notch:var(--ul-notch-2);display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:48px;padding:0 18px;font:700 16px/1 var(--ul-font-body);white-space:nowrap;color:var(--ul-ink)}
+.btn.primary{--ul-fill:var(--ul-signal);color:var(--ul-on-signal)}
+.btn.secondary{font-weight:600}
+.btn.secondary:hover{--ul-fill:var(--ul-line)}
+.btn.quiet{--ul-fill:transparent;color:var(--ul-ink-2);font-weight:600;text-decoration:underline dotted;text-underline-offset:5px}
+.btn.quiet:hover{color:var(--ul-ink)}
+.btn.sm{min-height:36px;padding:0 12px;font-size:14px;gap:6px}
+.btn svg.ic{width:12px;height:12px}
+.wm-hero{font:400 clamp(34px,calc(100cqi / 11),150px)/1 var(--ul-font-pixel);font-variation-settings:"XELA" 0,"YELA" 0,"SCAN" 0,"BLED" 0;white-space:nowrap;--ul-fill:var(--ul-bg);--ul-notch:var(--ul-notch-4);justify-self:start;padding:6px 10px 2px}
+.h-hero{font:700 clamp(30px,5.4cqi,58px)/1.04 var(--ul-font-body);letter-spacing:var(--ul-tracking-heading);text-wrap:balance;max-width:15em}
+.lede{font:500 clamp(16px,2cqi,18px)/1.45 var(--ul-font-body);color:var(--ul-ink-2);max-width:34em;text-wrap:pretty}
+.cta{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.c .l-nav .lockup{--ul-fill:var(--ul-bg);--ul-notch:var(--ul-notch-2);padding:8px 10px}
+.c-hero{display:grid;gap:18px;padding-top:clamp(8px,4cqi,48px)}
+.c-copy{--ul-fill:var(--ul-bg);--ul-notch:var(--ul-notch-4);display:grid;gap:18px;padding:20px 22px 22px;max-width:640px}
+.narrow{max-width:min(100%,720px)}
+.sec-h{--ul-fill:var(--ul-bg);--ul-notch:var(--ul-notch-4);display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px;padding:10px 14px;margin-bottom:6px}
+.sec-h h2{font:700 20px/1.2 var(--ul-font-body);letter-spacing:var(--ul-tracking-heading)}
+.sec-h p{font-size:14px;color:var(--ul-ink-3)}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{--ul-fill:var(--ul-raised);--ul-notch:var(--ul-notch-2);display:inline-flex;align-items:center;gap:6px;min-height:24px;padding:0 8px;font:700 12px/1 var(--ul-font-body);color:var(--ul-ink-2);white-space:nowrap}
+.tag svg.ic{width:12px;height:12px}
+.tag.carrier{--ul-fill:var(--ul-carrier-bg);color:var(--ul-carrier)}
+.tag.private{--ul-fill:var(--ul-signal-tint);color:var(--ul-accent-text)}
+.tag.other{--ul-fill:var(--ul-other-bg);color:var(--ul-other)}
+.tag.rec{--ul-fill:var(--ul-signal-tint);color:var(--ul-accent-text)}
+.idx{list-style:none;padding:0;display:grid;gap:4px}
+.idx a,.idx .empty{--ul-fill:var(--ul-bg);--ul-notch:var(--ul-notch-4);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 20px;align-items:center;padding:16px 14px;color:var(--ul-ink)}
+.idx strong{font:700 clamp(26px,4cqi,40px)/1.05 var(--ul-font-body);letter-spacing:var(--ul-tracking-heading)}
+.idx .sub{grid-column:1/-1;color:var(--ul-ink-2);max-width:40em;text-wrap:pretty}
+.idx a:hover,.idx a:focus-visible{--ul-fill:var(--ul-ink);color:var(--ul-bg)}
+.idx a:hover .sub,.idx a:focus-visible .sub{color:var(--ul-line)}
+.idx .empty strong{color:var(--ul-ink-3)}
+
+/* The engine's screen: its own panel fill, so the row can invert on hover around it. */
+.screen{--ul-fill:var(--ul-panel);--ul-notch:var(--ul-notch-2);display:block;height:48px}
+.screen canvas{display:block;width:100%;height:100%;clip-path:var(--ul-notch-2)}
+.idx .screen{grid-column:1/-1;margin-top:6px}
+.place-tile .idx a,.place-tile .idx .empty{grid-template-columns:minmax(0,1fr) auto 216px}
+.place-tile .idx .sub{grid-column:1/3}
+.place-tile .idx .screen{grid-column:3;grid-row:1/3;height:72px;margin-top:0}
+@container land (max-width:640px){
+  .place-tile .idx a,.place-tile .idx .empty{grid-template-columns:minmax(0,1fr) auto}
+  .place-tile .idx .sub{grid-column:1/-1}
+  .place-tile .idx .screen{grid-column:1/-1;grid-row:auto;height:48px;margin-top:6px}
+}
+
+/* Not on the landing board: below about 400 px the tags overlapped the name, so they drop under it. */
+@container land (max-width:400px){.idx a,.idx .empty{grid-template-columns:minmax(0,1fr)}.idx .tags{grid-row:2}}
+
+.note{--ul-fill:linear-gradient(90deg,var(--ul-attention) 0 4px,var(--ul-panel) 4px);--ul-notch:var(--ul-notch-4);display:grid;grid-template-columns:24px minmax(0,1fr);gap:14px;padding:16px 18px 18px 22px;max-width:46em}
+.note svg.ic{color:var(--ul-attention);margin-top:1px}
+.note strong{display:block;font:700 15px/1.45 var(--ul-font-body)}
+.note p{color:var(--ul-ink-2);text-wrap:pretty}
+.l-foot{--ul-fill:var(--ul-bg);--ul-notch:var(--ul-notch-2);display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 14px;justify-self:start;font:400 13px/1.45 var(--ul-font-body);color:var(--ul-ink-3)}
+.l-foot a{color:var(--ul-ink-2);text-decoration:underline dotted;text-underline-offset:4px}
+
+/* ---------- candidates ---------- */
+.group{display:grid;gap:12px}
+.group-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px}
+.group-h h2{font:700 24px/1.2 var(--ul-font-body);letter-spacing:var(--ul-tracking-heading)}
+.group-h p{color:var(--ul-ink-3);font-size:14px}
+.opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.opts.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:860px){.opts,.opts.two{grid-template-columns:1fr}}
+.opt{--ul-fill:var(--ul-panel);--ul-notch:var(--ul-notch-4);display:grid;align-content:start;gap:10px;padding:12px 12px 16px;text-align:left;color:var(--ul-ink);min-width:0}
+.opt:hover{--ul-fill:var(--ul-raised)}
+.opt[aria-pressed="true"]{--ul-fill:var(--ul-ink);color:var(--ul-bg)}
+.opt[aria-pressed="true"] .d,.opt[aria-pressed="true"] .dd{color:var(--ul-line)}
+.opt[aria-pressed="true"] .dt{color:var(--ul-bg)}
+.opt .screen{--ul-fill:var(--ul-bg)}
+.opt-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.opt-top strong{font:700 17px/1.2 var(--ul-font-body)}
+.opt-top .k{font:500 13px/1 var(--ul-font-mono);margin-right:8px;color:inherit;opacity:.7}
+.opt .d{color:var(--ul-ink-2);font-size:14px;text-wrap:pretty}
+.opt .facts{display:grid;grid-template-columns:5.2em minmax(0,1fr);gap:4px 10px;font-size:13px}
+.opt .dt{font-weight:700}
+.opt .dd{color:var(--ul-ink-2);text-wrap:pretty}
+
+.panel{--ul-fill:var(--ul-panel);--ul-notch:var(--ul-notch-4);padding:22px 22px 24px;display:grid;gap:14px;min-width:0}
+.panel h2{font:700 20px/1.2 var(--ul-font-body);letter-spacing:var(--ul-tracking-heading)}
+.keep{list-style:none;padding:0;display:grid;gap:10px}
+.keep li{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;color:var(--ul-ink-2)}
+.keep li svg{color:var(--ul-carrier);margin-top:1px}
+.keep strong{color:var(--ul-ink);font-weight:700}
+.verdict{--ul-fill:var(--ul-signal-tint);--ul-notch:var(--ul-notch-4);padding:24px;display:grid;gap:12px}
+.verdict h2{font:700 24px/1.2 var(--ul-font-body);letter-spacing:var(--ul-tracking-heading);text-wrap:balance}
+.verdict p{max-width:66ch;text-wrap:pretty}
+.verdict .conf{font:700 13px/1 var(--ul-font-body);color:var(--ul-ink-2)}
+.picks{font:500 14px/1.5 var(--ul-font-mono);color:var(--ul-ink)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+</style>
+
+<div class="board">
+  <header class="b-head">
+    <span class="lockup">%%MARK%%<span class="wordmark">Unleashed</span><span class="crumb">· card engines</span></span>
+    <div class="b-tools">
+      <div class="seg n" role="group" aria-label="Preview width">
+        <button type="button" class="n" data-width-set="desk" aria-pressed="true">Desktop</button>
+        <button type="button" class="n" data-width-set="phone" aria-pressed="false">Phone</button>
+      </div>
+      <div class="seg n" role="group" aria-label="Theme">
+        <button type="button" class="n" data-theme-set="dark" aria-pressed="true">Channel</button>
+        <button type="button" class="n" data-theme-set="light" aria-pressed="false">Printout</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="b-intro">
+    <h1>One small engine per experiment</h1>
+    <p>Option C as approved, with a live screen on each experiment row. Pick one engine per row below, and the page above takes it at once. Every candidate runs live, on the same tokens and the same stepped clock as the dither. One fix to the drawn page shows here too: on phones narrower than about 400 px, the tags drop under the experiment's name instead of covering it.</p>
+  </section>
+
+  <div class="stage n">
+    <div class="stage-bar">
+      <span class="url"><b>unleashed.systems</b> · <span id="picks-line"></span></span>
+      <div class="b-tools">
+        <div class="seg n" role="group" aria-label="Screen placement">
+          <button type="button" class="n" data-place-set="strip" aria-pressed="true">Strip</button>
+          <button type="button" class="n" data-place-set="tile" aria-pressed="false">Tile</button>
+        </div>
+        <button type="button" class="btn quiet sm n" data-motion>Pause motion</button>
+      </div>
+    </div>
+    <div class="stage-view" id="view" data-width="desk">
+      <article class="land c bg-host" id="land">
+        <div class="land-in">
+          <nav class="l-nav n" aria-label="Unleashed"><span class="lockup n">%%MARK%%<span class="wordmark">Unleashed</span></span><div class="l-links"><a class="txt n" href="https://testnet.app.unleashed.systems">Faucet</a><a class="txt n" href="https://github.com/alejoamiras/unleashed">Source</a><a class="btn secondary sm n" href="https://testnet.app.unleashed.systems">Open the app</a></div></nav>
+          <section class="c-hero">
+            <p class="wm-hero n" aria-hidden="true">Unleashed</p>
+            <div class="c-copy n">
+              <h1 class="h-hero">Privacy nobody can switch off, tested in the open.</h1>
+              <p class="lede">Unleashed is a lab for private apps on Aztec. Every experiment is a working app with its source in the open, built to find out what unstoppable privacy can do today.</p>
+              <div class="cta"><a class="btn primary n" href="https://testnet.app.unleashed.systems">Open the bridge %%I12:arrow-right%%</a><a class="btn secondary n" href="https://github.com/alejoamiras/unleashed">View source %%I12:external-link%%</a></div>
+            </div>
+          </section>
+          <section class="narrow" aria-labelledby="c-exp">
+            <header class="sec-h n"><h2 id="c-exp">Experiments</h2><p>Two on testnet. The next one is in the lab.</p></header>
+            <ul class="idx">
+              <li><a class="n" href="https://testnet.app.unleashed.systems"><strong>Bridge</strong><span class="tags"><span class="tag carrier n">%%I12:check%%Live on testnet</span><span class="tag private n">%%I12:eye-off%%Private sends</span></span><span class="sub">Move any ERC-20 between Ethereum and Aztec, in public or in private. Part of it can arrive as gas, so a new account can pay its own way.</span><span class="screen n" aria-hidden="true"><canvas data-slot="bridge"></canvas></span></a></li>
+              <li><a class="n" href="https://testnet.app.unleashed.systems"><strong>Faucet</strong><span class="tags"><span class="tag carrier n">%%I12:check%%Live on testnet</span></span><span class="sub">Mint SIGNAL and NOISE, the two test tokens, to your Aztec account. No sign-up and no rate limit.</span><span class="screen n" aria-hidden="true"><canvas data-slot="faucet"></canvas></span></a></li>
+              <li><div class="empty n"><strong>Next</strong><span class="tags"><span class="tag other n">%%I12:zap%%In the lab</span></span><span class="sub">Nothing on this channel yet. The next experiment is in the lab. Its source lands here with it.</span><span class="screen n" aria-hidden="true"><canvas data-slot="next"></canvas></span></div></li>
+            </ul>
+          </section>
+          <div class="narrow"><aside class="note n" aria-label="Before you try anything">%%I24:warning-diamond%%<div><strong>Experiments, not products.</strong><p>Each one is built with care and kept running on a best-effort basis. None of them is production ready, so use testnet funds or amounts you can afford to lose.</p></div></aside></div>
+          <footer class="l-foot n"><span class="lockup">%%MARK%%<span class="wordmark">Unleashed</span></span><a href="https://github.com/alejoamiras/unleashed">Source on GitHub</a><span>Apache-2.0</span><span>Works with any Aztec wallet</span><span>Mainnet is not open yet</span><button type="button" class="btn quiet sm n" data-motion>Pause motion</button></footer>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <section class="group" aria-labelledby="g-bridge">
+    <header class="group-h"><h2 id="g-bridge">Bridge</h2><p>What the bridge does, without a word.</p></header>
+    <div class="opts" role="group" aria-label="Bridge engine">
+      <button type="button" class="opt n" data-pick="bridge:portal" aria-pressed="true">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="portal"></canvas></span>
+        <span class="opt-top"><strong><span class="k">B1</span>Portal</strong><span class="tag rec n">My pick</span></span>
+        <span class="d">Option B's lanes in miniature. Amounts ride the Ethereum lane in the clear, cross the signal bar, turn to static and step down to the Aztec lane.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">4 px per 70 ms step, one lane change per amount.</span><span class="dt">Risk</span><span class="dd">Shows only Ethereum to Aztec; the exit back is left to the copy.</span></span>
+      </button>
+      <button type="button" class="opt n" data-pick="bridge:both" aria-pressed="false">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="both"></canvas></span>
+        <span class="opt-top"><strong><span class="k">B2</span>Both ways</strong></span>
+        <span class="d">One portal, two lanes. Sends go right and turn to static past the bar; exits come back left and turn clear again. Public on the Ethereum side, private on the Aztec side.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">4 px per 70 ms step on two opposing lanes.</span><span class="dt">Risk</span><span class="dd">The busiest of the three in a 48 px screen.</span></span>
+      </button>
+      <button type="button" class="opt n" data-pick="bridge:veil" aria-pressed="false">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="veil"></canvas></span>
+        <span class="opt-top"><strong><span class="k">B3</span>Veil</strong></span>
+        <span class="d">One amount at a time. Static sweeps over it as it moves from Ethereum to Aztec, holds, then clears onto the next amount.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">A sweep every few seconds, still in between.</span><span class="dt">Risk</span><span class="dd">Calm to the point of reading as a loading bar.</span></span>
+      </button>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g-faucet">
+    <header class="group-h"><h2 id="g-faucet">Faucet</h2><p>Two test tokens, free, to your account.</p></header>
+    <div class="opts" role="group" aria-label="Faucet engine">
+      <button type="button" class="opt n" data-pick="faucet:drip" aria-pressed="true">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="drip"></canvas></span>
+        <span class="opt-top"><strong><span class="k">F1</span>Drip</strong><span class="tag rec n">My pick</span></span>
+        <span class="d">A tap drips SIGNAL and NOISE in turn. Each drop lands as a coin and rolls along the rail into the account at the end, which lights up as it arrives.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">A drop every 6 steps of 90 ms.</span><span class="dt">Risk</span><span class="dd">The wallet glyph is small on a phone.</span></span>
+      </button>
+      <button type="button" class="opt n" data-pick="faucet:taps" aria-pressed="false">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="taps"></canvas></span>
+        <span class="opt-top"><strong><span class="k">F2</span>Two taps</strong></span>
+        <span class="d">One tap per token, named. Each fills its own pool at its own pace and empties when full.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">Two drips out of step, 90 ms steps.</span><span class="dt">Risk</span><span class="dd">Says "two tokens" more than "to your account".</span></span>
+      </button>
+      <button type="button" class="opt n" data-pick="faucet:rain" aria-pressed="false">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="rain"></canvas></span>
+        <span class="opt-top"><strong><span class="k">F3</span>Rain</strong></span>
+        <span class="d">Drops of both colours fall across the whole screen and settle into a stepped skyline, which clears when it fills.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">Many small drops, 100 ms steps.</span><span class="dt">Risk</span><span class="dd">Ambient; reads as weather, not as a faucet.</span></span>
+      </button>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g-next">
+    <header class="group-h"><h2 id="g-next">Next</h2><p>The open slot. Nothing runs here yet.</p></header>
+    <div class="opts" role="group" aria-label="Next slot engine">
+      <button type="button" class="opt n" data-pick="next:tuner" aria-pressed="true">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="tuner"></canvas></span>
+        <span class="opt-top"><strong><span class="k">N1</span>Tuner</strong><span class="tag rec n">My pick</span></span>
+        <span class="d">A scan line sweeps the dots looking for a signal, stops now and then, and moves on. The row's own words: nothing on this channel yet.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">8 px per 120 ms step, with pauses.</span><span class="dt">Risk</span><span class="dd">Close to option A's scanline, which you passed on for the page.</span></span>
+      </button>
+      <button type="button" class="opt n" data-pick="next:still" aria-pressed="false">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="still"></canvas></span>
+        <span class="opt-top"><strong><span class="k">N2</span>Off air</strong></span>
+        <span class="d">A still screen: the dot grid and a dim set. No motion, because nothing is running.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">None. One frame.</span><span class="dt">Risk</span><span class="dd">Next to two moving screens it can look broken.</span></span>
+      </button>
+      <button type="button" class="opt n" data-pick="next:build" aria-pressed="false">
+        <span class="screen n" aria-hidden="true"><canvas data-engine="build"></canvas></span>
+        <span class="opt-top"><strong><span class="k">N3</span>Assembly</strong></span>
+        <span class="d">The 8×8 mark assembles cell by cell, holds, and clears to start again: something is being built.</span>
+        <span class="facts"><span class="dt">Motion</span><span class="dd">Two cells per 110 ms step.</span><span class="dt">Risk</span><span class="dd">Brand, not experiment; it promises more than "in the lab".</span></span>
+      </button>
+    </div>
+  </section>
+
+  <section class="panel n">
+    <h2>What every screen keeps</h2>
+    <ul class="keep">
+      <li>%%I24:check%%<span><strong>Decoration only.</strong> Each screen is hidden from screen readers; the row's words carry the meaning, and the whole row stays one link.</span></li>
+      <li>%%I24:check%%<span><strong>One clock.</strong> The screens step on the dither's loop at 7 to 14 steps a second, never ease, and stop when the tab is hidden, the row is scrolled away, or motion is paused.</span></li>
+      <li>%%I24:check%%<span><strong>Reduced motion shows a still frame.</strong> Pause motion stops every screen on the page, not only the background.</span></li>
+      <li>%%I24:check%%<span><strong>Static still means encrypted.</strong> Only the bridge screens use it, and only as the veil over an amount. The faucet's NOISE is a colour, never static.</span></li>
+      <li>%%I24:check%%<span><strong>Its own fill.</strong> Each screen keeps a panel fill, so on hover the row inverts around it and the screen stays readable.</span></li>
+    </ul>
+  </section>
+
+  <section class="verdict n">
+    <span class="conf">My pick · moderate confidence</span>
+    <h2>Strip, Portal, Drip and Tuner.</h2>
+    <p>The strip keeps the row's text where the landing board put it and gives every engine the full width, which the bridge lanes need on a phone. Portal is the one you already liked inside option B, and it is the clearest picture of public in, private out. Drip shows the faucet's whole job in one loop: a tap, two tokens, into an account. Tuner keeps the open slot alive without inventing an experiment.</p>
+    <p>The strongest case against: Both ways is the more accurate bridge, since the app sends and exits, and Off air is the more honest empty slot. If you would rather be exact than calm, take B2 and N2.</p>
+    <p class="picks" id="picks-full"></p>
+  </section>
+</div>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  const reduceMQ = matchMedia("(prefers-reduced-motion: reduce)");
+  const darkMQ = matchMedia("(prefers-color-scheme: dark)");
+  const C = {};
+  const TOKENS = ["bg", "panel", "raised", "line", "ink", "ink-2", "ink-3", "signal", "carrier", "other"];
+  function readColors() {
+    const cs = getComputedStyle(root);
+    for (const k of TOKENS) C[k] = cs.getPropertyValue("--ul-" + k).trim() || "#888888";
+  }
+  function rgb(hex) {
+    let h = hex.replace("#", "");
+    if (h.length === 3) h = h.split("").map((x) => x + x).join("");
+    const n = parseInt(h, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const snap = (v, g) => Math.round(v / g) * g;
+  const MARK = ["#..#.###", "..#.####", "....#.##", ".#.#.###", "#...####", "..#.#.##", ".....###", "#.#.####"];
+  const BODY = '"Atkinson Hyperlegible Next", system-ui, sans-serif';
+  const MONO = '"Atkinson Hyperlegible Mono", ui-monospace, monospace';
+  const WALLET = ["M18 5h2v2h-2zM4 3h14v2H4zM2 5h2v14H2zm2 14h16v2H4zm12-4h6v2h-6zm0-4h6v2h-6zm-2 0h2v6h-2z", "M20 7h2v12h-2zM4 7h16v2H4z"];
+  const TV = ["M4 3h16v2H4zM2 5h2v10H2zm2 10h16v2H4zM20 5h2v10h-2zM6 19h12v2H6zm3-2h2v2H9zm4 0h2v2h-2z"];
+  const AMOUNTS = ["250.00 USDC", "0.42 WETH", "1,200.00 DAI", "18.75 LINK", "3,000.00 USDT", "64.10 UNI", "0.015 WBTC", "900.00 GHO"];
+
+  function notchPath(ctx, x, y, w, h, n) {
+    const s = n / 2;
+    const p = [[n,0],[w-n,0],[w-n,s],[w-s,s],[w-s,n],[w,n],[w,h-n],[w-s,h-n],[w-s,h-s],[w-n,h-s],[w-n,h],[n,h],[n,h-s],[s,h-s],[s,h-n],[0,h-n],[0,n],[s,n],[s,s],[n,s]];
+    ctx.beginPath();
+    p.forEach(([px, py], i) => (i ? ctx.lineTo(x + px, y + py) : ctx.moveTo(x + px, y + py)));
+    ctx.closePath();
+  }
+  function icon(ctx, paths, x, y, size, color) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(size / 24, size / 24); ctx.fillStyle = color;
+    for (const d of paths) ctx.fill(new Path2D(d));
+    ctx.restore();
+  }
+
+  /* One loop for every engine on the board; each steps on its own tick and only while visible. */
+  let playing = !reduceMQ.matches, last = 0, nacc = 0;
+  const engines = new Set();
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.target.eng) e.target.eng.vis = e.isIntersecting; }));
+  const running = () => playing && !document.hidden;
+
+  class Engine {
+    constructor(canvas, tick) {
+      this.cv = canvas; this.ctx = canvas.getContext("2d"); this.tick = tick; this.acc = 0; this.vis = true; this.w = 0; this.h = 0;
+      canvas.eng = this; engines.add(this); io.observe(canvas);
+      this.ro = new ResizeObserver(() => this.fit()); this.ro.observe(canvas);
+    }
+    fit(force) {
+      const r = this.cv.getBoundingClientRect();
+      const w = Math.round(r.width), h = Math.round(r.height);
+      if (!w || !h || (!force && w === this.w && h === this.h)) return;
+      this.w = w; this.h = h;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      this.cv.width = Math.round(w * dpr); this.cv.height = Math.round(h * dpr);
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.ctx.imageSmoothingEnabled = false;
+      this.oy = snap((h - 48) / 2, 2);
+      this.layout(); this.draw();
+    }
+    destroy() { engines.delete(this); io.unobserve(this.cv); this.ro.disconnect(); this.cv.eng = null; }
+    clear() { this.ctx.fillStyle = C.panel; this.ctx.fillRect(0, 0, this.w, this.h); }
+    layout() {} step() {} draw() {}
+  }
+
+  /* Page background: the landing board's Dither tide, unchanged. */
+  class Dither extends Engine {
+    constructor(host) {
+      const cv = document.createElement("canvas"); cv.className = "bg"; cv.setAttribute("aria-hidden", "true"); host.prepend(cv);
+      super(cv, 150);
+      this.t = 40; this.heat = 0; this.hx = -1e4; this.hy = -1e4;
+      this.off = document.createElement("canvas"); this.octx = this.off.getContext("2d");
+      host.addEventListener("pointermove", (e) => {
+        if (e.pointerType === "touch") return;
+        const r = host.getBoundingClientRect();
+        this.hx = e.clientX - r.left; this.hy = e.clientY - r.top; this.heat = 1;
+        if (!running()) this.draw();
+      });
+    }
+    layout() { this.cols = Math.ceil(this.w / 4); this.rows = Math.ceil(this.h / 4); this.off.width = this.cols; this.off.height = this.rows; this.img = this.octx.createImageData(this.cols, this.rows); }
+    step() { this.t++; this.heat = this.heat > 0.1 ? this.heat * 0.7 : 0; }
+    draw() {
+      const { cols, rows, w } = this;
+      if (!cols) return;
+      const d = this.img.data, bg = rgb(C.bg), ln = rgb(C.line), sg = rgb(C.signal);
+      const ph = this.t * 0.07, edge0 = w < 640 ? w - 72 : w * 0.56, span = Math.max(1, w - edge0);
+      const B = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+      const colA = new Float32Array(cols), colB = new Float32Array(cols);
+      for (let c = 0; c < cols; c++) { const x = c * 4; colA[c] = Math.sin(x * 0.011 + ph); colB[c] = x < edge0 ? 0 : Math.pow((x - edge0) / span, 1.5) * 1.08; }
+      const R = 110, heat = this.heat;
+      for (let r = 0; r < rows; r++) {
+        const y = r * 4, rowA = Math.sin(y * 0.017 - ph * 0.7), dy = y - this.hy;
+        for (let c = 0; c < cols; c++) {
+          const x = c * 4;
+          let v = 0.1 + 0.12 * colA[c] * rowA + 0.08 * Math.sin((x * 0.6 + y) * 0.009 + ph * 1.3) + colB[c];
+          if (heat) { const dx = x - this.hx, dist = Math.sqrt(dx * dx + dy * dy); if (dist < R) v += heat * 0.6 * (1 - dist / R); }
+          const th = (B[(r & 3) * 4 + (c & 3)] + 0.5) / 16, col = v > th ? (v > 1.0 ? sg : ln) : bg, i = (r * cols + c) * 4;
+          d[i] = col[0]; d[i + 1] = col[1]; d[i + 2] = col[2]; d[i + 3] = 255;
+        }
+      }
+      this.octx.putImageData(this.img, 0, 0);
+      this.ctx.drawImage(this.off, 0, 0, cols * 4, rows * 4);
+    }
+  }
+
+  /* Static for a veiled amount: four grey levels, reshuffled every step, shared by every bridge screen. */
+  const noise = document.createElement("canvas"); noise.width = 96; noise.height = 8;
+  const nctx = noise.getContext("2d"), nimg = nctx.createImageData(96, 8);
+  function shuffleNoise() {
+    const LV = [[10, 10, 13], [51, 51, 56], [140, 140, 143], [237, 237, 235]], d = nimg.data;
+    for (let i = 0; i < 96 * 8; i++) { const v = LV[(Math.random() * 4) | 0]; d[i * 4] = v[0]; d[i * 4 + 1] = v[1]; d[i * 4 + 2] = v[2]; d[i * 4 + 3] = 242; }
+    nctx.putImageData(nimg, 0, 0);
+  }
+  shuffleNoise();
+
+  function pill(ctx, it, h, from, to, veiled) {
+    if (to <= from) return;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(from, it.y - 1, to - from, h + 2); ctx.clip();
+    notchPath(ctx, it.x, it.y, it.w, h, 2);
+    if (veiled) { ctx.clip(); ctx.drawImage(noise, it.off, 0, Math.ceil(it.w / 2), 8, it.x, it.y, it.w, h); }
+    else {
+      ctx.fillStyle = C.raised; ctx.fill();
+      ctx.fillStyle = C.ink; ctx.font = "500 10px " + MONO; ctx.textBaseline = "middle";
+      ctx.fillText(it.label, it.x + 6, it.y + h / 2 + 1);
+    }
+    ctx.restore();
+  }
+  function laneDots(ctx, y, x0, x1) { ctx.fillStyle = C.line; for (let x = snap(x0, 8); x < x1; x += 8) ctx.fillRect(x, y, 2, 2); }
+  function label(ctx, text, x, y, align) { ctx.font = "700 10px " + BODY; ctx.textBaseline = "middle"; ctx.textAlign = align || "start"; ctx.fillStyle = C["ink-3"]; ctx.fillText(text, x, y); ctx.textAlign = "start"; }
+
+  /* B1 · amounts ride the Ethereum lane, cross the bar, veil, and step down to the Aztec lane. */
+  class Portal extends Engine {
+    constructor(cv) { super(cv, 70); this.li = Math.floor(Math.random() * 8); }
+    layout() {
+      const o = this.oy; this.ya = o + 6; this.yb = o + 28; this.ph = 14;
+      this.ctx.font = "700 10px " + BODY;
+      this.lw = this.w < 260 ? 6 : snap(this.ctx.measureText("Ethereum").width + 18, 4);
+      this.px = snap(Math.max(this.lw + 56, this.w * 0.46), 4);
+      this.items = []; this.gap = 0;
+      for (let i = 0; i < 220; i++) this.advance();
+    }
+    spawn() {
+      const label = AMOUNTS[this.li++ % AMOUNTS.length];
+      this.ctx.font = "500 10px " + MONO;
+      const w = snap(this.ctx.measureText(label).width + 12, 4);
+      this.items.push({ label, w, x: this.lw - w, y: this.ya, ph: 0, off: Math.floor(Math.random() * 40) });
+      this.gap = w + 4 * (4 + Math.floor(Math.random() * 8));
+    }
+    advance() {
+      for (const it of this.items) {
+        it.x += 4;
+        if (it.ph === 0 && it.x >= this.px + 4) it.ph = 1;
+        if (it.ph === 1) { it.y += 4; if (it.y >= this.yb) { it.y = this.yb; it.ph = 2; } }
+      }
+      this.items = this.items.filter((it) => it.x < this.w + 8);
+      this.gap -= 4;
+      if (this.gap <= 0) this.spawn();
+    }
+    step() { this.advance(); }
+    draw() {
+      const { ctx, w, h, ya, yb, px, ph, lw } = this;
+      this.clear();
+      laneDots(ctx, ya + 6, lw, w); laneDots(ctx, yb + 6, px, w);
+      ctx.fillStyle = C.line;
+      for (let k = 0; k * 4 <= yb - ya; k += 1) if (k % 2 === 0) ctx.fillRect(px + 12 + k * 4, ya + 6 + k * 4, 2, 2);
+      if (lw > 6) { label(ctx, "Ethereum", 8, ya + 7); label(ctx, "Aztec", 8, yb + 7); }
+      ctx.save(); ctx.beginPath(); ctx.rect(lw - 2, 0, w, h); ctx.clip();
+      for (const it of this.items) {
+        const cut = it.ph === 0 ? Math.max(it.x, Math.min(it.x + it.w, px + 2)) : it.x;
+        pill(ctx, it, ph, it.x, cut, false); pill(ctx, it, ph, cut, it.x + it.w, true);
+      }
+      ctx.restore();
+      ctx.fillStyle = C.signal; ctx.fillRect(px, this.oy + 2, 2, 44);
+    }
+  }
+
+  /* B2 · sends go right and veil past the bar; exits come back left and clear again. */
+  class Both extends Engine {
+    constructor(cv) { super(cv, 70); this.li = Math.floor(Math.random() * 8); }
+    layout() {
+      const o = this.oy; this.ya = o + 6; this.yb = o + 28; this.ph = 14;
+      this.ctx.font = "700 10px " + BODY;
+      const show = this.w >= 260;
+      this.l0 = show ? snap(this.ctx.measureText("Ethereum").width + 18, 4) : 4;
+      this.l1 = show ? this.w - snap(this.ctx.measureText("Aztec").width + 18, 4) : this.w - 4;
+      this.px = snap((this.l0 + this.l1) / 2, 4);
+      this.top = []; this.bot = []; this.gt = 0; this.gb = 20;
+      for (let i = 0; i < 220; i++) this.advance();
+    }
+    make(dir) {
+      const label = AMOUNTS[this.li++ % AMOUNTS.length];
+      this.ctx.font = "500 10px " + MONO;
+      const w = snap(this.ctx.measureText(label).width + 12, 4);
+      return { label, w, x: dir > 0 ? this.l0 - w : this.l1, y: dir > 0 ? this.ya : this.yb, off: Math.floor(Math.random() * 40) };
+    }
+    advance() {
+      for (const it of this.top) it.x += 4;
+      for (const it of this.bot) it.x -= 4;
+      this.top = this.top.filter((it) => it.x < this.l1); this.bot = this.bot.filter((it) => it.x + it.w > this.l0);
+      if ((this.gt -= 4) <= 0) { const it = this.make(1); this.top.push(it); this.gt = it.w + 4 * (5 + Math.floor(Math.random() * 9)); }
+      if ((this.gb -= 4) <= 0) { const it = this.make(-1); this.bot.push(it); this.gb = it.w + 4 * (7 + Math.floor(Math.random() * 11)); }
+    }
+    step() { this.advance(); }
+    draw() {
+      const { ctx, h, ya, yb, px, ph, l0, l1 } = this;
+      this.clear();
+      laneDots(ctx, ya + 6, l0, l1); laneDots(ctx, yb + 6, l0, l1);
+      if (l0 > 4) { label(ctx, "Ethereum", 8, this.oy + 24); label(ctx, "Aztec", this.w - 8, this.oy + 24, "end"); }
+      ctx.save(); ctx.beginPath(); ctx.rect(l0 - 2, 0, l1 - l0 + 4, h); ctx.clip();
+      for (const it of [...this.top, ...this.bot]) {
+        const cut = Math.max(it.x, Math.min(it.x + it.w, px + 1));
+        pill(ctx, it, ph, it.x, cut, false); pill(ctx, it, ph, cut, it.x + it.w, true);
+      }
+      ctx.restore();
+      ctx.fillStyle = C.signal; ctx.fillRect(px, this.oy + 2, 2, 44);
+    }
+  }
+
+  /* B3 · one amount; static sweeps over it, holds, then clears onto the next amount. */
+  class Veil extends Engine {
+    constructor(cv) { super(cv, 90); this.li = 0; this.phase = "clear"; this.n = 0; this.cover = 0; }
+    layout() { this.label = this.label || AMOUNTS[0]; this.size(); }
+    size() {
+      this.ctx.font = "500 12px " + MONO;
+      const w = snap(this.ctx.measureText(this.label).width + 20, 4);
+      this.it = { label: this.label, w, x: snap((this.w - w) / 2 + (this.w >= 300 ? 30 : 0), 2), y: this.oy + 14, off: 8 };
+    }
+    step() {
+      const it = this.it; this.n++;
+      if (this.phase === "clear" && this.n > 14) { this.phase = "veil"; this.n = 0; }
+      else if (this.phase === "veil") { this.cover = Math.min(it.w, this.cover + 8); if (this.cover >= it.w) { this.phase = "hold"; this.n = 0; } }
+      else if (this.phase === "hold" && this.n > 16) { this.phase = "reveal"; this.n = 0; this.label = AMOUNTS[++this.li % AMOUNTS.length]; this.size(); this.cover = this.it.w; }
+      else if (this.phase === "reveal") { this.cover = Math.max(0, this.cover - 8); if (!this.cover) { this.phase = "clear"; this.n = 0; } }
+    }
+    draw() {
+      const { ctx, it } = this;
+      this.clear();
+      laneDots(ctx, this.oy + 23, 8, this.w - 8);
+      const veiled = this.phase === "veil" || this.phase === "hold";
+      if (this.w >= 300) label(ctx, veiled ? "On Aztec" : "On Ethereum", 12, this.oy + 24);
+      const p = { ...it, label: it.label };
+      ctx.save(); ctx.beginPath(); ctx.rect(it.x - 2, 0, it.w + 4, this.h); ctx.clip();
+      ctx.fillStyle = C.panel; ctx.fillRect(it.x - 2, it.y - 2, it.w + 4, 24);
+      notchPath(ctx, it.x, it.y, it.w, 20, 2); ctx.fillStyle = C.raised; ctx.fill();
+      ctx.fillStyle = C.ink; ctx.font = "500 12px " + MONO; ctx.textBaseline = "middle"; ctx.fillText(it.label, it.x + 10, it.y + 11);
+      ctx.restore();
+      if (this.cover > 0) {
+        const from = this.phase === "reveal" ? it.x + it.w - this.cover : it.x;
+        pill(ctx, p, 20, from, from + this.cover, true);
+        ctx.fillStyle = C.signal; ctx.fillRect(this.phase === "reveal" ? from : from + this.cover - 2, this.oy + 8, 2, 32);
+      }
+    }
+  }
+
+  /* F1 · a tap drips SIGNAL and NOISE in turn; each lands as a coin and rolls into the account. */
+  class Drip extends Engine {
+    constructor(cv) { super(cv, 90); this.k = 0; }
+    layout() {
+      const o = this.oy; this.rail = o + 38; this.sx = 20; this.wx = this.w - 26;
+      this.drops = []; this.coins = []; this.flash = 0; this.n = 0;
+      for (let i = 0; i < 120; i++) this.step();
+    }
+    step() {
+      this.n++; if (this.flash) this.flash--;
+      if (this.n % 6 === 0) this.drops.push({ y: this.oy + 12, c: this.k++ % 2 });
+      for (const d of this.drops) d.y += 4;
+      const landed = this.drops.filter((d) => d.y >= this.rail - 6);
+      this.drops = this.drops.filter((d) => d.y < this.rail - 6);
+      for (const d of landed) this.coins.push({ x: this.sx - 2, c: d.c });
+      for (const c of this.coins) c.x += 4;
+      const kept = this.coins.filter((c) => c.x < this.wx - 6);
+      if (kept.length < this.coins.length) this.flash = 3;
+      this.coins = kept;
+    }
+    draw() {
+      const { ctx, oy } = this;
+      this.clear();
+      const ink = C["ink-3"], col = (c) => (c ? C["ink-2"] : C.signal);
+      ctx.fillStyle = ink; ctx.fillRect(4, oy + 4, 24, 4); ctx.fillRect(18, oy + 8, 6, 4);
+      for (let x = 8; x < this.wx - 4; x += 8) { ctx.fillStyle = C.line; ctx.fillRect(x, this.rail + 4, 2, 2); }
+      for (const d of this.drops) { ctx.fillStyle = col(d.c); ctx.fillRect(this.sx, d.y, 4, 4); }
+      for (const c of this.coins) { notchPath(ctx, c.x, this.rail - 6, 8, 8, 2); ctx.fillStyle = col(c.c); ctx.fill(); }
+      icon(ctx, WALLET, this.wx, oy + 18, 20, this.flash ? C.carrier : C["ink-2"]);
+      if (this.w >= 300) {
+        ctx.font = "500 10px " + MONO; ctx.textBaseline = "middle"; ctx.textAlign = "end";
+        ctx.fillStyle = C.signal; ctx.fillText("SIGNAL", this.wx - 10, oy + 8);
+        ctx.fillStyle = C["ink-2"]; ctx.fillText("NOISE", this.wx - 10, oy + 20);
+        ctx.textAlign = "start";
+      }
+    }
+  }
+
+  /* F2 · one named tap per token, each filling its own pool out of step with the other. */
+  class Taps extends Engine {
+    constructor(cv) { super(cv, 90); }
+    layout() {
+      const o = this.oy;
+      this.taps = [
+        { name: "SIGNAL", x: snap(this.w * 0.3, 4), every: 5, lvl: 0, drops: [], col: "signal", n: 0 },
+        { name: "NOISE", x: snap(this.w * 0.7, 4), every: 7, lvl: 8, drops: [], col: "ink-2", n: 3 },
+      ];
+      this.top = o + 12; this.floor = o + 44;
+      for (let i = 0; i < 60; i++) this.step();
+    }
+    step() {
+      for (const t of this.taps) {
+        if (++t.n % t.every === 0) t.drops.push(this.top);
+        t.drops = t.drops.map((y) => y + 4);
+        const surface = this.floor - t.lvl;
+        const hit = t.drops.filter((y) => y >= surface - 4).length;
+        t.drops = t.drops.filter((y) => y < surface - 4);
+        if (t.drain) { t.lvl = Math.max(0, t.lvl - 2); if (!t.lvl) t.drain = false; }
+        else { t.lvl += hit * 2; if (t.lvl >= 20) t.drain = true; }
+      }
+    }
+    draw() {
+      const { ctx, oy } = this;
+      this.clear();
+      for (const t of this.taps) {
+        ctx.fillStyle = C["ink-3"]; ctx.fillRect(t.x - 12, oy + 4, 16, 4); ctx.fillRect(t.x, oy + 8, 4, 4);
+        ctx.fillStyle = C[t.col];
+        for (const y of t.drops) ctx.fillRect(t.x, y, 4, 4);
+        ctx.fillRect(t.x - 28, this.floor - t.lvl, 60, t.lvl);
+        ctx.fillStyle = C.line; ctx.fillRect(t.x - 30, this.floor, 64, 2);
+        ctx.font = "500 10px " + MONO; ctx.textBaseline = "middle"; ctx.fillStyle = C[t.col];
+        ctx.fillText(t.name, t.x + 10, oy + 10);
+      }
+    }
+  }
+
+  /* F3 · drops of both colours fall everywhere and settle into a skyline that clears when full. */
+  class Rain extends Engine {
+    constructor(cv) { super(cv, 100); }
+    layout() {
+      this.cols = Math.floor((this.w - 8) / 8); this.hgt = new Array(this.cols).fill(0); this.drops = []; this.floor = this.oy + 46; this.drain = 0;
+      for (let i = 0; i < 80; i++) this.step();
+    }
+    step() {
+      if (this.drain) { this.hgt = this.hgt.map((v) => Math.max(0, v - 4)); if (!--this.drain) this.hgt.fill(0); }
+      const n = Math.max(1, Math.round(this.cols / 18));
+      for (let i = 0; i < n; i++) if (Math.random() < 0.6) this.drops.push({ c: (Math.random() * this.cols) | 0, y: this.oy + 2 });
+      for (const d of this.drops) d.y += 4;
+      const keep = [];
+      for (const d of this.drops) { if (d.y >= this.floor - this.hgt[d.c] - 4) this.hgt[d.c] = Math.min(28, this.hgt[d.c] + 4); else keep.push(d); }
+      this.drops = keep;
+      const avg = this.hgt.reduce((a, b) => a + b, 0) / this.cols;
+      if (!this.drain && avg >= 16) this.drain = 8;
+    }
+    draw() {
+      const { ctx } = this;
+      this.clear();
+      const col = (c) => (c % 3 === 0 ? C.signal : C["ink-2"]);
+      for (const d of this.drops) { ctx.fillStyle = col(d.c); ctx.fillRect(8 + d.c * 8, d.y, 4, 4); }
+      for (let c = 0; c < this.cols; c++) if (this.hgt[c]) { ctx.fillStyle = col(c); ctx.fillRect(8 + c * 8, this.floor - this.hgt[c], 6, this.hgt[c]); }
+    }
+  }
+
+  function dotGrid(ctx, w, h, color) { ctx.fillStyle = color; for (let y = 5; y < h; y += 8) for (let x = 5; x < w; x += 8) ctx.fillRect(x, y, 2, 2); }
+
+  /* N1 · a scan line looks for a signal across the dots, stopping now and then. */
+  class Tuner extends Engine {
+    constructor(cv) { super(cv, 120); this.x = 0; this.hold = 0; }
+    layout() { this.cols = Math.ceil(this.w / 8); this.x = Math.floor(this.cols * 0.3); }
+    step() {
+      if (this.hold) { this.hold--; return; }
+      this.x = (this.x + 1) % (this.cols + 12);
+      if (Math.random() < 0.04) this.hold = 6 + ((Math.random() * 8) | 0);
+    }
+    draw() {
+      const { ctx, w, h } = this;
+      this.clear(); dotGrid(ctx, w, h, C.line);
+      const trail = [[0, C.signal], [1, C["ink-2"]], [2, C["ink-3"]], [3, C["ink-3"]]];
+      for (const [d, col] of trail) {
+        const c = this.x - d; if (c < 0 || c >= this.cols) continue;
+        ctx.fillStyle = col; for (let y = 5; y < h; y += 8) ctx.fillRect(c * 8 + 5, y, 2, 2);
+      }
+      if (this.x < this.cols) { ctx.globalAlpha = 0.4; ctx.fillStyle = C.signal; ctx.fillRect(this.x * 8 + 9, 0, 2, h); ctx.globalAlpha = 1; }
+    }
+  }
+
+  /* N2 · off air: one still frame, the dot grid and a dim set. */
+  class Still extends Engine {
+    constructor(cv) { super(cv, 1e9); }
+    draw() { const { ctx, w, h } = this; this.clear(); dotGrid(ctx, w, h, C.line); icon(ctx, TV, snap(w / 2 - 12, 2), snap(h / 2 - 12, 2), 24, C["ink-3"]); }
+  }
+
+  /* N3 · the 8×8 mark assembles cell by cell, holds, and clears. */
+  class Build extends Engine {
+    constructor(cv) { super(cv, 110); }
+    layout() {
+      this.cells = [];
+      MARK.forEach((row, y) => [...row].forEach((ch, x) => ch === "#" && this.cells.push([x, y])));
+      this.order = []; this.reset(); this.n = this.cells.length; this.hold = 10;
+    }
+    reset() { this.order = this.cells.slice().sort(() => Math.random() - 0.5); this.n = 0; this.hold = 0; this.out = 0; }
+    step() {
+      if (this.n < this.cells.length) { this.n = Math.min(this.cells.length, this.n + 2); return; }
+      if (this.hold < 14) { this.hold++; return; }
+      this.out += 4; if (this.out >= this.cells.length) this.reset();
+    }
+    draw() {
+      const { ctx, w } = this, s = 4, x0 = snap(w / 2 - 16, 2), y0 = this.oy + 8;
+      this.clear(); dotGrid(ctx, w, this.h, C.line);
+      ctx.fillStyle = C.panel; ctx.fillRect(x0 - 4, y0 - 4, 40, 40);
+      for (let i = this.out; i < this.n; i++) {
+        const [x, y] = this.order[i];
+        ctx.fillStyle = x >= 6 ? C.signal : C.ink; ctx.fillRect(x0 + x * s, y0 + y * s, s, s);
+      }
+    }
+  }
+
+  const KINDS = { portal: Portal, both: Both, veil: Veil, drip: Drip, taps: Taps, rain: Rain, tuner: Tuner, still: Still, build: Build };
+  const NAMES = { portal: "B1 Portal", both: "B2 Both ways", veil: "B3 Veil", drip: "F1 Drip", taps: "F2 Two taps", rain: "F3 Rain", tuner: "N1 Tuner", still: "N2 Off air", build: "N3 Assembly" };
+
+  readColors();
+  const dither = new Dither(document.getElementById("land"));
+  document.querySelectorAll("canvas[data-engine]").forEach((cv) => new KINDS[cv.dataset.engine](cv));
+
+  const picks = { bridge: "portal", faucet: "drip", next: "tuner" };
+  const slots = {};
+  let place = "strip";
+  function mount(slot) {
+    const cv = document.querySelector(`canvas[data-slot="${slot}"]`);
+    if (slots[slot]) slots[slot].destroy();
+    slots[slot] = new KINDS[picks[slot]](cv);
+    slots[slot].fit(true);
+  }
+  function syncPicks() {
+    const line = `${NAMES[picks.bridge]} · ${NAMES[picks.faucet]} · ${NAMES[picks.next]} · ${place === "strip" ? "Strip" : "Tile"}`;
+    document.getElementById("picks-line").textContent = line;
+    document.getElementById("picks-full").textContent = "On the stage now: " + line + ".";
+  }
+  for (const s of Object.keys(picks)) mount(s);
+  document.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => {
+    const [slot, kind] = b.dataset.pick.split(":");
+    picks[slot] = kind;
+    document.querySelectorAll(`[data-pick^="${slot}:"]`).forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    mount(slot); syncPicks();
+  }));
+  document.querySelectorAll("[data-place-set]").forEach((b) => b.addEventListener("click", () => {
+    place = b.dataset.placeSet;
+    document.getElementById("land").classList.toggle("place-tile", place === "tile");
+    document.querySelectorAll("[data-place-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    requestAnimationFrame(() => { for (const s of Object.keys(slots)) slots[s].fit(true); dither.fit(true); });
+    syncPicks();
+  }));
+  syncPicks();
+
+  const motionBtns = [...document.querySelectorAll("[data-motion]")];
+  const syncMotion = () => motionBtns.forEach((b) => (b.textContent = playing ? "Pause motion" : "Play motion"));
+  motionBtns.forEach((b) => b.addEventListener("click", () => { playing = !playing; syncMotion(); }));
+  reduceMQ.addEventListener("change", () => { playing = !reduceMQ.matches; syncMotion(); });
+  syncMotion();
+
+  function frame(t) {
+    const dt = last ? Math.min(t - last, 250) : 0;
+    last = t;
+    if (running()) for (const e of engines) {
+      if (!e.vis || !e.w) continue;
+      e.acc += dt;
+      if (e.acc >= e.tick) { e.acc = Math.min(e.acc - e.tick, e.tick); e.step(); e.draw(); }
+    }
+    if (running()) { nacc += dt; if (nacc >= 70) { nacc = 0; shuffleNoise(); } }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  function retheme() {
+    readColors();
+    for (const e of engines) if (e.w) e.draw();
+    const cur = root.getAttribute("data-theme") || (darkMQ.matches ? "dark" : "light");
+    document.querySelectorAll("[data-theme-set]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === cur)));
+  }
+  document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => root.setAttribute("data-theme", b.dataset.themeSet)));
+  new MutationObserver(retheme).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+  darkMQ.addEventListener("change", retheme);
+
+  const view = document.getElementById("view");
+  document.querySelectorAll("[data-width-set]").forEach((b) => b.addEventListener("click", () => {
+    view.dataset.width = b.dataset.widthSet;
+    document.querySelectorAll("[data-width-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+    requestAnimationFrame(() => { for (const e of engines) e.fit(true); });
+  }));
+  retheme();
+  document.fonts && document.fonts.ready.then(() => { for (const e of engines) if (e.w) { e.layout(); e.draw(); } });
+})();
+</script>
