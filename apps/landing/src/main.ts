@@ -40,6 +40,7 @@ function retire(engine: Engine, error: unknown): void {
 	sized.delete(engine.sizedBy)
 	resizer.unobserve(engine.sizedBy)
 	watcher.unobserve(engine.canvas)
+	engine.dispose?.()
 	hide(engine.canvas)
 	console.error("landing: a motion engine stopped", error)
 }

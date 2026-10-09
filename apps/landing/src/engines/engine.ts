@@ -11,6 +11,8 @@ export interface Engine {
 	resize(force?: boolean): void
 	step(): void
 	draw(): void
+	/** Lets go of anything outside the loop that still calls into the engine, once it is retired. */
+	dispose?(): void
 }
 
 /** The theme's colours, read from the `--ul-*` tokens. One shared object, refreshed in place on a theme change. */

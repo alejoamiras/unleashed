@@ -17,6 +17,7 @@ export class DitherField implements Engine {
 	private grid: Grid = { cols: 0, rows: 0, width: 0 }
 	private image: ImageData | null = null
 	private height = 0
+	private readonly onPointer = (event: PointerEvent) => this.trace(event)
 
 	constructor(
 		private readonly host: HTMLElement,
@@ -29,7 +30,7 @@ export class DitherField implements Engine {
 		this.canvas.setAttribute("aria-hidden", "true")
 		this.ctx = context2d(this.canvas)
 		host.prepend(this.canvas)
-		host.addEventListener("pointermove", (event) => this.trace(event))
+		host.addEventListener("pointermove", this.onPointer)
 	}
 
 	resize(force = false): void {
@@ -56,6 +57,10 @@ export class DitherField implements Engine {
 		const { bg, line, signal } = this.palette
 		paintField(this.image.data, this.grid, this.state, [rgb(bg), rgb(line), rgb(signal)])
 		this.ctx.putImageData(this.image, 0, 0)
+	}
+
+	dispose(): void {
+		this.host.removeEventListener("pointermove", this.onPointer)
 	}
 
 	// A trace that follows the pointer is motion, so it only runs while the field does. Touch has no hover.

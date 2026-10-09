@@ -33,9 +33,15 @@ describe("build guard", () => {
 		["an upper-case scheme", { "index.html": HTML.replace("https://github.com", "HTTPS://evil.example") }, "outside LINKS"],
 		["an entity-encoded scheme", { "index.html": HTML.replace("https://github.com", "https&#58;//evil.example") }, "outside LINKS"],
 		["a single-quoted link", { "index.html": HTML.replace("<body>", "<body><a href='https://evil.example'>x</a>") }, "outside LINKS"],
+		["a slash-separated attribute", { "index.html": HTML.replace("<body>", '<body><a/href="//evil.example">x</a>') }, "outside LINKS"],
 		[
-			"a refresh to another host",
-			{ "index.html": HTML.replace("<body>", '<body><meta http-equiv="refresh" content="0;url=//evil.example">') },
+			"a meta refresh",
+			{ "index.html": HTML.replace("<body>", '<body><meta http-equiv="refresh" content="0;url=&sol;&sol;evil.example">') },
+			"meta refresh",
+		],
+		[
+			"a place in a content value",
+			{ "index.html": HTML.replace("<body>", '<body><meta property="og:url" content="x;url=http:evil.example">') },
 			"outside LINKS",
 		],
 		["a data: font", { "assets/index-x.css": "@font-face{src:url(data:font/woff2;base64,AAAA)}" }, "data: URL"],

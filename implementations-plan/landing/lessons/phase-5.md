@@ -32,4 +32,12 @@ Round 1: material findings remain. Seven findings, all verified against the code
 | 6 | Only frame steps were guarded: a theme redraw or a resize of a failing engine threw uncaught and left its screen up; an engine joined the set before its first draw | Adopted: `Loop.guard` covers starts, resizes and redraws; one page-owned `ResizeObserver` replaces the per-engine ones, so a retired engine is unobserved; a browser case breaks a screen's `fillRect` and shows both paths retire it (it fails with the redraw guard removed) |
 | 7 | Two comments carried workflow history ("while the owner's pick is pending", "Not on the board") | Adopted: each keeps only its lasting reason |
 
+Round 2 (resumed, over the fix commits): material findings remain. Three findings, all verified, all adopted.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | Browsers also split attributes on `/`, so `<a/href="//evil.example">` passed the link check | Adopted: the attribute match accepts `/` as a separator; a regression case pins it |
+| 2 | A meta refresh could still leave the page: `url=http:evil.example` and `url=&sol;&sol;evil.example` passed | Adopted: any meta refresh fails the guard (the page has none), and a `content` value with `:`, `&` or `//` must be an allowed URL |
+| 3 | A retired field kept its `pointermove` listener, which still reached the host and held the engine | Adopted: `Engine.dispose` (optional) lets go of it, and `retire` calls it; checked by hand: after a forced draw failure the canvas is hidden and a pointer move makes no call |
+
 LESSONS_FILE=implementations-plan/landing/lessons/phase-5.md

@@ -14,9 +14,11 @@ const FONT_FILES = ["AtkinsonHyperlegibleNext", "AtkinsonHyperlegibleMono", "Six
 const ALLOWED_URLS = new Set<string>([...Object.values(LINKS), CANONICAL])
 // Anything else, an entity, a scheme in any case or a `//` host included, is refused rather than decoded.
 const LOCAL_PATH = /^\/(?!\/)[\w.~/-]*$/
-const DESTINATION = /\s(href|src|srcset|action|formaction|poster|data|content)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
+// Browsers also split attributes on `/`, as in `<a/href=…>`.
+const DESTINATION = /[\s/](href|src|srcset|action|formaction|poster|data|content)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
 // A `content` value is prose unless it could name a place.
-const URL_LIKE = /\/\/|&#|^\s*[a-z][\w+.-]*:/i
+const URL_LIKE = /[:&]|\/\//
+const REFRESH = /<meta[^>]*http-equiv\s*=\s*["']?refresh/i
 
 const text = (dist: Dist, path: string) => new TextDecoder().decode(dist.get(path) ?? new Uint8Array())
 const bytesOf = (dist: Dist, test: (path: string) => boolean) =>
@@ -53,6 +55,7 @@ function checkHtml(html: string): string[] {
 	const errors: string[] = []
 	if (/<script(?![^>]*\ssrc=)[^>]*>/.test(html)) errors.push("index.html has an inline <script>")
 	if (/\sstyle=/.test(html)) errors.push("index.html has a style= attribute")
+	if (REFRESH.test(html)) errors.push("index.html has a meta refresh")
 	for (const [, name, ...quoted] of html.matchAll(DESTINATION)) {
 		const value = quoted.find((v) => v !== undefined) ?? ""
 		if (ALLOWED_URLS.has(value)) continue
