@@ -11,6 +11,9 @@ export default defineConfig({
 	testDir: here,
 	globalSetup: `${here}global-setup.ts`,
 	fullyParallel: true,
+	// Software-rendered WebKit starves past about eight parallel pages: a few frames a second, and the
+	// motion checks time out. Chromium keeps Playwright's default.
+	...(process.env.LANDING_WEBKIT ? { workers: 8 } : {}),
 	forbidOnly: Boolean(process.env.CI),
 	timeout: 30_000,
 	expect: { timeout: 5_000 },

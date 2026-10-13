@@ -25,4 +25,21 @@ Worker with Workers Builds' Import a repository after PR 1 merges, reusing the a
   `npx wrangler preview`. `worker:preview` (`wrangler versions upload`) is the landing's, as the tools
   app's `versions upload` already is on `unleashed-testnet`.
 
+## The local WebKit gate (libgtk-4-1 4.14.5 installed by the owner)
+
+WebKit launches now. The first pass, `LANDING_WEBKIT=1 test:browser`, gave 25 of 27, and repeats
+failed different motion and readback checks each time. Three causes, all in the harness:
+
+- **Mobile WebKit has no mouse wheel** (`mouse.wheel: Mouse wheel is not supported in mobile WebKit`).
+  The clean-load case now scrolls with `window.scrollTo`.
+- **`cards.spec.ts` forced a 1440 x 2000 viewport on every project**, so the phone project ran the
+  cards at desktop width with the iPhone's 3x scale: about 4 frames a second in software-rendered
+  WebKit, measured (58 at 390 x 844). The spec now keeps the project's width and only sets the height.
+- **Playwright's default is half the cores: 94 workers on this host.** Past about eight parallel
+  pages, software-rendered WebKit starves and the motion polls time out (161 of 162 at the default,
+  162 of 162 at eight). A WebKit run is capped at eight workers in the config; Chromium keeps the
+  default.
+
+After the fixes: both projects, `--repeat-each=3`, twice: 162 of 162 each time.
+
 LESSONS_FILE=implementations-plan/landing/lessons/phase-6.md

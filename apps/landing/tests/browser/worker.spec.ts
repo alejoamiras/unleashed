@@ -14,7 +14,7 @@ const reference = {
 
 test("loads clean: no CSP violation, no request to another origin, no console error", async ({ page, guard }) => {
 	await page.goto("/")
-	await page.mouse.wheel(0, 4_000)
+	await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
 	await page.waitForTimeout(1_000)
 	await expectClean(guard)
 })

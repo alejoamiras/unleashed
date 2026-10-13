@@ -22,7 +22,15 @@ const drawn = (page: Page, selector: string) =>
 		return count
 	})
 
-test.use({ viewport: { width: 1440, height: 2000 } })
+/** Resizes to `height` at the project's own width, so the phone project stays a phone. */
+const windowOf =
+	(height: number) =>
+	async ({ page }: { page: Page }) => {
+		await page.setViewportSize({ width: page.viewportSize()?.width ?? 1440, height })
+	}
+
+// Tall enough for every row to be on screen.
+test.beforeEach(windowOf(2000))
 
 test("every screen draws and moves while running", async ({ page, guard }) => {
 	expect(ENGINES.length).toBeGreaterThan(0)
@@ -60,7 +68,7 @@ test.describe("with reduced motion", () => {
 })
 
 test.describe("in a short window", () => {
-	test.use({ viewport: { width: 1440, height: 600 } })
+	test.beforeEach(windowOf(600))
 
 	test("a screen off screen stops, and starts when scrolled to", async ({ page }) => {
 		await page.goto("/")
