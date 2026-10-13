@@ -76,7 +76,7 @@ first deploy hurts no one."
 | A4 tokens | **Replaced.** No keyed run: K1 is dropped. After PR 1 merges, the owner creates the Worker with Workers Builds' Import a repository flow (O1), reusing the build token the two app Workers use. No new token. Ledger D15 records this owner decision; it supersedes D4, D5, D13 and the earlier rejection of the import flow (F3) |
 | A5 previews | **Yes**: the landing Worker gets preview builds (D9) |
 | A6 zone features and NEL | **Both off.** Any zone feature that injects into the page is turned off, on the landing's hosts where Cloudflare can scope it, else zone-wide. NEL is a zone setting, so it goes off for the app hosts too; the owner accepted that (O2, D16). This reading of "yeah. ok to turn it off." as two answers is the coordinator's |
-| WebKit | The owner installs `libgtk-4-1`. The lead checks `dpkg -s libgtk-4-1` before the WebKit gate (phase 7), and reports it if it is still missing at the cutover |
+| WebKit | The owner installed `libgtk-4-1` (4.14.5). The local WebKit gate of phases 2 to 4 now runs and passes at PR 1's head, after three harness fixes (`lessons/phase-6.md`); the live pass runs in phase 7 |
 
 Merge authority is restored as first granted: the lead squash-merges when every required check is
 green, never `--admin`. Merging PR 1 deploys nothing, because no Worker exists until O1.
