@@ -1,6 +1,6 @@
 /**
  * The build guard's rules over a built dist/, as pure functions of its files. Imports nothing but
- * node:crypto and the content file, because a keyed deploy runs this code beside a Cloudflare token.
+ * node:crypto and the content file, so the whole check is short enough to read.
  */
 import { createHash } from "node:crypto"
 import { CANONICAL, LINKS } from "../src/content.ts"
@@ -14,8 +14,8 @@ const FONT_FILES = ["AtkinsonHyperlegibleNext", "AtkinsonHyperlegibleMono", "Six
 const ALLOWED_URLS = new Set<string>([...Object.values(LINKS), CANONICAL])
 /*
  * The link rules catch a link nobody meant to ship. They are no defence against build tooling, which
- * is trusted: it could navigate from the script bundle, where no HTML check looks. The expected digest
- * binds a deploy to the trusted reference build.
+ * is trusted: it could navigate from the script bundle, where no HTML check looks. Tampering shows as
+ * a deployed digest that differs from a trusted reference build of the same commit.
  */
 // Anything else, an entity, a scheme in any case or a `//` host included, is refused rather than decoded.
 const LOCAL_PATH = /^\/(?!\/)[\w.~/-]*$/

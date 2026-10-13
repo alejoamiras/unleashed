@@ -9,8 +9,8 @@ const config = JSON.parse(
 		.join("\n"),
 ) as Record<string, unknown>
 
-// A keyed deploy runs `wrangler deploy` with this file beside a Cloudflare token: a `build` would run
-// arbitrary commands, and `main` or `alias` would bundle a script into an assets-only Worker.
+// Workers Builds deploys with this file after the guard has checked dist/: a `build` would run commands
+// after that check, and `main` or `alias` would bundle a script into an assets-only Worker.
 test("the Worker is assets only and runs nothing at deploy", () => {
 	expect(config.name).toBe("unleashed-landing")
 	expect(config).not.toHaveProperty("main")

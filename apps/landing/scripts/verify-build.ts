@@ -1,9 +1,8 @@
 /**
- * Offline guard over apps/landing/dist/. Prints DIST_SHA256 on success.
+ * Offline guard over apps/landing/dist/. Prints DIST_SHA256 on success; the same commit always gives
+ * the same digest, which is how a deployed build is compared with a reference build.
  *   --expect <hex>                  fail unless dist/ is exactly that artifact
  *   --channel production|preview    fail unless dist/ is that channel's build
- * A keyed deploy runs this file directly (never through `bun run`, which also runs pre/post hooks),
- * so it imports only node: built-ins and ./dist-checks.ts.
  */
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"

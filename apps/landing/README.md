@@ -35,8 +35,8 @@ rows from Strip to Tile; the Tile rules already ship in `src/styles/landing.css`
 ## Hosting
 
 One assets-only Cloudflare Worker, `unleashed-landing` (`wrangler.jsonc`), built and deployed by Workers Builds from
-`main`. GitHub Actions only builds and tests it. The config's header lists the commands and variables the dashboard
-runs; it never gains `main`, `build` or `alias`.
+`main`, with its root directory set to `apps/landing`. GitHub Actions only builds and tests it. The config's header
+lists the commands and variables the dashboard runs; it never gains `main`, `build` or `alias`.
 
 - **Production** is a build of `main`. `worker:deploy` publishes it and refuses any other `dist/`.
 - **Previews** are builds of any other branch (`WORKERS_CI_BRANCH` set and not `main`). `worker:preview` uploads
@@ -44,5 +44,7 @@ runs; it never gains `main`, `build` or `alias`.
   meta, so search engines skip it; `dist/build.json` records `{ buildId, channel }` and each command refuses the
   other channel's build.
 - A build's id is `<version>+<first 8 hex of the commit>`, from `WORKERS_CI_COMMIT_SHA` or the local checkout.
-  Two builds of one commit give one `DIST_SHA256`; `verify:build --expect <hex> --channel production` checks a
-  `dist/` against a known digest.
+  Two builds of one commit give one `DIST_SHA256`, so a deploy is checked by building the same commit locally
+  (`git archive` export, `WORKERS_CI_COMMIT_SHA=<sha>`) and comparing its digest with the one in the Workers Builds
+  log, then running `LANDING_URL=<host> test:browser` from that export, which compares the served HTML byte for
+  byte.
