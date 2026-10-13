@@ -6,6 +6,8 @@
 		"packages/*"
 	],
 	"scripts": {
+		"dev:landing": "bun run --cwd apps/landing dev",
+		"build:landing": "bun run --cwd apps/landing build",
 		"dev:tools": "bun run --cwd apps/tools dev",
 		"build:tools": "bun run --cwd apps/tools build",
 		"test:tools": "bun run --cwd apps/tools test",
