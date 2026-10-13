@@ -75,4 +75,29 @@ failed: `no build identity: WORKERS_CI_COMMIT_SHA or a git checkout, got 'main'`
 - **workers.dev also sends `nel` and `report-to`.** NEL there is not the zone's setting, so O2's
   "no `nel`" check belongs on the custom domains only.
 
+## Gate: passed
+
+- **Production.** The Workers Builds log for `4c33c63` printed
+  `DIST_SHA256=a66f05f4cb69ec658c862979eeba961e0ce966d05bf4d7506199f5ea23cc56f7`, byte-equal to the reference
+  build of that commit, then `bun run worker:deploy` deployed version `5e6ded0b-6856-4460-8e10-47db6af9ef8f` to
+  `unleashed-landing.alejo-amiras.workers.dev`. Install: automatic install skipped, filtered and frozen, 201
+  packages. Live build id `0.1.0+4c33c630`; the live smoke from the reference export passed (56, both
+  projects).
+- **Preview.** The `landing-close-out` build at `0dea427` printed `DIST_SHA256=a94f3f56…df55`, byte-equal to a
+  preview reference built from an export with `WORKERS_CI_BRANCH=landing-close-out`, and uploaded version
+  `86f7d1c4` with `bun run worker:preview`. Workers Builds gave it the alias
+  `landing-close-out-unleashed-landing.alejo-amiras.workers.dev` on its own. Both preview URLs send
+  `X-Robots-Tag: noindex` and the robots meta, and serve the reference HTML byte for byte; production sends
+  neither marker.
+- **The channels cannot cross in the pipeline.** On the preview reference, `worker.ts deploy` refuses
+  (`deploy needs a production build, but dist/ is 'preview'`) and `worker.ts preview` reaches wrangler
+  (stubbed). The reverse was shown on a production export. A preview build's markers are fixed in its bytes,
+  so a version promoted by hand in the dashboard would still say noindex, and the live integrity check
+  (served HTML equal to the production reference) would fail on it.
+- **"Read 12 files" against Vite's 8 is expected.** wrangler 4.129.1's `buildAssetManifest` logs the length
+  of `readdir(dist, { recursive: true })`, which counts the `assets/` directory too: 11 files plus 1
+  directory. Vite lists the 8 files it emitted, not the 3 copied from `public/`. Of the 11, `_headers` is
+  never uploaded, which leaves the 10 the log uploads ("2 files (8 already uploaded)"). The same code
+  `stat`s every entry and so follows a symlink, which is why the guard refuses one.
+
 LESSONS_FILE=implementations-plan/landing/lessons/phase-6.md

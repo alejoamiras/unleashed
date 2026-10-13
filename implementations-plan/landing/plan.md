@@ -814,7 +814,7 @@ Validation gate:
 
 After phase 5: run the Post-implementation loop (steps 2 and 3) over the whole PR 1 diff.
 
-### Phase 6: merge PR 1, create the Worker with Workers Builds, verify on workers.dev
+### Phase 6: merge PR 1, create the Worker with Workers Builds, verify on workers.dev ✓
 
 Steps:
 1. Run the repository's PR gates: `bun run audit:tools && bun run test:all`.
@@ -881,7 +881,8 @@ Steps:
 5. Note the second consumer of `base.css` in `packages/design/README.md`. Leave `apps/tools/README.md`
    alone: an edit there re-runs the tools build and its e2e shards.
 6. Check the preview channel on PR 2's own branch build: its preview URL answers with
-   `X-Robots-Tag: noindex` and the robots meta (A5).
+   `X-Robots-Tag: noindex` and the robots meta (A5). Done on `landing-close-out`'s first build
+   (`lessons/phase-6.md`); repeat on the final head.
 7. Add the follow-ups. Then write the Outcome, promote the lessons, move the archive, and move the
    index line (Post-implementation step 5).
 
@@ -937,8 +938,9 @@ run creates the Worker, and no new token is minted.
    lead what changed. The lead re-checks the app hosts after any zone-wide change; on a failure, turn
    that one back on.
 2. **NEL off.** In the zone's Network page, turn off Network Error Logging Monitoring. It is
-   zone-wide (Fact 18), accepted by the owner. The lead checks that responses no longer carry `nel`,
-   and re-checks the app hosts.
+   zone-wide (Fact 18), accepted by the owner. The lead checks that the zone's hosts (the app hosts
+   now, the landing's custom domains after step 5) no longer carry `nel`, and re-checks the app hosts.
+   `workers.dev` keeps sending `nel`: it is not in the zone, so it proves nothing here.
 3. **Apex.** Open `unleashed-landing` › Settings › Domains & Routes › Add › Custom domain, and enter
    `unleashed.systems`.
    - If the dashboard offers to replace the existing DNS record, accept. Leave previews off, as on
