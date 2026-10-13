@@ -9,7 +9,7 @@ explainer: off
 eli5_mode: artifact
 budget: "recon 1 agent; code_review off; codex gpt-6.1-sol at high; fable leg on opus"
 harden: not scheduled (a static page with no secrets, no input and no backend)
-status: approved; PR 1 merging, then the Worker (O1) and the cutover (O2)
+status: approved; PR 1 merged, the Worker live on workers.dev (O1); the cutover runs as keyed runs (O2-API, D17)
 ---
 
 # Landing page for unleashed.systems
@@ -405,7 +405,17 @@ landing filter does not list the action again.
     decision, D15): a user token with Workers Scripts Edit and Account Settings Read on this one
     account. It can create, and overwrite, any Worker on the account; that residual is accepted in
     `follow-ups.md`. No new token, and no agent sees one.
-  - Nothing else holds a Cloudflare credential: there is no keyed run.
+  - The cutover runs as owner-approved keyed runs (O2-API, D17) with one new user token on this
+    account and the `unleashed.systems` zone. It lives in 1Password only (`Keyed-Runs/Cloudflare-Cutover`),
+    has a TTL of hours and an IP filter for this host, and the owner deletes it after the cutover. Two of
+    its lines are broad, stated plainly:
+    1. Account › Workers Scripts › Edit reaches every Worker on the account, the two app Workers
+       included, because custom domains have no per-Worker role (Fact 13).
+    2. Zone › Zone Settings › Edit reaches every setting of the zone, SSL and Always Use HTTPS
+       included, for the app hosts too.
+    Single Redirect Edit and Workers Routes Edit can redirect or route any host of the zone. DNS is
+    read-only: nothing creates, edits or deletes a record. The scripts import only Bun and Node
+    built-ins, so the approved commit is all the code that sees the token.
 - **The first deploy has no gate before upload.** Workers Builds builds `main` and deploys it as
   soon as the owner saves the import. What still holds:
   - the guard runs inside `build`, and `worker:deploy` refuses anything but a production `dist/`;
@@ -844,7 +854,8 @@ Validation gate:
 ### Phase 7: cutover and live verification
 
 Steps:
-1. Hand the owner runbook O2, one checkpoint at a time.
+1. Run O2-API (D17): run A, then run B, then the owner's iPhone look, then run C. The dashboard O2
+   is the manual fallback.
 2. After each checkpoint, check both hosts with `curl -sSI` over HTTPS and HTTP.
 3. After the rule is off, poll until both hosts serve the landing's build id, at most 5 minutes.
    Then verify in Chromium against both hosts:
@@ -922,7 +933,27 @@ run creates the Worker, and no new token is minted.
    which opens the landing. Domains & Routes lists no custom domain. Add none yet.
 6. Send the lead "done", the `DIST_SHA256=` line, and the token's name.
 
-### O2: cutover (owner, dashboard; after the lead says workers.dev is verified)
+### O2-API: the cutover as keyed runs (lead, after the owner approves each run; D17)
+
+`apps/landing/scripts/cutover.ts`, run with `apps/landing/cloudflare-cutover.env.example`. Each run is
+one `env-exec` request the owner approves with `op-remote`. Records go to `~/.cache/unleashed-landing-cutover/`,
+never into the repository.
+
+- **Run A, inventory.** GET requests only. It records what O2 step 0 asks for: the redirect ruleset
+  as JSON (the rollback), every DNS record, the zone settings that touch a page or its headers,
+  Zaraz, Bot Fight Mode, the Workers custom domains and routes, the certificate packs, and what
+  each public host answers. A read the token cannot make is named with the permission it lacks.
+- **Run B, the cutover.** O2 steps 1 to 5 in order, with the checks of each step inside the script:
+  after each zone toggle the app hosts answer as recorded and both landing hosts still answer 302;
+  after each attach the domain's certificate is active and both hosts still answer 302; after the
+  rule is off both hosts serve the landing's production build. On a failed check it stops and puts
+  back what it changed, newest first: the rule on again, each setting to its recorded value. A
+  custom domain stays attached, as in R, because detaching one deletes its DNS record.
+- **Run C, delete the rule.** After the owner's iPhone look. It refuses unless the rule is still
+  the recorded one and off.
+- The owner deletes the token after run C.
+
+### O2: cutover (manual fallback; owner, dashboard)
 
 0. **Record.** Send the lead:
    - the redirect rule: its name, its match expression, the target URL, the status code, the
@@ -1116,6 +1147,7 @@ another HTML bypass does not weaken it, and build tooling stays trusted (D13). T
 | D14 | Reference builds | `git archive` exports in the scratch directory | A temporary clone (the brief allows no clones); checking out `main` in the worktree (moves the branch's working state) | X3, the brief |
 | D15 | Creating the Worker | **Owner decision**: Workers Builds' Import a repository after PR 1 merges, root directory `apps/landing`, the existing build token. The lead's check comes after the first deploy: build-log digest against a reference build of the merge commit, and the live smoke on workers.dev, before any domain points at it | The keyed run (K1) the lead recommended and the rejection of the import flow (F3); a new per-Worker token | owner, second answer; supersedes D4, D5, D13 |
 | D16 | Zone extras and NEL | Off: injecting features hostname-scoped where possible, else zone-wide; NEL zone-wide | NEL on and named in the Quality Bar (the earlier recommendation) | owner, A6 |
+| D17 | Running O2 | **Owner decision**: the lead runs O2 through the Cloudflare API as owner-approved keyed runs A, B and C (O2-API), with a new token in `Keyed-Runs/Cloudflare-Cutover` that the owner deletes afterwards. The dashboard O2 stays as the manual fallback | The dashboard O2 by the owner | owner: "I'd rather mint you a token so you can do that please?"; supersedes "there is no keyed run" (D15's Security note) |
 
 Unresolved: none. Residuals the owner accepted: the build token can deploy every Worker on the account
 (`follow-ups.md`), and the first upload has no gate before it, only the check after it (D15).
