@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from "vite"
+import { buildCommit } from "./build-commit.ts"
 import { type Channel, channelOf, pageHeaders, renderHeadersFile } from "./security-headers.ts"
 import { renderBody } from "./src/markup.ts"
 
@@ -13,9 +14,7 @@ const PRELOADED_FONTS = [/^assets\/AtkinsonHyperlegibleNext-[\w-]+\.woff2$/, /^a
 /** `<version>+<first 8 hex of the commit>`: Workers Builds' commit, else the checkout's. */
 function buildId(): string {
 	const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string }
-	const sha = process.env.WORKERS_CI_COMMIT_SHA || gitHead()
-	if (!/^[0-9a-f]{40}$/.test(sha ?? "")) throw new Error(`no build identity: WORKERS_CI_COMMIT_SHA or a git checkout, got '${sha ?? ""}'`)
-	return `${pkg.version}+${sha?.slice(0, 8)}`
+	return `${pkg.version}+${buildCommit(process.env.WORKERS_CI_COMMIT_SHA, gitHead).slice(0, 8)}`
 }
 
 function gitHead(): string | null {
