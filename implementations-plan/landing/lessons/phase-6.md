@@ -53,4 +53,26 @@ Reference build of `1dd4aec` (export, root directory `apps/landing`, O1's build 
 `WORKERS_CI_BRANCH=main`): `DIST_SHA256=91ff95ac81c0072c431a9130b1ff2f0eddf7c2e0970d0c6606749c001b807d4c`.
 The first Workers Builds deploy must print the same.
 
+## The first Workers Builds build (O1)
+
+The owner imported the repository with the token "Unleashed Builds". The install ran as designed:
+`SKIP_DEPENDENCY_INSTALL` honoured, then the filtered, frozen install (201 packages). Then `vite build`
+failed: `no build identity: WORKERS_CI_COMMIT_SHA or a git checkout, got 'main'`. Nothing deployed.
+
+- **Workers Builds put the branch name in `WORKERS_CI_COMMIT_SHA`** on that first build, which no push
+  triggered. `||` only falls back on an empty value, so the strict 40-hex check saw `main` and failed.
+  The tools build slices the variable unchecked and would have shipped `<version>+main`
+  (`follow-ups.md`).
+- **Fix, PR #16 (`4c33c63`):** `apps/landing/build-commit.ts` uses the variable only when it is a full
+  SHA, else `git rev-parse HEAD` (Workers Builds builds from a clone), else fails. A local build with
+  `WORKERS_CI_COMMIT_SHA=main` in a checkout gave the reference digest. The fix branch's own preview
+  build on `unleashed-landing` passed before the merge.
+- **The merge's production build deployed:** build id `0.1.0+4c33c630` on workers.dev. Reference build
+  of `4c33c63` (export, O1's command): `DIST_SHA256=a66f05f4cb69ec658c862979eeba961e0ce966d05bf4d7506199f5ea23cc56f7`.
+  From that export, `LANDING_URL=https://unleashed-landing.alejo-amiras.workers.dev LANDING_WEBKIT=1
+  test:browser`: 56 passed, the live-only cases included (served HTML byte-identical to the reference,
+  no `/cdn-cgi/` request). The build log's digest is still to be compared (the owner sends it).
+- **workers.dev also sends `nel` and `report-to`.** NEL there is not the zone's setting, so O2's
+  "no `nel`" check belongs on the custom domains only.
+
 LESSONS_FILE=implementations-plan/landing/lessons/phase-6.md
