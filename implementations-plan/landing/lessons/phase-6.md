@@ -42,4 +42,15 @@ failed different motion and readback checks each time. Three causes, all in the 
 
 After the fixes: both projects, `--repeat-each=3`, twice: 162 of 162 each time.
 
+## Merge
+
+PR 1 (#15) squash-merged at `bf6596d` with every required check green (28 passed, Shellcheck skipped
+by its filter): `1dd4aec`, verified by GitHub. Marking it ready fired `ready_for_review`, which
+cancelled the in-flight `synchronize` runs; their aggregators showed as failed until the new runs
+finished. That is the concurrency group working, not a break.
+
+Reference build of `1dd4aec` (export, root directory `apps/landing`, O1's build command,
+`WORKERS_CI_BRANCH=main`): `DIST_SHA256=91ff95ac81c0072c431a9130b1ff2f0eddf7c2e0970d0c6606749c001b807d4c`.
+The first Workers Builds deploy must print the same.
+
 LESSONS_FILE=implementations-plan/landing/lessons/phase-6.md
