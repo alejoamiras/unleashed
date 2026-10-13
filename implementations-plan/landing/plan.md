@@ -9,7 +9,7 @@ explainer: off
 eli5_mode: artifact
 budget: "recon 1 agent; code_review off; codex gpt-6.1-sol at high; fable leg on opus"
 harden: not scheduled (a static page with no secrets, no input and no backend)
-status: conditionally approved; phases 1-5 built, deploy decisions pending
+status: approved; PR 1 merging, then the Worker (O1) and the cutover (O2)
 ---
 
 # Landing page for unleashed.systems
@@ -35,7 +35,8 @@ that sends both hosts to the testnet app goes away.
   connecting cloudflare's dashboard."
 - **Cloudflare**: "Keyed deploy + your clicks". The lead creates the Worker once through a keyed run
   and verifies it on `workers.dev`. The owner then does the dashboard-only steps from the runbooks
-  below.
+  below. *Superseded by the owner's second answer (Owner verdict): no keyed run; the owner creates
+  the Worker with Workers Builds' Import a repository flow (D15).*
 - **Merge authority**: "Lead merges when green". The lead squash-merges its own PRs once every
   required check is green and the Codex fix loop has converged. Never `--admin`, never a bypassed
   check, never a change to branch protection.
@@ -50,31 +51,35 @@ that sends both hosts to the testnet app goes away.
 
 ## Owner verdict (approval gate)
 
-**Conditional approve** for building the landing now; the deploy decisions come later. The owner,
-verbatim: "my picks are B2, F1 and N1. A5: yes, let's do preview builds. Im going into the weekend
-though, I think I'll answer the other ones later. But mosr have to do with how are we going to
+**First answer: conditional approve** for building the landing; the deploy decisions came later. The
+owner, verbatim: "my picks are B2, F1 and N1. A5: yes, let's do preview builds. Im going into the
+weekend though, I think I'll answer the other ones later. But mosr have to do with how are we going to
 deploy, so maybe you can already start implementing the landing and we do the deploy and rest
 afterwards"
 
-What it settles and what it leaves open:
+**Second answer, on the owner's return.** Verbatim, numbered against the lead's list (1 placement,
+2 page details, 3 token, 4 zone features and NEL, 5 WebKit): "hey im back. 1. Whatever it's now.
+Strip it's ok. 2. ok. 3. do we need to do that or shall I just connect something on cloudflare? 5.
+yeah. ok to turn it off. ill install it."
+
+Asked how the Worker gets created, the owner picked "Just connect it (Recommended)", which read: "The
+lead merges PR 1. You go to Workers & Pages → Create → Import a repository and pick unleashed with the
+settings it gives you, reusing the build token the two app sites already use. Cloudflare builds and
+deploys. Nothing points at the site until the lead has checked it on its workers.dev address, so a bad
+first deploy hurts no one."
 
 | Ask | State |
 |---|---|
-| A1 engines | **Picked**: B2 Both ways, F1 Drip, N1 Tuner. The placement was not picked: the page builds Strip, the recommendation, as **provisional, awaiting the owner**. Switching to Tile is one constant and its CSS, because every engine lays out from its canvas size |
-| A2 narrow phones | **Awaiting owner sign-off**: built as recommended |
-| A3 page details | **Awaiting owner sign-off**: each recommended default built as listed |
-| A4 tokens | **Unanswered**: K1 and O1 do not start |
-| A5 previews | **Changed to yes**: the landing Worker gets preview builds (D9) |
-| A6 zone features and NEL | **Unanswered**: O2 does not start |
+| A1 engines | **Picked**: B2 Both ways, F1 Drip, N1 Tuner, in the **Strip** placement (confirmed) |
+| A2 narrow phones | **Signed off** as built |
+| A3 page details | **Signed off** as built |
+| A4 tokens | **Replaced.** No keyed run: K1 is dropped. After PR 1 merges, the owner creates the Worker with Workers Builds' Import a repository flow (O1), reusing the build token the two app Workers use. No new token. Ledger D15 records this owner decision; it supersedes D4, D5, D13 and the earlier rejection of the import flow (F3) |
+| A5 previews | **Yes**: the landing Worker gets preview builds (D9) |
+| A6 zone features and NEL | **Both off.** Any zone feature that injects into the page is turned off, on the landing's hosts where Cloudflare can scope it, else zone-wide. NEL is a zone setting, so it goes off for the app hosts too; the owner accepted that (O2, D16). This reading of "yeah. ok to turn it off." as two answers is the coordinator's |
+| WebKit | The owner installs `libgtk-4-1`. The lead checks `dpkg -s libgtk-4-1` before the WebKit gate (phase 7), and reports it if it is still missing at the cutover |
 
-Scope until the owner returns:
-- Phases 1 to 5, then the Post-implementation Codex fix loop on that diff, then PR 1 opened so CI
-  runs.
-- Nothing merges. The merge authority above is suspended until the owner returns. The owner said
-  the deploy comes afterwards, and AFK mode forbids merges anyway.
-- PR 1 lists every provisional choice and every surface awaiting sign-off.
-- The owner is away, so AFK rules apply. Non-trivial forks go to `/codex` (`gpt-6.1-sol`, high), and
-  each consult is logged in the phase's lessons file.
+Merge authority is restored as first granted: the lead squash-merges when every required check is
+green, never `--admin`. Merging PR 1 deploys nothing, because no Worker exists until O1.
 
 ## Outcome & Quality Bar
 
@@ -87,9 +92,8 @@ Scope until the owner returns:
 1. **The page requests nothing from another origin.** Fonts are self-hosted. There is no analytics,
    no cookie and no storage. A strict CSP (`default-src 'none'`, no `unsafe-inline`) reports zero
    violations in a real browser. On the live hosts, the served HTML is byte-identical to the build,
-   and no `/cdn-cgi/` request happens. The one out-of-band exception is the zone's own Network Error
-   Logging: on a failed load, the browser reports it to Cloudflare, which already hosts the page
-   (Ask A6).
+   and no `/cdn-cgi/` request happens. The zone's Network Error Logging, which would report a failed
+   load to Cloudflare, is turned off (A6), so the page has no out-of-band request either.
 2. **The dither is crisp and cheap.**
    - Cells are 4 CSS px squares. They are whole device pixels, so exactly square, at DPR 1, 1.25,
      1.5, 2 and 3. At other zoom levels they vary by one device pixel, as on the board.
@@ -130,7 +134,7 @@ AGENTS.md: a change to what a user sees is the owner's decision. Every surface t
 7. Themes: Channel and Printout, chosen by the operating system. The board's Channel/Printout toggle
    is board chrome, so the page has no theme control.
 
-**Not on the board, so the owner decides (Asks A1-A3):**
+**Not on the board, so the owner decided (Asks A1-A3; signed off in the second answer):**
 8. The card engines and where their screen sits in each row (the card-engine board).
 9. Narrow phones: below about 400 px, the tags drop under the experiment's name. On the board they
    overlap it at 360 px.
@@ -156,7 +160,7 @@ AGENTS.md: a change to what a user sees is the owner's decision. Every surface t
 **Not shipped from the board**: the option tabs, Desktop/Phone and Channel/Printout toggles, the
 notes, the comparison table and the verdict; the stage's outer notched corners.
 
-## Card engines (picked by the owner; placement provisional)
+## Card engines (picked by the owner)
 
 Board: https://claude.ai/artifact/BjzP75ugjcxiutFRjo7cFq (source:
 `implementations-plan/landing/design/cards.src.html`, fonts stripped). Every candidate runs live on
@@ -164,7 +168,7 @@ option C, in both themes and at both widths.
 
 | Slot | Candidates | Recommendation | Owner's pick |
 |---|---|---|---|
-| Placement | Strip (a 48 px screen across the row, under its copy) · Tile (a 216×72 screen at the row's right on desktop, a strip on phones) | Strip | none yet: Strip is built, provisional |
+| Placement | Strip (a 48 px screen across the row, under its copy) · Tile (a 216×72 screen at the row's right on desktop, a strip on phones) | Strip | **Strip** (confirmed) |
 | Bridge | B1 Portal (option B's lanes in miniature) · B2 Both ways (sends veil past the bar, exits clear again) · B3 Veil (one amount, a static sweep) | B1 Portal | **B2 Both ways** |
 | Faucet | F1 Drip (a tap drips SIGNAL and NOISE as coins that roll into the account) · F2 Two taps (one named tap per token) · F3 Rain | F1 Drip | **F1 Drip** |
 | Next | N1 Tuner (a scan line looks for a signal) · N2 Off air (one still frame) · N3 Assembly (the mark builds cell by cell) | N1 Tuner | **N1 Tuner** |
@@ -367,7 +371,7 @@ landing filter does not list the action again.
   - A preview build adds `X-Robots-Tag: noindex` to every response and
     `<meta name="robots" content="noindex">`, so search engines never index a preview host.
   - `dist/build.json` records `{ buildId, channel }`. `worker:deploy` refuses a preview build, and
-    `worker:preview` refuses a production one. K1's guard takes `--channel production`.
+    `worker:preview` refuses a production one. The reference build's guard takes `--channel production`.
   - A preview uploads with `wrangler versions upload` and no alias of its own. It is served at its
     version URL, plus whatever branch alias Workers Builds gives it. Unlike the tools app, nothing on
     this page trusts its host, so an alias collision costs nothing.
@@ -389,7 +393,7 @@ landing filter does not list the action again.
 - **Threat model.** A static page with no input, no backend, no cookies and no storage. The attack
   surface:
   1. the build supply chain, through Workers Builds and its token;
-  2. the keyed run's token;
+  2. the first deploy, which nothing checks before it is uploaded;
   3. the Cloudflare account, and the dashboard's DNS and rules;
   4. script injection into the page, by zone features or a compromised dependency;
   5. links that point somewhere else;
@@ -397,36 +401,31 @@ landing filter does not list the action again.
 - **Least privilege.**
   - GitHub Actions keeps `contents: read` and no Cloudflare credential. The new job has no job-level
     permissions (`behavior-gating.test.ts` pins this).
-  - Workers Builds gets a new user token with the per-Worker **Editor** role on `unleashed-landing`
-    only. Cloudflare's Workers roles page (updated 2026-09-15) says Editor can deploy an existing
-    Worker. The owner creates this token in the dashboard; no agent sees it. If Workers Builds
-    refuses it, the fallback is the existing account-wide build token, with the residual already
-    accepted in `follow-ups.md` (Inference 6).
-  - Creating a Worker needs product-level Admin or the legacy Workers Scripts Edit permission. So the
-    keyed run keeps the existing template's token: Workers Scripts Edit and Account Settings Read on
-    one account, a TTL of hours, IP-filtered.
-- **The keyed process runs as little code as possible.**
-  - The lead installs, builds and guards before filing the request, and the guard prints the dist
-    digest.
-  - The keyed command runs two entry points directly, never through `bun run`, because `bun run`
-    also runs any `pre<script>` and `post<script>` hooks. First the guard re-checks the digest. Its
-    imports are `node:` built-ins and `src/content.ts`, which imports nothing. Then the pinned
-    wrangler binary deploys.
-  - `wrangler.jsonc` has no `main`, `build` or `alias`, and a unit test pins that. So wrangler runs
-    no custom build and bundles no script.
-  - The owner's approval binds the commit (env-exec refuses a dirty or unpushed tree), the config at
-    that commit, and the artifact through its digest.
-  - Residual, accepted: the keyed run trusts the host as it stands after the unkeyed build. Code that
-    ran during that build (Vite, its plugins, the tests) runs as the same user. It could change
-    anything that user can write, a fresh second install included, so a second install would not
-    move the boundary. This is env-exec's trust model for every keyed run.
+  - Workers Builds deploys with the build token the two app Workers already use (the owner's
+    decision, D15): a user token with Workers Scripts Edit and Account Settings Read on this one
+    account. It can create, and overwrite, any Worker on the account; that residual is accepted in
+    `follow-ups.md`. No new token, and no agent sees one.
+  - Nothing else holds a Cloudflare credential: there is no keyed run.
+- **The first deploy has no gate before upload.** Workers Builds builds `main` and deploys it as
+  soon as the owner saves the import. What still holds:
+  - the guard runs inside `build`, and `worker:deploy` refuses anything but a production `dist/`;
+  - `wrangler.jsonc` has no `main`, `build` or `alias` (pinned by a test), so the deploy uploads
+    `dist/` as built and guarded;
+  - the Worker gets only its `workers.dev` host. No domain or route points at it until the lead has
+    compared the build log's digest with a reference build of the merge commit and run the live
+    smoke on `workers.dev` (phase 6). A bad first deploy reaches no visitor.
+  - Residual, accepted by the owner: the build runs in Cloudflare's build image beside the token,
+    and the digest proves only that the deployed bytes are the reference build's, not that the
+    build tooling is honest (D13's limit, unchanged).
 - **Build graph, stated plainly.** Workers Builds runs from the repository root. A root `bun install`
   installs the whole monorepo, Aztec packages included. Phase 1 proves
   `bun install --frozen-lockfile --filter @unleashed/landing`, which installs only the landing and
   its workspace dependency. If it works, the Workers Builds command uses it; if not, the full
   install's exposure is recorded as it is. Workers Builds also installs dependencies on its own
-  before the build command, unless `SKIP_DEPENDENCY_INSTALL=1` is set. O1 sets it, and the first
-  build's log must show only the filtered, frozen install.
+  before the build command, unless `SKIP_DEPENDENCY_INSTALL=1` is set. With the root directory at
+  `apps/landing` that install would run there, with no lockfile, and npm cannot read the workspace
+  links; O1 sets the variable, and the first build's log must show only the filtered, frozen
+  install (`cd ../..` first, so it runs at the repository root).
 - **CSP and headers** (`security-headers.ts`, emitted into `_headers` and served by `vite preview`):
   - The CSP: `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src
     'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none';
@@ -441,18 +440,17 @@ landing filter does not list the action again.
   - Trusted Types forbids the DOM's HTML string sinks outright; the runtime uses `textContent` and
     canvas only. `base.css`'s `--ul-static` `data:` SVG stays unused, so `img-src 'self'` holds.
 - **Zone features.** Web Analytics auto-injection, Rocket Loader, Zaraz, Bot Fight Mode's JS
-  detections and Email Obfuscation would each change the HTML or add a request. The live integrity
-  check catches each of them. The fix is a Configuration Rule scoped to the two hostnames where
-  Cloudflare supports one (Rocket Loader, Email Obfuscation). Otherwise the owner weighs a zone-wide
-  change against the two app hosts (Ask A6). Approving the landing does not approve that change.
-  Before a zone-wide toggle, the lead records each affected host and its check: the testnet app
-  answers 200 with its own CSP, and the mainnet app still answers with its Access login. After the
-  toggle, the lead runs those checks, and on any failure the owner restores the setting. The CSP is
-  never loosened.
+  detections and Email Obfuscation would each change the HTML or add a request. The owner's answer
+  (A6): turn off any that is on. The way is a Configuration Rule scoped to the two hostnames where
+  Cloudflare supports one (Rocket Loader, Email Obfuscation), else the zone-wide setting, which the
+  owner accepted. Before a zone-wide toggle, the lead records each affected host and its check: the
+  testnet app answers 200 with its own CSP, and the mainnet app still answers with its Access login.
+  After the toggle, the lead runs those checks, and on any failure the owner restores the setting.
+  The live integrity check catches anything left on. The CSP is never loosened.
 - **NEL.** Every host in the zone sends `nel` and `report-to` headers that point at
   `a.nel.cloudflare.com` (live probe, `success_fraction: 0.0`). A browser posts there only after a
-  failed load. That is the host's own telemetry, not the page's, but it is a request to another
-  origin, so the Quality Bar names it (Ask A6).
+  failed load. The owner turns it off (A6). It is a zone setting (Fact 18), so the app hosts lose it
+  too, which the owner accepted; the lead checks the app hosts afterwards as for any zone-wide toggle.
 - **Input validation.** No runtime input. Build-time content is repository data, and `esc()` escapes
   every text node and attribute anyway. A test pins every `href` to `LINKS`.
 - **Supply chain.**
@@ -509,14 +507,22 @@ landing filter does not list the action again.
     `AppShell.vue`, `ProgressBar.*` in the design package, `_build-tools.yml`, `_tools-e2e.yml`,
     `biome.json`, `README.md`, `AGENTS.md`, `apps/tools/README.md`, and the plan index, archive
     index, lessons and follow-ups. It touches neither `bun.lock` nor any `package.json`.
+17. Workers Builds (Cloudflare's builds docs): the root directory is where the build and deploy
+    commands run and where the Wrangler file is read; the Worker's name must equal that file's `name`,
+    or the build fails. An Import a repository whose root directory has no Wrangler file runs
+    automatic configuration, which opens a pull request with a generated config; with a file present
+    it does not run. So O1 sets the root directory to `apps/landing`. An export of the branch, built
+    from `apps/landing` with O1's command and `WORKERS_CI_BRANCH=main`, gives the worktree's digest.
+18. Network Error Logging is a zone setting: the zone's Network page, "Network Error Logging
+    Monitoring", or the zone settings API's `nel`. It cannot be scoped to a hostname.
 
 ### Inferences (unverified; each has a check)
 
 1. **A redirect rule runs before a Worker on a custom domain**, so attaching the domains changes
    nothing until the rule is off. Supported by Fact 12 and by the rule answering before Always Use
-   HTTPS (Fact 1). Check: after attaching, both hosts still answer 302 (O2 step 1).
+   HTTPS (Fact 1). Check: after attaching, both hosts still answer 302 (O2 step 3).
 2. **The dashboard replaces an existing A or AAAA record** when it adds a custom domain. Cloudflare's
-   launch post says so; the docs refuse an existing CNAME. Check: O2 step 1. Fallback: Workers
+   launch post says so; the docs refuse an existing CNAME. Check: O2 step 3. Fallback: Workers
    routes. Never delete records.
 3. **Vite bundles the workspace-linked design package into the config**, so `vite.config.ts` can
    import `src/markup.ts` (which imports `icons.ts`) under plain Node. Check: phase 1's build.
@@ -525,23 +531,26 @@ landing filter does not list the action again.
    `bun install --frozen-lockfile` in phase 1; else a local, uncommitted exclude (lessons.md).
 5. **`_headers` applies to the single-page fallback response.** Check: the live smoke requests
    `/nope` and asserts the CSP header.
-6. **Workers Builds accepts a per-Worker Editor token, and wrangler finds the account with it.**
-   Check: O1 and the first production build. Fallback: the existing account-wide token.
+6. ~~Workers Builds accepts a per-Worker Editor token~~ **Moot**: the owner reuses the existing build
+   token (D15).
 7. **`bun install --frozen-lockfile --filter @unleashed/landing` installs enough to build.** Check:
    phase 1, in a clean clone.
-8. **The workers.dev host is `unleashed-landing.alejo-amiras.workers.dev`.** Check: K1's output.
-9. **The token in `Keyed-Runs/Cloudflare-Workers` may have expired** (its template says "a TTL of
-   hours"). The owner may mint a fresh one, same scope, before approving K1.
+8. **The workers.dev host is `unleashed-landing.alejo-amiras.workers.dev`** (the tools previews use
+   the `alejo-amiras` subdomain). Check: the Worker page after O1.
+9. ~~The keyed run's token may have expired~~ **Moot**: there is no keyed run.
 10. **COLRv1 rendering on iOS Safari** may differ from Chromium for the pixel wordmark. The tools app
-    already ships this font, so the risk is not new. Check: the owner's iPhone look in O2 step 4.
+    already ships this font, so the risk is not new. Check: the owner's iPhone look in O2 step 6.
 11. **Workers Builds' output is byte-identical to a local build at the same commit** (same lockfile,
-    Bun 1.4.2, Node 24; local is Node 24.21.0). Check: phase 6 step 9. If it is not, the live check
+    Bun 1.4.2, Node 24; local is Node 24.21.0). Check: phase 6 step 6. If it is not, the live check
     compares the build id, the script and style URLs, and the set of `<script>` elements instead of
     every byte, and the change is logged.
 12. ~~An unmatched non-navigation request gets a 404~~ **Refuted** by the post-implementation audit:
     with no Worker script, single-page mode serves `index.html` with a 200 for every unmatched
     request (Miniflare 4.129.1's asset worker, and the Cloudflare SPA routing page). The smoke server
     and its `/assets/nope.js` case now expect that. Check: the live smoke's `/assets/nope.js` case.
+13. **The import dialog lets the owner pick an existing token, and an app Worker's Settings › Build
+    shows its token's name.** Check: O1 steps 1 and 3. If the dialog offers only "Create new token",
+    the owner stops and tells the lead, because that token adds KV, R2 and Workers Routes on every zone.
 
 ### Asks (the owner decides at the approval gate)
 
@@ -561,20 +570,14 @@ landing filter does not list the action again.
   - No pointer trace while paused or under reduced motion (surface 15).
   - The wordmark waits for its font, at most about 1.5 s (surface 16).
   - A failed engine leaves its row without a screen (surface 17).
-- **A4. Tokens.**
-  - For Workers Builds, the owner creates a new token with the per-Worker Editor role on
-    `unleashed-landing` (O1). If Workers Builds refuses it, the existing build token is the fallback.
-  - The keyed run uses the existing creation token. Its residual stays as `follow-ups.md` records
-    it, and PR 2 updates that entry to say per-Worker roles now exist.
-  - The keyed run trusts this host as it stands after the unkeyed build (Security, ledger D13).
-  - Workers Builds gets `SKIP_DEPENDENCY_INSTALL=1`, so its own install is off (O1).
+- **A4. Tokens.** *Answered and replaced (Owner verdict, second answer):* no keyed run and no new
+  token. The owner creates the Worker with Import a repository and the existing build token (O1,
+  D15). Workers Builds gets `SKIP_DEPENDENCY_INSTALL=1`, so its own install is off.
 - **A5. Preview builds** (answered: yes). Each non-production branch is built and uploaded as a
   preview version on workers.dev, marked `noindex`.
-- **A6. Zone features and NEL.**
-  - If the live check finds an injected script or request, the owner turns that feature off. Use a
-    hostname-scoped rule where one exists; a zone-wide change is the owner's call.
-  - NEL stays on, and the Quality Bar names it, unless the owner wants to look for a zone setting
-    that turns it off for all hosts.
+- **A6. Zone features and NEL.** *Answered:* both off. Any injecting zone feature is turned off
+  (hostname-scoped where Cloudflare allows, else zone-wide), and NEL is turned off zone-wide (O2
+  steps 1 and 2, D16).
 - **FYI (no decision now).** The Bridge copy says "between Ethereum and Aztec". When `lifi-routing`
   ships more source chains, the copy is incomplete, not wrong. A follow-up records it.
 
@@ -609,7 +612,7 @@ Steps:
    - `workers_dev: true`, `preview_urls: true`;
    - a header comment that lists the Workers Builds root directory, build and deploy commands;
    - a comment on why the custom domains are absent;
-   - no `main`, `build` or `alias` (`wrangler-config.test.ts` pins this, since the keyed run deploys
+   - no `main`, `build` or `alias` (`wrangler-config.test.ts` pins this, since the deploy runs
      with this file).
 6. Add `public/theme-boot.js`, `public/noscript.css`, and `public/favicon.svg` copied from tools.
 7. Add `scripts/verify-build.ts` (the checks live in `scripts/dist-checks.ts`). It fails when any of
@@ -811,36 +814,32 @@ Validation gate:
 
 After phase 5: run the Post-implementation loop (steps 2 and 3) over the whole PR 1 diff.
 
-### Phase 6: create the Worker, connect Workers Builds, merge PR 1
+### Phase 6: merge PR 1, create the Worker with Workers Builds, verify on workers.dev
 
 Steps:
 1. Run the repository's PR gates: `bun run audit:tools && bun run test:all`.
-2. Commit, and push `worktree-landing`. The tree must be clean, and HEAD must equal the remote tip.
-3. Build and guard unkeyed: `bun install --frozen-lockfile && bun run --cwd apps/landing build &&
-   bun run --cwd apps/landing verify:build --channel production`. Note the printed `DIST_SHA256`.
-4. File the keyed run (runbook K1) with that digest. Hand the owner the `op-remote alejo-box <id>`
-   line, and watch it with `env-exec wait <id>`. The worktree's `dist/` is the reference build for the
-   pre-merge live checks.
-5. Run the live smoke against `https://unleashed-landing.alejo-amiras.workers.dev`.
-6. Hand the owner runbook O1 (token and Workers Builds), and wait for "builds connected".
-7. Open PR 1 (Delivery). Attach the screenshots, quote the sign-offs, and watch `gh pr checks`.
-8. When every required check is green, squash-merge PR 1.
-9. Wait for the Workers Builds production deploy of `main`. Check its build log: only the filtered,
-   frozen install ran. Build the reference for the merge commit unkeyed, in an export:
-   `git archive <merge-sha> | tar -x -C <scratch>/main-<sha8>`, then the filtered install and
-   `WORKERS_CI_COMMIT_SHA=<merge-sha> bun run --cwd apps/landing build` there. Run the live smoke from
-   that export, so its reference `dist/` is the merge commit's (Inference 11).
+2. Quote the owner's answers here and in PR 1, mark PR 1 ready for review, and watch `gh pr checks`.
+3. When every required check is green, squash-merge PR 1. No Worker exists yet, so the merge deploys
+   nothing.
+4. Hand the owner runbook O1, and wait for "done", the `DIST_SHA256=` line from the first build's log,
+   and the token's name.
+5. Build the reference for the merge commit in an export:
+   `git archive <merge-sha> | tar -x -C <scratch>/main-<sha8>`, then from its `apps/landing`, O1's
+   build command with `WORKERS_CI_COMMIT_SHA=<merge-sha>`. It prints the reference `DIST_SHA256`.
+6. Check the build log: only the filtered, frozen install ran, the guard printed a digest equal to
+   the reference's (Inference 11), and `worker:deploy` deployed.
+7. From the export, run the live smoke against `https://unleashed-landing.alejo-amiras.workers.dev`.
 
 Validation gate:
 - Commands:
   - `bun run audit:tools && bun run test:all` exit 0;
-  - `env-exec wait <id>` exits 0;
+  - `gh pr checks <PR1>` is all green before the merge;
   - `LANDING_URL=https://unleashed-landing.alejo-amiras.workers.dev bun run --cwd apps/landing
-    test:browser` exits 0 before the merge (from the worktree) and after it (from the merge export);
-  - `gh pr checks <PR1>` is all green before the merge.
-- Pass: the live build id equals the merge commit's first 8 characters, and the live smoke passes,
-  integrity check included.
-- Layers: repository gates, live e2e (the smoke against production), CI.
+    test:browser` exits 0 from the merge export.
+- Pass: the build log's digest equals the reference's, the live build id equals the merge commit's
+  first 8 characters, and the live smoke passes, integrity check included. On a mismatch nothing
+  points at the Worker yet: stop and report.
+- Layers: repository gates, CI, live e2e on workers.dev.
 
 ### Phase 7: cutover and live verification
 
@@ -853,7 +852,8 @@ Steps:
    - reduced motion, and Pause and Play;
    - every link's target answers 200;
    - the headers, the integrity check, and the build id.
-4. Run the WebKit pass at 390 px against the apex.
+4. Run the WebKit pass at 390 px against the apex once `dpkg -s libgtk-4-1` shows it installed. If
+   it is still missing, report it to the coordinator; the owner's iPhone look stands meanwhile.
 5. Save the screenshots for PR 2, and tell the owner "verified" or "roll back".
 6. After the owner deletes the rule, run the smoke once more on both hosts.
 
@@ -862,7 +862,8 @@ Validation gate:
   - `LANDING_URL=https://unleashed.systems bun run --cwd apps/landing test:browser` exits 0 from the
     merge export, and the same with `https://www.unleashed.systems`;
   - `curl -sSI https://unleashed.systems/` shows 200 and the CSP;
-  - `curl -sSI http://unleashed.systems/` shows a 301 to `https://unleashed.systems/`.
+  - `curl -sSI http://unleashed.systems/` shows a 301 to `https://unleashed.systems/`;
+  - `curl -sSI https://unleashed.systems/` carries no `nel` or `report-to` header.
 - Pass:
   - both hosts serve the landing with zero CSP violations, zero off-origin requests, and HTML
     identical to the build;
@@ -879,7 +880,9 @@ Steps:
 4. Update `AGENTS.md`: the read-before list, § Hosting, and the CI summary.
 5. Note the second consumer of `base.css` in `packages/design/README.md`. Leave `apps/tools/README.md`
    alone: an edit there re-runs the tools build and its e2e shards.
-6. Add the follow-ups. Then write the Outcome, promote the lessons, move the archive, and move the
+6. Check the preview channel on PR 2's own branch build: its preview URL answers with
+   `X-Robots-Tag: noindex` and the robots meta (A5).
+7. Add the follow-ups. Then write the Outcome, promote the lessons, move the archive, and move the
    index line (Post-implementation step 5).
 
 Validation gate:
@@ -890,61 +893,53 @@ Validation gate:
 
 ## Cloudflare runbooks
 
-### K1: keyed run that deploys the Worker (lead files, owner approves)
+### K1: dropped
 
-- Template: `apps/tools/cloudflare.env.example`, with one secret, `CLOUDFLARE_API_TOKEN`. Its header
-  gives the scope.
-- Warning: if the 1Password item's token has expired, mint a fresh one before approving. Use the same
-  scope and a TTL of hours, IP-filtered to `alejo-box`.
-- Request, from the worktree at the pushed HEAD, after phase 6 step 3:
-  `env-exec request --template apps/tools/cloudflare.env.example --slug landing-worker -- bash -c 'bun apps/landing/scripts/verify-build.ts --expect <DIST_SHA256> --channel production && apps/landing/node_modules/.bin/wrangler deploy -c apps/landing/wrangler.jsonc'`
-- Both entry points run directly, so no `package.json` script or hook runs beside the token.
-- Owner: `op-remote alejo-box <id>`. It shows the commit, the command with the digest, and the
-  secret's reference. On `y` it runs.
-- What it does:
-  1. It re-checks that `dist/` is the reviewed build.
-  2. It runs `wrangler deploy -c wrangler.jsonc`, which creates `unleashed-landing` with only its
-     `workers.dev` host.
-  - No install, no build, no domain, route or DNS change.
+The owner chose Workers Builds' Import a repository flow (Owner verdict, second answer; D15). No keyed
+run creates the Worker, and no new token is minted.
 
-### O1: token and Workers Builds (owner, dashboard)
+### O1: create the Worker with Import a repository (owner, dashboard; after PR 1 merges)
 
-1. **Token.** Open My Profile › API Tokens › Create Token › Custom token.
-   - Name: `workers-builds-unleashed-landing`.
-   - Permissions: Workers, the **Editor** role, on the Worker `unleashed-landing` only.
-   - Account: this one. No zone permission, no TTL.
-   - Create it, and do not copy the value anywhere. Workers Builds stores it.
-2. **Connect.** Open Workers & Pages › `unleashed-landing` › Settings › Build › Connect.
-   - Repository: the GitHub connection the other two Workers use, and `alejoamiras/unleashed`.
-   - Production branch: `main`. Root directory: the repository root (empty).
-3. **Commands.**
-   - Build: `bun install --frozen-lockfile --filter @unleashed/landing && bun run --cwd apps/landing
-     build` (or without `--filter`, if phase 1 says the filter fails).
-   - Deploy: `bun run --cwd apps/landing worker:deploy`.
-   - Builds for non-production branches: on, with the same build command and the non-production
-     deploy command `bun run --cwd apps/landing worker:preview`.
-4. **Variables.** `BUN_VERSION` = `1.4.2`, `NODE_VERSION` = `24`, `SKIP_DEPENDENCY_INSTALL` = `1`.
-   The last one stops Workers Builds' own install, so only the build command's install runs.
-5. **API token.**
-   - Warning: do not let the dialog create a token; that one adds KV, R2 and Workers Routes on every
-     zone.
-   - Select `workers-builds-unleashed-landing`.
-   - If the dialog does not list it or refuses it, stop and tell the lead. The fallback is the token
-     the other two Workers use, with its known residual.
-6. **Check.** Settings › Build shows the repository, `main`, both commands, both variables and the
-   token. A build of `main` may start and fail, because `main` has no `apps/landing` yet. That is
-   expected and changes nothing live.
-7. Tell the lead "builds connected", and name the token you selected.
+1. **Find the token.** Workers & Pages › `unleashed-testnet` › Settings › Build. Note the name under
+   API token: that is the build token the two app Workers use.
+2. **Start.** Workers & Pages › Create application › Import a repository › Get started. Pick the
+   GitHub account the other two Workers use, then `alejoamiras/unleashed`.
+3. **Settings.**
+   - Project name: `unleashed-landing`, exactly (Fact 17).
+   - Production branch: `main`.
+   - Root directory: `apps/landing` (Fact 17: at the repository root the import would open a pull
+     request with a generated config).
+   - Build command: `cd ../.. && bun install --frozen-lockfile --filter @unleashed/landing && bun run
+     --cwd apps/landing build`.
+   - Deploy command: `bun run worker:deploy`.
+   - Builds for non-production branches: on, with the command `bun run worker:preview`.
+   - Variables: `BUN_VERSION` = `1.4.2`, `NODE_VERSION` = `24`, `SKIP_DEPENDENCY_INSTALL` = `1`.
+   - API token: the name from step 1. Never "Create new token" (Inference 13).
+4. **Save and Deploy.** The first build of `main` runs and deploys.
+5. **Check.** The build succeeds; its log shows `DIST_SHA256=` and wrangler's deploy of
+   `unleashed-landing`. The Worker page shows `https://unleashed-landing.alejo-amiras.workers.dev`,
+   which opens the landing. Domains & Routes lists no custom domain. Add none yet.
+6. Send the lead "done", the `DIST_SHA256=` line, and the token's name.
 
-### O2: cutover (owner, dashboard; after the lead says the main build is verified)
+### O2: cutover (owner, dashboard; after the lead says workers.dev is verified)
 
 0. **Record.** Send the lead:
    - the redirect rule: its name, its match expression, the target URL, the status code, the
      "preserve query string" setting, and its place in the rule order;
    - DNS › Records for `unleashed.systems` and `www`: the type, the content and the proxy status of
-     each record.
+     each record;
+   - which of these are on in the zone: Rocket Loader, Email Address Obfuscation, Web Analytics'
+     automatic setup, Zaraz, Bot Fight Mode, and Network Error Logging.
    The lead stores them in `lessons/phase-7.md` for a rollback.
-1. **Apex.** Open `unleashed-landing` › Settings › Domains & Routes › Add › Custom domain, and enter
+1. **Zone extras off.** Turn off each feature from step 0 that is on, except NEL (step 2). For Rocket
+   Loader and Email Obfuscation, use a Configuration Rule for `unleashed.systems` and
+   `www.unleashed.systems`; for the others the setting is zone-wide, which the owner accepted. Tell the
+   lead what changed. The lead re-checks the app hosts after any zone-wide change; on a failure, turn
+   that one back on.
+2. **NEL off.** In the zone's Network page, turn off Network Error Logging Monitoring. It is
+   zone-wide (Fact 18), accepted by the owner. The lead checks that responses no longer carry `nel`,
+   and re-checks the app hosts.
+3. **Apex.** Open `unleashed-landing` › Settings › Domains & Routes › Add › Custom domain, and enter
    `unleashed.systems`.
    - If the dashboard offers to replace the existing DNS record, accept. Leave previews off, as on
      `testnet.app.unleashed.systems`.
@@ -953,21 +948,25 @@ Validation gate:
    - Warning: never delete a DNS record. If the dashboard refuses, stop and tell the lead. Then add
      the Workers route `unleashed.systems/*` on the same Worker instead. A route keeps the existing
      record. Each host gets one mode, a custom domain or a route, never both.
-2. **`www`.** Same as step 1 with `www.unleashed.systems` (route: `www.unleashed.systems/*`). Tell the
+4. **`www`.** Same as step 3 with `www.unleashed.systems` (route: `www.unleashed.systems/*`). Tell the
    lead "www attached", and which mode each host got.
-3. **Switch.** First check both hosts are ready: each custom domain shows its certificate as active
+5. **Switch.** First check both hosts are ready: each custom domain shows its certificate as active
    (a route uses the zone's existing certificate). Then turn the redirect rule off. Do not delete it.
    Tell the lead "rule off". The lead polls until both hosts serve the landing.
-4. **Look.** The lead runs phase 7 and asks you to open `https://unleashed.systems` on your iPhone.
+6. **Look.** The lead runs phase 7 and asks you to open `https://unleashed.systems` on your iPhone.
    Tell the lead what you see. The lead answers "verified" or "roll back".
-5. **Finish.** On "verified", delete the redirect rule. Tell the lead "rule deleted".
+7. **Finish.** On "verified", delete the redirect rule. Tell the lead "rule deleted".
 
 ### R: rollback
 
-- **Before step 5**: turn the redirect rule back on. Redirect rules run before the Worker, so both
+- **Before step 7**: turn the redirect rule back on. Redirect rules run before the Worker, so both
   hosts answer 302 to the app again; the lead polls to confirm. The domains or routes can stay
   attached.
-- **After step 5**: re-create the rule from the step 0 record, then turn it on.
+- **After step 7**: re-create the rule from the step 0 record, then turn it on.
+- **Zone extras and NEL**: each is one toggle back, from the step 0 record. Nothing on the landing
+  depends on them being off, except a clean integrity check.
+- **A bad first deploy** (phase 6 fails): nothing points at the Worker. Fix forward through a PR, or
+  delete the Worker in the dashboard (the owner's call).
 - **A code fault after the cutover**: until a landing version has passed the live checks on both
   hosts, the rollback is the redirect rule (re-enabled, or re-created from the step 0 record), because
   the previous version may hold the same fault. After that, roll back in the dashboard, under
@@ -986,8 +985,8 @@ Two sequential PRs, not a stack. PR 1 must merge before the cutover, because Wor
 
 - PR 1 title: `feat(landing): ship the dither tide landing for unleashed.systems` (65 characters).
 - PR 2 title: `docs: unleashed.systems serves the landing; close the landing plan` (66 characters).
-- The Codex fix loop runs over PR 1's diff after phase 5, before the keyed run, so the code deployed by
-  hand is the reviewed code. PR 2 is docs only, and Codex reviews it once for drift from the live
+- The Codex fix loop runs over PR 1's diff after phase 5, before the merge, so the code Workers Builds
+  first deploys is the reviewed code. PR 2 is docs only, and Codex reviews it once for drift from the live
   state.
 - Plain `gh pr create` for each. The lead merges each with `gh pr merge --squash` once every required
   check is green. Never `--admin`.
@@ -1102,8 +1101,8 @@ another HTML bypass does not weaken it, and build tooling stays trusted (D13). T
 | D1 | Framework | Vanilla TypeScript and Vite, build-time HTML | Vue runtime (30 KB for static text); build-time Vue render (no matching design components); hand-written HTML (pasted paths, three-place edits) | lead; both audits kept it |
 | D2 | `www` | Serve both hosts, with the apex canonical | A 301 needs a dashboard rule or a Worker script | lead |
 | D3 | Domains | Custom domains, routes as the fallback | Deleting records (negative DNS caching breaks a rollback) | lead, C3, F6 |
-| D4 | Build token | A per-Worker Editor token; the existing token as the fallback | The account-wide token by default (C1 showed a narrower one now exists) | C1 |
-| D5 | Keyed run | Deploy only, pinned by a dist digest | Install and build inside the keyed run; Workers Builds' import flow (overrides the owner's pick, and the first deploy would go out unverified) | C2, F3 |
+| D4 | Build token | ~~A per-Worker Editor token; the existing token as the fallback~~ Superseded by D15 | The account-wide token by default (C1 showed a narrower one now exists) | C1 |
+| D5 | Keyed run | ~~Deploy only, pinned by a dist digest~~ Superseded by D15 | Install and build inside the keyed run; Workers Builds' import flow (overrides the owner's pick, and the first deploy would go out unverified) | C2, F3 |
 | D6 | Smoke server | An in-process `node:http` server on port 0, applying `dist/_headers` | `vite preview` on a probed port (a race); `wrangler dev` (workerd and its inspector port on a shared host) | lead, C11 |
 | D7 | WebKit | Local and live gates, plus the owner's iPhone, each recorded as a release gate | In CI (a longer required check; Linux WebKit is not iOS Safari anyway) | lead, after C8; upheld by the final pass |
 | D8 | Unknown paths | The landing (single-page fallback) | A 404 page (undrawn); Cloudflare's bare 404 | lead; A3 |
@@ -1111,11 +1110,13 @@ another HTML bypass does not weaken it, and build tooling stays trusted (D13). T
 | D10 | Delivery | Two sequential PRs | One PR (the docs would claim a state that is not yet live); a stack (PR 2 cannot be written before the cutover) | brief, lead |
 | D11 | Font gate | Hide the wordmark until its font loads, at most 1.5 s | The board's immediate animation (it would run on the fallback face) | C6 |
 | D12 | setup-playwright | Unchanged | A workspace input (CI's install already has the same Playwright pin) | F10 |
-| D13 | Keyed run's tooling | The worktree's pinned wrangler, called directly, with the residual recorded | A second install for the deploy tools (code from the unkeyed build runs as the same user and could alter it as well) | X1 |
+| D13 | Keyed run's tooling | ~~The worktree's pinned wrangler, called directly~~ Moot with D15; its limit stands: a digest proves the bytes, not honest tooling | A second install for the deploy tools (code from the unkeyed build runs as the same user and could alter it as well) | X1 |
 | D14 | Reference builds | `git archive` exports in the scratch directory | A temporary clone (the brief allows no clones); checking out `main` in the worktree (moves the branch's working state) | X3, the brief |
+| D15 | Creating the Worker | **Owner decision**: Workers Builds' Import a repository after PR 1 merges, root directory `apps/landing`, the existing build token. The lead's check comes after the first deploy: build-log digest against a reference build of the merge commit, and the live smoke on workers.dev, before any domain points at it | The keyed run (K1) the lead recommended and the rejection of the import flow (F3); a new per-Worker token | owner, second answer; supersedes D4, D5, D13 |
+| D16 | Zone extras and NEL | Off: injecting features hostname-scoped where possible, else zone-wide; NEL zone-wide | NEL on and named in the Quality Bar (the earlier recommendation) | owner, A6 |
 
-Unresolved: none. One residual is accepted and goes to the owner under A4: the keyed run trusts the
-host after the unkeyed build (D13).
+Unresolved: none. Residuals the owner accepted: the build token can deploy every Worker on the account
+(`follow-ups.md`), and the first upload has no gate before it, only the check after it (D15).
 
 ## Post-implementation
 
@@ -1189,8 +1190,8 @@ Run this after phase 5, over the whole PR 1 diff from the plan baseline (`origin
 ELI5: https://claude.ai/artifact/2Mj8rV7osT9DDgoxEYo9yP (private to the owner). Source:
 `implementations-plan/landing/eli5.html` (gitignored; fonts and mark filled in at publish).
 
-Recommended: `/goal`, because each gate's evidence lands in the transcript. The owner's keyed-run and
-dashboard steps pause it.
+Recommended: `/goal`, because each gate's evidence lands in the transcript. The owner's dashboard
+steps pause it.
 
 ```
 /goal Every phase in implementations-plan/landing/plan.md is marked ✓, each backed by its validation gate reported passing in the transcript, with LESSONS_FILE=implementations-plan/landing/lessons/phase-N.md printed for each phase; /code-review was NOT run (code_review: off); the Codex fix loop on PR 1's diff converged, shown by a resumed gpt-6.1-sol pass at high quoted with no new material findings; PR 1 and PR 2 exist on GitHub, opened only after the loop converged, both squash-merged with every required check green; https://unleashed.systems and https://www.unleashed.systems pass the live smoke (LANDING_URL=… bun run --cwd apps/landing test:browser exit 0) and no longer 302; the archive-move commit's git show --stat is in the transcript; bun run lint and bun run test:all both exit 0.
@@ -1199,7 +1200,7 @@ dashboard steps pause it.
 Alternative: `/loop`.
 
 ```
-/loop 15m Drive implementations-plan/landing forward. Never idle. Each firing: (1) read plan.md and lessons/ (authoritative), judged against its Outcome & Quality Bar; if plan.md is gone, check `git fetch -q origin main && git cat-file -e FETCH_HEAD:implementations-plan/archive/landing/plan.md`: if it succeeds, run `agent-worktree done landing --merged`, report, clear this loop and stop; if a PR is open, `gh pr view --json statusCheckRollup`. (2) Waiting on CI or on the owner (K1, O1, O2) is fine: prepare the next step, never cross a gate. (3) No task in hand: take the next pending step, run the fast gate after each edit, commit with `env -u SSH_AUTH_SOCK git commit`, push. (4) Stuck: consult /codex at high on gpt-6.1-sol, log it in lessons, act; never cross a hard limit (no merge without green required checks, no --admin, no Cloudflare or DNS action, no secret). (5) Same step failed 5 times: reassess with Codex. (6) Phase gate green: paste it, mark ✓, write lessons, print LESSONS_FILE=…; after phase 5 run the Post-implementation loop before phase 6. (7) All phases ✓: close out per Post-implementation, merge PR 2 when green, tear down.
+/loop 15m Drive implementations-plan/landing forward. Never idle. Each firing: (1) read plan.md and lessons/ (authoritative), judged against its Outcome & Quality Bar; if plan.md is gone, check `git fetch -q origin main && git cat-file -e FETCH_HEAD:implementations-plan/archive/landing/plan.md`: if it succeeds, run `agent-worktree done landing --merged`, report, clear this loop and stop; if a PR is open, `gh pr view --json statusCheckRollup`. (2) Waiting on CI or on the owner (O1, O2) is fine: prepare the next step, never cross a gate. (3) No task in hand: take the next pending step, run the fast gate after each edit, commit with `env -u SSH_AUTH_SOCK git commit`, push. (4) Stuck: consult /codex at high on gpt-6.1-sol, log it in lessons, act; never cross a hard limit (no merge without green required checks, no --admin, no Cloudflare or DNS action, no secret). (5) Same step failed 5 times: reassess with Codex. (6) Phase gate green: paste it, mark ✓, write lessons, print LESSONS_FILE=…; after phase 5 run the Post-implementation loop before phase 6. (7) All phases ✓: close out per Post-implementation, merge PR 2 when green, tear down.
 ```
 
 Use exactly one of the two per session.
