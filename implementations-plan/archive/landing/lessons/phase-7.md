@@ -86,3 +86,17 @@ The owner's iPhone look: "looks good". The owner then deleted the redirect rule 
 `unleashed-cutover` token. The Chromium live smoke from the 4c33c63 export exited 0 on both hosts
 afterwards. Ten cache-busting requests per host all answered 200, with no `nel` or `report-to`, and
 `http://` answers 301 to `https://`.
+
+## Codex review of PR 2 (`gpt-6.1-sol`, high; session 01a13b54-9869-7d40-ba81-743cbc7d069b)
+
+One pass over the close-out's diff, for drift from the live state and an adversarial read of the
+cutover scripts. Four findings; all adopted.
+
+- **Medium: a failing journal write stopped the rollback.** The error path journalled before it
+  rolled back, and a throw there skipped the undo. Journal writes on the error path are now caught;
+  a test pins it.
+- **Medium: a timed-out change could pass as never applied.** A failed undo of a change whose call
+  had thrown was logged as "skipped". Every failed undo is now `NOT REVERTED` (exit 4).
+- **Low: comments named the plan's steps.** These are rewritten as what the code does and why.
+- **Low: the design README overstated what a `core/` change reaches.** The app shell still inlines
+  the mark; the sentence now says so.

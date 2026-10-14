@@ -121,6 +121,18 @@ describe("run B", () => {
 			"/zones/z1/settings/email_obfuscation",
 		])
 	})
+
+	test("a journal that stops writing after a change still gets that change reverted", async () => {
+		const w = world()
+		let writes = 0
+		w.deps.journal = () => {
+			if (++writes > 3) throw new Error("disk full")
+		}
+		const outcome = await cutover(w.deps, snapshot())
+		expect(outcome.code).toBe(1)
+		expect(outcome.notes[0]).toContain("disk full")
+		expect(w.writes.at(-1)).toBe('PATCH /zones/z1/settings/email_obfuscation {"value":"on"}')
+	})
 })
 
 test("a run A record of an unchanged zone shows no drift, and one changed setting does", async () => {

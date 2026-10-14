@@ -3,9 +3,9 @@
  * this process's `CLOUDFLARE_API_TOKEN`: an owner-approved keyed run (`cloudflare-cutover.env.example`)
  * or the owner's own shell.
  *   inventory   read-only: records the zone's current state under ~/.cache, changes nothing
- *   cutover     O2 steps 1 to 5 with their checks; refuses without an inventory record, on drift since
- *               the latest one, or before any change it cannot make safely; puts back what it changed
- *               when a check fails
+ *   cutover     features off, both domains attached, the redirect rule off, each step checked; refuses
+ *               without an inventory record, on drift since the latest one, or before any change it
+ *               cannot make safely; puts back what it changed when a check fails
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"

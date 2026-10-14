@@ -1,5 +1,6 @@
 /**
- * Run B: O2 steps 1 to 5 against the live zone, each followed by its check. Every change is journalled
+ * The cutover against the live zone: features off, both domains attached, the redirect rule off, each
+ * step followed by its check. Every change is journalled
  * with the value it replaced, and a failed check puts back what changed, newest first. A custom domain
  * stays attached on rollback: detaching one deletes its DNS record, and the re-enabled rule runs
  * before the Worker anyway, so the rule alone decides what visitors get.
@@ -29,10 +30,9 @@ export interface Deps {
 	journal(entry: Record<string, unknown>): void
 }
 
+/** Pushed before its change is sent: a call that timed out may still have landed, so it is reverted too. */
 interface Undo {
 	what: string
-	/** False while the change's own call is in flight: a refused call changed nothing. */
-	applied: boolean
 	run(): Promise<void>
 }
 
@@ -73,10 +73,8 @@ function checkpoint(deps: Deps, baseline: Map<string, string>, label: string, ru
 
 async function change(deps: Deps, undo: Undo[], what: string, apply: () => Promise<void>, revert: () => Promise<void>): Promise<void> {
 	deps.journal({ step: what, phase: "start" })
-	const entry: Undo = { what, applied: false, run: revert }
-	undo.push(entry)
+	undo.push({ what, run: revert })
 	await apply()
-	entry.applied = true
 	deps.journal({ step: what, phase: "done" })
 	deps.log(`done: ${what}`)
 }
@@ -155,7 +153,7 @@ async function servesLanding(deps: Deps, expected: Build): Promise<string[]> {
 	return failures
 }
 
-/** Not failures: phase 7 checks these again, and neither puts a visitor at risk. */
+/** Notes, not failures: neither puts a visitor at risk, so neither is worth a rollback. */
 async function softChecks(deps: Deps): Promise<string[]> {
 	const notes: string[] = []
 	for (const host of LANDING_HOSTS) {
@@ -202,18 +200,26 @@ async function attachAll(deps: Deps, s: Snapshot, baseline: Map<string, string>)
 	deps.log("done: both certificates active")
 }
 
+/** A journal write that cannot stop a rollback: the log still carries every step. */
+function note(deps: Deps, entry: Record<string, unknown>): void {
+	try {
+		deps.journal(entry)
+	} catch (error) {
+		deps.log(`journal write failed: ${error instanceof Error ? error.message : String(error)}`)
+	}
+}
+
 async function rollback(deps: Deps, undo: Undo[]): Promise<string[]> {
 	const failed: string[] = []
 	for (const step of [...undo].reverse()) {
 		try {
 			await step.run()
-			deps.journal({ step: step.what, phase: "reverted" })
-			deps.log(`reverted: ${step.what}`)
 		} catch (error) {
-			const why = error instanceof Error ? error.message : String(error)
-			if (step.applied) failed.push(`${step.what}: ${why}`)
-			else deps.log(`skipped: ${step.what} (its call failed, so it changed nothing; the revert said: ${why})`)
+			failed.push(`${step.what}: ${error instanceof Error ? error.message : String(error)}`)
+			continue
 		}
+		note(deps, { step: step.what, phase: "reverted" })
+		deps.log(`reverted: ${step.what}`)
 	}
 	return failed
 }
@@ -248,7 +254,7 @@ export async function cutover(deps: Deps, s: Snapshot): Promise<Outcome> {
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
 		deps.log(`FAILED: ${reason}`)
-		deps.journal({ step: "failed", reason })
+		note(deps, { step: "failed", reason })
 		const failed = await rollback(deps, undo)
 		if (failed.length) return { code: 4, notes: [reason, ...failed.map((f) => `NOT REVERTED: ${f}`)] }
 		await retry(deps, "back to 302", 18, 10_000, () => landingRedirects(deps)).catch((e: unknown) => {
