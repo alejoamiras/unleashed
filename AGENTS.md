@@ -6,7 +6,7 @@ the map; this file is the ruleset. `CLAUDE.md` imports it.
 ## Read before you start
 
 - The README of the package you touch: [`apps/tools`](apps/tools/README.md),
-  [`packages/bridge-core`](packages/bridge-core/README.md), [`packages/design`](packages/design/README.md),
+  [`apps/landing`](apps/landing/README.md), [`packages/bridge-core`](packages/bridge-core/README.md), [`packages/design`](packages/design/README.md),
   [`contracts/bridge/evm`](contracts/bridge/evm/README.md), [`contracts/bridge/aztec`](contracts/bridge/aztec/README.md).
 - [`apps/tools/tests/browser/README.md`](apps/tools/tests/browser/README.md) before touching the
   browser suite: the parallel-safe runner, the fixtures, the egress rule.
@@ -127,6 +127,11 @@ custom domains (`app.unleashed.systems`,
 [`apps/tools/README.md`](apps/tools/README.md) § Production build +
 hosting has the commands and the host model.
 
+The landing is a third assets-only Worker, `unleashed-landing` (`apps/landing/wrangler.jsonc`), deployed
+the same way from the root directory `apps/landing`. Its custom domains, `unleashed.systems` and
+`www.unleashed.systems`, are also attached in the dashboard. A deploy is checked against a reference
+build of the same commit: [`apps/landing/README.md`](apps/landing/README.md) § Hosting.
+
 ## Security
 
 Treat every change as attack surface. The bridge moves real funds on mainnet: a derivation, a
@@ -171,7 +176,7 @@ committed file.
 | Contracts | the contract READMEs' build and test commands; CI runs them in `bridge-contracts.yml` |
 
 CI: `pr-quick.yml` (`quality-status`: commitlint, lint and typecheck, unit tests, both builds with
-`verify:build-target`), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
+`verify:build-target`, and the landing's build and browser smoke on the landing graph), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
 graph or the `e2e:tools` label), `bridge-contracts.yml` (`bridge-contracts-status`: Foundry, halmos,
 Noir, TXE, the sandbox integration suite), `actionlint.yml`. Every PR workflow opens with a
 `changes` paths-filter job; `workflow_dispatch` bypasses it.

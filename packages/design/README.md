@@ -1,7 +1,9 @@
 # @unleashed/design
 
 The design system of the unleashed tools app: theme tokens and global defaults (`src/base.css`), a
-few layout and control primitives, and the composites the tools app renders.
+few layout and control primitives, and the composites the tools app renders. The landing
+(`apps/landing`) is its second consumer: it imports `base.css`, the fonts and `core/` (icons and the
+mark), never a Vue component, so a token or `core/` change reaches both.
 
 - `import "@unleashed/design/base.css"` once at app entry. `public/theme-boot.js` sets the `theme`
   attribute (`dark` or `light`) on `<html>` before first paint.

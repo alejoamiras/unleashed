@@ -46,3 +46,36 @@ The owner ran run A in their own session; every read succeeded. This is the roll
 - **Workers**: `app` and `testnet.app` are custom domains of the two app Workers; no routes.
 - Neither Zaraz nor Web Analytics injects anything into the testnet app's HTML today, although both
   are switched on for the zone (fetched HTML, no `cdn-cgi` or `cloudflareinsights` reference).
+
+## Run B: the cutover
+
+The owner ran run B in their own session at 1669839 (`bun apps/landing/scripts/cutover.ts cutover`). It
+printed `CUTOVER PASSED` with no notes. The journal of every old value is
+`~/.cache/unleashed-landing-cutover/cutover-2026-10-14T154745.025Z.json`, beside run A's
+`inventory-2026-10-14T130713.045Z.json`. Neither file is committed.
+
+- In order: Email Obfuscation off, Web Analytics (`rum`) off, NEL off; the apex, then `www`, attached to
+  `unleashed-landing`, each replacing its proxied AAAA `100::` placeholder; both new Advanced
+  Certificates active about 2 m 40 s after the second attach; the redirect rule off, not deleted. The
+  302 held after each attach, as Inference 1 predicted: the rule runs before the Worker on a custom
+  domain.
+- The coordinator's first probe a minute later got one stale 302 on the apex, and every later request
+  got the landing. A rule change can take a short while to reach every edge machine. Forty requests
+  per host a few minutes later, half with a cache-busting query, all answered 200.
+
+## The live gate
+
+From this host, with no token:
+
+- **No 302 remains**: 40 of 40 requests per host answered 200, half with a cache-busting query.
+- **The served bytes are the reference build's**: `/` on both hosts hashes like the 4c33c63 export's
+  `dist/index.html`, the other nine files are byte-identical on both hosts and on `workers.dev`, and
+  `/build.json` is `0.1.0+4c33c630`, production.
+- **Headers**: the landing's CSP and the other page headers, no `nel` or `report-to`, and `http://`
+  answers 301 to `https://` on both hosts. The app hosts answer as run A recorded: testnet 200 with its
+  CSP, mainnet 302 to the Access login. NEL is off for them too, as the owner accepted.
+- **Smoke from the export**: every Chromium case passed on both hosts, the live-only byte and
+  `/cdn-cgi/` cases included. WebKit passed every case but the canvas-timing ones, which failed on
+  different cases each run: 2 of 21 per host one page at a time, and 1 of 21 on the `workers.dev`
+  control. The load average was 90 to 240 on 192 cores. This is phase 6's starvation pattern, not the
+  host, since the bytes are identical; the owner's iPhone look is the Safari check.
