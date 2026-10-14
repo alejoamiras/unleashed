@@ -9,7 +9,7 @@ explainer: off
 eli5_mode: artifact
 budget: "recon 1 agent; code_review off; codex gpt-6.1-sol at high; fable leg on opus"
 harden: not scheduled (a static page with no secrets, no input and no backend)
-status: approved; PR 1 merged, the Worker live on workers.dev (O1); the cutover runs as keyed runs (O2-API, D17)
+status: approved; PR 1 merged, the Worker live on workers.dev (O1); the cutover runs through the API (O2-API, D17)
 ---
 
 # Landing page for unleashed.systems
@@ -405,10 +405,10 @@ landing filter does not list the action again.
     decision, D15): a user token with Workers Scripts Edit and Account Settings Read on this one
     account. It can create, and overwrite, any Worker on the account; that residual is accepted in
     `follow-ups.md`. No new token, and no agent sees one.
-  - The cutover runs as owner-approved keyed runs (O2-API, D17) with one new user token on this
-    account and the `unleashed.systems` zone. It lives in 1Password only (`Keyed-Runs/Cloudflare-Cutover`),
-    has a TTL of hours and an IP filter for this host, and the owner deletes it after the cutover. Two of
-    its lines are broad, stated plainly:
+  - The cutover runs through the API (O2-API, D17) with one new user token on this account and the
+    `unleashed.systems` zone. Only the owner handles it: the owner runs each command in their own
+    session, so no agent reads the token. It has an end date of the next day and an IP filter for this
+    host, and the owner deletes it right after run B. Two of its lines are broad, stated plainly:
     1. Account › Workers Scripts › Edit reaches every Worker on the account, the two app Workers
        included, because custom domains have no per-Worker role (Fact 13).
     2. Zone › Zone Settings › Edit reaches every setting of the zone, SSL and Always Use HTTPS
@@ -854,8 +854,8 @@ Validation gate:
 ### Phase 7: cutover and live verification
 
 Steps:
-1. Run O2-API (D17): run A, then run B, then the owner's iPhone look, then run C. The dashboard O2
-   is the manual fallback.
+1. Run O2-API (D17): run A, run B, the owner's iPhone look, then the owner deletes the rule. The
+   dashboard O2 is the manual fallback.
 2. After each checkpoint, check both hosts with `curl -sSI` over HTTPS and HTTP.
 3. After the rule is off, poll until both hosts serve the landing's build id, at most 5 minutes.
    Then verify in Chromium against both hosts:
@@ -933,11 +933,11 @@ run creates the Worker, and no new token is minted.
    which opens the landing. Domains & Routes lists no custom domain. Add none yet.
 6. Send the lead "done", the `DIST_SHA256=` line, and the token's name.
 
-### O2-API: the cutover as keyed runs (lead, after the owner approves each run; D17)
+### O2-API: the cutover through the API (D17)
 
-`apps/landing/scripts/cutover.ts`, run with `apps/landing/cloudflare-cutover.env.example`. Each run is
-one `env-exec` request the owner approves with `op-remote`. Records go to `~/.cache/unleashed-landing-cutover/`,
-never into the repository.
+`apps/landing/scripts/cutover.ts`, with the token in `CLOUDFLARE_API_TOKEN` and nowhere else. The owner
+runs each command in their own session; `apps/landing/cloudflare-cutover.env.example` is the keyed-run
+path for next time. Records go to `~/.cache/unleashed-landing-cutover/`, never into the repository.
 
 - **Run A, inventory.** GET requests only. It records what O2 step 0 asks for: the redirect ruleset
   as JSON (the rollback), every DNS record, the zone settings that touch a page or its headers,
@@ -949,9 +949,19 @@ never into the repository.
   rule is off both hosts serve the landing's production build. On a failed check it stops and puts
   back what it changed, newest first: the rule on again, each setting to its recorded value. A
   custom domain stays attached, as in R, because detaching one deletes its DNS record.
-- **Run C, delete the rule.** After the owner's iPhone look. It refuses unless the rule is still
-  the recorded one and off.
-- The owner deletes the token after run C.
+  - It refuses without a run A record, on drift since it, and before any change on Bot Fight Mode,
+    a Zaraz tool enabled, a CNAME or unproxied record on a landing host, or a landing rule that also
+    names another host.
+  - Rocket Loader, Email Obfuscation and Web Analytics (`rum`) go off zone-wide through the settings
+    API, each only if it is on.
+  - It attaches with wrangler's own call (`PUT …/workers/scripts/unleashed-landing/domains/records`):
+    an A or AAAA record is replaced (`override_existing_dns_record`), and a hostname of another Worker
+    is never taken (`override_existing_origin` stays false).
+  - Missing `nel` and the HTTP 301 are reported, not rolled back: neither puts a visitor at risk, and
+    phase 7 checks both.
+- **Deleting the rule** is the owner's one dashboard click after the iPhone look (O2 step 7), so the
+  token need not outlive the look. The owner deletes the token right after run B passes; from then
+  on the rollback is the owner turning the rule back on (R).
 
 ### O2: cutover (manual fallback; owner, dashboard)
 
@@ -1147,7 +1157,7 @@ another HTML bypass does not weaken it, and build tooling stays trusted (D13). T
 | D14 | Reference builds | `git archive` exports in the scratch directory | A temporary clone (the brief allows no clones); checking out `main` in the worktree (moves the branch's working state) | X3, the brief |
 | D15 | Creating the Worker | **Owner decision**: Workers Builds' Import a repository after PR 1 merges, root directory `apps/landing`, the existing build token. The lead's check comes after the first deploy: build-log digest against a reference build of the merge commit, and the live smoke on workers.dev, before any domain points at it | The keyed run (K1) the lead recommended and the rejection of the import flow (F3); a new per-Worker token | owner, second answer; supersedes D4, D5, D13 |
 | D16 | Zone extras and NEL | Off: injecting features hostname-scoped where possible, else zone-wide; NEL zone-wide | NEL on and named in the Quality Bar (the earlier recommendation) | owner, A6 |
-| D17 | Running O2 | **Owner decision**: the lead runs O2 through the Cloudflare API as owner-approved keyed runs A, B and C (O2-API), with a new token in `Keyed-Runs/Cloudflare-Cutover` that the owner deletes afterwards. The dashboard O2 stays as the manual fallback | The dashboard O2 by the owner | owner: "I'd rather mint you a token so you can do that please?"; supersedes "there is no keyed run" (D15's Security note) |
+| D17 | Running O2 | **Owner decision**: O2 runs through the Cloudflare API (O2-API) as run A (read) and run B (change), each command run by the owner in their own session, with a new token the owner deletes right after run B. The owner deletes the rule by hand after the iPhone look. Rocket Loader, Email Obfuscation and Web Analytics go off zone-wide; Bot Fight Mode, an enabled Zaraz tool or a CNAME stops run B before any change; an A or AAAA record is replaced by the custom domain. The dashboard O2 stays as the manual fallback, and `cloudflare-cutover.env.example` is the keyed-run path for next time | The dashboard O2 by the owner; a keyed run through 1Password (the owner skipped op-remote this once); an agent reading the token from a file or the chat (refused by this host's permission system); a run C that deletes the rule (the token would outlive the iPhone look) | owner: "I'd rather mint you a token so you can do that please?"; coordinator, for the open calls; supersedes "there is no keyed run" (D15's Security note) |
 
 Unresolved: none. Residuals the owner accepted: the build token can deploy every Worker on the account
 (`follow-ups.md`), and the first upload has no gate before it, only the check after it (D15).

@@ -65,7 +65,7 @@ export async function redirectEntrypoint(api: Api, zoneId: string): Promise<Rule
 	}
 }
 
-export async function readInventory(api: Api, zone: Zone) {
+export async function readInventory(api: Api, zone: Zone, look: (url: string) => Promise<Probe> = probe) {
 	const z = `/zones/${zone.id}`
 	const settings = await Promise.all(
 		SETTINGS.map(async (id) => [id, await attempt("Zone › Zone Settings", () => api.call("GET", `${z}/settings/${id}`))] as const),
@@ -85,7 +85,7 @@ export async function readInventory(api: Api, zone: Zone) {
 		),
 		workerRoutes: await attempt("Zone › Workers Routes", () => api.call<unknown[]>("GET", `${z}/workers/routes`)),
 		certificatePacks: await attempt("Zone › SSL and Certificates", () => api.list<CertPack>(`${z}/ssl/certificate_packs?status=all`)),
-		probes: await Promise.all([...LANDING_URLS, ...APP_URLS].map((url) => probe(url))),
+		probes: await Promise.all([...LANDING_URLS, ...APP_URLS].map((url) => look(url))),
 	}
 }
 

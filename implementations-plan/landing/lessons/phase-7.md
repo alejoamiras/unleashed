@@ -29,3 +29,20 @@ can do that please?". The lead scoped it from Cloudflare's own sources, not from
   pack, not the zone's Universal one, which already covers the apex and `www`.
 - **Keyed runs pin a clean tree.** `env-exec` refuses a dirty tree when the owner approves, so run B's
   code waits until run A has run, and every record goes to `~/.cache`, outside the repository.
+
+## Run A: the state before the cutover (O2 step 0)
+
+The owner ran run A in their own session; every read succeeded. This is the rollback record (R):
+
+- **The redirect rule**: the only rule in the zone's Single Redirects, position 1. Description "Until
+  the landing page exists: apex and www go to the testnet app", ref `apex_to_testnet`, expression
+  `(http.host eq "unleashed.systems") or (http.host eq "www.unleashed.systems")`, static target
+  `https://testnet.app.unleashed.systems/`, status 302, query string not preserved. No Page Rules.
+- **DNS**: the apex, `www`, `app` and `testnet.app` are each a proxied AAAA `100::` placeholder. No CNAME,
+  so both landing hosts take the replace-the-record attach.
+- **Zone settings**: Rocket Loader off; Email Obfuscation on; Web Analytics (`rum`) on; NEL on; Speed
+  Brain off; Automatic HTTPS Rewrites, Server Side Excludes and Always Use HTTPS on.
+- **Zaraz**: a default config with no tools. **Bot Fight Mode** and its JavaScript detections: off.
+- **Workers**: `app` and `testnet.app` are custom domains of the two app Workers; no routes.
+- Neither Zaraz nor Web Analytics injects anything into the testnet app's HTML today, although both
+  are switched on for the zone (fetched HTML, no `cdn-cgi` or `cloudflareinsights` reference).
