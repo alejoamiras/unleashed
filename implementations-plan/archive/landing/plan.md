@@ -9,8 +9,43 @@ explainer: off
 eli5_mode: artifact
 budget: "recon 1 agent; code_review off; codex gpt-6.1-sol at high; fable leg on opus"
 harden: not scheduled (a static page with no secrets, no input and no backend)
-status: approved; PR 1 merging, then the Worker (O1) and the cutover (O2)
+status: closed; shipped (#15, #16 and the close-out PR); unleashed.systems and www serve the landing
 ---
+
+## Outcome
+
+- **Status: closed, shipped.** Option C, "Dither tide", is the page at `unleashed.systems` and
+  `www.unleashed.systems`. The assets-only Worker `unleashed-landing` serves it, and Workers Builds
+  deploys it from `main` with `noindex` previews for every other branch.
+- **What shipped:**
+  - #15: the landing app, its Worker config and its CI job.
+  - #16: the build's commit taken from git when Workers Builds names a branch.
+  - The close-out PR: the docs, the cutover scripts (`apps/landing/scripts/cutover.ts`), the lessons,
+    this archive.
+- **The cutover (O2-API, D17).** The owner ran run A (read) and run B (change) in their own session.
+  Run B turned off Email Obfuscation, Web Analytics and NEL zone-wide, attached both hosts as custom
+  domains, waited for their certificates and turned the redirect rule off. The live gate passed
+  (`lessons/phase-7.md`). The owner looked on the iPhone, deleted the rule and deleted the token:
+  "1. looks good. 3. done. 2. done."
+- **Dispositions:**
+  - K1, the keyed first deploy: dropped for the owner's Import a repository flow (D15).
+  - The dashboard O2: superseded by O2-API (D17). It stays below as the manual fallback, as history.
+  - A run C to delete the rule: dropped. The owner deleted it by hand, so the token did not outlive
+    the iPhone look.
+  - An agent reading the owner's token from a file or the chat: refused by this host's permission
+    system. The owner ran each command instead.
+  - A Configuration Rule for Rocket Loader and Email Obfuscation: replaced by zone-wide toggles, which
+    the owner accepted (D17). Rocket Loader was already off.
+  - `www` as a 301 to the apex: rejected (D2). Both hosts serve the page, and its canonical link names
+    the apex.
+  - WebKit in CI: rejected (D7). The local and live WebKit passes and the owner's iPhone stand in.
+- **Residuals the owner accepted:** Email Obfuscation, Web Analytics and NEL are off for the app hosts
+  too, and the build token the three Workers share is account-wide.
+- **Open items** (`implementations-plan/follow-ups.md`): "A Cloudflare account of its own for
+  unleashed", "Per-Worker build tokens", "`AppShell.vue` should import the mark", "A drawn social
+  preview image", "The landing's Bridge copy names Ethereum and Aztec only", and "The tools build
+  trusts any `WORKERS_CI_COMMIT_SHA`".
+- **The `/goal` and `/loop` seeds below are retired.** This plan is history, never a task list.
 
 # Landing page for unleashed.systems
 
@@ -163,7 +198,7 @@ notes, the comparison table and the verdict; the stage's outer notched corners.
 ## Card engines (picked by the owner)
 
 Board: https://claude.ai/artifact/BjzP75ugjcxiutFRjo7cFq (source:
-`implementations-plan/landing/design/cards.src.html`, fonts stripped). Every candidate runs live on
+`implementations-plan/archive/landing/design/cards.src.html`, fonts stripped). Every candidate runs live on
 option C, in both themes and at both widths.
 
 | Slot | Candidates | Recommendation | Owner's pick |
@@ -342,7 +377,7 @@ export function shouldRun(s: MotionState, visible: boolean): boolean
 | `.github/workflows/_build-landing.yml` | new reusable: build, guard, Playwright smoke (Chromium) |
 | `apps/tools/cloudflare.env.example` | header comment: "the Workers", not "the two Workers" |
 | `implementations-plan/.gitignore` | `**/design/*.png`: board screenshots stay local |
-| `implementations-plan/landing/design/*.src.html` | committed: the two boards' sources, fonts stripped, as the design record |
+| `implementations-plan/archive/landing/design/*.src.html` | committed: the two boards' sources, fonts stripped, as the design record |
 | `README.md`, `AGENTS.md`, `packages/design/README.md` | docs, in PR 2 (after the cutover) |
 
 `.github/actions/setup-playwright` stays as it is: CI's full install already provides tools'
@@ -405,7 +440,17 @@ landing filter does not list the action again.
     decision, D15): a user token with Workers Scripts Edit and Account Settings Read on this one
     account. It can create, and overwrite, any Worker on the account; that residual is accepted in
     `follow-ups.md`. No new token, and no agent sees one.
-  - Nothing else holds a Cloudflare credential: there is no keyed run.
+  - The cutover runs through the API (O2-API, D17) with one new user token on this account and the
+    `unleashed.systems` zone. Only the owner handles it: the owner runs each command in their own
+    session, so no agent reads the token. It has an end date of the next day and an IP filter for this
+    host, and the owner deletes it right after run B. Two of its lines are broad, stated plainly:
+    1. Account › Workers Scripts › Edit reaches every Worker on the account, the two app Workers
+       included, because custom domains have no per-Worker role (Fact 13).
+    2. Zone › Zone Settings › Edit reaches every setting of the zone, SSL and Always Use HTTPS
+       included, for the app hosts too.
+    Single Redirect Edit and Workers Routes Edit can redirect or route any host of the zone. DNS is
+    read-only: nothing creates, edits or deletes a record. The scripts import only Bun and Node
+    built-ins, so the approved commit is all the code that sees the token.
 - **The first deploy has no gate before upload.** Workers Builds builds `main` and deploys it as
   soon as the owner saves the import. What still holds:
   - the guard runs inside `build`, and `worker:deploy` refuses anything but a production `dist/`;
@@ -814,7 +859,7 @@ Validation gate:
 
 After phase 5: run the Post-implementation loop (steps 2 and 3) over the whole PR 1 diff.
 
-### Phase 6: merge PR 1, create the Worker with Workers Builds, verify on workers.dev
+### Phase 6: merge PR 1, create the Worker with Workers Builds, verify on workers.dev ✓
 
 Steps:
 1. Run the repository's PR gates: `bun run audit:tools && bun run test:all`.
@@ -841,10 +886,11 @@ Validation gate:
   points at the Worker yet: stop and report.
 - Layers: repository gates, CI, live e2e on workers.dev.
 
-### Phase 7: cutover and live verification
+### Phase 7: cutover and live verification ✓
 
 Steps:
-1. Hand the owner runbook O2, one checkpoint at a time.
+1. Run O2-API (D17): run A, run B, the owner's iPhone look, then the owner deletes the rule. The
+   dashboard O2 is the manual fallback.
 2. After each checkpoint, check both hosts with `curl -sSI` over HTTPS and HTTP.
 3. After the rule is off, poll until both hosts serve the landing's build id, at most 5 minutes.
    Then verify in Chromium against both hosts:
@@ -871,7 +917,7 @@ Validation gate:
   - the owner confirms the iPhone look and the deleted rule.
 - Layers: live e2e on the production hosts.
 
-### Phase 8: docs and close-out (PR 2)
+### Phase 8: docs and close-out (PR 2) ✓
 
 Steps:
 1. Cut `landing-close-out` from `origin/main`.
@@ -881,7 +927,8 @@ Steps:
 5. Note the second consumer of `base.css` in `packages/design/README.md`. Leave `apps/tools/README.md`
    alone: an edit there re-runs the tools build and its e2e shards.
 6. Check the preview channel on PR 2's own branch build: its preview URL answers with
-   `X-Robots-Tag: noindex` and the robots meta (A5).
+   `X-Robots-Tag: noindex` and the robots meta (A5). Done on `landing-close-out`'s first build
+   (`lessons/phase-6.md`); repeat on the final head.
 7. Add the follow-ups. Then write the Outcome, promote the lessons, move the archive, and move the
    index line (Post-implementation step 5).
 
@@ -921,7 +968,37 @@ run creates the Worker, and no new token is minted.
    which opens the landing. Domains & Routes lists no custom domain. Add none yet.
 6. Send the lead "done", the `DIST_SHA256=` line, and the token's name.
 
-### O2: cutover (owner, dashboard; after the lead says workers.dev is verified)
+### O2-API: the cutover through the API (D17)
+
+`apps/landing/scripts/cutover.ts`, with the token in `CLOUDFLARE_API_TOKEN` and nowhere else. The owner
+runs each command in their own session; `apps/landing/cloudflare-cutover.env.example` is the keyed-run
+path for next time. Records go to `~/.cache/unleashed-landing-cutover/`, never into the repository.
+
+- **Run A, inventory.** GET requests only. It records what O2 step 0 asks for: the redirect ruleset
+  as JSON (the rollback), every DNS record, the zone settings that touch a page or its headers,
+  Zaraz, Bot Fight Mode, the Workers custom domains and routes, the certificate packs, and what
+  each public host answers. A read the token cannot make is named with the permission it lacks.
+- **Run B, the cutover.** O2 steps 1 to 5 in order, with the checks of each step inside the script:
+  after each zone toggle the app hosts answer as recorded and both landing hosts still answer 302;
+  after each attach the domain's certificate is active and both hosts still answer 302; after the
+  rule is off both hosts serve the landing's production build. On a failed check it stops and puts
+  back what it changed, newest first: the rule on again, each setting to its recorded value. A
+  custom domain stays attached, as in R, because detaching one deletes its DNS record.
+  - It refuses without a run A record, on drift since it, and before any change on Bot Fight Mode,
+    a Zaraz tool enabled, a CNAME or unproxied record on a landing host, or a landing rule that also
+    names another host.
+  - Rocket Loader, Email Obfuscation and Web Analytics (`rum`) go off zone-wide through the settings
+    API, each only if it is on.
+  - It attaches with wrangler's own call (`PUT …/workers/scripts/unleashed-landing/domains/records`):
+    an A or AAAA record is replaced (`override_existing_dns_record`), and a hostname of another Worker
+    is never taken (`override_existing_origin` stays false).
+  - Missing `nel` and the HTTP 301 are reported, not rolled back: neither puts a visitor at risk, and
+    phase 7 checks both.
+- **Deleting the rule** is the owner's one dashboard click after the iPhone look (O2 step 7), so the
+  token need not outlive the look. The owner deletes the token right after run B passes; from then
+  on the rollback is the owner turning the rule back on (R).
+
+### O2: cutover (manual fallback; owner, dashboard)
 
 0. **Record.** Send the lead:
    - the redirect rule: its name, its match expression, the target URL, the status code, the
@@ -937,8 +1014,9 @@ run creates the Worker, and no new token is minted.
    lead what changed. The lead re-checks the app hosts after any zone-wide change; on a failure, turn
    that one back on.
 2. **NEL off.** In the zone's Network page, turn off Network Error Logging Monitoring. It is
-   zone-wide (Fact 18), accepted by the owner. The lead checks that responses no longer carry `nel`,
-   and re-checks the app hosts.
+   zone-wide (Fact 18), accepted by the owner. The lead checks that the zone's hosts (the app hosts
+   now, the landing's custom domains after step 5) no longer carry `nel`, and re-checks the app hosts.
+   `workers.dev` keeps sending `nel`: it is not in the zone, so it proves nothing here.
 3. **Apex.** Open `unleashed-landing` › Settings › Domains & Routes › Add › Custom domain, and enter
    `unleashed.systems`.
    - If the dashboard offers to replace the existing DNS record, accept. Leave previews off, as on
@@ -1114,6 +1192,7 @@ another HTML bypass does not weaken it, and build tooling stays trusted (D13). T
 | D14 | Reference builds | `git archive` exports in the scratch directory | A temporary clone (the brief allows no clones); checking out `main` in the worktree (moves the branch's working state) | X3, the brief |
 | D15 | Creating the Worker | **Owner decision**: Workers Builds' Import a repository after PR 1 merges, root directory `apps/landing`, the existing build token. The lead's check comes after the first deploy: build-log digest against a reference build of the merge commit, and the live smoke on workers.dev, before any domain points at it | The keyed run (K1) the lead recommended and the rejection of the import flow (F3); a new per-Worker token | owner, second answer; supersedes D4, D5, D13 |
 | D16 | Zone extras and NEL | Off: injecting features hostname-scoped where possible, else zone-wide; NEL zone-wide | NEL on and named in the Quality Bar (the earlier recommendation) | owner, A6 |
+| D17 | Running O2 | **Owner decision**: O2 runs through the Cloudflare API (O2-API) as run A (read) and run B (change), each command run by the owner in their own session, with a new token the owner deletes right after run B. The owner deletes the rule by hand after the iPhone look. Rocket Loader, Email Obfuscation and Web Analytics go off zone-wide; Bot Fight Mode, an enabled Zaraz tool or a CNAME stops run B before any change; an A or AAAA record is replaced by the custom domain. The dashboard O2 stays as the manual fallback, and `cloudflare-cutover.env.example` is the keyed-run path for next time | The dashboard O2 by the owner; a keyed run through 1Password (the owner skipped op-remote this once); an agent reading the token from a file or the chat (refused by this host's permission system); a run C that deletes the rule (the token would outlive the iPhone look) | owner: "I'd rather mint you a token so you can do that please?"; coordinator, for the open calls; supersedes "there is no keyed run" (D15's Security note) |
 
 Unresolved: none. Residuals the owner accepted: the build token can deploy every Worker on the account
 (`follow-ups.md`), and the first upload has no gate before it, only the check after it (D15).
@@ -1185,7 +1264,7 @@ Run this after phase 5, over the whole PR 1 diff from the plan baseline (`origin
    - On a refusal, relay its output and stop; never force.
    - The lead merges PR 2 itself, so it runs this in the same turn as the merge.
 
-## Seeds (draft; final after approval)
+## Seeds (retired; see Outcome)
 
 ELI5: https://claude.ai/artifact/2Mj8rV7osT9DDgoxEYo9yP (private to the owner). Source:
 `implementations-plan/landing/eli5.html` (gitignored; fonts and mark filled in at publish).

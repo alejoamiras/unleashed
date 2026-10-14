@@ -29,14 +29,22 @@ runs never share a port. `LANDING_WEBKIT=1` adds WebKit at phone width (CI does 
 | `security-headers.ts` | The CSP and the other response headers, for `_headers` and `vite preview` |
 | `scripts/dist-checks.ts` | The guard over a built `dist/` (CSP, no inline code, links, fonts, sizes, build id) |
 
-Screen placement is provisional, awaiting the owner. `SCREEN_PLACEMENT = "tile"` in `src/content.ts` switches the
-rows from Strip to Tile; the Tile rules already ship in `src/styles/landing.css`.
+The rows use the Strip placement, the owner's pick. `SCREEN_PLACEMENT = "tile"` in `src/content.ts` switches them
+to Tile; the Tile rules already ship in `src/styles/landing.css`.
 
 ## Hosting
 
 One assets-only Cloudflare Worker, `unleashed-landing` (`wrangler.jsonc`), built and deployed by Workers Builds from
 `main`, with its root directory set to `apps/landing`. GitHub Actions only builds and tests it. The config's header
 lists the commands and variables the dashboard runs; it never gains `main`, `build` or `alias`.
+
+- **Hosts**: `unleashed.systems` and `www.unleashed.systems`, two custom domains attached in the dashboard (previews
+  off), and `unleashed-landing.alejo-amiras.workers.dev`. The apex is canonical: the page's canonical link names it,
+  and `www` serves the same page. The zone's Email Obfuscation, Web Analytics and Network Error Logging are off, so
+  nothing rewrites the page or adds a header to it.
+- **`scripts/cutover.ts`** attached the two domains through the Cloudflare API. `inventory` only reads and records
+  the zone's state; `cutover` ran once, and refuses now that no redirect rule sends a landing host to the app. Its
+  token template is `cloudflare-cutover.env.example`.
 
 - **Production** is a build of `main`. `worker:deploy` publishes it and refuses any other `dist/`.
 - **Previews** are builds of any other branch (`WORKERS_CI_BRANCH` set and not `main`). `worker:preview` uploads
