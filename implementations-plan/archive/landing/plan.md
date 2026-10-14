@@ -198,7 +198,7 @@ notes, the comparison table and the verdict; the stage's outer notched corners.
 ## Card engines (picked by the owner)
 
 Board: https://claude.ai/artifact/BjzP75ugjcxiutFRjo7cFq (source:
-`implementations-plan/landing/design/cards.src.html`, fonts stripped). Every candidate runs live on
+`implementations-plan/archive/landing/design/cards.src.html`, fonts stripped). Every candidate runs live on
 option C, in both themes and at both widths.
 
 | Slot | Candidates | Recommendation | Owner's pick |
@@ -377,7 +377,7 @@ export function shouldRun(s: MotionState, visible: boolean): boolean
 | `.github/workflows/_build-landing.yml` | new reusable: build, guard, Playwright smoke (Chromium) |
 | `apps/tools/cloudflare.env.example` | header comment: "the Workers", not "the two Workers" |
 | `implementations-plan/.gitignore` | `**/design/*.png`: board screenshots stay local |
-| `implementations-plan/landing/design/*.src.html` | committed: the two boards' sources, fonts stripped, as the design record |
+| `implementations-plan/archive/landing/design/*.src.html` | committed: the two boards' sources, fonts stripped, as the design record |
 | `README.md`, `AGENTS.md`, `packages/design/README.md` | docs, in PR 2 (after the cutover) |
 
 `.github/actions/setup-playwright` stays as it is: CI's full install already provides tools'
