@@ -100,3 +100,5 @@ cutover scripts. Four findings; all adopted.
 - **Low: comments named the plan's steps.** These are rewritten as what the code does and why.
 - **Low: the design README overstated what a `core/` change reaches.** The app shell still inlines
   the mark; the sentence now says so.
+
+The resumed pass over the fix commit answered "no material findings". The loop converged.
