@@ -9,8 +9,43 @@ explainer: off
 eli5_mode: artifact
 budget: "recon 1 agent; code_review off; codex gpt-6.1-sol at high; fable leg on opus"
 harden: not scheduled (a static page with no secrets, no input and no backend)
-status: approved; PR 1 merged, the Worker live on workers.dev (O1); the cutover runs through the API (O2-API, D17)
+status: closed; shipped (#15, #16 and the close-out PR); unleashed.systems and www serve the landing
 ---
+
+## Outcome
+
+- **Status: closed, shipped.** Option C, "Dither tide", is the page at `unleashed.systems` and
+  `www.unleashed.systems`. The assets-only Worker `unleashed-landing` serves it, and Workers Builds
+  deploys it from `main` with `noindex` previews for every other branch.
+- **What shipped:**
+  - #15: the landing app, its Worker config and its CI job.
+  - #16: the build's commit taken from git when Workers Builds names a branch.
+  - The close-out PR: the docs, the cutover scripts (`apps/landing/scripts/cutover.ts`), the lessons,
+    this archive.
+- **The cutover (O2-API, D17).** The owner ran run A (read) and run B (change) in their own session.
+  Run B turned off Email Obfuscation, Web Analytics and NEL zone-wide, attached both hosts as custom
+  domains, waited for their certificates and turned the redirect rule off. The live gate passed
+  (`lessons/phase-7.md`). The owner looked on the iPhone, deleted the rule and deleted the token:
+  "1. looks good. 3. done. 2. done."
+- **Dispositions:**
+  - K1, the keyed first deploy: dropped for the owner's Import a repository flow (D15).
+  - The dashboard O2: superseded by O2-API (D17). It stays below as the manual fallback, as history.
+  - A run C to delete the rule: dropped. The owner deleted it by hand, so the token did not outlive
+    the iPhone look.
+  - An agent reading the owner's token from a file or the chat: refused by this host's permission
+    system. The owner ran each command instead.
+  - A Configuration Rule for Rocket Loader and Email Obfuscation: replaced by zone-wide toggles, which
+    the owner accepted (D17). Rocket Loader was already off.
+  - `www` as a 301 to the apex: rejected (D2). Both hosts serve the page, and its canonical link names
+    the apex.
+  - WebKit in CI: rejected (D7). The local and live WebKit passes and the owner's iPhone stand in.
+- **Residuals the owner accepted:** Email Obfuscation, Web Analytics and NEL are off for the app hosts
+  too, and the build token the three Workers share is account-wide.
+- **Open items** (`implementations-plan/follow-ups.md`): "A Cloudflare account of its own for
+  unleashed", "Per-Worker build tokens", "`AppShell.vue` should import the mark", "A drawn social
+  preview image", "The landing's Bridge copy names Ethereum and Aztec only", and "The tools build
+  trusts any `WORKERS_CI_COMMIT_SHA`".
+- **The `/goal` and `/loop` seeds below are retired.** This plan is history, never a task list.
 
 # Landing page for unleashed.systems
 
@@ -851,7 +886,7 @@ Validation gate:
   points at the Worker yet: stop and report.
 - Layers: repository gates, CI, live e2e on workers.dev.
 
-### Phase 7: cutover and live verification
+### Phase 7: cutover and live verification ✓
 
 Steps:
 1. Run O2-API (D17): run A, run B, the owner's iPhone look, then the owner deletes the rule. The
@@ -882,7 +917,7 @@ Validation gate:
   - the owner confirms the iPhone look and the deleted rule.
 - Layers: live e2e on the production hosts.
 
-### Phase 8: docs and close-out (PR 2)
+### Phase 8: docs and close-out (PR 2) ✓
 
 Steps:
 1. Cut `landing-close-out` from `origin/main`.
@@ -1229,7 +1264,7 @@ Run this after phase 5, over the whole PR 1 diff from the plan baseline (`origin
    - On a refusal, relay its output and stop; never force.
    - The lead merges PR 2 itself, so it runs this in the same turn as the merge.
 
-## Seeds (draft; final after approval)
+## Seeds (retired; see Outcome)
 
 ELI5: https://claude.ai/artifact/2Mj8rV7osT9DDgoxEYo9yP (private to the owner). Source:
 `implementations-plan/landing/eli5.html` (gitignored; fonts and mark filled in at publish).

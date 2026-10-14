@@ -79,3 +79,10 @@ From this host, with no token:
   different cases each run: 2 of 21 per host one page at a time, and 1 of 21 on the `workers.dev`
   control. The load average was 90 to 240 on 192 cores. This is phase 6's starvation pattern, not the
   host, since the bytes are identical; the owner's iPhone look is the Safari check.
+
+## After the rule's deletion
+
+The owner's iPhone look: "looks good". The owner then deleted the redirect rule and the
+`unleashed-cutover` token. The Chromium live smoke from the 4c33c63 export exited 0 on both hosts
+afterwards. Ten cache-busting requests per host all answered 200, with no `nel` or `report-to`, and
+`http://` answers 301 to `https://`.
