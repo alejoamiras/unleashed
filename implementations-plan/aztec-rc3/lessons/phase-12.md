@@ -26,3 +26,8 @@ That run also measured the first plain public claim of this generation, 1.656 FJ
   means a second intent, under `lessons/recalibration/`, whose receipt sits beside it.
 
 The canary retry filed before this (`rc3-canaries-retry-5688193a`) went void with the first fix commit.
+
+## The second intent (`rc3-recal-intent-6a5a7692`, testnet-l1)
+
+Green at `17659a1`. Its identity, L1 addresses, signer, caps and artifact pins (the FPC address, salt and digest,
+both Noir target digests) equal the first intent's, so nothing deployed moves. Starting balance 2.90357 ETH.
