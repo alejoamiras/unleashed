@@ -43,3 +43,21 @@ in the same call. That is a lagging backend behind the keyed Sepolia RPC. Two pu
 minute later: 19479 bytes of code, IMPLEMENTATION `0xdf4d…b047` (the predicted one), L2_HUB `0x08f3…39c9`. The
 re-run adopts the landed factory (`adoptLandedFactory` checks both bindings), so the generation stays alive. The
 read-after-receipt race is a follow-up: a source fix inside the window would void the intent.
+
+The resume (`rc3-deploy-resume-9641ec7e`) adopted the factory and landed the router `0x9696…8df7`, the hub
+`0x08f3…39c9` and every readback, then USDC's portal. It stopped on the same lag right after USDT's
+`createPortal`; a public RPC showed the registration a minute later. The third run (`rc3-deploy-tokens-faf39129`)
+wrapped each command in a bounded retry (4 attempts, 60 s apart, `verify` before each), the runbook's own
+re-run recovery. It finished green: USDT registered on the hub, the candidate written, then EURC and GBPC
+pre-created unregistered. GBPC's portal read lagged once and the retry recovered it. Spend: 0.000079 ETH.
+
+| Token | L1 | Portal | L2 token |
+|---|---|---|---|
+| USDC | `0x8648…51fc` | `0x1d8a…772a` | `0x1d753361e33e8ceb41e07f621785a1db2297e29c6507a35af2cf4e5a5210e6db` |
+| USDT | `0x8bad…238f` | `0x3c34…7cea` | `0x16d70d782cc2c94f5aad3461dd3d0272d037a143ac6f6db77f3541d8154116c5` |
+| EURC | `0xc10b…4d24` | `0x1636…e7` | `0x1d7cf5ef4a2ed63584d4c915e94268a4ffb2c95cd91e2f2940d9a16a0ddb4813` |
+| GBPC | `0x177e…efca` | `0xf633…3db2` | `0x0e2d0bbe86f69fe27272cb09539952cb055e83088d1419afbeda64da05e67cb5` |
+
+Factory `0xc68a230a765ea13240785a88c7078712908a565a`, router `0x969652d23c3dddba2fa185e2cbbc36f9d6408df7`, swap
+target `0xbc4b882477c03c144b90f24626017b51ec415a64`, hub
+`0x08f380397b1978e0c6939d525c41695dd0e254d5214affe875061b8906b339c9`.
