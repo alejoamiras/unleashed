@@ -862,7 +862,7 @@ This section is the execution contract. `code_review` is `off`, so there is no `
    4. Strip timestamps and commit ids from `lessons/intent.json` and the receipt.
    5. `git mv implementations-plan/aztec-rc3 implementations-plan/archive/aztec-rc3`, in its own commit.
    6. In the next commit:
-      - point `NO_RESET_BASELINE` at `implementations-plan/archive/aztec-rc3/lessons/intent.json`;
+      - point `NO_RESET_BASELINE` at `implementations-plan/archive/aztec-rc3/lessons/reset-baseline.json`;
       - replace the allowlist entry with the archived path;
       - repair every `git grep -n aztec-rc3` link;
       - move the `index.md` line to `archive/index.md`.
