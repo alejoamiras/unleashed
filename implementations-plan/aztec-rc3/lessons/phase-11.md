@@ -74,3 +74,30 @@ On the keyless node, `node_getContract` returns it with original and current cla
 `0x0d6670f2…2437`, salt zero and deployer zero. The app does not hard-code it:
 `apps/tools/src/contracts/sponsored-fpc.ts` derives it from the installed SponsoredFPC artifact and
 `SPONSORED_FPC_SALT`, and running that code yields the same address and class.
+
+## Steps 5–6: the gate, the smokes and the fuel samples (`rc3-smokes-fuel-136846a5`, testnet-l1)
+
+Green with no retry used. The FPC gate was green three times ("compat + identity + digest + live class all
+agree"). The candidate smoke bridged USDC and USDT, public and private, in 2.9 minutes. The fueled smoke quoted
+1.5 USDC at 43.27 FJ (floor 41.97 after slippage) and settled a self-paying claim.
+
+The rc.3 testnet bills far less than rc.1 did. Fees in FJ-wei:
+
+| Run | Path | Claim fee | Register fee | Ceiling (`getFeeLimit`) |
+|---|---|---|---|---|
+| EURC public | register+claim | 2970310475249600000 | (inside) | — |
+| EURC private ×3 | claim | 1137202681952400000, 1068358920937400000 ×2 | — | 2838685858590000000 |
+| GBPC private first | register,claim | 1026798914287800000 | 2203834102613400000 | 8516057575770000000 |
+| GBPC private ×2 | claim | 1068358920937400000 ×2 | — | 2838685858590000000 |
+
+## Step 7: calibrate
+
+The Stop condition does not hold. The worst measured private ceiling, 8.516 FJ on GBPC's private first claim,
+sits below `MIN_FUEL_FJ` (29.773 FJ), a margin of 3.5×. The validator's `4× worst getFeeLimit` heuristic prints
+34.064 FJ. The follow-up that moves `MIN_FUEL_FJ` to the measured ceiling should decide between the two.
+
+The samples were written outside the repository: 1 `register_and_claim_public`, 6 `claim_private`, 1
+`register_token`. No plain `claim_public` was sampled; the public register+claim minus the private
+`register_token` puts one near 0.77 FJ, under the private plain claim. The result: `fjPerTx=1364643218342880000`
+and `fjRegister=2199729351956640000` (each worst value plus 20 %), down from the carried 3.28 and 2.94 FJ. The
+candidate is final.
