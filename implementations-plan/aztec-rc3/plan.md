@@ -709,6 +709,8 @@ Sources: **M** the lead's draft, **C** Codex's draft (`gpt-6.1-sol`), **F** the 
 | D19 | Independent work runs in parallel streams with disjoint files (§ Delivery) | owner (approval) | Run the phases in sequence: slower, and the owner asked for speed |
 | D20 | Scripts compose the node URL from the owner's shared CLI key, `op://Keyed-Runs/dRPC-CLI/DRPC_API_KEY`, in one helper | coordinator, for the owner | A per-project URL field (`AZTEC_NODE_URL` in `Unleashed-Testnet`): per-project caps and attribution, but one key to mint, restrict and rotate per project. Accepted costs: every project shares one CU cap and one blast radius, and use cannot be attributed per project. The IP restriction is the real control, because a TCP source IP cannot be spoofed the way an Origin header can. Rotation is one field edit |
 | D18 | `minFuelFj` keeps the carried floor this arc; the measured private ceiling becomes a follow-up | contradiction-check | Set it inside the window: a source edit there is drift, and a hand edit of the candidate is forbidden |
+| D21 | `runSend` sends an explicit L1 gas limit, the estimate plus 25 %, in PR B | owner, after the first canary run | A follow-up: the scripts and any wallet without headroom keep reverting on Inbox window turns |
+| D22 | Recalibrate inside this arc with run 7's plain public claim, through a second intent and promotion | owner, after the first canary run | Carry the low `fjPerTx` to the next generation: the review screen understates a public claim's fee by about 18 % |
 
 Still disputed after consolidation: none.
 
@@ -775,6 +777,14 @@ Its six conditions are all adopted:
 
 Resumed on the revised plan, the same session returned **`VERDICT: approve`, high confidence**: all six conditions
 met, no new contradiction or broken command, no window edit outside the allowlist.
+
+**Live-window findings.** Both came out of the first canary run, after promotion. Neither touches a deployed
+contract.
+
+| Finding | Disposition |
+|---|---|
+| The private canary's `bridgeWithFuel` ran out of gas: limit 1,058,108, all of it used. The same calldata needs 1,058,108 at the end of the block before and 1,180,262 at the end of its own. The Aztec Inbox charges the first message of each window for a fresh tree, and the estimate came right after the run's own public send had paid for one. viem sends a local account's bare estimate | D21: `runSend` adds 25 % headroom, on the scripts' path and on the app's wallet path |
+| `fjPerTx` 1.365 FJ under-quotes a plain public claim, which run 7 measured at 1.656 FJ. Run 4's matrix sampled no plain public claim: EURC's public claim was its first, registering one | D22: recalibrated with that sample; a second intent and promotion |
 
 ## Post-implementation
 
