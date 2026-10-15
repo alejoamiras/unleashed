@@ -72,7 +72,8 @@ surface:
 
 **The Noir surface** (skipping it makes the drift check a false negative):
 - `contracts/bridge/aztec/scripts/compile.sh` pins the toolchain (`AZTEC_HOME`, default
-  `~/.aztec/versions/6.0.0-rc.1`; `aztec-up install <v>` first) and lists the crates it compiles
+  `~/.aztec/versions/6.0.0-rc.3`, the `@aztec-labs/aztec.js` pin and never the foundation version;
+  `aztec-up install <v>` first) and lists the crates it compiles
   (`token_bridge_hub`, `keystone`; `claim_secret` and `register_hash` are libraries the hub pulls in).
 - The `Nargo.toml` git tags (`aztec` and `compressed_string` from `aztec-labs-eng/aztec-nr`, and the
   hub's `token` dep from `AztecProtocol/aztec-standards`, dir `src/token_contract`) sit on ONE tag,
