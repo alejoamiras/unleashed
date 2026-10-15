@@ -7,9 +7,9 @@
  *   bun packages/bridge-core/scripts/live-intent.ts verify <intent-path> [--candidate <path>]
  *   bun packages/bridge-core/scripts/live-intent.ts promote <intent-path> [--bridge-only]
  *
- * `build` records: node identity from the PRIMARY Aztec RPC; an INDEPENDENT L1 corroboration
- * (direct `eth_getCode` on the node-claimed rollup + FeeJuicePortal via SEPOLIA_RPC_URL); a
- * second Aztec endpoint's identity when INTENT_SECOND_AZTEC_RPC is set, else the documented
+ * `build` records: node identity from the keyed dRPC node (`requireDrpcNodeUrl`); an INDEPENDENT L1
+ * corroboration (direct `eth_getCode` on the node-claimed rollup + FeeJuicePortal via SEPOLIA_RPC_URL);
+ * whether a second Aztec endpoint (INTENT_SECOND_AZTEC_RPC) agreed, else the documented
  * single-node posture; the env-derived signer CHECKED against the pinned allowlist (the constant
  * below — not the env, breaking the env-file tautology); artifact digests (canonical PrivateFPC +
  * the committed Noir targets); the git source snapshot; and the spend caps.
@@ -38,7 +38,7 @@ import { FACTORY_CONSTANTS_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI } from "./
 import { deriveHubInstance } from "./script-l2"
 import { verifyL1Manifest } from "./verify-l1"
 import { walletChainIdOf } from "../src/wallet-chain-id"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
+import { postNodeRpc, requireDrpcNodeUrl } from "../src/drpc-node"
 
 /**
  * The only L1 signers authorized to broadcast, one per network — keys never cross networks. Pinned
@@ -92,17 +92,12 @@ function castBin(): string {
 	return castPath
 }
 
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
-
+/** Errors name the method, never the URL: the keyed dRPC URL carries the key. */
 async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T> {
-	const res = await fetch(url, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-	})
-	if (!res.ok) throw new Error(`${method} @ ${url}: HTTP ${res.status}`)
+	const res = await postNodeRpc(url, method, params)
+	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
 	const body = (await res.json()) as { result?: T; error?: { message: string } }
-	if (body.error) throw new Error(`${method} @ ${url}: ${body.error.message}`)
+	if (body.error) throw new Error(`${method}: ${body.error.message}`)
 	return body.result as T
 }
 
@@ -147,14 +142,14 @@ async function probeIdentity(url: string): Promise<NodeIdentity> {
 	return rpc<NodeIdentity>(url, "node_getNodeInfo", [])
 }
 
+/** Records no node URL: the dRPC URL carries the key, and `verify` re-composes it from the keyed run. */
 export interface DeployIntent {
 	builtAt: string
-	primaryRpc: string
 	identity: { nodeVersion: string; l1ChainId: number; rollupVersion: number; walletChainId: number }
 	l1: { rollup: string; feeJuicePortal: string; feeJuice: string; feeAssetHandler: string; registry: string }
 	l1Corroboration: { rollupHasCode: boolean; portalHasCode: boolean; source: string }
 	secondEndpoint:
-		| { url: string; agreed: true }
+		| { agreed: true }
 		| { posture: "SINGLE-L2-NODE (documented residual: no second public endpoint; L1-anchored; caps bound exposure)" }
 	signer: string
 	caps: typeof CAPS
@@ -251,8 +246,9 @@ async function build(intentPath: string): Promise<void> {
 	if (!sepolia) throw new Error("SEPOLIA_RPC_URL required (source packages/bridge-core/.env)")
 	const pk = process.env.PRIVATE_KEY
 	if (!pk) throw new Error("PRIVATE_KEY required (source packages/bridge-core/.env)")
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 
-	const identity = await probeIdentity(NODE_URL)
+	const identity = await probeIdentity(nodeUrl)
 	const walletChainId = walletChainIdOf(identity.l1ChainId, identity.rollupVersion)
 	assertNoResetPins(identity)
 
@@ -271,7 +267,7 @@ async function build(intentPath: string): Promise<void> {
 		if (second.rollupVersion !== identity.rollupVersion || second.l1ContractAddresses.rollupAddress !== rollup) {
 			throw new Error(`second endpoint DISAGREES: rollupVersion ${second.rollupVersion} vs ${identity.rollupVersion}`)
 		}
-		secondEndpoint = { url: secondUrl, agreed: true }
+		secondEndpoint = { agreed: true }
 	} else {
 		secondEndpoint = { posture: "SINGLE-L2-NODE (documented residual: no second public endpoint; L1-anchored; caps bound exposure)" }
 	}
@@ -291,7 +287,6 @@ async function build(intentPath: string): Promise<void> {
 
 	const intent: DeployIntent = {
 		builtAt: new Date().toISOString(),
-		primaryRpc: NODE_URL,
 		identity: {
 			nodeVersion: identity.nodeVersion,
 			l1ChainId: identity.l1ChainId,
@@ -395,8 +390,8 @@ export function assertNoSourceDrift(intent: Pick<DeployIntent, "source">): void 
 }
 
 /** Identity re-validation, before EVERY broadcast group and at promotion. */
-async function assertIdentityUnmoved(intent: DeployIntent): Promise<NodeIdentity> {
-	const now = await probeIdentity(intent.primaryRpc)
+async function assertIdentityUnmoved(intent: DeployIntent, nodeUrl: string): Promise<NodeIdentity> {
+	const now = await probeIdentity(nodeUrl)
 	if (now.rollupVersion !== intent.identity.rollupVersion) {
 		throw new Error(`rollupVersion MOVED mid-arc: ${now.rollupVersion} != ${intent.identity.rollupVersion} — STOP`)
 	}
@@ -468,7 +463,7 @@ function assertFeeJuicePins(m: ManifestV2, intent: DeployIntent, sepolia: string
 async function reportHubBindings(b: BridgeBlock, nodeUrl: string): Promise<void> {
 	const node = createNode(nodeUrl)
 	const instance = await node.getContract(AztecAddress.fromStringUnsafe(b.l2.hub.address))
-	if (!instance) throw new Error(`no contract at the manifest hub ${b.l2.hub.address} on ${nodeUrl} — STOP`)
+	if (!instance) throw new Error(`no contract at the manifest hub ${b.l2.hub.address} on the node — STOP`)
 	const derived = await deriveHubInstance(b.l2.hub)
 	const same = (label: string, got: { toString(): string }, want: { toString(): string }) => {
 		if (got.toString().toLowerCase() !== want.toString().toLowerCase())
@@ -547,7 +542,13 @@ function assertCandidateIdentity(intent: DeployIntent, candidate: ManifestV2, se
 }
 
 /** Digest-pin the candidate bytes, strict-parse them, then prove the generation they name. */
-async function verifyCandidate(intent: DeployIntent, intentPath: string, candidatePath: string, sepolia: string): Promise<void> {
+async function verifyCandidate(
+	intent: DeployIntent,
+	intentPath: string,
+	candidatePath: string,
+	sepolia: string,
+	nodeUrl: string,
+): Promise<void> {
 	const raw = readFileSync(candidatePath, "utf8")
 	const digest = createHash("sha256").update(raw).digest("hex")
 	if (intent.candidateSha256 && intent.candidateSha256 !== digest) {
@@ -561,7 +562,7 @@ async function verifyCandidate(intent: DeployIntent, intentPath: string, candida
 	}
 	assertFeeJuicePins(candidate, intent, sepolia)
 	assertCandidateIdentity(intent, candidate, sepolia)
-	await verifyGenerationBindings(candidate, sepolia, intent.primaryRpc)
+	await verifyGenerationBindings(candidate, sepolia, nodeUrl)
 	console.log("✓ candidate strict-valid + privileged readbacks agree")
 }
 
@@ -591,13 +592,14 @@ function assertSpendWithinCaps(intent: DeployIntent, sepolia: string, rollupVers
 async function verify(intentPath: string, candidatePath?: string): Promise<void> {
 	const intent = JSON.parse(readFileSync(intentPath, "utf8")) as DeployIntent
 	const sepolia = requireSepoliaRpc()
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 	assertIntentCommitted(intent, intentPath)
 	assertTreeDiscipline()
 	assertNoSourceDrift(intent)
-	const now = await assertIdentityUnmoved(intent)
+	const now = await assertIdentityUnmoved(intent, nodeUrl)
 	assertSignerUnmoved(intent)
 	assertArtifactDigests(intent)
-	if (candidatePath) await verifyCandidate(intent, intentPath, candidatePath, sepolia)
+	if (candidatePath) await verifyCandidate(intent, intentPath, candidatePath, sepolia, nodeUrl)
 	assertSpendWithinCaps(intent, sepolia, now.rollupVersion)
 }
 
