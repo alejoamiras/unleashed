@@ -1,5 +1,5 @@
 {
-	"builtAt": "2026-10-15T21:06:36.519Z",
+	"builtAt": "",
 	"identity": {
 		"nodeVersion": "6.0.0-rc.3",
 		"l1ChainId": 11155111,
@@ -26,7 +26,7 @@
 		"maxTotalEthSpend": "2.0",
 		"maxWethSeed": "1.5"
 	},
-	"startingBalanceEth": 2.9035706227821816,
+	"startingBalanceEth": 2.90366221468834,
 	"artifacts": {
 		"privateFpc": {
 			"address": "0x2e189d0c28cb86234a17951a94131e19620cda595fa8f9c5c10c24268ceb6db4",
@@ -39,7 +39,7 @@
 		}
 	},
 	"source": {
-		"commit": "17659a1e7fd836ba5916e00d8cf481fb735a0320",
+		"commit": "",
 		"treeClean": true,
 		"operationalAllowlist": [
 			"apps/tools/public/testnet-bridge.candidate.json",
@@ -57,5 +57,5 @@
 			"apps/tools/public/testnet-bridge.journal.jsonl"
 		]
 	},
-	"candidateSha256": "6685544cf56460017f1738dbbe6768bf079b83eb0fa438d140abdbe359783a24"
+	"candidateSha256": "891ab834ee3c4bcbeeebe63599cced88bf001212e390184c678308b103d314dc"
 }
