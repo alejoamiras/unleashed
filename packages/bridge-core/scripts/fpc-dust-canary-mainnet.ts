@@ -60,11 +60,7 @@ const mainnet = mainnetChain(ETH_RPC)
 
 async function nodeL1(nodeUrl: string): Promise<{ portal: `0x${string}`; asset: `0x${string}` }> {
 	const res = await postNodeRpc(nodeUrl, "node_getNodeInfo", [])
-	const body = await readNodeRpcBody<{ l1ContractAddresses: Record<string, { value?: string } | string> }>(
-		res,
-		"node_getNodeInfo",
-		nodeUrl,
-	)
+	const body = await readNodeRpcBody<{ l1ContractAddresses: Record<string, { value?: string } | string> }>(res, "node_getNodeInfo")
 	if (!body.result) throw new Error("node_getNodeInfo: malformed RPC response (no result)")
 	const a = body.result.l1ContractAddresses
 	const pick = (v: unknown) => (typeof v === "object" && v ? (v as { value: string }).value : (v as string)) as `0x${string}`

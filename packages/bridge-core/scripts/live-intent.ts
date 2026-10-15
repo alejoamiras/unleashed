@@ -94,7 +94,7 @@ function castBin(): string {
 
 /** Errors name the method, never the URL: the keyed dRPC URL carries the key. */
 async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T> {
-	return (await readNodeRpcBody<T>(await postNodeRpc(url, method, params), method, url)).result as T
+	return (await readNodeRpcBody<T>(await postNodeRpc(url, method, params), method)).result as T
 }
 
 const sha256 = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex")

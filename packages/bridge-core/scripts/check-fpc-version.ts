@@ -74,7 +74,7 @@ function resolvePackageFile(pkg: string, file: string): string {
 }
 
 async function rpc<T>(nodeUrl: string, method: string, params: unknown[]): Promise<T> {
-	const body = await readNodeRpcBody<T>(await postNodeRpc(nodeUrl, method, params), method, nodeUrl)
+	const body = await readNodeRpcBody<T>(await postNodeRpc(nodeUrl, method, params), method)
 	// A response with NEITHER `result` nor `error` is malformed — an ERROR, never a clean absence.
 	// (Use `rpcOptional` for methods whose ABSENCE the node encodes by omitting the key.)
 	if (!("result" in body)) throw new Error(`${method}: malformed RPC response (no result, no error)`)
@@ -89,7 +89,7 @@ async function rpc<T>(nodeUrl: string, method: string, params: unknown[]): Promi
  * errors still throw in `readNodeRpcBody` — never mistaken for absence.
  */
 async function rpcOptional<T>(nodeUrl: string, method: string, params: unknown[]): Promise<T | undefined> {
-	const body = await readNodeRpcBody<T>(await postNodeRpc(nodeUrl, method, params), method, nodeUrl)
+	const body = await readNodeRpcBody<T>(await postNodeRpc(nodeUrl, method, params), method)
 	if (!("result" in body)) {
 		if (body.jsonrpc !== "2.0") throw new Error(`${method}: malformed RPC response (no result, no error, no jsonrpc)`)
 		return undefined
