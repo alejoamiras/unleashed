@@ -1,7 +1,7 @@
 {
-	"promotedAt": "2026-10-15T20:39:41.294Z",
+	"promotedAt": "",
 	"intent": "implementations-plan/aztec-rc3/lessons/intent.json",
-	"commitAtPromotion": "8c7ea1049a2bbe5f928c5e3cf77a70bde4d13a9b",
+	"commitAtPromotion": "",
 	"mode": "bridge-only",
 	"bridge": {
 		"candidateSha256": "891ab834ee3c4bcbeeebe63599cced88bf001212e390184c678308b103d314dc",
