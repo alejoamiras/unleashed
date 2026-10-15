@@ -2,13 +2,11 @@
 const URL_SAFE_KEY = /^[A-Za-z0-9_-]+$/
 
 /**
- * The dRPC node URL for `network`, composed from `env.DRPC_API_KEY`, the owner's shared CLI key.
- * Never defaulted: the key reaches a run only from 1Password through a keyed-run template, so a
- * script run outside one fails here instead of falling back to another node. Throws, naming the
- * variable but never its value, when the key is unset or not URL-safe (`[A-Za-z0-9_-]+`).
- *
- * The URL carries the key: callers never print it, write it to a file or put it in an error.
- * Callers pass `process.env` at operation entry, so the browser bundle never references `process`.
+ * The dRPC node URL for `network`, from `env.DRPC_API_KEY`. Throws, naming the variable but never
+ * its value, when the key is unset or not URL-safe (`[A-Za-z0-9_-]+`); there is no fallback node.
+ * The URL carries the key: never log it, persist it or put it in an error.
+ * Callers pass `process.env` at operation entry, not at import, so importing a script needs no key
+ * and this module, which the package index re-exports to the browser, never touches `process`.
  */
 export function requireDrpcNodeUrl(network: "testnet" | "mainnet", env: Record<string, string | undefined>): string {
 	const key = env.DRPC_API_KEY
