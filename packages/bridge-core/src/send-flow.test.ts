@@ -34,7 +34,7 @@ const gen: SendGeneration = {
 	swapTarget: "0x6666666666666666666666666666666666666666",
 	chainId: 31337,
 	hub: `0x${"7".padStart(64, "0")}`,
-	tokenClassId: "0x24c34002788720c941a327a20c369b12c8bdcff3b5a974673a8f618763471505",
+	tokenClassId: "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a",
 }
 
 const usdcPortal = predictPortal(FACTORY, IMPL, USDC)

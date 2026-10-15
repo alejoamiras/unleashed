@@ -13,8 +13,8 @@ import { claimTokensUntilSynced, deployAccountIfAbsent, deriveInstance, register
 
 const FACTORY = "0x3333333333333333333333333333333333333333"
 const GUARDIAN = `0x${"0".repeat(61)}ab1`
-/** The installed aztec-standards@6.0.0-rc.1 Token class — the same pin as noir-artifact-classids.test.ts. */
-const TOKEN_CLASS_ID = "0x24c34002788720c941a327a20c369b12c8bdcff3b5a974673a8f618763471505"
+/** The installed aztec-standards@6.0.0-rc.3 Token class — the same pin as noir-artifact-classids.test.ts. */
+const TOKEN_CLASS_ID = "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a"
 const ERC20 = "0x00000000000000000000000000000000000e2c20"
 const HUB_SALT = `0x${"0".repeat(24)}${FACTORY.slice(2)}`
 
