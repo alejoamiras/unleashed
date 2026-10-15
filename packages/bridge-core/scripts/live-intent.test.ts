@@ -4,18 +4,18 @@ import { requireDrpcNodeUrl } from "../src/drpc-node"
 import { assertL1Pins, assertNoSourceDrift, authenticatedNode, type NodeIdentity } from "./live-intent"
 
 const pinned = {
-	rollup: "0x8c2fb2a68a3d362ab1de99e06f83f8903160bbd9",
-	feeJuicePortal: "0x5bb7523a95c1fdf1d2a3dd9fb7d497e7f5142d7f",
+	rollup: "0xed1eb2eb670b42e2fb5a478c076a264b9604089d",
+	feeJuicePortal: "0x6974bde62c47a0041f5b4a2e61c5506c2b59ce59",
 	feeJuice: "0x762c132040fda6183066fa3b14d985ee55aa3c18",
 	feeAssetHandler: "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9",
 	registry: "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba",
 }
 const node = (registryAddress: string): NodeIdentity => ({
-	nodeVersion: "6.0.0-rc.1",
+	nodeVersion: "6.0.0-rc.3",
 	l1ChainId: 11155111,
-	rollupVersion: 2914217885,
+	rollupVersion: 3409706519,
 	l1ContractAddresses: {
-		rollupAddress: "0x8C2FB2A68A3D362AB1DE99E06F83F8903160BBD9",
+		rollupAddress: "0xED1EB2EB670B42E2FB5A478C076A264B9604089D",
 		feeJuicePortalAddress: pinned.feeJuicePortal,
 		feeJuiceAddress: pinned.feeJuice,
 		feeAssetHandlerAddress: pinned.feeAssetHandler,

@@ -7,9 +7,9 @@
 	"artifactSha256": "f9dd12290a47a2828fefea8c4e2976f1af1aee33a486cc6b2dd2929f5afb4e96",
 	"artifactPath": "@alejoamiras/private-fee-juice/target/private_contract-PrivateFPC.json",
 	"network": {
-		"$comment": "Hard identity pins for the ONE network this descriptor serves (Sepolia-anchored v6 testnet, verified live). A gate run against any other network is a wrong-network operator error, not a compat question.",
+		"$comment": "Hard identity pins for the ONE network this descriptor serves (the Sepolia-anchored 6.0.0-rc.3 testnet, verified live). A gate run against any other network is a wrong-network operator error, not a compat question.",
 		"l1ChainId": 11155111,
-		"rollupVersion": 2914217885
+		"rollupVersion": 3409706519
 	},
 	"compatibleNodeVersions": {
 		"$comment": "HUMAN-CURATED, digest-keyed: node versions this exact artifact (by sha256) may run against. A new artifact digest REQUIRES a fresh entry — the gate fails closed on a missing key. 6.0.0-rc.3 = the artifact's own version; the rc.3 testnet node reports nodeVersion 6.0.0-rc.3.",
