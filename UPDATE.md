@@ -41,10 +41,10 @@ hub's class ids depend on these inputs, so they move only with a new generation.
   regenerates them or they silently stop applying.
 - `bunfig.toml` `minimumReleaseAgeExcludes`: fresh publishes are blocked by the release-age gate,
   transitives included. Add every new-line name from `bun.lock` while `bun install` resolves the new
-  line, then delete them again in the same PR and prove the lockfile with
-  `bun install --frozen-lockfile --force`. For the following 7 days a `package.json` edit in a
-  workspace that reaches the new line re-gates it: land the bump's dependency changes in the bump
-  PR, and re-add the excludes locally, uncommitted, for a stray later edit.
+  line, then delete them again in the same PR (the standing exemptions stay) and prove the
+  lockfile with `bun install --frozen-lockfile --force`. For the following 7 days a `package.json`
+  edit in a workspace that reaches the new line re-gates it: land the bump's dependency changes in
+  the bump PR, and re-add the excludes locally, uncommitted, for a stray later edit.
 - `bun install` after editing the pins: targeted re-resolution is the default, and deleting
   `bun.lock` is a last resort (a full regeneration re-gates every locked version). Old-line entries
   left in `bun.lock` are a missed pin; `aztec-line.test.ts` names them.
