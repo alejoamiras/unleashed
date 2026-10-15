@@ -18,7 +18,14 @@ const PIN_SOURCES = ["packages/bridge-core/package.json", "apps/tools/package.js
 const EXACT = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/
 const STANDARDS = "@aztec-foundation/aztec-standards"
 
-type Manifest = { dependencies?: Record<string, string>; patchedDependencies?: Record<string, string> }
+type Specs = Record<string, string>
+type Manifest = {
+	workspaces?: string[]
+	dependencies?: Specs
+	devDependencies?: Specs
+	peerDependencies?: Specs
+	patchedDependencies?: Specs
+}
 type Lock = { packages: Record<string, [string, string, { dependencies?: Record<string, string> }?, string?]> }
 
 const manifest = (path: string): Manifest => JSON.parse(readFileSync(join(ROOT, path), "utf8")) as Manifest
@@ -52,6 +59,20 @@ test("every workspace the CI pin readers consult names the same exact pins", () 
 		expect(pinOf(path, "@aztec-labs/aztec.js"), path).toBe(LABS)
 		expect(pinOf(path, STANDARDS), path).toBe(STANDARDS_PIN)
 	}
+})
+
+test("every manifest declares each Aztec package at exactly its line version", () => {
+	const workspaces = (manifest("package.json").workspaces ?? []).flatMap((glob) => [
+		...new Bun.Glob(`${glob}/package.json`).scanSync({ cwd: ROOT }),
+	])
+	const off = ["package.json", "contracts/bridge/aztec/txe-server/package.json", ...workspaces].flatMap((path) => {
+		const m = manifest(path)
+		return Object.entries({ ...m.dependencies, ...m.devDependencies, ...m.peerDependencies })
+			.filter(([name, spec]) => expectedVersion(name) !== undefined && spec !== expectedVersion(name))
+			.map(([name, spec]) => `${path}: ${name}@${spec} (want ${expectedVersion(name)})`)
+	})
+	expect(workspaces.length).toBeGreaterThan(1)
+	expect(off).toEqual([])
 })
 
 test("the foundation version is the exact one the locked aztec.js requires", () => {
