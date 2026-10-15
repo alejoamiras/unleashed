@@ -55,9 +55,22 @@ pre-created unregistered. GBPC's portal read lagged once and the retry recovered
 |---|---|---|---|
 | USDC | `0x8648…51fc` | `0x1d8a…772a` | `0x1d753361e33e8ceb41e07f621785a1db2297e29c6507a35af2cf4e5a5210e6db` |
 | USDT | `0x8bad…238f` | `0x3c34…7cea` | `0x16d70d782cc2c94f5aad3461dd3d0272d037a143ac6f6db77f3541d8154116c5` |
-| EURC | `0xc10b…4d24` | `0x1636…e7` | `0x1d7cf5ef4a2ed63584d4c915e94268a4ffb2c95cd91e2f2940d9a16a0ddb4813` |
+| EURC | `0xc10b…4d24` | `0x1636…a2e7` | `0x1d7cf5ef4a2ed63584d4c915e94268a4ffb2c95cd91e2f2940d9a16a0ddb4813` |
 | GBPC | `0x177e…efca` | `0xf633…3db2` | `0x0e2d0bbe86f69fe27272cb09539952cb055e83088d1419afbeda64da05e67cb5` |
 
 Factory `0xc68a230a765ea13240785a88c7078712908a565a`, router `0x969652d23c3dddba2fa185e2cbbc36f9d6408df7`, swap
 target `0xbc4b882477c03c144b90f24626017b51ec415a64`, hub
 `0x08f380397b1978e0c6939d525c41695dd0e254d5214affe875061b8906b339c9`.
+
+## Step 4: the faucet (`rc3-faucet-1f4e1cbe`, testnet-faucet)
+
+Green. The Dripper was already at `0x0fda…95d4` (`[EXISTING]`): the address commits to its class, constructor
+arguments and deployer, so the instance is the expected one; the drip canary proves it works. SIGNAL `0x1349…6599`
+and NOISE `0x23f1…4537` were deployed. The output, written outside the repository, equals the committed
+`deployments.json` byte for byte.
+
+The faucet paid through the SponsoredFPC `0x2adfb70e860909f0db8268b3fec80bce52a94559963444f5c0341816b8412130`.
+On the keyless node, `node_getContract` returns it with original and current class
+`0x0d6670f2…2437`, salt zero and deployer zero. The app does not hard-code it:
+`apps/tools/src/contracts/sponsored-fpc.ts` derives it from the installed SponsoredFPC artifact and
+`SPONSORED_FPC_SALT`, and running that code yields the same address and class.
