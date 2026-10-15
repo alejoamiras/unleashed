@@ -744,9 +744,9 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 	}
 	await verify(intentPath, paths.bridgeCandidate)
 
-	// Promotion enables the app's fuel path, which hard-uses PRIVATE_FPC_ADDRESS — an undeployed or
-	// upgraded-out FPC at that address must abort the promotion.
-	run("bun", [join(here, "check-fpc-version.ts"), "--mode", "require-deployed"], { stdio: "inherit" })
+	// Promotion enables the app's fuel path, which hard-uses PRIVATE_FPC_ADDRESS — a drifted
+	// derivation, or another or upgraded-out class published at that address, must abort it.
+	run("bun", [join(here, "check-fpc-version.ts")], { stdio: "inherit" })
 
 	assertPromotablePaths(paths, bridgeOnly)
 	const bytes = readPromotionBytes(paths, bridgeOnly, intent.candidateSha256)

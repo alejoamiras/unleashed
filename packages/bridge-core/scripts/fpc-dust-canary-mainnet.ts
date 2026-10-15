@@ -1,7 +1,7 @@
 /**
  * MAINNET PrivateFPC dust canary — the descriptor's authoritative on-net proof (run AFTER
- * deploy-private-fpc-mainnet.ts + check-fpc-version --mode require-deployed --network mainnet, BEFORE
- * any real private-fuel funding or promotion). Proves the full private lane live with dust:
+ * deploy-private-fpc-mainnet.ts + check-fpc-version --network mainnet, BEFORE any real
+ * private-fuel funding or promotion). Proves the full private lane live with dust:
  *
  *   1. sizes the dust from the LIVE fee ceiling — 2 × getFeeLimit(PRIVATE_CLAIM_GAS × worst fees),
  *      the same formula as testnet's MIN_FUEL_FJ calibration, so the printed value IS the

@@ -483,9 +483,9 @@ async function main() {
 	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 
 	// This canary deposits Fee Juice and pays fees THROUGH the pinned PrivateFPC — an unrecoverable
-	// loss if that address is not the deployed, class-correct contract. The gate runs inline so it
-	// cannot be skipped before the first broadcast.
-	await runFpcGate("require-deployed")
+	// loss if that address is not the installed artifact's canonical instance, or is published with
+	// another class. The gate runs inline so it cannot be skipped before the first broadcast.
+	await runFpcGate()
 
 	const l1 = await buildL1(mins)
 	const { ctx, fpc } = await buildL2(l1, nodeUrl, mins)
