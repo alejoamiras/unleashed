@@ -11,8 +11,8 @@ import { join } from "node:path"
  * match.
  */
 const ROOT = join(import.meta.dir, "..", "..")
-// lb.drpc.live's path form (any case, a port, escaped slashes), or `dkey=` in a URL on any drpc host.
-const KEYED_URL = /lb\.drpc\.live(?::\d+)?\\*\/[a-z0-9-]+\\*\/[A-Za-z0-9_-]{12,}|drpc[^\s"'<>]*?dkey=[A-Za-z0-9_-]{12,}/gi
+// The path form on lb.drpc.live or .org (any case, a port, escaped slashes), or `dkey=` on any drpc host.
+const KEYED_URL = /lb\.drpc\.(?:live|org)(?::\d+)?\\*\/[a-z0-9-]+\\*\/[A-Za-z0-9_-]{12,}|drpc[^\s"'<>]*?dkey=[A-Za-z0-9_-]{12,}/gi
 
 const files = Bun.spawnSync(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: ROOT })
 	.stdout.toString()
@@ -34,10 +34,12 @@ test("the matcher catches every spelling of a keyed URL and passes the keyless e
 	// Assembled at run time, so this file never matches its own pattern; failures print labels and counts.
 	const key = ["synthetic", "Key", "0123456789"].join("_")
 	const host = ["lb", "drpc", "live"].join(".")
+	const orgHost = ["lb", "drpc", "org"].join(".")
 	const pathForm = `https://${host}/aztec-testnet/${key}`
 	const spellings: Record<string, string> = {
 		"path form": pathForm,
-		"query form": `https://${["lb", "drpc", "org"].join(".")}/ogrpc?network=aztec-testnet&dkey=${key}`,
+		"org path form": `https://${orgHost}/mcp/${key}`,
+		"query form": `https://${orgHost}/ogrpc?network=aztec-testnet&dkey=${key}`,
 		"JSON-escaped slashes": pathForm.replaceAll("/", "\\/"),
 		"uppercase host": pathForm.replace(host, host.toUpperCase()),
 		"explicit port": pathForm.replace(host, `${host}:443`),
@@ -45,6 +47,7 @@ test("the matcher catches every spelling of a keyed URL and passes the keyless e
 	}
 	expect(Object.entries(spellings).map(([label, text]) => `${label}: ${keyedUrls(text)}`)).toEqual([
 		"path form: 1",
+		"org path form: 1",
 		"query form: 1",
 		"JSON-escaped slashes: 1",
 		"uppercase host: 1",
