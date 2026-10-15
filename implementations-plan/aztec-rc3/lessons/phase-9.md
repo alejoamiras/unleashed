@@ -14,7 +14,7 @@ Stream F, in its own worktree on the L line, before the cherry-pick.
   retired.
 
 The first e2e run failed all 70 tests at `browserType.launch`, a machine problem rather than a code one. The
-shell exports `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright`, which holds only headless shell 1148/1234, while
+shell exports a `PLAYWRIGHT_BROWSERS_PATH` system directory that holds only headless shell 1148/1234, while
 Playwright 1.63.0 needs 1243. The re-run used `~/.cache/ms-playwright`, which has 1243, and went green.
 
 `registerPrivateFpc` now lets a `registerContract` error propagate; the old `fuel-testnet` copy swallowed it.
