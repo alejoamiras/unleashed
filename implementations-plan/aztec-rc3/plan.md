@@ -10,9 +10,47 @@ eli5_mode: artifact
 eli5_source: implementations-plan/aztec-rc3/eli5.html
 eli5_url: https://claude.ai/artifact/2JWCkJhmQm2cmEBtejh5xT
 budget: "recon: 3 Sonnet agents; code-review: off; Codex on gpt-6.1-sol at high; Claude leg on Opus 5.5"
-status: approved
+status: closed
 base: main (aecf311); the lifi-routing stack (#7–#14) lands after this plan, rebased onto it
 ---
+
+## Outcome
+
+- **Closed; delivered.** Two PRs, both squash-merged under A2: PR A (#18), the dRPC key split, then PR B (#19),
+  rc.3 and the generation. Phases 1–13 are ✓. The owner's preview check passed (A6).
+- **Shipped: the key split (#18).** The testnet bundle talks to dRPC's keyless `https://aztec-testnet.drpc.org`
+  and holds no key; mainnet's `nodeUrl` is empty. Every script composes its node URL from the owner's shared,
+  IP-restricted CLI key through `requireDrpcNodeUrl`, and `node-keys.test.ts` allows no key anywhere in the tree.
+- **Shipped: the rc.3 line (#19).**
+  - `@aztec-labs/*` and the TXE at 6.0.0-rc.3; foundation at 6.0.0-rc.6; `aztec-standards` and
+    `private-fee-juice` at 6.0.0-rc.3 (the latter now a standing release-age exemption); `@nulo-sh/*` at 0.2.0.
+  - Noir on aztec-nr `v6.0.0-rc.3`, with the hub recompiled and its class ids re-pinned.
+  - The PrivateFPC re-pinned to `0x2e189d0c…6db4` (salt `0x…01`, deployer zero, artifact sha256 `f9dd1229…4e96`),
+    equal to the package's canonical deployment. Nothing deploys it; its gate has one behaviour.
+  - The testnet identity: rollupVersion 3409706519, wallet chainId 3415328944, FeeJuicePortal `0x6974…Ce59`.
+- **Shipped: the generation**, on the pinned signer `0x7F42…6a9a`, cap 2.0 ETH, spend 0.0000926 ETH:
+  - factory `0xc68a230a765ea13240785a88c7078712908a565a`, router `0x969652d23c3dddba2fa185e2cbbc36f9d6408df7`,
+    UniswapFuelSwap `0xbc4b882477c03c144b90f24626017b51ec415a64`, hub
+    `0x08f380397b1978e0c6939d525c41695dd0e254d5214affe875061b8906b339c9`;
+  - portals and L2 tokens: USDC `0x1d8a…772a` / `0x1d753361…10e6db`, USDT `0x3c34…7cea` / `0x16d70d78…16c5`,
+    EURC `0x1636…a2e7` / `0x1d7cf5ef…4813`, GBPC `0xf633…3db2` / `0x0e2d0bbe…7cb5`;
+  - the faucet: Dripper `0x0fda…95d4`, SIGNAL `0x1349…6599`, NOISE `0x23f1…4537`;
+  - promoted twice: first `891ab834…14dc`, then, recalibrated with a plain public claim (D22), `6685544c…3a24`
+    (`fjPerTx` 1.987 FJ, `fjRegister` 1.577 FJ). Both intents and receipts are in `lessons/`.
+  - Every canary and the final verify are green.
+- **Shipped: fixes on the way.** `runSend` sends its gas estimate plus 25 %, because the Aztec Inbox charges the
+  first message of each window for a fresh tree (D21). The FPC gate treats only a null result as absence.
+  `aztec-line.test.ts` checks every declaration in every manifest.
+- **Reviews.** Arc 1's Codex loop converged in 3 rounds. Arc 2's converged in 2 before the window and 1 final
+  cross-arc pass after it, none with a material finding. `/code-review` was off.
+- **Dropped:** the testnet PrivateFPC deploy and the `require-deployed` gate (Q4); the rc.1 factory stays
+  unpaused (A7).
+- **Known limits:** the single L2 node posture of the intents; the rc.1 factory unpaused, with only test tokens
+  at stake (D10).
+- **Open items:** in `follow-ups.md`: `MIN_FUEL_FJ` from the measured ceiling, gas headroom and lag-tolerant
+  readbacks for the conductor's other L1 writes, `lifi-routing` onto rc.3, mainnet on its line, Aztec 6.0.0
+  final, the rc.1 records, and the old dRPC keys' timing (A5).
+- **Retired:** the `/goal` and `/loop` seeds below. This plan is a record, never a task list.
 
 # aztec-rc3: Aztec 6.0.0-rc.3, a new testnet generation, and split dRPC keys
 
@@ -667,7 +705,7 @@ expected-red test is named by file in that phase's lessons before the phase star
   violation. The final verify is green. Each success line is quoted in `lessons/phase-12.md`.
 - Layers: live testnet.
 
-#### Phase 13: Docs and the final gates
+#### Phase 13: Docs and the final gates ✓
 
 1. Update `UPDATE.md` (current line, couplings) and the runbook. Add to `follow-ups.md`:
    - lifi-routing rebases onto rc.3, scrubs its two intents (F15), adopts the per-scope line rule, and redeploys
