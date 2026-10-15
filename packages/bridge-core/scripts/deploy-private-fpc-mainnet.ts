@@ -1,12 +1,11 @@
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 import { preexistingFeeJuicePayment } from "../src/fee-juice"
 import { deployCanonicalPrivateFpc } from "./deploy-canonical-private-fpc"
 import { resolveDeployerKeys } from "./deployer-keys"
 
-const NODE_URL = process.env.AZTEC_NODE_URL ?? "https://lb.drpc.live/aztec-mainnet/Ak_eT5HA2kbyqamqGTF702cdsdWqLTIR8YdadmahlY6k"
-
 const deployed = await deployCanonicalPrivateFpc({
-	nodeUrl: NODE_URL,
+	nodeUrl: requireDrpcNodeUrl("mainnet", process.env),
 	prepare: async ({ ewallet, node }) => {
 		// The conductor's L2 deployer — its claimed public fee-juice balance pays this deploy.
 		const { secret, salt } = resolveDeployerKeys("mainnet")
@@ -33,4 +32,4 @@ const deployed = await deployCanonicalPrivateFpc({
 	},
 })
 
-if (deployed) console.log("   Next: check-fpc-version --mode require-deployed, then the dust canary.")
+if (deployed) console.log("   Next: check-fpc-version --mode require-deployed --network mainnet, then the dust canary.")

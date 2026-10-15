@@ -1,7 +1,7 @@
 /**
  * MAINNET PrivateFPC dust canary — the descriptor's authoritative on-net proof (run AFTER
- * deploy-private-fpc-mainnet.ts + check-fpc-version --mode require-deployed, BEFORE any real
- * private-fuel funding or promotion). Proves the full private lane live with dust:
+ * deploy-private-fpc-mainnet.ts + check-fpc-version --mode require-deployed --network mainnet, BEFORE
+ * any real private-fuel funding or promotion). Proves the full private lane live with dust:
  *
  *   1. sizes the dust from the LIVE fee ceiling — 2 × getFeeLimit(PRIVATE_CLAIM_GAS × worst fees),
  *      the same formula as testnet's MIN_FUEL_FJ calibration, so the printed value IS the
@@ -12,7 +12,8 @@
  *      PrivateFPC.mint_and_pay_fee in setup), fees re-priced per attempt while the message syncs;
  *   4. asserts the claimer's PRIVATE FPC balance grew (dust − fee).
  *
- *   bun scripts/fpc-dust-canary-mainnet.ts   (MAINNET_PRIVATE_KEY + BRIDGE_DEPLOYER_SECRET_MAINNET + BRIDGE_DEPLOYER_PREFIX_MAINNET)
+ *   bun scripts/fpc-dust-canary-mainnet.ts   (MAINNET_PRIVATE_KEY + BRIDGE_DEPLOYER_SECRET_MAINNET +
+ *     BRIDGE_DEPLOYER_PREFIX_MAINNET + DRPC_API_KEY)
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { BatchCall, Contract } from "@aztec-labs/aztec.js/contracts"
@@ -21,6 +22,7 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas } from "@aztec-labs/stdlib/gas"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { privateKeyToAccount } from "viem/accounts"
+import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
 import { predictedWorstMinFees } from "../src/fee-juice"
 import { FeeJuicePortalAbi, feeJuiceDepositArgs, parseFeeJuiceDeposit, planPrivateFuelDeposit } from "../src/fuel"
 import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, privateMintAndPayFee } from "../src/private-fuel"
@@ -29,7 +31,6 @@ import { requirePinnedSigner } from "./live-intent"
 import { createL1Clients, createL2Wallet, createNode, mainnetChain, stopwatch } from "./script-bootstrap"
 
 const ETH_RPC = process.env.ETH_RPC_URL ?? "https://ethereum-rpc.publicnode.com"
-const NODE_URL = process.env.AZTEC_NODE_URL ?? "https://lb.drpc.live/aztec-mainnet/Ak_eT5HA2kbyqamqGTF702cdsdWqLTIR8YdadmahlY6k"
 const PRIVATE_KEY = process.env.MAINNET_PRIVATE_KEY as `0x${string}` | undefined
 if (!PRIVATE_KEY) throw new Error("MAINNET_PRIVATE_KEY required")
 
@@ -57,13 +58,11 @@ const ERC20_MIN = [
 
 const mainnet = mainnetChain(ETH_RPC)
 
-async function nodeL1(): Promise<{ portal: `0x${string}`; asset: `0x${string}` }> {
-	const res = await fetch(NODE_URL, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node_getNodeInfo", params: [] }),
-	})
-	const a = (await res.json()).result.l1ContractAddresses as Record<string, { value?: string } | string>
+async function nodeL1(nodeUrl: string): Promise<{ portal: `0x${string}`; asset: `0x${string}` }> {
+	const res = await postNodeRpc(nodeUrl, "node_getNodeInfo", [])
+	const body = await readNodeRpcBody<{ l1ContractAddresses: Record<string, { value?: string } | string> }>(res, "node_getNodeInfo")
+	if (!body.result) throw new Error("node_getNodeInfo: malformed RPC response (no result)")
+	const a = body.result.l1ContractAddresses
 	const pick = (v: unknown) => (typeof v === "object" && v ? (v as { value: string }).value : (v as string)) as `0x${string}`
 	return { portal: pick(a.feeJuicePortalAddress), asset: pick(a.feeJuiceAddress) }
 }
@@ -71,8 +70,9 @@ async function nodeL1(): Promise<{ portal: `0x${string}`; asset: `0x${string}` }
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: accepted at score 23 — the live canary binds fee sizing, deposit evidence, repriced retries and balance-delta acceptance
 async function main() {
 	const mins = stopwatch()
+	const nodeUrl = requireDrpcNodeUrl("mainnet", process.env)
 
-	const node = createNode(NODE_URL)
+	const node = createNode(nodeUrl)
 	const fpc = AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS)
 	if (!(await node.getContract(fpc))) throw new Error("PrivateFPC not deployed — run deploy-private-fpc-mainnet.ts first; STOP")
 
@@ -86,9 +86,9 @@ async function main() {
 	const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 	if (account.address.toLowerCase() !== requirePinnedSigner("mainnet").toLowerCase()) throw new Error("wrong L1 key; STOP")
 	const { wallet, pub } = createL1Clients({ chain: mainnet, rpcUrl: ETH_RPC, account })
-	const { portal, asset } = await nodeL1()
+	const { portal, asset } = await nodeL1(nodeUrl)
 
-	const ewallet = await createL2Wallet({ nodeUrl: NODE_URL, proverEnabled: true })
+	const ewallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	const { secret, salt } = resolveDeployerKeys("mainnet")
 	const { signingKey, secretKey } = await deriveNuloAccountKeys(secret)
 	const manager = await ewallet.createSchnorrAccount(secretKey, salt, signingKey)

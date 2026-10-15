@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest"
-import { assertL1Pins, assertNoSourceDrift, type NodeIdentity } from "./live-intent"
+import { inspect } from "node:util"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { assertL1Pins, assertNoSourceDrift, authenticatedNode, type NodeIdentity } from "./live-intent"
 
 const pinned = {
 	rollup: "0x8c2fb2a68a3d362ab1de99e06f83f8903160bbd9",
@@ -38,5 +40,54 @@ describe("assertNoSourceDrift", () => {
 		expect(() => assertNoSourceDrift(source(""))).toThrow(/source\.commit is empty/)
 		expect(() => assertNoSourceDrift({} as never)).toThrow(/source\.commit is empty/)
 		expect(() => assertNoSourceDrift(source("HEAD"))).toThrow(/not a 40-hex commit/)
+	})
+})
+
+describe("a failing node call", () => {
+	const sentinel = "sentinel_Key-0123456789"
+	const url = requireDrpcNodeUrl("testnet", { DRPC_API_KEY: sentinel })
+	afterEach(() => vi.unstubAllGlobals())
+
+	// A second endpoint may carry its key as a query parameter, where no path segment isolates it.
+	const queryUrl = `https://node.invalid/ogrpc?network=aztec-testnet&dkey=${sentinel}`
+	const failures: Array<[label: string, nodeUrl: string, failure: () => Promise<Response>]> = [
+		[
+			"a rejected fetch",
+			url,
+			() => Promise.reject(Object.assign(new TypeError(`fetch failed: ${url}`), { code: "ConnectionRefused", path: url })),
+		],
+		["an HTTP error", url, async () => new Response("", { status: 503 })],
+		["a JSON-RPC error", url, async () => Response.json({ jsonrpc: "2.0", id: 1, error: { message: "upstream unavailable" } })],
+		[
+			"a JSON-RPC error echoing the URL and the key",
+			url,
+			async () => Response.json({ jsonrpc: "2.0", id: 1, error: { message: `no route for ${url} (key ${sentinel})` } }),
+		],
+		[
+			"a JSON-RPC error echoing only a query-string key",
+			queryUrl,
+			async () => Response.json({ jsonrpc: "2.0", id: 1, error: { code: -32001, message: `unknown dkey ${sentinel}` } }),
+		],
+		[
+			"a body read that rejects",
+			url,
+			async () =>
+				new Response(
+					new ReadableStream({ start: (c) => c.error(Object.assign(new TypeError(`body read failed: ${url}`), { path: url })) }),
+				),
+		],
+	]
+
+	// `inspect` renders what a crash prints: message, stack, own properties and cause. Booleans only,
+	// so a failure never prints the key either.
+	it.each(failures)("never puts the node URL or its key in the error: %s", async (_, nodeUrl, failure) => {
+		vi.stubGlobal("fetch", vi.fn(failure))
+		const err = await authenticatedNode(nodeUrl).then(
+			() => undefined,
+			(e: unknown) => e,
+		)
+		expect(err instanceof Error).toBe(true)
+		const printed = inspect(err)
+		expect(printed.includes(nodeUrl) || printed.includes(sentinel)).toBe(false)
 	})
 })

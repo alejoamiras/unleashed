@@ -30,3 +30,20 @@ Do not file public issues for security bugs.
   `bun pm diff`.
 - **`bun audit`** runs in CI as an advisory step; its findings land in the job summary.
 - No Renovate: dependency bumps are manual pull requests.
+
+## The dRPC key
+
+- **The browser holds no key.** The testnet bundle calls dRPC's keyless public endpoint,
+  `https://aztec-testnet.drpc.org`, and the mainnet placeholder calls no node.
+- **Scripts use one key**, `DRPC_API_KEY`: the owner's shared dRPC CLI key, restricted to the
+  operator host's IP. It exists only in 1Password (`Keyed-Runs/dRPC-CLI`) and reaches a run only as an
+  owner-approved keyed run from the `*.env.example` templates. `requireDrpcNodeUrl`
+  (`packages/bridge-core/src/drpc-node.ts`) composes the node URL from it and has no default. No
+  script prints that URL, records it in a deploy intent or puts it in an error. The Aztec node client
+  prints its URL on a failed call, and only env-exec's masking keeps the key out of a keyed run's log,
+  so a failing keyed command is never re-run outside env-exec.
+- **No key is ever committed.** `scripts/ci-cd/node-keys.test.ts` fails on a keyed `lb.drpc.live` URL
+  anywhere in the tree, archived records included. Keys committed before the split stay in git
+  history; only disabling them in dRPC retires them.
+- **On a leak**, disable the key in dRPC, mint a new one, and replace the `DRPC_API_KEY` field of
+  `Keyed-Runs/dRPC-CLI`. All the owner's projects share the key, so one rotation covers them all.
