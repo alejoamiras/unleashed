@@ -12,17 +12,13 @@
  * Run: bun run scripts/fuel-testnet.ts --config <manifest> [--token <erc20>]
  *      (a keyed run on testnet-l1.env.example: PRIVATE_KEY, SEPOLIA_RPC_URL, DRPC_API_KEY)
  */
-import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { loadContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { Contract, type ContractBase, getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js/contracts"
+import { Contract, type ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { PublicKeys } from "@aztec-labs/aztec.js/keys"
 import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas, type GasFees } from "@aztec-labs/stdlib/gas"
-import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { predictedWorstMinFees, publicFeeJuicePayment } from "../src/fee-juice"
@@ -30,7 +26,6 @@ import type { L1Ctx } from "../src/flows"
 import { claimViaHub, type HubClaimOutcome, hubTokenFor } from "../src/hub-l2"
 import {
 	PRIVATE_FPC_ADDRESS,
-	PRIVATE_FPC_SALT,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	deriveBridgeSecret,
@@ -45,7 +40,7 @@ import { requirePinnedSigner } from "./live-intent"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
 import { feeJuiceFor } from "./fee-juice-l2"
-import { deployAccountIfAbsent, freshSchnorrAccount, registerHub, registerHubToken, sponsoredFpcFee } from "./script-l2"
+import { deployAccountIfAbsent, freshSchnorrAccount, registerHub, registerHubToken, registerPrivateFpc, sponsoredFpcFee } from "./script-l2"
 import { claimTokenBlock, planFuelLeg, requireSwap, selectToken, sendGenerationOf } from "./script-send"
 import {
 	createL1Clients,
@@ -121,33 +116,6 @@ async function landedTx(ctx: VariantCtx, txHash: string): Promise<{ fee: bigint;
 }
 
 const gasNote = (tx: { l2GasApprox?: bigint }): string => (tx.l2GasApprox === undefined ? "" : ` (≈${tx.l2GasApprox} L2 gas)`)
-
-/** The PrivateFPC has no public functions and no initializer, so it needs no on-chain deploy — but
- *  the private kernel oracle needs both preimages locally, and the canonical salt must reproduce the
- *  pinned address or the artifact has drifted. */
-async function registerPrivateFpc(ewallet: unknown, mins: () => string) {
-	const artifact = loadContractArtifact(
-		JSON.parse(
-			readFileSync(
-				resolvePackageAsset("@alejoamiras/private-fee-juice", "target/private_contract-PrivateFPC.json", { from: import.meta.url }),
-				"utf8",
-			),
-		),
-	)
-	const instance = await getContractInstanceFromInstantiationParams(artifact, {
-		salt: Fr.fromHexString(PRIVATE_FPC_SALT),
-		publicKeys: PublicKeys.default(),
-		deployer: AztecAddress.ZERO,
-	})
-	if (instance.address.toString() !== PRIVATE_FPC_ADDRESS) {
-		throw new Error(`PrivateFPC rebuilt ${instance.address} != pinned ${PRIVATE_FPC_ADDRESS} (artifact/version drift)`)
-	}
-	try {
-		await (ewallet as { registerContract: (i: unknown, a: unknown) => Promise<unknown> }).registerContract(instance, artifact)
-	} catch {}
-	console.log(`PrivateFPC ${PRIVATE_FPC_ADDRESS.slice(0, 12)}… registered (${mins()})`)
-	return { instance, artifact }
-}
 
 /** PUBLIC fuel pays the ACTUAL fee, so its payment is static. PRIVATE-FPC fuel asserts
  *  `amount >= getFeeLimit` against the COMMITTED maxFeesPerGas, and the protocol rejects a tx whose
@@ -457,7 +425,8 @@ async function buildL2(l1: L1Ctx, nodeUrl: string, mins: () => string): Promise<
 	const hub = await registerHub(ewallet as never, BRIDGE.l2.hub)
 	const hubAddress = AztecAddress.fromStringUnsafe(BRIDGE.l2.hub.address)
 	const l2Token = await registerHubToken(ewallet as never, hubAddress, TOKEN, BRIDGE.l2.tokenClassId)
-	const privateFpc = await registerPrivateFpc(ewallet, mins)
+	const privateFpc = await registerPrivateFpc(ewallet as never)
+	console.log(`PrivateFPC ${PRIVATE_FPC_ADDRESS.slice(0, 12)}… registered (${mins()})`)
 	const feeJuice = await feeJuiceFor(ewallet as never, node)
 
 	const read = async (call: { simulate: (o: never) => Promise<unknown> }): Promise<bigint> => {
