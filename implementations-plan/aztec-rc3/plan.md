@@ -45,7 +45,7 @@ The owner, at the approval gate: *"Approve All + Try to parallelize the work as 
 | A2 Merge | Yes: squash-merge PR A, then PR B, once their required checks are green. No `--admin` |
 | A3 Script key IP | Done by the owner: the CLI key is restricted to `18.171.13.239` (F18) |
 | A5 Old keys | The owner disables them when the owner decides; both stay enabled for now, on purpose. Not a gate for anything here, and nothing new depends on them. Disabling breaks other repositories (F19) |
-| A6 Manual wallet check | Yes: stop at PR B's preview for the owner's check with the Nulo rc.3 wallet, before the merge |
+| A6 Manual wallet check | Yes: stop at PR B's preview for the owner's check with the Nulo rc.3 wallet, before the merge. **Passed** on the recalibrated preview: *"I've just bridged from sepolia to aztec privately super good, nothing weird."* |
 | A7 rc.1 factory | Leave it unpaused |
 | Exemption wording | Confirmed: `SECURITY.md` names both standing exemptions |
 | D12 | Accepted: `@nulo-sh/*` 0.2.0 pinned before the sandbox rehearsal and the deploy |
@@ -473,7 +473,7 @@ expected-red test is named by file in that phase's lessons before the phase star
 
 ### Arc 2 — rc.3 and the generation (PR B, branch `aztec-rc3-line`)
 
-#### Phase 5: Preconditions
+#### Phase 5: Preconditions ✓
 
 1. Create `aztec-rc3-line` from `origin/main` once PR A has merged, and cherry-pick the streams' commits
    (§ Delivery). PR A merged before arc 2's branch existed, so Phase 10 needs no rebase.
@@ -489,7 +489,7 @@ expected-red test is named by file in that phase's lessons before the phase star
 - Pass criteria: every command exits 0. The reads equal F5, F7 and F8.
 - Layers: typecheck/lint, unit.
 
-#### Phase 6: The JS line
+#### Phase 6: The JS line ✓
 
 1. Set the pins. Labs goes to `6.0.0-rc.3`. Foundation `bb.js`, `l1-artifacts`, `noir-acvm_js` and
    `noir-noirc_abi` go to `6.0.0-rc.6`. `aztec-standards`, `private-fee-juice` and `@aztec-labs/txe` go to
@@ -517,7 +517,7 @@ expected-red test is named by file in that phase's lessons before the phase star
   `aztec-line.test.ts`, `published-packages.test.ts` and the vector test are green.
 - Layers: typecheck/lint, unit.
 
-#### Phase 7: The Noir line
+#### Phase 7: The Noir line ✓
 
 1. Move the six `Nargo.toml` tags to `v6.0.0-rc.3`. Spell the URL exactly as the standards spell it.
 2. Re-vendor `token_portal_content_hash_lib` from `aztec-labs-eng/aztec-node` at `v6.0.0-rc.3` (`c5cf1822…`), and
@@ -546,7 +546,7 @@ expected-red test is named by file in that phase's lessons before the phase star
   shrinks by the re-pinned files.
 - Layers: contract suites, unit.
 
-#### Phase 8: The PrivateFPC
+#### Phase 8: The PrivateFPC ✓
 
 1. Set `PRIVATE_FPC_ADDRESS` and the descriptor from F3: `aztecVersion`, `expectedAddress`, the installed
    artifact's `artifactSha256`, a compatibility entry with the node's `nodeVersion`, and its `$comment`. The
@@ -568,7 +568,7 @@ expected-red test is named by file in that phase's lessons before the phase star
   shrinks by the FPC tests.
 - Layers: unit.
 
-#### Phase 9: Chain cascade, trust anchors, local rehearsal
+#### Phase 9: Chain cascade, trust anchors, local rehearsal ✓
 
 1. Set `TESTNET_ROLLUP_VERSION = 3409706519`. Update every old-identity literal (recon § Identities), the
    `live-intent.test.ts` fixtures included, and the FPC descriptor's network pins.
@@ -593,7 +593,7 @@ expected-red test is named by file in that phase's lessons before the phase star
     re-runs it and expects nothing (exit 1). Each run is reaped by its own process group.
 - Layers: unit, contract suites, sandbox smoke, browser e2e.
 
-#### Phase 10: Rebase, then the arc 2 quality loop (before any key)
+#### Phase 10: Rebase, then the arc 2 quality loop (before any key) ✓
 
 1. If `main` moved after arc 2's branch was cut, rebase `aztec-rc3-line` onto `origin/main` before the loop. Check that Phase 8's FPC compatibility `nodeVersion` equals Phase 4's keyed probe. Re-run the
    Phase 9 gate.
@@ -606,7 +606,7 @@ expected-red test is named by file in that phase's lessons before the phase star
   finding, quoted in `lessons/phase-10.md`.
 - Layers: all local layers.
 
-#### Phase 11: The live generation (keyed runs, A1)
+#### Phase 11: The live generation (keyed runs, A1) ✓
 
 > **Warning:** from step 1 until Phase 12's final verify, change nothing outside `OPERATIONAL_ALLOWLIST`. Record
 > progress in `lessons/` only. Run one signing command at a time. Commit each run's output before the next request.
@@ -645,7 +645,7 @@ expected-red test is named by file in that phase's lessons before the phase star
   are registered. The spend tally stays under 2.0 ETH. The search prints nothing and exits 1.
 - Layers: live testnet.
 
-#### Phase 12: Canaries and the final verify
+#### Phase 12: Canaries and the final verify ✓
 
 1. Run the canaries of runbook step 9 against the promoted manifest:
    - `verify:l1 --strict`;
