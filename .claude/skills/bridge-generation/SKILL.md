@@ -250,6 +250,11 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    an already-landed factory or hub instead of deriving fresh ones. Never delete the journal to start
    clean while that generation is still being deployed or may be resumed; a completed generation's
    journal is retired only when the next one starts on the same network (below).
+   - **A read straight after a receipt can lag.** The keyed Sepolia RPC may answer it from a backend that
+     has not seen the block, so the conductor stops with `returned no data` or `landed but the factory has
+     no registration — STOP` although the write landed. Confirm the write on a public RPC, then re-run the
+     same command: every step reads before it writes, and the journal adopts what landed. A bounded retry
+     (a pause, `verify` before each attempt) automates exactly that.
    - **Serialize with anything else that signs from the deployer.** The nonce pin is this step's whole
      safety; a forge broadcast from the same key between prediction and deploy is exactly what the
      abort exists to catch.
@@ -318,7 +323,10 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      `register_and_claim_public` and leaves the token registered as an ordinary third token. Failing
      that, carry the sandbox's measured register excess scaled by the ratio of the two networks'
      `claim_public` samples. It writes `fjPerTx` (the worst paid plain claim) and `fjRegister` (the
-     worst registering shape's excess over it), both plus 20 %; sponsored samples are excluded. A
+     worst registering shape's excess over it), both plus 20 %; sponsored samples are excluded. The
+     matrix needs a plain `claim_public` too (`fuel-testnet.ts` with `PUBLIC_RUNS=1` on an already
+     registered token): on rc.3 it cost 1.66 FJ, above every private plain claim, and a matrix without it
+     under-quoted `fjPerTx` by 18 %. A
      candidate promoted with the carried placeholders under-quotes the gas slice on the new line.
    - `live-intent.ts verify <intent> --candidate <candidate>`: records the digest (the intent file
      changes: **commit it now**, `promote` refuses an uncommitted intent), runs strict `verify-l1` and
@@ -341,6 +349,8 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    fueled smokes never exercise) · a drip (`drip-canary-testnet.ts`) · the token list against its real
    origin (`TOKEN_LIST_LIVE=1` on `packages/bridge-core/src/token-list.test.ts`: origin, schema, chain
    filter, cache; never membership).
+   - **Never overlap a local forge build with a keyed `verify-l1 --strict`.** The strict verify rebuilds
+     `contracts/bridge/evm/out`, and a sandbox reading it at that moment fails with `ENOENT`.
    - **`PRIVATE_RUNS=1` is the settle canary only**: its printed `minFuelFj` is a one-sample estimate
      that may only ever raise the floor, never lower it. Size `FUEL_SLICE_UNITS` so the live quote
      clears the manifest floor; a slice under it reverts at the router's guard

@@ -29,7 +29,8 @@ and the standards package keeps a pin of its own:
 [`scripts/ci-cd/aztec-line.test.ts`](scripts/ci-cd/aztec-line.test.ts) holds each scope to its own
 version, and writes none: labs at the aztec.js pin, foundation at the version labs' lock entry
 requires for `@aztec-foundation/l1-artifacts`, `aztec-standards` at its declared pin, and every
-root `patchedDependencies` key at the foundation version. It also fails on any resolved `@aztec/*`
+root `patchedDependencies` key at the foundation version, and every Aztec declaration in every manifest at
+exactly its scope's version. It also fails on any resolved `@aztec/*`
 other than `@aztec/viem`, in the root lockfile and in the TXE server's. The hub's class ids depend
 on these inputs, so they move only with a new generation.
 
