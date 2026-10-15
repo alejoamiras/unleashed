@@ -22,8 +22,8 @@ Do not file public issues for security bugs.
   publishes only from `alejoamiras/ecosystem-tooling`. Each publishes through npm trusted publishing
   with SLSA provenance from that one repository, and each is exact-pinned, so a new version arrives
   only through a reviewed bump. No other name is added this way without the owner's decision.
-- **First-party packages** (`@alejoamiras/*`) go through the same gate. Before a temporary exclude
-  for one, verify its provenance: install the exact versions into a scratch npm project with
+- **First-party packages** (`@alejoamiras/*`) other than `private-fee-juice` go through the same
+  gate. Before a temporary exclude for one, verify its provenance: install the exact versions into a scratch npm project with
   `npm install --ignore-scripts`, then run `npm audit signatures --include-attestations` there and
   check the attestations bind each tarball to its repository and commit. Run bare in this Bun tree,
   the command has no npm lockfile to audit and passes vacuously.
