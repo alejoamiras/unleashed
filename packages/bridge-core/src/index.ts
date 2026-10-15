@@ -5,6 +5,7 @@
 
 export * from "./claim-secret"
 export * from "./content-hash"
+export * from "./drpc-node"
 export * from "./erc20"
 export * from "./fee-juice"
 export * from "./flows"
