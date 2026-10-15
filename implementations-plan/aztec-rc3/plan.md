@@ -43,8 +43,8 @@ The owner, at the approval gate: *"Approve All + Try to parallelize the work as 
 | A0 Browser endpoint | Keyless: `https://aztec-testnet.drpc.org`. No browser key exists; A4 lapses |
 | A1 Live authorization | Granted as scoped: signer `0x7F42…6a9a`, cap 2.0 Sepolia ETH, the four templates mapped to their runs. Each keyed run still needs the owner's op-remote approval |
 | A2 Merge | Yes: squash-merge PR A, then PR B, once their required checks are green. No `--admin` |
-| A3 Script key IP | Yes, if this host's egress IP is stable. The owner checks it (§ Assumptions, F18) |
-| A5 Old keys | Disable both now. The owner accepted the breakage in other repositories (F19) |
+| A3 Script key IP | Done by the owner: the CLI key is restricted to `18.171.13.239` (F18) |
+| A5 Old keys | The owner disables them when the owner decides; both stay enabled for now, on purpose. Not a gate for anything here, and nothing new depends on them. Disabling breaks other repositories (F19) |
 | A6 Manual wallet check | Yes: stop at PR B's preview for the owner's check with the Nulo rc.3 wallet, before the merge |
 | A7 rc.1 factory | Leave it unpaused |
 | Exemption wording | Confirmed: `SECURITY.md` names both standing exemptions |
@@ -58,7 +58,7 @@ The owner, at the approval gate: *"Approve All + Try to parallelize the work as 
 | Tier | `deep`: four high dimensions (irreversibility, migration cost, external coupling, security sensitivity); novelty low |
 | Fee-juice exemption | The owner's decision, relayed in the brief: `@alejoamiras/private-fee-juice` becomes a standing exemption, recorded in `bunfig.toml`, `SECURITY.md` and `AGENTS.md`. `SECURITY.md` says "Add no other name this way", so Phase 6 amends that line to name both exemptions. The owner confirms the wording at the gate |
 | Q1 Order vs `lifi-routing` | rc.3 first, on today's `main`, in the Uniswap shape. Do not stack on lifi. Its testnet deploy is void; it rebases onto rc.3 later |
-| Q2 Success | The testnet app works end to end on rc.3 against the new generation. Every runbook canary is green. The new keys are live, scripts use a key that exists only in 1Password, and the old keys are disabled |
+| Q2 Success | The testnet app works end to end on rc.3 against the new generation. Every runbook canary is green. The new keys are live, scripts use a key that exists only in 1Password, and the old keys are disabled (revised at the gate: the owner decides when, A5) |
 | Q3 Quality bar | Production rigor. Gates: lint+typecheck+unit · contract suites · sandbox smoke + browser e2e · live canaries. `/harden` not scheduled; revisit before the mainnet bridge |
 | Q4 PrivateFPC | Remove the testnet FPC deploy and the `require-deployed` absence gate. Keep the address, version, digest and identity checks before any Fee Juice moves. The sandbox stops publishing the FPC. The mainnet FPC scripts stay, minus their key. The Nulo wallet confirmed it never needs the instance published; its condition is the salt-1, deployer-zero derivation |
 | Q5 Browser key | Superseded by A0: no browser key |
@@ -80,7 +80,7 @@ The owner, at the approval gate: *"Approve All + Try to parallelize the work as 
    without fuel, exits and drips. Every runbook canary passes against the promoted manifest. A private self-paying
    claim settles through the PrivateFPC, which no script publishes.
 2. **No key can be lifted from this repository.** `node-keys.test.ts` finds no dRPC key in the tracked tree. No
-   intent, journal or log holds the script key. The two abused keys are disabled.
+   intent, journal or log holds the script key. Nothing here uses the two abused keys; the owner disables them when the owner decides.
 3. **The next bump is cheaper.** `aztec-line.test.ts` holds the two-version line in code. A vector test pins the
    deployer derivation across `@nulo-sh` versions. `UPDATE.md` and the runbook describe the keyed node URL and the
    FPC that is never deployed.
@@ -142,7 +142,7 @@ export async function runFpcGate(): Promise<void> // no mode: absence green, pre
 
 ### Data and control flow (the critical path)
 
-1. Arc 1 code, then its quality loop. The owner disables the old keys and mints the script key. Probes prove the
+1. Arc 1 code, then its quality loop. The owner mints the shared CLI key. Probes prove the
    keyless endpoint carries the app. PR A opens and merges.
 2. Arc 2's rc.3 line work runs in parallel from the start (§ Delivery, Parallel streams). After PR A merges, arc 2
    rebases onto `main`. Arc 2's quality loop converges **before** `live-intent build`: a source change after
@@ -334,9 +334,9 @@ The decision ledger below records each fork with its source and the rejected alt
 - **F15.** The `lifi-routing` stack commits two intents that carry `primaryRpc` with the old testnet key.
 - **F16.** The keyless node answers an `OPTIONS` preflight from `https://testnet.app.unleashed.systems` with 204
   and that Origin echoed in `access-control-allow-origin`, with no redirect.
-- **F18.** This host's egress IP is `18.171.13.239` (AWS eu-west-2; four lookup services agree). Whether it is
-  stable is unknown here: an agent may not read the instance metadata. It is stable only if it is an Elastic IP
-  attached to this instance, which the owner checks in the EC2 console.
+- **F18.** This host's egress IP is `18.171.13.239` (AWS eu-west-2; four lookup services agree). The owner
+  restricted the CLI key to it. If the IP ever changes (an instance stop/start without an Elastic IP), keyed runs
+  fail with a dRPC 401 or 403 until the owner updates the restriction.
 - **F19.** Correction to the recon: the old testnet key is committed in `inference-money`
   (`deployments/testnet.json`, `packages/deployer/src/networks.ts`), whose deployer breaks when the key is
   disabled. Stale copies sit in `unleashed-legacy` and a standalone wallet copy. Reported by the coordinator; this
@@ -373,7 +373,7 @@ All answered at the approval gate (§ Approval). What each answer binds:
 - **A2. Merge: yes**, PR A then PR B, squash, once their required checks are green.
 - **A3. Script key IP restriction: yes, if stable** (F18).
 - **A4. Localhost allowlist:** lapsed with A0.
-- **A5. Old keys: disabled now**, with the breakage of F19 accepted.
+- **A5. Old keys: the owner's timing.** Not a gate; nothing new depends on them. Disabling breaks F19's repositories.
 - **A6. Manual wallet check: yes**, at PR B's preview, before the merge (Phase 12).
 - **A7. The rc.1 factory: unpaused** (the known limit in § Security).
 
@@ -446,7 +446,7 @@ expected-red test is named by file in that phase's lessons before the phase star
 > **Warning:** request no keyed run before the owner confirms the `Keyed-Runs/dRPC-CLI` item exists.
 
 1. Run the arc 1 quality loop (§ Post-implementation, step 1). Push the branch.
-2. The owner, through main, in order: disables both old keys (A5); mints the shared CLI key; creates
+2. The owner, through main, in order: mints the shared CLI key; creates
    `Keyed-Runs/dRPC-CLI` with the bare key in `DRPC_API_KEY`; restricts it to this host's IP if stable (A3).
 3. Probe the keyless URL. Print status codes, `nodeVersion` and `rollupVersion` only.
    - `node_getNodeInfo` with `Origin: https://testnet.app.unleashed.systems` answers 200 with rollupVersion
@@ -876,9 +876,8 @@ future reader, human or LLM, pays to re-read: they must be few, dense, and exact
 - Each PR opens with `gh pr create` only after its quality loop converges. Add the `e2e:tools` label after it opens,
   never at creation. Check `mergeable` if no CI appears.
 - Owner steps, in order:
-  1. Disable both old keys; mint the shared CLI key; create `Keyed-Runs/dRPC-CLI`; restrict the key to this host's
-     IP if stable (Phase 4).
-  2. Confirm the `Keyed-Runs/dRPC-CLI` item exists, before any keyed run.
+  1. Mint the shared CLI key; create `Keyed-Runs/dRPC-CLI`; restrict the key to this host's IP (Phase 4). Done.
+  2. Disable both old keys, when the owner decides (A5). Not a gate.
   3. Approve each keyed run (Phases 4, 11, 12).
   4. Fund the signer if the tally runs short.
   5. Run the manual wallet check on PR B's preview (Phase 12), before the merge.
