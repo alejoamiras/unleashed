@@ -56,6 +56,7 @@ probes by the lead. No key appears in this file: every dRPC URL is written `…/
 - CSP: path-exact on purpose (a host-only `lb.drpc.live` would admit every dRPC customer); `network-targets.test.ts` holds the URL and the CSP equal.
 - Origins: testnet `https://testnet.app.unleashed.systems`, `https://unleashed-testnet.alejo-amiras.workers.dev`, previews `https://<label>-unleashed-testnet.alejo-amiras.workers.dev` (`isPreviewHostOf`); mainnet `https://app.unleashed.systems`, `https://unleashed-mainnet.alejo-amiras.workers.dev`, no previews.
 - The Nulo wallet's repository uses its own testnet key, different from both; neither Unleashed key appears in its main checkout or its eleven worktrees. An old standalone copy of the wallet source on the build host holds the Unleashed mainnet key; disabling that key covers it.
+- **Correction (from the coordinator, not re-verified here):** this recon searched only the wallet's repository, so "nothing outside this repository depends on the old keys" was wrong. `inference-money` commits the old testnet key (`deployments/testnet.json`, `packages/deployer/src/networks.ts`), and its deployer breaks when the key is disabled. Stale copies also sit in `unleashed-legacy` and the standalone wallet copy. The owner disabled both keys knowing this; the breakage is a follow-up for those repositories, which this plan does not edit.
 
 ## External packages
 

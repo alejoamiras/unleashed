@@ -10,7 +10,7 @@ eli5_mode: artifact
 eli5_source: implementations-plan/aztec-rc3/eli5.html
 eli5_url: https://claude.ai/artifact/2JWCkJhmQm2cmEBtejh5xT
 budget: "recon: 3 Sonnet agents; code-review: off; Codex on gpt-6.1-sol at high; Claude leg on Opus 5.5"
-status: draft
+status: approved
 base: main (aecf311); the lifi-routing stack (#7–#14) lands after this plan, rebased onto it
 ---
 
@@ -21,9 +21,9 @@ base: main (aecf311); the lifi-routing stack (#7–#14) lands after this plan, r
 The Aztec testnet reset to 6.0.0-rc.3. The new rollupVersion is `3409706519`, and the FeeJuicePortal moved. This
 plan does three things.
 
-1. **It splits the dRPC keys (PR A, first).** The testnet bundle gets one origin-filtered browser key. Scripts
-   read a second key that exists only in 1Password. The mainnet URL leaves the bundle, and a CI guard allows
-   exactly one committed key.
+1. **It splits the dRPC keys (PR A, first).** The testnet bundle moves to dRPC's keyless public endpoint
+   `https://aztec-testnet.drpc.org`, so it holds no key. Scripts read the owner's shared CLI key, which exists only in 1Password. The
+   mainnet URL leaves the bundle, and a CI guard allows no committed key.
 2. **It moves the repository to the rc.3 line (PR B).** `@aztec-labs/*` goes to 6.0.0-rc.3. `@aztec-foundation/*`
    goes to 6.0.0-rc.6, except `aztec-standards`, which goes to 6.0.0-rc.3. `@alejoamiras/private-fee-juice` goes to
    6.0.0-rc.3, and aztec-nr goes to `v6.0.0-rc.3`. The PrivateFPC gets its new address, and nothing deploys it.
@@ -33,6 +33,23 @@ plan does three things.
 
 Length: about 900 lines against the deep tier's 600, because two arcs, a frozen live window and three audit
 rounds' verdicts each need their own text.
+
+## Approval
+
+The owner, at the approval gate: *"Approve All + Try to parallelize the work as you can, so we finish faster"*.
+
+| Ask | Answer |
+|---|---|
+| A0 Browser endpoint | Keyless: `https://aztec-testnet.drpc.org`. No browser key exists; A4 lapses |
+| A1 Live authorization | Granted as scoped: signer `0x7F42…6a9a`, cap 2.0 Sepolia ETH, the four templates mapped to their runs. Each keyed run still needs the owner's op-remote approval |
+| A2 Merge | Yes: squash-merge PR A, then PR B, once their required checks are green. No `--admin` |
+| A3 Script key IP | Yes, if this host's egress IP is stable. The owner checks it (§ Assumptions, F18) |
+| A5 Old keys | Disable both now. The owner accepted the breakage in other repositories (F19) |
+| A6 Manual wallet check | Yes: stop at PR B's preview for the owner's check with the Nulo rc.3 wallet, before the merge |
+| A7 rc.1 factory | Leave it unpaused |
+| Exemption wording | Confirmed: `SECURITY.md` names both standing exemptions |
+| D12 | Accepted: `@nulo-sh/*` 0.2.0 pinned before the sandbox rehearsal and the deploy |
+| Script key, after approval | The coordinator, for the owner: one shared CLI key at `op://Keyed-Runs/dRPC-CLI/DRPC_API_KEY` replaces `AZTEC_NODE_URL` in `Unleashed-Testnet` (D20) |
 
 ## Owner decisions (Phase 0)
 
@@ -44,10 +61,10 @@ rounds' verdicts each need their own text.
 | Q2 Success | The testnet app works end to end on rc.3 against the new generation. Every runbook canary is green. The new keys are live, scripts use a key that exists only in 1Password, and the old keys are disabled |
 | Q3 Quality bar | Production rigor. Gates: lint+typecheck+unit · contract suites · sandbox smoke + browser e2e · live canaries. `/harden` not scheduled; revisit before the mainnet bridge |
 | Q4 PrivateFPC | Remove the testnet FPC deploy and the `require-deployed` absence gate. Keep the address, version, digest and identity checks before any Fee Juice moves. The sandbox stops publishing the FPC. The mainnet FPC scripts stay, minus their key. The Nulo wallet confirmed it never needs the instance published; its condition is the salt-1, deployer-zero derivation |
-| Q5 Browser key | The agent commits a placeholder that fails a test. The owner replaces it in a one-line edit. The agent never receives a key |
-| Q6 Script key | The owner mints an unfiltered key and stores the full URL as field `AZTEC_NODE_URL` in `Keyed-Runs/Unleashed-Testnet`. Scripts stop writing and printing the node URL |
+| Q5 Browser key | Superseded by A0: no browser key |
+| Q6 Script key | Revised after approval (D20): one CLI key shared by all the owner's projects, restricted to this host's IP. 1Password `Keyed-Runs/dRPC-CLI`, field `DRPC_API_KEY`, holding the bare key. The owner creates the item by hand. Scripts compose the node URL from it, refuse to run without it, and never write or print the URL |
 | Q7 Mainnet key | Remove the mainnet URL from the bundle now; mint the mainnet key at mainnet launch |
-| Q8 Allowlist | Approved; the key split is its own PR, first. The owner sets the allowlist and a daily CU limit |
+| Q8 Allowlist | The key split is its own PR, first. The browser allowlist is superseded by A0; the script key gets the IP restriction of A3 |
 | Q9 Deploy now | Approved. (a) The `deriveNuloAccountKeys` vector matches between 0.1.0 and npm 0.2.0: **met** (F12). (b) The swap-after-promotion rule existed only because 0.2.0 was not published. It is now, so this plan pins 0.2.0 in Phase 6, before the deploy (D12). Signer `0x7F42…6a9a`, cap 2.0 Sepolia ETH |
 | Legs | Claude Opus 5.5 · Codex GPT-6.1 Sol at high · `/code-review` off · explainer off |
 
@@ -62,10 +79,8 @@ rounds' verdicts each need their own text.
 1. **The testnet app works on rc.3 against a proven generation.** It bridges publicly and privately, with and
    without fuel, exits and drips. Every runbook canary passes against the promoted manifest. A private self-paying
    claim settles through the PrivateFPC, which no script publishes.
-2. **No key can be lifted from this repository and used freely.** `node-keys.test.ts` finds at most one dRPC key
-   in the tracked tree: the origin-filtered, capped testnet browser key (none under A0). No intent, journal or log
-   holds the script key. A keyed probe shows the script key differs from the browser key. The two abused keys are
-   disabled.
+2. **No key can be lifted from this repository.** `node-keys.test.ts` finds no dRPC key in the tracked tree. No
+   intent, journal or log holds the script key. The two abused keys are disabled.
 3. **The next bump is cheaper.** `aztec-line.test.ts` holds the two-version line in code. A vector test pins the
    deployer derivation across `@nulo-sh` versions. `UPDATE.md` and the runbook describe the keyed node URL and the
    FPC that is never deployed.
@@ -73,7 +88,7 @@ rounds' verdicts each need their own text.
 **Good enough.**
 - Mainnet operator scripts stay stale until Aztec Alpha upgrades. They only lose their literal key.
 - Testnet records from the rc.1 generation stay withheld at boot, with no new UI.
-- A distributed attacker can exhaust the browser key's daily cap and stop the testnet app for that day.
+- The public endpoint's rate limits and lack of SLA can slow or stop the testnet app. Accepted for testnet.
 
 ## Architecture & Implementation
 
@@ -82,18 +97,18 @@ rounds' verdicts each need their own text.
 Two arcs, two PRs, on existing tooling (`recon.md` holds the reuse map).
 
 - **Arc 1, the key split (PR A).**
-  - One helper, `requireAztecNodeUrl()`, joins the existing `packages/bridge-core/scripts/script-bootstrap.ts`.
+  - One helper, `requireDrpcNodeUrl(network)`, composes `https://lb.drpc.live/aztec-<network>/<DRPC_API_KEY>`.
     It replaces `process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL` in every script, and the two mainnet literals.
-  - `packages/bridge-core/src/testnet-node.ts` and its barrel export go. The one browser literal stays in
-    `apps/tools/src/lib/network-targets.ts`.
+    It lives in a new `packages/bridge-core/src/drpc-node.ts`, exported from the barrel, so
+    `apps/tools/scripts/deploy-config.ts` uses the same function without a new `package.json` export. It takes the
+    environment as a parameter, so the browser bundle never references `process`, and never calls it.
+  - `packages/bridge-core/src/testnet-node.ts` and its barrel export go. The one browser literal, the keyless
+    `https://aztec-testnet.drpc.org`, stays in `apps/tools/src/lib/network-targets.ts`.
   - `live-intent.ts` stops recording a node URL. `verify` and `promote` read the node from the keyed run. The
-    committed template, `op://Keyed-Runs/Unleashed-Testnet/AZTEC_NODE_URL`, fixes which endpoint a run uses.
-    Templates are not allowlisted, so a mid-arc template edit is source drift that `verify` refuses.
-  - `scripts/ci-cd/node-keys.test.ts` allows one committed key. The four archived copies of the old testnet key
+    network is fixed in code and the key comes from `op://Keyed-Runs/dRPC-CLI/DRPC_API_KEY` in the committed
+    templates. Neither is allowlisted, so a mid-arc edit to either is source drift that `verify` refuses.
+  - `scripts/ci-cd/node-keys.test.ts` allows no committed key. The four archived copies of the old testnet key
     are scrubbed to `<KEY>`.
-  - **If the owner picks the keyless endpoint at the gate (A0)**, the browser constant becomes
-    `https://aztec-testnet.drpc.org`. Then no browser key exists: no placeholder, no owner key commit, no allowlist,
-    and the guard allows zero keys. Everything else stays.
 - **Arc 2, rc.3 and the generation (PR B).** It follows the runbook: pins, Noir, FPC, chain cascade, reset
   baseline, sandbox rehearsal, then the live arc under `live-intent`. The one structural change is the FPC gate:
   `check-fpc-version.ts` has one behaviour. Absence at the pinned address is green, and a published instance must
@@ -103,10 +118,11 @@ Two arcs, two PRs, on existing tooling (`recon.md` holds the reuse map).
 ### Key interfaces
 
 ```ts
-// packages/bridge-core/scripts/script-bootstrap.ts
-/** The Aztec node a live script talks to. Never defaulted: the URL embeds an unfiltered dRPC key that reaches a
- *  run only from 1Password through a keyed-run template. Throws, naming the variable, when unset. */
-export function requireAztecNodeUrl(): string
+// packages/bridge-core/src/drpc-node.ts
+/** The dRPC node URL for `network`, composed from `env.DRPC_API_KEY`, the owner's shared CLI key. Never defaulted:
+ *  the key reaches a run only from 1Password through a keyed-run template. Throws, naming the variable but never
+ *  its value, when the key is unset or not URL-safe (`[A-Za-z0-9_-]+`). Callers pass `process.env`. */
+export function requireDrpcNodeUrl(network: "testnet" | "mainnet", env: Record<string, string | undefined>): string
 // packages/bridge-core/scripts/check-fpc-version.ts
 export async function runFpcGate(): Promise<void> // no mode: absence green, presence class-checked
 ```
@@ -114,23 +130,23 @@ export async function runFpcGate(): Promise<void> // no mode: absence green, pre
 - Every caller reads the URL at operation entry, never at module scope. `deploy-seed-tokens.ts`, `pause-factory.ts`,
   `fpc-dust-canary-mainnet.ts` and `live-intent.test.ts` import `live-intent.ts` for its pure exports.
 - `DeployIntent` loses `primaryRpc`. `secondEndpoint` keeps `{ agreed: true }` or the posture string, without a URL.
-  `rpc()` errors name the method and `AZTEC_NODE_URL`, never the value; a unit test feeds a sentinel key through a
+  `rpc()` errors name the method, never the URL; a unit test feeds a sentinel key through a
   failing fetch and asserts the error text excludes it. Old intents still parse, because the JSON is type-cast.
-- `apps/tools/scripts/deploy-config.ts` requires `AZTEC_NODE_URL` for `testnet` and `mainnet`. `local-network`
-  keeps its loopback default.
+- `apps/tools/scripts/deploy-config.ts` uses the same helper for `testnet` and `mainnet`. `local-network` keeps its
+  loopback default.
 - `ToolsTarget.nodeUrl` stays a `string`; mainnet's is `""`. The mainnet build never calls a node
   (`main.ts` skips the probe on `IS_MAINNET`), and its CSP blocks one.
-- **Visible surfaces: none.** No `.vue` file reads `nodeUrl`, so neither mainnet's `""` nor A0 changes layout,
-  copy or formatting. A0 changes availability only (public-tier limits, no SLA), which the owner decides at A0.
-  The new generation changes addresses, not screens.
+- **Visible surfaces: none.** No `.vue` file reads `nodeUrl`, so neither mainnet's `""` nor the keyless endpoint
+  changes layout, copy or formatting. The keyless endpoint changes availability only (public-tier limits, no SLA),
+  which the owner accepted at A0. The new generation changes addresses, not screens.
 
 ### Data and control flow (the critical path)
 
-1. Arc 1 code, then its quality loop. The owner mints both keys and commits the browser key on the branch. A
-   probe proves the filter. PR A opens and merges.
-2. Arc 2 starts from arc 1's code and runs its local phases while PR A is in review. After PR A merges, arc 2
-   rebases onto `main`, so its tree holds the real browser key. Arc 2's quality loop converges **before**
-   `live-intent build`: a source change after `build` voids the intent.
+1. Arc 1 code, then its quality loop. The owner disables the old keys and mints the script key. Probes prove the
+   keyless endpoint carries the app. PR A opens and merges.
+2. Arc 2's rc.3 line work runs in parallel from the start (§ Delivery, Parallel streams). After PR A merges, arc 2
+   rebases onto `main`. Arc 2's quality loop converges **before** `live-intent build`: a source change after
+   `build` voids the intent.
 3. Live window (keyed runs): `build` → generation → faucet → FPC gate → smokes and samples → calibrate →
    `verify --candidate` → retire the old manifest → `promote --bridge-only` → canaries → preview check → final
    `verify`. Only allowlisted paths change inside the window.
@@ -140,11 +156,12 @@ export async function runFpcGate(): Promise<void> // no mode: absence green, pre
 
 | Arc | Area | Files |
 |---|---|---|
-| 1 | Node URL | `scripts/script-bootstrap.ts` (+ test); the 11 testnet scripts that default to `TESTNET_NODE_URL` (recon § dRPC keys); `deploy-private-fpc-mainnet.ts`, `fpc-dust-canary-mainnet.ts`; `apps/tools/scripts/deploy-config.ts` + `deploy-config.test.ts`, `deploy.ts` (stop logging the URL); `check-fpc-version.ts` (stop logging); delete `src/testnet-node.ts` and its line in `src/index.ts` |
+| 1 | Node URL | `src/drpc-node.ts` (+ test, barrel export); the 11 testnet scripts that default to `TESTNET_NODE_URL` (recon § dRPC keys); `deploy-private-fpc-mainnet.ts`, `fpc-dust-canary-mainnet.ts`; `apps/tools/scripts/deploy-config.ts` + `deploy-config.test.ts`, `deploy.ts` (stop logging the URL); `check-fpc-version.ts` (stop logging); delete `src/testnet-node.ts` and its line in `src/index.ts` |
 | 1 | Intent | `live-intent.ts` (no `primaryRpc`, no `secondEndpoint.url`, lazy URL, errors without the URL) + `live-intent.test.ts` (the sentinel-key error test) |
-| 1 | Bundle | `network-targets.ts` (placeholder, mainnet `""`, the `TESTNET_NODE_URL` comment and "the wallet reports the same one" corrected), `network-targets.test.ts` (drops the `TESTNET_NODE_URL` import in Phase 1) |
+| 1 | Bundle | `network-targets.ts` (the keyless URL, mainnet `""`, the `TESTNET_NODE_URL` comment and "the wallet reports the same one" corrected), `network-targets.test.ts` (drops the `TESTNET_NODE_URL` import in Phase 1) |
 | 1 | Key guard | `scripts/ci-cd/node-keys.test.ts` (new); scrub `archive/aztec-v6/lessons/{intent.json,reset-baseline.json,phase-5.md}` and `archive/protocol-labels/lessons/intent.json` |
-| 1 | Templates | `AZTEC_NODE_URL=op://Keyed-Runs/Unleashed-Testnet/AZTEC_NODE_URL` in `testnet-l1`, `testnet-generation`, `testnet-rpc`, `apps/tools/testnet-faucet`; `# op: import` and the line in `testnet-provision`; the plain `apps/tools/.env.example` and `packages/bridge-core/.env.example` lose the keyed URL |
+| 1 | Follow-ups | `implementations-plan/follow-ups.md`: the old-key breakage in other repositories (F19) |
+| 1 | Templates | `DRPC_API_KEY=op://Keyed-Runs/dRPC-CLI/DRPC_API_KEY` in `testnet-l1`, `testnet-generation`, `testnet-rpc`, `apps/tools/testnet-faucet`; `testnet-provision` unchanged (the owner creates `dRPC-CLI` by hand); the plain `apps/tools/.env.example` and `packages/bridge-core/.env.example` lose the keyed URL |
 | 1 | Docs | `AGENTS.md` § Security, `SECURITY.md`, `apps/tools/README.md`, `UPDATE.md` (Testnet node ↔ CSP), the skill (pre-flight, Phase 0 probe as a keyed run, step 11) |
 | 2 | Pins | `apps/tools`, `packages/bridge-core`, `txe-server` `package.json`; root `patchedDependencies`; `patches/@aztec-foundation%2Fnoir-{acvm_js,noirc_abi}@6.0.0-rc.6.patch`; `bunfig.toml`; both `bun.lock` |
 | 2 | Line guards | `scripts/ci-cd/aztec-line.test.ts` (per scope, patch keys); `packages/bridge-core/scripts/deployer-keys.test.ts` (derivation vector, vitest) |
@@ -197,6 +214,9 @@ export async function runFpcGate(): Promise<void> // no mode: absence green, pre
 - **PR A's preview dies at boot**, and so does production after PR A merges. Both run rc.1 code against the reset
   node, and the boot identity check refuses it. The deployed app is already dead for the same reason, so nothing
   regresses.
+- **Two branches, one live worktree.** env-exec runs in this worktree, so the live window runs here, on arc 2's
+  branch. Arc 1's code is written in an agent worktree of its own, and its branch is pushed as
+  `worktree-aztec-rc3` (§ Delivery).
 - **Old keys stay in git history forever.** Only disabling them in dRPC removes them. Nothing here rewrites
   history.
 
@@ -212,27 +232,22 @@ The decision ledger below records each fork with its source and the rejected alt
   - A wrong PrivateFPC address loses every Fee Juice deposit sent to it.
   - A tampered dependency runs inside the keyed runs, with the script key and the signer in its environment.
   - A malicious or stale node RPC names contracts that agree with each other.
-- **The browser key is public by construction.**
-  - Any client outside a browser can set the Origin header, so the filter stops only embedding by other sites.
-  - The daily CU cap is the control that bounds abuse, with dRPC's per-IP rate limit beside it.
-  - The fallback allowlist entry `*.alejo-amiras.workers.dev` admits only hosts this Cloudflare account serves.
-  - `http://localhost:5176` (Ask A4, the dev server's port) adds no embedding risk: no public site can make a
-    browser send it as Origin.
-  - Phase 4 probes the filter: a forged foreign Origin is refused, our Origin is served, and the CORS preflight
-    echoes our Origin.
-  - The alternative is the keyless public endpoint (A0). It puts no key in the bundle and spends none of the
-    owner's CU. It costs the public tier's rate limits and has no SLA.
+- **The browser endpoint holds no key (A0).** The bundle names dRPC's keyless public endpoint, so there is
+  nothing to lift and no CU to spend on the owner's account. The cost is the public tier's per-IP rate limits and
+  no SLA, accepted for testnet. Every visitor's browser calls it from its own IP, so one abuser does not exhaust
+  another's quota. Phase 4 proves it serves the app's Origins, its preflight and its heaviest reads.
 - **The script key.**
   - It reaches only keyed-run processes. env-exec masks its value in the run's log, not in files a run writes
     (F11). The writers are the intent (fixed here), forge's broadcast cache (deleted after every live
     `forge script`), and any new writer. `node-keys.test.ts` catches a committed one.
-  - `requireAztecNodeUrl` has no default. A script outside a keyed run fails instead of falling back.
-  - Ask A3: an IP allowlist on the script key, if this host has a stable egress IP. Unlike Origin, a client
-    cannot forge its IP.
+  - `requireDrpcNodeUrl` has no default. A script outside a keyed run fails instead of falling back.
+  - It is one key for all the owner's projects (D20). Its blast radius and its CU cap are shared, and its use cannot
+    be attributed per project. Rotation is one field edit.
+  - A3: an IP restriction on the script key, if this host's egress IP is stable (F18). Unlike Origin, a client
+    cannot forge its IP. A restriction on an IP that later changes fails closed: keyed runs fail until the owner
+    updates it.
   - A daily cap on the script key needs headroom. A cap that trips mid-conductor leaves a partial landing, which
     only the journal's resume recovers.
-  - A keyed probe proves the script key differs from the browser key. This catches the owner pasting the
-    unfiltered key into the public bundle.
 - **No URL redaction helper.** Keeping only the origin leaks providers that put the key in the subdomain. The
   scripts print nothing about the node instead.
 - **Residual: the Aztec node client prints the full URL on a failed call** (`@aztec-labs/foundation`
@@ -240,11 +255,8 @@ The decision ledger below records each fork with its source and the rejected alt
   rely on env-exec's masking (F11). Lessons quote only masked output, and a failing keyed command is never re-run
   outside env-exec.
 - **Tests never print a key.** URL assertions compare booleans, and the key guard prints paths and counts only.
-- **CSP.** `connect-src` keeps its shape: the exact testnet node URL and the token-list file. Only the key segment
-  changes, and it follows the constant. Mainnet keeps `'self' data: blob:`.
-- **The owner's key commit.** Before arc 2 adopts it, check that it changes exactly one line of
-  `network-targets.ts`. A placeholder cannot reach production: its test fails, `quality-status` is required on
-  `main`, and Workers Builds deploys production only from `main`.
+- **CSP.** `connect-src` keeps its shape: the exact testnet node URL and the token-list file. The node URL becomes
+  the exact keyless URL, with no wildcard and no fallback host. Mainnet keeps `'self' data: blob:`.
 - **PrivateFPC address.** `private-fuel.test.ts` and `runFpcGate` re-derive the address from the installed
   artifact with salt `0x…01` and deployer zero. They do not rest on the package's JSON. The Nulo wallet pins the
   address from the same tarball, so it is not independent evidence. A failed unpublished path is recoverable,
@@ -275,7 +287,7 @@ The decision ledger below records each fork with its source and the rejected alt
     canonical, so no L2 claim exists, and the token stays locked.
   - The live rc.1 app usually dies at boot on the reset node, but not always. It mounts before the check, a
     failed fetch only warns, and a tab opened before the reset never re-checks.
-  - Consequence: lost Sepolia test tokens only. Disposition: no pause, unless the owner says so at the gate (A7);
+  - Consequence: lost Sepolia test tokens only. Disposition: no pause, the owner's call at A7;
     `pause-factory.ts` stays available.
   - It goes in the Outcome's `Known limits:` line. Reopening condition: a user reports a stranded deposit.
 - **Smart-contract risks** (reorg, replay, front-running) do not change in kind. Every derived address is new under
@@ -322,49 +334,48 @@ The decision ledger below records each fork with its source and the rejected alt
 - **F15.** The `lifi-routing` stack commits two intents that carry `primaryRpc` with the old testnet key.
 - **F16.** The keyless node answers an `OPTIONS` preflight from `https://testnet.app.unleashed.systems` with 204
   and that Origin echoed in `access-control-allow-origin`, with no redirect.
+- **F18.** This host's egress IP is `18.171.13.239` (AWS eu-west-2; four lookup services agree). Whether it is
+  stable is unknown here: an agent may not read the instance metadata. It is stable only if it is an Elastic IP
+  attached to this instance, which the owner checks in the EC2 console.
+- **F19.** Correction to the recon: the old testnet key is committed in `inference-money`
+  (`deployments/testnet.json`, `packages/deployer/src/networks.ts`), whose deployer breaks when the key is
+  disabled. Stale copies sit in `unleashed-legacy` and a standalone wallet copy. Reported by the coordinator; this
+  plan edits none of them.
 - **F17.** `minFuelFj` is the source constant `MIN_FUEL_FJ` in `deploy-generation.ts`. `calibrate` writes only
   `fjPerTx` and `fjRegister`. `pre-create` needs `BRIDGE_DEPLOYER_SECRET_TESTNET`, and `fuel-testnet.ts`
   defaults `--config` to the live manifest.
 
 ### Inferences
 
-- **I1.** dRPC's allowed domains accept the testnet hosts, or the `*.alejo-amiras.workers.dev` fallback. Phase 4's
-  probe proves it.
+- **I1.** The keyless endpoint serves the app's heaviest reads and its Origins within the public tier's limits.
+  Phase 4's probes prove it.
 - **I2.** The embedded test wallet accepts an unpublished FPC instance, as the Nulo wallet does. Phase 9's sandbox
   smoke and browser suite prove it; Phase 12's private canary proves it live.
 - **I3.** `aztec-up install 6.0.0-rc.3` installs a complete toolchain. Phase 5 proves it.
 - **I4.** The re-vendored content-hash lib keeps its vectors. The Solidity, Noir and TS cross-checks prove it.
 - **I5.** The node reports one `nodeVersion` across its fleet. Every `verify` re-checks it.
 
-### Asks (answered at the approval gate)
+### Asks
 
-- **A0. Browser endpoint.** Keep the plan (a new origin-filtered, capped browser key), or point the testnet bundle
-  at the keyless public `https://aztec-testnet.drpc.org` (F7, F16)? Keyless puts no key in the bundle, spends none
-  of the owner's CU, and makes A4 moot. It costs the public tier's rate limits and has no SLA. Recommendation
-  (moderate confidence): keyless, because a lifted browser key is the abuse that started this work, and the testnet app's traffic is
-  small.
-- **A1. Live authorization (runbook Q2).** Authorize the scripted testnet redeploy: L1 broadcasts, L2 deploys, the
-  faucet, promotion and canaries. Every run that signs on L1 chains `live-intent verify` ahead of it in one
-  `bash -c`, because the signer re-check runs only where `PRIVATE_KEY` is present (F14). The one exception is A7's
-  pause, which runs before any intent exists; its own chain, signer, owner, factory and finalized-nonce checks
-  are its gate. It uses these templates:
+All answered at the approval gate (§ Approval). What each answer binds:
+
+- **A0. Browser endpoint: keyless** (F7, F16). The bundle names `https://aztec-testnet.drpc.org`.
+- **A1. Live authorization (runbook Q2): granted.** It covers the scripted testnet redeploy: L1 broadcasts, L2
+  deploys, the faucet, promotion and canaries. Every run that signs on L1 chains `live-intent verify` ahead of it
+  in one `bash -c`, because the signer re-check runs only where `PRIVATE_KEY` is present (F14). The templates:
   - `packages/bridge-core/testnet-generation.env.example` for `deploy:generation` and both `pre-create` runs;
   - `packages/bridge-core/testnet-l1.env.example` for `build`, the smokes, `fuel-testnet` and the fee-juice canary;
   - `apps/tools/testnet-faucet.env.example` for `deploy:testnet`;
   - `packages/bridge-core/testnet-rpc.env.example`, which carries no persistent signing credential, for the probes,
     `check-fpc-version`, `verify --candidate`, `promote`, the final `verify` and `verify:l1`. The drip canary also
-    runs on it: it writes to L2 with a fresh random account, paid by the SponsoredFPC;
-  - if A7 is "pause": `testnet-l1` for `pause-factory.ts`, dry run first, before `live-intent build`.
-  The agent creates no credential. The owner adds the `AZTEC_NODE_URL` field.
-- **A2. Merge.** May the agent squash-merge PR A, and later PR B, once their required checks are green?
-- **A3. Script key IP allowlist.** Restrict the script key to this host's egress IP, if it is stable?
-- **A4. Local development.** Add `http://localhost:5176` (the dev server's port) to the browser key's allowlist?
-  Without it, `bun run dev` against testnet fails at the first node call. `dev:local` (the sandbox) is unaffected.
-- **A5. Old keys.** Nothing depends on them now: the deployed testnet app is dead on the reset network, and the
-  mainnet build never calls a node. Disable both now, or after PR A's deploy as first decided?
-- **A6. Manual wallet check.** Is an rc.3 Nulo wallet build available for the manual check on PR B's preview?
-- **A7. The rc.1 factory.** Leave it unpaused (the known limit in § Security), or pause it with
-  `pause-factory.ts`? Recommendation: leave it; only Sepolia test tokens are at stake.
+    runs on it: it writes to L2 with a fresh random account, paid by the SponsoredFPC.
+  The agent creates no credential. The owner creates `Keyed-Runs/dRPC-CLI`, and approves each run with op-remote.
+- **A2. Merge: yes**, PR A then PR B, squash, once their required checks are green.
+- **A3. Script key IP restriction: yes, if stable** (F18).
+- **A4. Localhost allowlist:** lapsed with A0.
+- **A5. Old keys: disabled now**, with the breakage of F19 accepted.
+- **A6. Manual wallet check: yes**, at PR B's preview, before the merge (Phase 12).
+- **A7. The rc.1 factory: unpaused** (the known limit in § Security).
 
 ## Phases
 
@@ -378,15 +389,16 @@ expected-red test is named by file in that phase's lessons before the phase star
 #### Phase 1: Scripts take the node from the keyed run only
 
 1. Commit this plan folder (`plan.md`, `recon.md`, `lessons/`) and `implementations-plan/index.md`.
-2. Add `requireAztecNodeUrl` to `script-bootstrap.ts`, with a unit test: unset and empty throw, naming the variable.
-3. Replace every `TESTNET_NODE_URL` default and both mainnet literals with `requireAztecNodeUrl()`, called at
-   operation entry. In `deploy-config.ts`, require `AZTEC_NODE_URL` for `testnet` and `mainnet`.
+2. Add `requireDrpcNodeUrl` (§ Key interfaces), with a unit test: unset, empty and a key with `/` or `?` throw,
+   naming `DRPC_API_KEY` and never echoing the value; each network composes its `aztec-<network>` URL.
+3. Replace every `TESTNET_NODE_URL` default and both mainnet literals with `requireDrpcNodeUrl(<network>)`, called
+   at operation entry. `deploy-config.ts` uses it for `testnet` and `mainnet`.
 4. In `live-intent.ts`, drop `primaryRpc` and `secondEndpoint.url`. `verify` and `promote` take the node from
-   `requireAztecNodeUrl()`. Errors name `AZTEC_NODE_URL`, never its value.
+   `requireDrpcNodeUrl("testnet")`. Errors never carry the URL.
 5. Stop printing the node URL in `check-fpc-version.ts` and `apps/tools/scripts/deploy.ts`. Add the sentinel-key
    error test to `live-intent.test.ts`. The sentinel uses a non-dRPC host (`https://node.invalid/<sentinel>`), so
    the key guard never counts it.
-6. Add the `AZTEC_NODE_URL` reference to the templates. Correct the `testnet-l1` and `testnet-rpc` headers to
+6. Add `DRPC_API_KEY=op://Keyed-Runs/dRPC-CLI/DRPC_API_KEY` to the four templates. Correct the `testnet-l1` and `testnet-rpc` headers to
    D15. Remove the keyed URL from the two plain `.env.example` files. Correct the header comments that become
    false: `check-fpc-version.ts` ("no keys"), `deploy-generation.ts` ("defaults to the public testnet RPC") and
    `fuel-testnet.ts` (keys from `.env`).
@@ -400,96 +412,72 @@ expected-red test is named by file in that phase's lessons before the phase star
 - Pass criteria: the fast layers and `test:ci-gating` exit 0. The search prints nothing and exits 1.
 - Layers: typecheck/lint, unit.
 
-#### Phase 2: One browser key, and the guard
+#### Phase 2: The keyless browser endpoint, and the guard
 
-1. Set the testnet node in `network-targets.ts` to the `aztec-testnet` load-balancer URL with the key segment
-   `REPLACE-WITH-BROWSER-KEY`. No other tracked file may spell that URL out, this plan included, or the guard counts
-   it.
-   Set mainnet `nodeUrl` to `""`, with a one-line reason. Correct the CSP comment.
-2. In `network-targets.test.ts`, assert with booleans: the testnet URL matches
-   `^https://lb\.drpc\.live/aztec-testnet/[A-Za-z0-9_-]+$` and does not contain the placeholder (red until Phase 4);
-   the CSP names that URL; mainnet's `nodeUrl` is `""`.
+1. Set the testnet node in `network-targets.ts` to `https://aztec-testnet.drpc.org`. Set mainnet `nodeUrl` to `""`,
+   with a one-line reason. Correct the CSP comment.
+2. In `network-targets.test.ts`, assert with booleans: the testnet URL equals the keyless URL; the CSP names that
+   exact URL; mainnet's `nodeUrl` is `""`.
 3. Add `scripts/ci-cd/node-keys.test.ts`. It reads `git ls-files` and matches
-   `lb\.drpc\.live\/[a-z0-9-]+\/[A-Za-z0-9_-]{12,}`. It requires exactly one hit, the `aztec-testnet` line of
-   `network-targets.ts`, and prints paths and counts only. The placeholder matches the pattern, so the guard is
-   green before the owner's commit.
+   `lb\.drpc\.live\/[a-z0-9-]+\/[A-Za-z0-9_-]{12,}`. It requires zero hits, and prints paths and counts only.
 4. Scrub the four archived copies of the old testnet key to `<KEY>`.
-
-Under A0 (keyless): step 1 sets `https://aztec-testnet.drpc.org`, step 2 asserts that exact URL with no
-placeholder test, and step 3 requires zero hits.
 
 **Validation gate**
 - Commands: the fast layers; `bun run test:ci-gating`; both builds.
-- Pass criteria: only the placeholder assertion fails (none under A0). The key guard passes, and both builds pass.
+- Pass criteria: every command exits 0. The key guard counts zero keys.
 - Layers: typecheck/lint, unit, build.
 
 #### Phase 3: Docs for the split
 
-1. `AGENTS.md` § Security and `SECURITY.md`: the browser key is public, origin-filtered and capped. The script key
-   exists only in 1Password and reaches a run only as a keyed run. For a leak: disable the key in dRPC, then replace
-   the constant or the 1Password field.
-2. `apps/tools/README.md`, `UPDATE.md` (Testnet node ↔ CSP) and the runbook: `AZTEC_NODE_URL` comes from the
-   templates; the runbook's Phase 0 probe becomes a keyed run on `testnet-rpc`.
+1. `AGENTS.md` § Security and `SECURITY.md`: the browser uses dRPC's keyless public endpoint, and no key is ever
+   committed (`node-keys.test.ts`). Scripts use the owner's shared CLI key (`DRPC_API_KEY`), IP-restricted, which
+   exists only in 1Password and reaches a run only as a keyed run. For a leak: disable the key in dRPC, mint a new
+   one, and replace the 1Password field.
+2. `apps/tools/README.md`, `UPDATE.md` (Testnet node ↔ CSP) and the runbook: `DRPC_API_KEY` comes from the
+   templates, and is the owner's shared CLI key; the runbook's Phase 0 probe becomes a keyed run on `testnet-rpc`.
 
 **Validation gate**
 - Commands: `bun run lint`; `bun test scripts/ci-cd/node-keys.test.ts`.
 - Pass criteria: both exit 0.
 - Layers: lint, unit.
 
-#### Phase 4: Arc 1 quality loop, the owner's keys, PR A
+#### Phase 4: Arc 1 quality loop, the script key, PR A
 
-> **Warning:** request no keyed run before the owner confirms the `AZTEC_NODE_URL` field exists.
+> **Warning:** request no keyed run before the owner confirms the `Keyed-Runs/dRPC-CLI` item exists.
 
 1. Run the arc 1 quality loop (§ Post-implementation, step 1). Push the branch.
-2. Ask the owner, through main, to do these steps in order:
-   1. Mint the browser key. Set its allowlist and a daily CU cap (and A3, A4 if approved).
-   2. Mint the script key. Store its full URL as `AZTEC_NODE_URL` in `Keyed-Runs/Unleashed-Testnet`.
-   3. Replace the placeholder on the branch in one commit titled
-      `chore(tools): set the origin-filtered testnet node key`. The GitHub web editor signs it.
-3. Fetch the branch. Check that the commit changes one line of `network-targets.ts`, then adopt it with
-   `git merge --ff-only origin/worktree-aztec-rc3`, before the probes and the gate.
-4. Probe the browser key. Print status codes and `rollupVersion` only. If this host refuses an agent reading the
-   key, ask the owner to run the two commands.
+2. The owner, through main, in order: disables both old keys (A5); mints the shared CLI key; creates
+   `Keyed-Runs/dRPC-CLI` with the bare key in `DRPC_API_KEY`; restricts it to this host's IP if stable (A3).
+3. Probe the keyless URL. Print status codes, `nodeVersion` and `rollupVersion` only.
    - `node_getNodeInfo` with `Origin: https://testnet.app.unleashed.systems` answers 200 with rollupVersion
-     `3409706519`, and no redirect.
-   - The same request with `Origin: https://example.invalid` is refused.
-   - A preview-shaped Origin (`https://<label>-unleashed-testnet.alejo-amiras.workers.dev`) is served (I1).
-   - A request with no Origin header: record the answer. A served answer is expected (dRPC cannot filter what is
-     not sent), and it confirms the daily cap is the real bound.
+     `3409706519`, and no redirect. The same holds for a preview-shaped Origin
+     (`https://<label>-unleashed-testnet.alejo-amiras.workers.dev`).
    - An `OPTIONS` preflight with `Access-Control-Request-Method: POST` and
      `Access-Control-Request-Headers: content-type` answers 2xx, for the production and a preview Origin. Its
      `access-control-allow-origin` equals that Origin, and `access-control-allow-headers` admits `content-type`.
-     A browser sends this first; a wrong answer found here costs a commit, while one found in Phase 12 is drift
-     inside the window.
-5. File a keyed run on `testnet-rpc`. It prints the node's `nodeVersion` and rollupVersion, and `distinct` or
-   `SAME` for the script key against the browser key. `verify` compares `nodeVersion` exactly through the script
-   key, so Phase 10 checks that Phase 8's compatibility entry (from F7) equals this value.
-6. Open PR A (§ Delivery) and add the `e2e:tools` label. Merge it under A2.
-7. Tell main the old keys may be disabled now (A5).
-
-**Under A0 (keyless)** the owner only mints the script key (step 2.2); steps 2.1, 2.3 and 3 drop. Step 4 probes
-the keyless URL: our Origin is served, and the preflight echoes it. It also runs the app's heaviest reads there
-once: `getBlocks` with transactions (exit recovery), a tx receipt, and a nullifier membership witness. Step 5
-prints `nodeVersion` and rollupVersion, without the key comparison. The public tier's rate limits and lack of SLA are recorded as accepted testnet
-limits. The CSP names the exact keyless URL; no wildcard and no fallback host. The branch the owner does not pick
-is deleted from this plan at the gate.
+     A wrong answer found here costs a commit; one found in Phase 12 is drift inside the window.
+   - The app's heaviest reads answer once: `getBlocks` with transactions (exit recovery), a tx receipt, and a
+     nullifier membership witness. The public tier's limits and lack of SLA are recorded as accepted.
+4. File a keyed run on `testnet-rpc`. It prints the script key's node `nodeVersion` and rollupVersion. `verify`
+   compares `nodeVersion` exactly through the script key, so Phase 10 checks that Phase 8's compatibility entry
+   (from F7) equals this value.
+5. Open PR A (§ Delivery) and add the `e2e:tools` label. Merge it under A2.
 
 **Validation gate**
-- Commands: the fast layers; `bun run test:ci-gating`; both builds; the probes in steps 4 and 5;
+- Commands: the fast layers; `bun run test:ci-gating`; both builds; the probes in steps 3 and 4;
   `gh pr checks --watch`.
-- Pass criteria: every command exits 0, the placeholder test included. `quality-status`, `tools-e2e-status` and
-  `bridge-contracts-status` are green.
-  - With a browser key: the guard counts exactly one key. The foreign origin is refused, ours is served, and the
-    preflight echoes ours. The keyed probe prints `distinct`.
-  - Under A0: the guard counts zero keys. Ours is served, the preflight echoes it, and the heavy reads answer.
+- Pass criteria: every command exits 0. The key guard counts zero keys. Both Origins are served, the preflight
+  admits them, and the heavy reads answer. `quality-status`, `tools-e2e-status` and `bridge-contracts-status`
+  are green.
 - Layers: typecheck/lint, unit, build, live (read-only).
 
 ### Arc 2 — rc.3 and the generation (PR B, branch `aztec-rc3-line`)
 
 #### Phase 5: Preconditions
 
-1. Create `aztec-rc3-line` from arc 1's tip. The rebase fork is later `git merge-base aztec-rc3-line
-   worktree-aztec-rc3` (the local arc 1 branch), so no commit id is written down.
+1. Create `aztec-rc3-line` from arc 1's tip, once arc 1's loop converges, and cherry-pick stream L's commits
+   (§ Delivery). The rebase fork is later `git merge-base aztec-rc3-line worktree-aztec-rc3` (the local arc 1
+   branch), so no commit id is written down.
 2. Run `aztec-up install 6.0.0-rc.3`. Check that `~/.aztec/versions/6.0.0-rc.3` is complete. Keep the log.
 3. Copy or `forge install --no-git` the gitignored `contracts/bridge/evm/{lib,out}`. Never copy `cache/`: forge's
    broadcast cache holds the keyed `SEPOLIA_RPC_URL`. Delete `contracts/bridge/evm/lib/v4-core/.env`.
@@ -499,8 +487,7 @@ is deleted from this plan at the gate.
 
 **Validation gate**
 - Commands: `bun install --frozen-lockfile`; the fast layers.
-- Pass criteria: every command exits 0, except the placeholder test while arc 2's base predates the owner's key
-  commit. The reads equal F5, F7 and F8.
+- Pass criteria: every command exits 0. The reads equal F5, F7 and F8.
 - Layers: typecheck/lint, unit.
 
 #### Phase 6: The JS line
@@ -527,8 +514,7 @@ is deleted from this plan at the gate.
   Remediating the baseline is a follow-up, not this plan. Every other command exits 0, except the expected reds in
   `lessons/phase-6.md`:
   - the class-id, vector and FPC tests that phases 7 and 8 re-pin;
-  - the testnet-manifest case in `bridge-generation.test.ts`, until promotion;
-  - the placeholder test, while arc 2's base predates the owner's key commit.
+  - the testnet-manifest case in `bridge-generation.test.ts`, until promotion.
   `aztec-line.test.ts`, `published-packages.test.ts` and the vector test are green.
 - Layers: typecheck/lint, unit.
 
@@ -602,7 +588,7 @@ is deleted from this plan at the gate.
   `rg -n -i --hidden '2914217885|2904119610|0x5bb7523a' --glob '!.git/**' --glob '!**/node_modules/**' --glob '!implementations-plan/**' --glob '!bun.lock'`
   (case-insensitive, because the Solidity files spell the portal checksummed).
 - Pass criteria:
-  - Every command exits 0, except the testnet-manifest case and the placeholder test.
+  - Every command exits 0, except the testnet-manifest case.
   - The smoke runs all its steps, the PrivateFPC credit flows included, and the FPC is absent at its end.
   - The search hits only `apps/tools/public/testnet-bridge.json`, which changes at promotion. Phase 11's gate
     re-runs it and expects nothing (exit 1). Each run is reaped by its own process group.
@@ -618,7 +604,7 @@ is deleted from this plan at the gate.
 
 **Validation gate**
 - Commands: the Phase 9 gate, re-run after the last fix.
-- Pass criteria: the placeholder test is gone from the expected reds. The loop's last round yields no material
+- Pass criteria: the rebased tree holds PR A's code, and the expected reds are unchanged. The loop's last round yields no material
   finding, quoted in `lessons/phase-10.md`.
 - Layers: all local layers.
 
@@ -627,9 +613,6 @@ is deleted from this plan at the gate.
 > **Warning:** from step 1 until Phase 12's final verify, change nothing outside `OPERATIONAL_ALLOWLIST`. Record
 > progress in `lessons/` only. Run one signing command at a time. Commit each run's output before the next request.
 
-0. Only if A7 is "pause", before `build`: `pause-factory.ts --config apps/tools/public/testnet-bridge.json
-   --factory <rc.1 factory> --deposits paused --dry-run`, then the live run (testnet-l1). It needs the signer's
-   nonces finalized. `build` then reads the balance after the pause, so the 2.0 ETH cap covers the rest.
 1. `live-intent.ts build implementations-plan/aztec-rc3/lessons/intent.json` (testnet-l1). Commit the intent.
 2. Check the four Sepolia tokens: code, `decimals()`, `maxMintPerTx()`, and sorted below WETH. Read back each
    TOKEN/WETH pool and the ETH/FJ pool: liquidity, and a quote for a quarter token.
@@ -710,21 +693,23 @@ Sources: **M** the lead's draft, **C** Codex's draft (`gpt-6.1-sol`), **F** the 
 |---|---|---|---|
 | D1 | Two PRs. PR A (keys) merges alone first; PR B carries rc.3, the generation and the close-out | owner, M, C, F | A docs-only third close-out PR: arc 1 merges long before the plan can close |
 | D2 | One browser literal, in `network-targets.ts`; `testnet-node.ts` deleted | M, F | C: keep `testnet-node.ts` behind a subpath export. It is also one literal, but it keeps an export that no script uses after the split |
-| D3 | `requireAztecNodeUrl` in the existing `script-bootstrap.ts`, called at operation entry | F | M: a new `node-url.ts` subpath (an extra module for one function). Module-scope resolution (C): it breaks the six importers of `live-intent.ts` |
+| D3 | `requireDrpcNodeUrl` in `src/drpc-node.ts`, exported from the barrel and called at operation entry with `process.env` | F, D20 | M: a new subpath export (a `package.json` edit, which stream L owns). `script-bootstrap.ts` (F): `apps/tools` cannot import a bridge-core script without a new export. Module-scope resolution (C): it breaks the six importers of `live-intent.ts` |
 | D4 | The intent records no node URL and no origin; the template reference pins the endpoint | F | M: record the origin (it leaks keys in a subdomain, and it adds nothing to the identity re-probe). A hash of the URL (no gain) |
 | D5 | Tests compare node URLs with booleans; the key guard prints paths only | C, F | Plain equality, which prints both values on failure |
 | D6 | `node-keys.test.ts` covers the whole tree; the four archived copies are scrubbed | F | M: exclude `archive/` from the guard. That would let a future archived record with a key pass, as lifi's intents would (F15) |
 | D7 | `check-fpc-version.ts` has one behaviour | M, C, F | Keep `--mode` for mainnet (C): mainnet's FPC is published, so the single behaviour checks it the same way |
 | D8 | `SKIP_POOL_SEED=1`, after reading back the persisting pools | C | Seed as on a fresh network: a seed on an existing pool adds liquidity again |
 | D9 | EURC for the public first-registration sample; GBPC for the full private calibration | C | Register all four in the deploy: it spends both first-registration samples |
-| D10 | The lead recommends leaving the rc.1 factory unpaused (known limit); the owner decides at A7 | M | C, F: pause it. Only test tokens are at stake. The old app usually dies at boot, but not in a stale tab, so the limit is real, and small |
-| D11 | PR A merges, and arc 2 rebases onto it, before `build`. No fallback | F | M: build on arc 1's unmerged tip. A late PR A fix, or the owner's key commit, would then be drift inside the window |
+| D10 | The rc.1 factory stays unpaused (known limit); the owner's call at A7 | M | C, F: pause it. Only test tokens are at stake. The old app usually dies at boot, but not in a stale tab, so the limit is real, and small |
+| D11 | PR A merges, and arc 2 rebases onto it, before `build`. No fallback | F | M: build on arc 1's unmerged tip. A late PR A fix would then be drift inside the window |
 | D12 | `@nulo-sh/*` 0.2.0 pinned in Phase 6, before the rehearsal and the deploy; a vector test pins the derivation | owner (Q9), M, C, F | Deploy on 0.1.0 and swap after promotion: the order existed only while 0.2.0 was unpublished, and it put a dependency change after the deploy |
 | D13 | The temporary exclude leaves right after the install | F | M: remove it at Phase 13. Both work; removing it early makes the committed `bunfig.toml` final before `build` |
 | D14 | Sandbox-reproduced `deployments.json` committed in Phase 9; `promote --bridge-only` | F (aztec-v6 phase 4) | Promote the faucet candidate: the browser suite needs the record earlier |
 | D15 | Runs that sign nothing use `testnet-rpc`, which has no signer. Each signing run chains `verify` ahead on its own template | F, contradiction-check | `testnet-rpc` for every `verify`: the signer re-check skips without `PRIVATE_KEY`, so signing groups would lose it. `testnet-l1` for everything: it puts `PRIVATE_KEY` into runs that sign nothing |
 | D16 | `aztec-line.test.ts` reads the foundation version from labs' own lock entry and checks the patch keys | F | Hard-coded expected versions (C): the next line would need a test edit |
-| D17 | The browser endpoint: a new filtered key (the plan's default) or the keyless public endpoint, the owner's call (A0) | contradiction-check (F) | The lead recommends keyless; the default stays the key because the owner's brief named it |
+| D17 | The browser uses the keyless public endpoint | owner (A0), contradiction-check (F) | A new origin-filtered, capped browser key: anyone can lift it, forge its Origin and spend the owner's CU up to the cap |
+| D19 | Independent work runs in parallel streams with disjoint files (§ Delivery) | owner (approval) | Run the phases in sequence: slower, and the owner asked for speed |
+| D20 | Scripts compose the node URL from the owner's shared CLI key, `op://Keyed-Runs/dRPC-CLI/DRPC_API_KEY`, in one helper | coordinator, for the owner | A per-project URL field (`AZTEC_NODE_URL` in `Unleashed-Testnet`): per-project caps and attribution, but one key to mint, restrict and rotate per project. Accepted costs: every project shares one CU cap and one blast radius, and use cannot be attributed per project. The IP restriction is the real control, because a TCP source IP cannot be spoofed the way an Origin header can. Rotation is one field edit |
 | D18 | `minFuelFj` keeps the carried floor this arc; the measured private ceiling becomes a follow-up | contradiction-check | Set it inside the window: a source edit there is drift, and a hand edit of the candidate is forbidden |
 
 Still disputed after consolidation: none.
@@ -862,32 +847,46 @@ future reader, human or LLM, pays to re-read: they must be few, dense, and exact
 
 | Arc | Phases | Branch → base | PR title | `/code-review` |
 |---|---|---|---|---|
-| 1 | 1–4 | `worktree-aztec-rc3` → `main` | `fix: move the drpc keys out of the repository and origin-filter the browser key` | off |
+| 1 | 1–4 | `worktree-aztec-rc3` → `main` | `fix: move the drpc keys out of the repository and use the keyless testnet endpoint` | off |
 | 2 | 5–13 + close-out | `aztec-rc3-line` → `main` | `feat!: move to aztec 6.0.0-rc.3 and deploy a new testnet generation` | off |
 
 - Two plain branches; no `gh stack`. PR A merges first and alone.
-- Arc 2 runs phases 5–9 while PR A is in review. At Phase 10, after PR A merges, it rebases:
+- **Parallel streams (D19).** Each stream is one subagent on Opus with a fixed file set; no file belongs to two
+  streams. Only the lead files keyed runs, runs the Codex loops, writes `lessons/`, and talks to main.
+
+  | Stream | Where | Phases | Files it owns |
+  |---|---|---|---|
+  | P, the key split | this worktree, `worktree-aztec-rc3` | 1–3 | arc 1's rows of the change map |
+  | L, the rc.3 line | its own agent worktree and branch | 5 (toolchain), 6, 7 | arc 2's Pins, Line guards, Noir, and Class ids rows. Not `AGENTS.md` or `SECURITY.md` |
+  | F, FPC and identity | this worktree, `aztec-rc3-line` | 8, 9 steps 1–4 | arc 2's PrivateFPC and Identity rows, `contracts/bridge/evm/**` |
+  | D, arc 2 docs | this worktree, `aztec-rc3-line` | 6 step 3's wording, 8 step 5, 13 step 1 | arc 2's Docs row, and the exemption text in `AGENTS.md` and `SECURITY.md` |
+  | S, the rehearsal | this worktree, `aztec-rc3-line` | 9 steps 5–6 | the faucet record; nothing else |
+
+  - P and L start at once. L never edits a file in arc 1's rows; a type break it finds in one is reported, and
+    fixed after the cherry-pick.
+  - When PR A's loop converges, the lead creates `aztec-rc3-line` from PR A's tip in this worktree and
+    cherry-picks L's commits. F and D then run together, and S runs after both.
+  - Streams sharing this worktree run only their own package's tests. The lead runs each phase's full gate once
+    the streams it covers have committed.
+- At Phase 10, after PR A merges, arc 2 rebases:
   `git fetch origin main`, then `git rebase --onto origin/main <fork> aztec-rc3-line`, where `<fork>` is
   `git merge-base aztec-rc3-line worktree-aztec-rc3`. Then `git push --force-with-lease` to this branch
   only. Never rebase inside the live window (D11). If PR A cannot merge, the deploy waits.
 - The close-out is PR B's final commits, not a third PR (D1).
 - Each PR opens with `gh pr create` only after its quality loop converges. Add the `e2e:tools` label after it opens,
   never at creation. Check `mergeable` if no CI appears.
-- Parallelism: arc 2's local phases overlap PR A's review, as above. Nothing else runs in parallel: both arcs edit
-  `live-intent.ts`, `check-fpc-version.ts` and `fuel-testnet.ts`.
 - Owner steps, in order:
-  1. Mint the script key and store it (Phase 4). With a browser key (not A0): also mint it, set its allowlist and
-     cap, and commit it (Phase 4).
-  2. Confirm the `AZTEC_NODE_URL` field exists, before any keyed run.
-  3. Disable the old keys (A5).
-  4. Approve each keyed run (Phases 4, 11, 12).
-  5. Fund the signer if the tally runs short.
-  6. Run the manual wallet check (Phase 12).
-  7. Merge, or let the agent merge under A2.
+  1. Disable both old keys; mint the shared CLI key; create `Keyed-Runs/dRPC-CLI`; restrict the key to this host's
+     IP if stable (Phase 4).
+  2. Confirm the `Keyed-Runs/dRPC-CLI` item exists, before any keyed run.
+  3. Approve each keyed run (Phases 4, 11, 12).
+  4. Fund the signer if the tally runs short.
+  5. Run the manual wallet check on PR B's preview (Phase 12), before the merge.
+  6. The agent merges PR A, then PR B, under A2.
 
 ## Seeds
 
-Draft until the approval gate.
+Final: approved with the plan.
 
 **Recommended: `/goal`** (completion is visible in the transcript):
 
