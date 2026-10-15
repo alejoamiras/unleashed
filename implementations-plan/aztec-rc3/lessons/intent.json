@@ -1,0 +1,60 @@
+{
+	"builtAt": "2026-10-15T19:06:14.466Z",
+	"identity": {
+		"nodeVersion": "6.0.0-rc.3",
+		"l1ChainId": 11155111,
+		"rollupVersion": 3409706519,
+		"walletChainId": 3415328944
+	},
+	"l1": {
+		"rollup": "0xed1eb2eb670b42e2fb5a478c076a264b9604089d",
+		"feeJuicePortal": "0x6974bde62c47a0041f5b4a2e61c5506c2b59ce59",
+		"feeJuice": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
+		"feeAssetHandler": "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9",
+		"registry": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba"
+	},
+	"l1Corroboration": {
+		"rollupHasCode": true,
+		"portalHasCode": true,
+		"source": "direct eth_getCode via SEPOLIA_RPC_URL"
+	},
+	"secondEndpoint": {
+		"posture": "SINGLE-L2-NODE (documented residual: no second public endpoint; L1-anchored; caps bound exposure)"
+	},
+	"signer": "0x7F42018F47451417Fa4D39eDb6ad1e1C14C26a9a",
+	"caps": {
+		"maxTotalEthSpend": "2.0",
+		"maxWethSeed": "1.5"
+	},
+	"startingBalanceEth": 2.90366221468834,
+	"artifacts": {
+		"privateFpc": {
+			"address": "0x2e189d0c28cb86234a17951a94131e19620cda595fa8f9c5c10c24268ceb6db4",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+			"sha256": "f9dd12290a47a2828fefea8c4e2976f1af1aee33a486cc6b2dd2929f5afb4e96"
+		},
+		"noirTargets": {
+			"token_bridge_hub/target/token_bridge_hub_contract-TokenBridgeHub.json": "03f46037cd308bdeffff36696fb3ed26aa9de9bcc6dc078fe6e540203b1b79d8",
+			"keystone/target/keystone.json": "122b35e084d19cd40b54c1f5d77e603562efe976c593de7a621a099fecfda6ee"
+		}
+	},
+	"source": {
+		"commit": "4260741e839e2b2944ed7145552fd5d300a51370",
+		"treeClean": true,
+		"operationalAllowlist": [
+			"apps/tools/public/testnet-bridge.candidate.json",
+			"apps/tools/public/testnet-bridge.json",
+			"apps/tools/src/contracts/deployments.candidate.json",
+			"apps/tools/src/contracts/deployments.json",
+			"packages/bridge-core/deploy-journal.jsonl",
+			"packages/bridge-core/deploy-journal/",
+			"implementations-plan/archive/aztec-5.0.0-stable/lessons/",
+			"implementations-plan/archive/aztec-5.0.1-line/lessons/",
+			"implementations-plan/archive/tools-two-network/lessons/",
+			"implementations-plan/archive/any-erc20-bridge/lessons/",
+			"implementations-plan/archive/protocol-labels/lessons/",
+			"implementations-plan/aztec-rc3/lessons/",
+			"apps/tools/public/testnet-bridge.journal.jsonl"
+		]
+	}
+}
