@@ -139,8 +139,12 @@ salt, a manifest field or an authwit scope is protocol, and a change to one is r
 Live deploys follow the runbook's authorization gates and never sign without them. Keys live in
 1Password and reach a run only as an owner-approved keyed run (`env-exec`, from the `*.env.example`
 templates), or in local `.env` files that git ignores; an agent never creates one, and none reaches
-CI. Security
-reports go through GitHub's private advisories ([`SECURITY.md`](SECURITY.md)).
+CI. The Aztec node needs no key in the browser: the testnet bundle calls dRPC's keyless public
+endpoint. Scripts compose their node URL from `DRPC_API_KEY`, the owner's shared, IP-restricted dRPC
+CLI key, which exists only in 1Password and reaches a run only as a keyed run; no script prints that
+URL or writes it to a file, and no dRPC key is ever committed (`scripts/ci-cd/node-keys.test.ts`). On
+a leak, disable the key in dRPC, mint a new one and replace the 1Password field. Security reports go
+through GitHub's private advisories ([`SECURITY.md`](SECURITY.md)).
 
 ## Code comments
 

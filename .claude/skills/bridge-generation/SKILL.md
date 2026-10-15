@@ -24,13 +24,19 @@ pin, so a bump cannot start before those versions exist.
 
 ## Phase 0 — classify the bump (first; it forks everything)
 
-1. **Did the target network reset?** Probe the live node and compare against the pin:
+1. **Did the target network reset?** Probe the live node and compare against the pin. The scripts'
+   node is keyed, so the probe is a keyed run on `testnet-rpc`; it prints the status, `nodeVersion`
+   and `rollupVersion`, never the URL:
    ```bash
-   NODE=$(rg -o 'https://[^"]+' packages/bridge-core/src/testnet-node.ts)
-   curl -s -X POST "$NODE" -H 'content-type: application/json' \
-     -d '{"jsonrpc":"2.0","id":1,"method":"node_getNodeInfo","params":[]}' | jq '.result.rollupVersion'
+   env-exec request --template packages/bridge-core/testnet-rpc.env.example --slug node-probe -- \
+     bun -e 'import { postNodeRpc, requireDrpcNodeUrl } from "./packages/bridge-core/src/drpc-node"
+   const res = await postNodeRpc(requireDrpcNodeUrl("testnet", process.env), "node_getNodeInfo", [])
+   const { nodeVersion, rollupVersion } = (await res.json()).result
+   console.log(res.status, nodeVersion, rollupVersion)'
    rg -n 'TESTNET_ROLLUP_VERSION' apps/tools/src/lib/chain-constants.ts
    ```
+   The browser's keyless endpoint, `https://aztec-testnet.drpc.org`, answers the same call with no
+   key; `live-intent verify` compares the keyed node's `nodeVersion` exactly, so record that one.
    A different rollupVersion is a **NETWORK RESET**: Branch B is mandatory and coupled to the bump.
    `verify:deployments` runs inside the tools build gate, so a class-id or identity shift reds the
    build; the bump cannot land with the redeploy deferred.
@@ -171,11 +177,18 @@ Never loosen the check.
 approves it with `op-remote` on the Mac, and the values exist only inside that one process. The
 1Password item `Keyed-Runs/Unleashed-Testnet` is created once, whole, from
 `packages/bridge-core/testnet-provision.env.example` (`op-remote create` generates the L1 key and
-both L2 secrets and imports `SEPOLIA_RPC_URL`). Each run template takes only its own fields:
-`testnet-l1.env.example` (intent, smokes, canaries), `testnet-generation.env.example`
-(`deploy:generation`; adds `BRIDGE_DEPLOYER_SECRET_TESTNET`, which the L2 deployer derives from and
-which must never change while a generation is resumable), `apps/tools/testnet-faucet.env.example`.
-`deploy-private-fpc-testnet.ts` needs none. **Surface a missing key; never create one** outside the
+both L2 secrets and imports `SEPOLIA_RPC_URL`). The node key is not in it: `DRPC_API_KEY`, the
+owner's shared, IP-restricted dRPC CLI key, lives in `Keyed-Runs/dRPC-CLI`, which the owner creates
+by hand, and every run template carries it. The scripts compose the node URL from it
+(`requireDrpcNodeUrl`) and never print it or write it to a file. Each run template takes only its
+own fields: `testnet-l1.env.example` (`build`, the smokes, `fuel-testnet`, the fee-juice canary),
+`testnet-generation.env.example` (`deploy:generation` and `pre-create`; adds
+`BRIDGE_DEPLOYER_SECRET_TESTNET`, which the L2 deployer derives from and which must never change
+while a generation is resumable), `apps/tools/testnet-faucet.env.example`, and
+`testnet-rpc.env.example`, which holds no signer: the probes, `check-fpc-version`, `verify`,
+`promote`, `verify-l1`, the drip canary and `deploy-private-fpc-testnet.ts`. A run that signs on L1
+chains `live-intent verify` ahead of it in one `bash -c`, on its own template, because the signer
+re-check runs only where `PRIVATE_KEY` is set. **Surface a missing key; never create one** outside the
 owner-approved create. A fresh L1 signer is pinned in `PLAN_PINNED_L1_SIGNERS` and committed before
 `build`; the owner funds it.
 - `env-exec` pins the request to HEAD and refuses untracked files when filed and again when run (a
@@ -256,8 +269,8 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    `src/contracts/deployments.candidate.json`, which `promote` moves into the live `deployments.json`).
    Independent accounts: runs in parallel with step 4.
 6. **PrivateFPC: version gate first, then deploy.**
-   `AZTEC_NODE_URL=<node> bun packages/bridge-core/scripts/check-fpc-version.ts --mode predeploy`
-   (read-only, no keys; `--mode` is required, and `require-deployed` is the form to re-run before any
+   `bun packages/bridge-core/scripts/check-fpc-version.ts --mode predeploy`, a keyed run on `testnet-rpc`
+   (read-only, no signer; `--mode` is required, and `require-deployed` is the form to re-run before any
    funding, canary or promotion): the node's version must be in the descriptor's compatibility list
    for the artifact's sha256 (`private-fpc-canonical.json`), the descriptor must cohere, its
    `l1ChainId` and `rollupVersion` pins must match the live node (a reset reds this for identity
@@ -350,11 +363,14 @@ script: an assignment after it is just another argument. `pre-create` and `calib
     factory registration at boot, so a record from the old generation is withheld, never claimed
     against the new hub. The wallet's per-chain purge is the wallet's own; tell its repository the new
     generation's `tokens[].l2Token` addresses, which it mirrors (or not) as its own UI decision.
-11. **CSP check.** The page connects to the node host the wallet reports and to the token list:
+11. **CSP check.** The page connects to dRPC's keyless testnet endpoint and to the token list:
     `cspConnectSrc` per target lives in `apps/tools/src/lib/network-targets.ts` (the build generates
-    `_headers` from it). Testnet's lists exactly `TESTNET_NODE_URL`, a path-exact source, so a moved
-    node is a change to that constant; confirm the endpoint answers without a redirect (CSP stops
-    path-matching after one) and that the list has exactly one entry, the file `TOKEN_LIST_URL` names.
+    `_headers` from it). Testnet's lists exactly `https://aztec-testnet.drpc.org`, the testnet
+    `nodeUrl`, which holds no key; a keyed `lb.drpc.live` URL never enters the bundle or the tree
+    (`scripts/ci-cd/node-keys.test.ts`). A moved endpoint is a change to that literal: confirm it
+    answers `node_getNodeInfo` without a redirect to another host, and that its CORS preflight
+    (`OPTIONS` with `Access-Control-Request-Headers: content-type`) admits the production and a
+    preview Origin. The list has exactly one entry, the file `TOKEN_LIST_URL` names.
 
 Then Branch A's delivery gates. Live-deploy discipline: fix forward carefully, never blind-retry a
 live step, and stop and surface after a few failures on one step.

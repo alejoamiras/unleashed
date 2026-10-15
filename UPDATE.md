@@ -90,10 +90,15 @@ hub's class ids depend on these inputs, so they move only with a new generation.
   `@aztec-labs/aztec.js/protocol`. The scripts take it from `packages/bridge-core/scripts/fee-juice-l2.ts`,
   which asserts the bound address equals the node's `protocolContractAddresses.feeJuice`, so a wrong
   endpoint or a split line aborts before anything is sent.
-- **Testnet node ↔ CSP**: `TESTNET_NODE_URL` (`packages/bridge-core/src/testnet-node.ts`) is the
-  scripts' default node; `network-targets.ts` repeats it as the testnet `nodeUrl` and the only node
-  entry in its `cspConnectSrc`, a path-exact source (`network-targets.test.ts` holds them equal). CSP
-  stops path-matching after a redirect, so a new endpoint must answer without one.
+- **Testnet node ↔ CSP**: the browser's node is dRPC's keyless public endpoint,
+  `https://aztec-testnet.drpc.org`: the testnet `nodeUrl` in `apps/tools/src/lib/network-targets.ts`
+  and the only node entry in its `cspConnectSrc` (`network-targets.test.ts` pins both). It holds no
+  key. A new endpoint must answer without a redirect to another host, which the CSP blocks, and must
+  admit the app's Origins in its CORS preflight. Scripts never use it: they compose
+  `https://lb.drpc.live/aztec-<network>/<key>` from `DRPC_API_KEY`, the owner's shared dRPC CLI key
+  (`requireDrpcNodeUrl`, `packages/bridge-core/src/drpc-node.ts`), which reaches a run only from a
+  keyed-run template. The FPC gate and `live-intent verify` read the keyed node, so the PrivateFPC
+  descriptor's compatibility entry records its `nodeVersion`, not the keyless endpoint's.
 - **Fee Juice claim phases**: `FeeJuice.claim_and_end_setup` is valid only as the fee payload; an
   app-phase claim under a sponsored fee uses plain `claim` (`apps/tools/src/composables/fuelClaim.ts`,
   `deposit-flow.ts`).
