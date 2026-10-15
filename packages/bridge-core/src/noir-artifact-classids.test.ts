@@ -8,14 +8,9 @@ import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifac
 import { describe, expect, it } from "vitest"
 
 /**
- * Supply-chain tripwire: the committed bridge Noir artifacts are NOT reproducibly bound to
- * source — CI has no nargo, Nargo.toml pins mutable git tags, and the multi-MiB JSONs merely
- * self-report `aztec_version`. A stale or hand-edited-yet-valid artifact would otherwise survive
- * CI and become the runtime + deploy input. This pins each artifact's DERIVED class id (bytecode +
- * ABI, the on-chain identity) AND its sha256 to the values recorded when they were compiled from
- * the pinned 6.0.0-rc.3 toolchain + AztecProtocol/aztec-standards@v6.0.0-rc.3. ANY drift in the committed
- * bytes trips this before a live deploy consumes them. Regenerate ONLY via `contracts/bridge/aztec/scripts/
- * compile.sh` on the pinned toolchain, then update the pins here consciously.
+ * Supply-chain tripwire: each committed bridge artifact must derive its pinned class id (bytecode + ABI, the
+ * on-chain identity) and self-report the pinned toolchain. Re-pin only after `contracts/bridge/aztec/scripts/compile.sh`
+ * rebuilds it on that toolchain; CI's `compile.sh --check` proves source parity.
  */
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -31,7 +26,7 @@ const PINS = [
 	},
 ] as const
 
-describe("committed bridge Noir artifacts — class-id + digest tripwire (6.0.0-rc.3)", () => {
+describe("committed bridge Noir artifacts — class-id tripwire (6.0.0-rc.3)", () => {
 	for (const pin of PINS) {
 		it(`${pin.name} derives its pinned class id`, async () => {
 			const artifact = loadContractArtifact(JSON.parse(readFileSync(pin.path, "utf8")))
