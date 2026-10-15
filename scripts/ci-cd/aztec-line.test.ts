@@ -67,7 +67,8 @@ test("every manifest declares each Aztec package at exactly its line version", (
 	])
 	const off = ["package.json", "contracts/bridge/aztec/txe-server/package.json", ...workspaces].flatMap((path) => {
 		const m = manifest(path)
-		return Object.entries({ ...m.dependencies, ...m.devDependencies, ...m.peerDependencies })
+		return [m.dependencies, m.devDependencies, m.peerDependencies]
+			.flatMap((section) => Object.entries(section ?? {}))
 			.filter(([name, spec]) => expectedVersion(name) !== undefined && spec !== expectedVersion(name))
 			.map(([name, spec]) => `${path}: ${name}@${spec} (want ${expectedVersion(name)})`)
 	})
