@@ -94,16 +94,27 @@ on these inputs, so they move only with a new generation.
   `nargo.sh` and `run-txe-tests.sh` default `AZTEC_HOME` to a literal version. Move both together.
   Both name the labs version, never the foundation one: on this line, `~/.aztec/versions/6.0.0-rc.3`
   (`aztec-up install 6.0.0-rc.3`).
-- **Canonical PrivateFPC**: `packages/bridge-core/src/private-fuel.ts` (`PRIVATE_FPC_ADDRESS`,
-  `PRIVATE_FPC_SALT = 0x…01`), `private-fpc-canonical.json` (artifact sha256, the human-curated
-  `compatibleNodeVersions` keyed by digest, the network identity pins) and
-  `scripts/check-fpc-version.ts` (`--mode predeploy|require-deployed`). A new artifact digest needs a
-  fresh compatibility entry (it fails closed), and every rebuild site uses `PRIVATE_FPC_SALT`. The
-  Nulo wallet pins the same address. `private-fuel.test.ts` holds `PRIVATE_FPC_ADDRESS` and the
-  salt equal to the installed package's `canonical-deployment.json`. Mainnet keeps its own descriptor
-  (`private-fpc-canonical-mainnet.json`, frozen at the FPC it runs) while `PRIVATE_FPC_ADDRESS` follows
-  testnet, so a network may enable a bridge only while its descriptor names that address
-  (`bridge-generation.test.ts`).
+- **Canonical PrivateFPC**: the address and the digest are pinned in
+  `packages/bridge-core/src/private-fuel.ts` (`PRIVATE_FPC_ADDRESS`, `PRIVATE_FPC_SALT = 0x…01`) and
+  `private-fpc-canonical.json` (`expectedAddress`, the artifact sha256, the human-curated
+  `compatibleNodeVersions` keyed by digest, the network identity pins). `private-fuel.test.ts`
+  re-derives the address from the installed artifact at that salt with deployer zero, and holds
+  `PRIVATE_FPC_ADDRESS` and the salt equal to the installed package's `canonical-deployment.json`.
+  A new artifact digest needs a fresh compatibility entry (it fails closed), and every rebuild site
+  uses `PRIVATE_FPC_SALT`. The Nulo wallet pins the same address.
+  - **Nothing deploys the testnet FPC.** The artifact has no initializer and no public function of
+    its own. The app and the wallet register the instance locally, and the node reads the fee
+    payer's balance by storage slot. Anyone may publish the instance, so the gate accepts either
+    state.
+  - **The gate has one behaviour.** `scripts/check-fpc-version.ts` checks the node version against
+    the digest's compatibility entry, the identity pins, the artifact digest and the descriptor's
+    coherence with the constants. At the pinned address, absence is green, and a published instance
+    must carry the expected original and current class. An RPC failure is an error, never absence.
+  - Mainnet keeps its own descriptor (`private-fpc-canonical-mainnet.json`, frozen at the FPC it
+    runs) and its scripts (`deploy-private-fpc-mainnet.ts`, `deploy-canonical-private-fpc.ts`, and
+    `fpc-dust-canary-mainnet.ts`, which keeps its own presence check). `PRIVATE_FPC_ADDRESS` follows
+    testnet, so a network may enable a bridge only while its descriptor names that address
+    (`bridge-generation.test.ts`).
 - **Fee Juice contract**: bound through `FeeJuiceContract.withWallet` from
   `@aztec-labs/aztec.js/protocol`. The scripts take it from `packages/bridge-core/scripts/fee-juice-l2.ts`,
   which asserts the bound address equals the node's `protocolContractAddresses.feeJuice`, so a wrong

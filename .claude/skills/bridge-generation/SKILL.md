@@ -187,7 +187,7 @@ own fields: `testnet-l1.env.example` (`build`, the smokes, `fuel-testnet`, the f
 `BRIDGE_DEPLOYER_SECRET_TESTNET`, which the L2 deployer derives from and which must never change
 while a generation is resumable), `apps/tools/testnet-faucet.env.example`, and
 `testnet-rpc.env.example`, which holds no signer: the probes, `check-fpc-version`, `verify`,
-`promote`, `verify-l1`, the drip canary and `deploy-private-fpc-testnet.ts`. A run that signs on L1
+`promote`, `verify-l1` and the drip canary. A run that signs on L1
 chains `live-intent verify` ahead of it in one `bash -c`, on its own template, because the signer
 re-check runs only where `PRIVATE_KEY` is set. **Surface a missing key; never create one** outside the
 owner-approved create. A fresh L1 signer is pinned in `PLAN_PINNED_L1_SIGNERS` and committed before
@@ -269,20 +269,23 @@ script: an assignment after it is just another argument. `pre-create` and `calib
 5. **Faucet**: `bun run --cwd apps/tools deploy:testnet` (idempotent; writes
    `src/contracts/deployments.candidate.json`, which `promote` moves into the live `deployments.json`).
    Independent accounts: runs in parallel with step 4.
-6. **PrivateFPC: version gate first, then deploy.**
-   `bun packages/bridge-core/scripts/check-fpc-version.ts --mode predeploy`, a keyed run on `testnet-rpc`
-   (read-only, no signer; `--mode` is required, and `require-deployed` is the form to re-run before any
-   funding, canary or promotion): the node's version must be in the descriptor's compatibility list
-   for the artifact's sha256 (`private-fpc-canonical.json`), the descriptor must cohere, its
+6. **PrivateFPC: the version gate; nothing deploys it on testnet.**
+   `bun packages/bridge-core/scripts/check-fpc-version.ts`, a keyed run on `testnet-rpc` (read-only,
+   no signer). It must be green before any Fee Juice moves; re-run it before any funding, canary or
+   promotion. It has one behaviour: the node's version must be in the descriptor's compatibility list
+   for the artifact's sha256 (`private-fpc-canonical.json`), the descriptor must cohere, and its
    `l1ChainId` and `rollupVersion` pins must match the live node (a reset reds this for identity
-   reasons, and the descriptor is re-pinned with the redeploy), and a live `node_getContract` class
-   check passes (an RPC error is not absence). **Canonical salt: `PRIVATE_FPC_SALT = 0x…01`, exported
-   from `private-fuel.ts`; every rebuild site uses it.** Sweep for the construction pattern (`new Fr(0)`
-   near FPC artifacts), not just the constant's imports. The FPC address is bytecode- and
-   version-specific: **depositing Fee Juice to an address derived from the wrong version is an
-   unrecoverable loss**, and a version bump is exactly what opens that window. A red gate means the
-   conscious re-pin and re-canary flow (drift detector 2), not a deploy. Only on green:
-   `packages/bridge-core/scripts/deploy-private-fpc-testnet.ts` (idempotent; asserts the pinned address).
+   reasons, and the descriptor is re-pinned with the redeploy). At the pinned address, absence is
+   green, and a published instance must carry the expected original and current class. An RPC error
+   is an error, never absence. The FPC has no initializer and no public function of its own: the app
+   and the wallet register the instance locally, and the node reads the fee payer's balance by
+   storage slot. Anyone may publish it, so the gate accepts either state. **Canonical salt:
+   `PRIVATE_FPC_SALT = 0x…01`, exported from `private-fuel.ts`; every rebuild site uses it.** Sweep
+   for the construction pattern (`new Fr(0)` near FPC artifacts), not just the constant's imports.
+   The FPC address is bytecode- and version-specific: **depositing Fee Juice to an address derived
+   from the wrong version is an unrecoverable loss**, and a version bump is exactly what opens that
+   window. A red gate means the conscious re-pin and re-canary flow (drift detector 2), never a
+   deploy.
 7. **ETH/FJ pool.** Token-independent; it persists across resets unless the L1 Fee Juice asset moved
    (compare `node_getNodeInfo.l1ContractAddresses.feeJuiceAddress` with the old manifest's
    `feeJuice.asset`). If it moved, re-seed with `DeployFuelLive.s.sol` in seed-only mode
