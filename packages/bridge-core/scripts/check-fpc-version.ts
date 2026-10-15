@@ -239,11 +239,12 @@ async function assertLiveClass(nodeUrl: string, artifactBytes: Buffer): Promise<
 	const live = await rpcOptional<{ originalContractClassId?: string; currentContractClassId?: string }>(nodeUrl, "node_getContract", [
 		PRIVATE_FPC_ADDRESS,
 	])
-	// (RPC failure already threw above; a malformed no-result response now throws too — never absence.)
-	if (!live) {
+	// Only a null or missing result is absence; an RPC failure or any non-object result throws.
+	if (live === undefined) {
 		console.log("live contract      : not published (wallets register the derived instance locally)")
 		return
 	}
+	if (typeof live !== "object") fail(`node_getContract returned a ${typeof live}, not a contract instance or null`)
 	const expected = expectedClassId.toString()
 	const originalClass = String(live.originalContractClassId ?? "")
 	const currentClass = String(live.currentContractClassId ?? "")
