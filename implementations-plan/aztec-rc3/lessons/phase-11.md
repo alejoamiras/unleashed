@@ -33,3 +33,13 @@ the floor. The swap smoke's default slice (one whole token) would quote USDC und
 EURC and GBPC are pre-created (`--no-register`) inside the deploy run, which already holds the deployer secret, so
 the fuel runs go under testnet-l1 without it. The smokes only read `tokens[0..1]`, and pre-create appends, so the
 reorder changes no sample.
+
+## Step 3: the deploy
+
+`rc3-deploy-5f856d18` (testnet-generation) went green through `verify`, the dry run, the L2 deployer account, the
+UniswapFuelSwap `0xbc4b…5a64`, the class publications and the factory deploy at the predicted `0xc68a…565a`. Then
+`readFactoryBindings` read `L2_HUB()` as `0x` straight after the receipt, although `IMPLEMENTATION()` had answered
+in the same call. That is a lagging backend behind the keyed Sepolia RPC. Two public RPCs read the factory a
+minute later: 19479 bytes of code, IMPLEMENTATION `0xdf4d…b047` (the predicted one), L2_HUB `0x08f3…39c9`. The
+re-run adopts the landed factory (`adoptLandedFactory` checks both bindings), so the generation stays alive. The
+read-after-receipt race is a follow-up: a source fix inside the window would void the intent.

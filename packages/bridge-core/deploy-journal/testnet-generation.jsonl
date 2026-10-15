@@ -1,0 +1,4 @@
+{"ts":"2026-10-15T19:08:07.649Z","step":{"kind":"identity","l1ChainId":11155111,"rollupVersion":3409706519,"deployer":"0x7f42018f47451417fa4d39edb6ad1e1c14c26a9a","registry":"0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba","feeJuicePortal":"0x6974bde62c47a0041f5b4a2e61c5506c2b59ce59"}}
+{"ts":"2026-10-15T19:08:16.174Z","step":{"kind":"swap-target-deployed","address":"0xbc4b882477c03c144b90f24626017b51ec415a64","txHash":"0x957f7e58f17a10e98cc022817214ef7b5dd5797e577fae98ffbd3f6c1c4344df"}}
+{"ts":"2026-10-15T19:09:25.370Z","step":{"kind":"classes-published","tokenClassId":"0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a","hubClassId":"0x198c190c4eb3f1522cad4802d001d444724358732dc01710203657f9aeafd124"}}
+{"ts":"2026-10-15T19:09:25.426Z","step":{"kind":"factory-predicted","factory":"0xc68a230a765ea13240785a88c7078712908a565a","implementation":"0xdf4d5f1508008a3d7e561b1393f1e283fcb4b047"}}
