@@ -31,3 +31,13 @@ The canary retry filed before this (`rc3-canaries-retry-5688193a`) went void wit
 
 Green at `17659a1`. Its identity, L1 addresses, signer, caps and artifact pins (the FPC address, salt and digest,
 both Noir target digests) equal the first intent's, so nothing deployed moves. Starting balance 2.90357 ETH.
+
+## The recalibrated candidate (`rc3-recal-verify-c1b9632b`, testnet-rpc)
+
+Green. Digest `6685544c…3a24` recorded in the second intent; "L1 verification passed"; the hub's
+initialization hash and class match.
+
+A local sandbox smoke run alongside it, to rehearse the gas fix, failed at step (e) with `ENOENT` on
+`contracts/bridge/evm/out/MintableERC20.sol/MintableERC20.json`. The keyed run's strict `verify-l1` rebuilt
+`out/` at that minute, and both share the worktree's forge output. Every step before it passed with the new gas
+limit, `runSend`'s deposits and fueled sends included. A local forge build must not overlap a keyed `verify-l1`.
