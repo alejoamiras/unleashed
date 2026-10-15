@@ -41,3 +41,19 @@ A local sandbox smoke run alongside it, to rehearse the gas fix, failed at step 
 `contracts/bridge/evm/out/MintableERC20.sol/MintableERC20.json`. The keyed run's strict `verify-l1` rebuilt
 `out/` at that minute, and both share the worktree's forge output. Every step before it passed with the new gas
 limit, `runSend`'s deposits and fueled sends included. A local forge build must not overlap a keyed `verify-l1`.
+
+## Promote, the canaries and the final verify (`rc3-recal-promote-canaries-7cf5d244`, testnet-l1)
+
+Green with no retry used. The promotion passed the generation interlock against the live manifest. The live
+`testnet-bridge.json` equals the verified candidate (`6685544c…3a24`).
+
+- `verify:l1 --strict`: "L1 verification passed".
+- `verify:deployments`: the faucet record, the hub and all four tokens match.
+- The FPC gate is green.
+- The fuel canary ran the public lane, then the private one, the order that ran out of gas before; both settled.
+  Public claim fee 1.656 FJ; private claim fee 1.137 FJ, ceiling 2.839 FJ.
+- The direct Fee Juice self-pay canary passed: 15.18 FJ landed, fee 0.824 FJ.
+- The drip canary passed: SIGNAL and NOISE dripped to a fresh account.
+- The final verify is green. The freeze ends.
+
+Total Sepolia spend for the generation, over both intents: 0.0000926 ETH, against the 2.0 ETH cap.
