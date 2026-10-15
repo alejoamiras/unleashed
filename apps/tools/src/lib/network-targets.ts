@@ -108,7 +108,6 @@ export const TESTNET_TARGET: ToolsTarget = {
 	host: "testnet.app.unleashed.systems",
 	workersDevHost: "unleashed-testnet.alejo-amiras.workers.dev",
 	acceptsPreviewHosts: true,
-	// bridge-core's TESTNET_NODE_URL, repeated to stay Node-safe; a test holds the two equal.
 	nodeUrl: TESTNET_NODE_SOURCE,
 	l1ExplorerBaseUrl: "https://sepolia.etherscan.io",
 	// The node by its exact path (the wallet reports the same one), plus the community token list the

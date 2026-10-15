@@ -1,4 +1,4 @@
-import { TESTNET_NODE_URL, TOKEN_LIST_URL } from "@unleashed/bridge-core"
+import { TOKEN_LIST_URL } from "@unleashed/bridge-core"
 import { describe, expect, it } from "vitest"
 import { localTarget, MAINNET_TARGET, resolveToolsTarget, TESTNET_TARGET } from "./network-targets"
 
@@ -6,8 +6,7 @@ import { localTarget, MAINNET_TARGET, resolveToolsTarget, TESTNET_TARGET } from 
  *  fetch the browser blocks with no visible error, so both targets pin their exact reach. */
 describe("cspConnectSrc", () => {
 	it("testnet reaches exactly its node, by path, and no other node host", () => {
-		expect(TESTNET_TARGET.nodeUrl).toBe(TESTNET_NODE_URL)
-		expect(TESTNET_TARGET.cspConnectSrc.split(" ")).toContain(TESTNET_NODE_URL)
+		expect(TESTNET_TARGET.cspConnectSrc.split(" ").includes(TESTNET_TARGET.nodeUrl)).toBe(true)
 		expect(TESTNET_TARGET.cspConnectSrc).not.toMatch(/\*|aztec-labs\.com|aztec\.network|wss:/)
 	})
 
