@@ -32,4 +32,4 @@ const deployed = await deployCanonicalPrivateFpc({
 	},
 })
 
-if (deployed) console.log("   Next: check-fpc-version --mode require-deployed, then the dust canary.")
+if (deployed) console.log("   Next: check-fpc-version --mode require-deployed --network mainnet, then the dust canary.")
