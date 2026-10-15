@@ -11,6 +11,8 @@ const URL_SAFE_KEY = /^[A-Za-z0-9_-]+$/
 export function requireDrpcNodeUrl(network: "testnet" | "mainnet", env: Record<string, string | undefined>): string {
 	const key = env.DRPC_API_KEY
 	if (!key) throw new Error("DRPC_API_KEY is unset: run this through its keyed-run template (*.env.example)")
+	if (key.includes("/")) throw new Error("DRPC_API_KEY holds a URL or a path: store only the bare key in its 1Password field")
+	if (/\s/.test(key)) throw new Error("DRPC_API_KEY contains whitespace: store only the bare key in its 1Password field")
 	if (!URL_SAFE_KEY.test(key)) throw new Error("DRPC_API_KEY is not a bare URL-safe key ([A-Za-z0-9_-]+)")
 	return `https://lb.drpc.live/aztec-${network}/${key}`
 }

@@ -24,4 +24,22 @@ describe("requireDrpcNodeUrl", () => {
 			expect(message.includes(key)).toBe(false)
 		}
 	})
+
+	it("names the likely mistake when the field holds a URL or whitespace", () => {
+		const cases: Array<[string, string]> = [
+			[`https://lb.drpc.live/aztec-testnet/${key}`, "holds a URL or a path"],
+			[` ${key}`, "contains whitespace"],
+			[`${key}\n`, "contains whitespace"],
+		]
+		for (const [value, reason] of cases) {
+			let message = ""
+			try {
+				requireDrpcNodeUrl("testnet", { DRPC_API_KEY: value })
+			} catch (err) {
+				message = err instanceof Error ? err.message : String(err)
+			}
+			expect(message.includes(reason)).toBe(true)
+			expect(message.includes(key)).toBe(false)
+		}
+	})
 })
