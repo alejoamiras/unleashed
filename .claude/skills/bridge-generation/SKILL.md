@@ -253,8 +253,9 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    - **A read straight after a receipt can lag.** The keyed Sepolia RPC may answer it from a backend that
      has not seen the block, so the conductor stops with `returned no data` or `landed but the factory has
      no registration — STOP` although the write landed. Confirm the write on a public RPC, then re-run the
-     same command: every step reads before it writes, and the journal adopts what landed. A bounded retry
-     (a pause, `verify` before each attempt) automates exactly that.
+     same command: the factory and each portal are read before they are written, so the re-run adopts
+     them. A bounded retry (a pause, `verify` before each attempt) automates that for these readbacks; a
+     crash between another step's receipt and its journal line is § Recovery after a partial landing.
    - **Serialize with anything else that signs from the deployer.** The nonce pin is this step's whole
      safety; a forge broadcast from the same key between prediction and deploy is exactly what the
      abort exists to catch.
