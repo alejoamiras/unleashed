@@ -16,3 +16,23 @@ export function requireDrpcNodeUrl(network: "testnet" | "mainnet", env: Record<s
 	if (!URL_SAFE_KEY.test(key)) throw new Error("DRPC_API_KEY is not a bare URL-safe key ([A-Za-z0-9_-]+)")
 	return `https://lb.drpc.live/aztec-${network}/${key}`
 }
+
+const ERROR_CODE = /^[A-Za-z_]+$/
+
+/**
+ * POSTs one JSON-RPC call to `url`. A rejected fetch is rethrown naming only `method` and the
+ * runtime's error code: the runtime's own error carries the URL (Bun sets `path` to it), and a dRPC
+ * URL carries its key.
+ */
+export async function postNodeRpc(url: string, method: string, params: unknown[]): Promise<Response> {
+	try {
+		return await fetch(url, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+		})
+	} catch (err) {
+		const code = (err as { code?: unknown } | null)?.code
+		throw new Error(`${method}: node request failed${typeof code === "string" && ERROR_CODE.test(code) ? ` (${code})` : ""}`)
+	}
+}

@@ -5,7 +5,8 @@
  * is REBUILT from its params with the address and minter asserted, all before any account exists:
  * a drifted record fails here, not in a user's browser.
  *
- * Run: bun scripts/drip-canary-testnet.ts [--config <path>]   (no L1 env needed; the drip is L2-only)
+ * Run: bun scripts/drip-canary-testnet.ts [--config <path>]   (a keyed run on testnet-rpc.env.example for
+ *      DRPC_API_KEY; no L1 env, the drip is L2-only)
  */
 import { readFileSync } from "node:fs"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
@@ -27,9 +28,7 @@ import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifac
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { catalogMismatches } from "../src/faucet-catalog"
 import { stopwatch } from "./script-bootstrap"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
-
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 
 const here = dirname(fileURLToPath(import.meta.url))
 // `--config <path>` targets a CANDIDATE manifest (candidate-first: the canary must
@@ -104,7 +103,7 @@ async function rebuildAll() {
 
 type Rebuilt = Awaited<ReturnType<typeof rebuildAll>>
 
-async function dripEach(ewallet: EmbeddedWallet, { dripper: dripperInstance, tokens }: Rebuilt, mins: () => string) {
+async function dripEach(ewallet: EmbeddedWallet, nodeUrl: string, { dripper: dripperInstance, tokens }: Rebuilt, mins: () => string) {
 	const { signingKey, secretKey } = await deriveNuloAccountKeys(Fr.random())
 	const manager = await ewallet.createSchnorrAccount(secretKey, Fr.random(), signingKey)
 	const from = (await manager.getAccount()).getAddress()
@@ -115,7 +114,7 @@ async function dripEach(ewallet: EmbeddedWallet, { dripper: dripperInstance, tok
 		await ewallet.registerContract(fpc, SponsoredFPCContract.artifact)
 	} catch {}
 	const sponsoredFee = { paymentMethod: new SponsoredFeePaymentMethod(fpc.address) }
-	if (!(await createAztecNodeClient(NODE_URL).getContract(from))) {
+	if (!(await createAztecNodeClient(nodeUrl).getContract(from))) {
 		console.log(`deploying L2 account via sponsored FPC (real proof)… (${mins()})`)
 		const deployMethod = await manager.getDeployMethod()
 		await deployMethod.send({ fee: sponsoredFee, from: "NO_FROM" as never } as never)
@@ -154,6 +153,7 @@ async function dripEach(ewallet: EmbeddedWallet, { dripper: dripperInstance, tok
 }
 
 async function main() {
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 	console.log(`drip canary config: ${deploymentsPath}`)
 	const mins = stopwatch()
 	const rebuilt = await rebuildAll()
@@ -177,10 +177,10 @@ async function main() {
 	const onSignal = (): void => void release().finally(() => process.exit(130))
 	process.once("SIGINT", onSignal).once("SIGTERM", onSignal)
 	try {
-		walletReady = EmbeddedWallet.create(NODE_URL, { pxeConfig: { proverEnabled: true, dataDirectory } })
+		walletReady = EmbeddedWallet.create(nodeUrl, { pxeConfig: { proverEnabled: true, dataDirectory } })
 		const ewallet = await walletReady
 		if (released) throw new Error("interrupted")
-		await dripEach(ewallet, rebuilt, mins)
+		await dripEach(ewallet, nodeUrl, rebuilt, mins)
 	} finally {
 		await release()
 	}

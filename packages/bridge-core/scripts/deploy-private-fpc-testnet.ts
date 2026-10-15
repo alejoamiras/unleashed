@@ -8,7 +8,7 @@
  * The conductor skeleton lives in deploy-canonical-private-fpc.ts; this file owns only the
  * testnet fee/account setup (throwaway account, SponsoredFPC pays).
  *
- * Run: bun run scripts/deploy-private-fpc-testnet.ts   (no env needed beyond AZTEC_NODE_URL override)
+ * Run: bun run scripts/deploy-private-fpc-testnet.ts   (a keyed run on testnet-rpc.env.example for DRPC_API_KEY)
  */
 import { getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js/contracts"
 import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee"
@@ -16,13 +16,11 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { SPONSORED_FPC_SALT } from "@aztec-labs/constants"
 import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 import { deployCanonicalPrivateFpc } from "./deploy-canonical-private-fpc"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
-
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 
 await deployCanonicalPrivateFpc({
-	nodeUrl: NODE_URL,
+	nodeUrl: requireDrpcNodeUrl("testnet", process.env),
 	prepare: async ({ ewallet, node, mins }) => {
 		// Throwaway account; the SponsoredFPC pays its deployment AND the FPC deploy.
 		const secret = Fr.random()

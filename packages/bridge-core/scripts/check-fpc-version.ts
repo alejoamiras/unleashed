@@ -6,9 +6,9 @@
  * @aztec-version + salt specific — depositing real Fee Juice to an address derived from the wrong
  * artifact is an UNRECOVERABLE loss.
  *
- *   bun packages/bridge-core/scripts/check-fpc-version.ts --mode predeploy|require-deployed
+ *   bun packages/bridge-core/scripts/check-fpc-version.ts --mode predeploy|require-deployed [--network mainnet]
  *
- * against `TESTNET_NODE_URL`, or the node `AZTEC_NODE_URL` names.
+ * against the dRPC node of `--network` (default testnet), composed from `DRPC_API_KEY`.
  *
  * `--mode` is REQUIRED — callers choose consciously:
  *   - `predeploy`: a clean ABSENCE of the contract is green (the deploy script creates it).
@@ -31,7 +31,8 @@
  *      wrong contract; a drifted current = upgraded-out code — never deposit). An RPC failure is
  *      an ERROR (exit 1), never treated as absence.
  *
- * Read-only, no keys. The live dust canary (pre-promotion) stays the authoritative on-net proof.
+ * Read-only and signs nothing; its one secret is the node key (a keyed run on `testnet-rpc.env.example`).
+ * The live dust canary (pre-promotion) stays the authoritative on-net proof.
  */
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
@@ -44,12 +45,12 @@ import { AztecAddress } from "@aztec-labs/stdlib/aztec-address"
 import { getContractClassFromArtifact, getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract"
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
 
+import { postNodeRpc, requireDrpcNodeUrl } from "../src/drpc-node"
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
-
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 
 export type GateMode = "predeploy" | "require-deployed"
+
+type GateNetwork = "testnet" | "mainnet"
 
 function parseMode(argv: string[]): GateMode {
 	const i = argv.indexOf("--mode")
@@ -59,16 +60,21 @@ function parseMode(argv: string[]): GateMode {
 	process.exit(1)
 }
 
+function parseNetwork(argv: string[]): GateNetwork {
+	const i = argv.indexOf("--network")
+	if (i < 0) return "testnet"
+	const value = argv[i + 1]
+	if (value === "testnet" || value === "mainnet") return value
+	console.error("\n✗ --network takes testnet or mainnet.")
+	process.exit(1)
+}
+
 function resolvePackageFile(pkg: string, file: string): string {
 	return resolvePackageAsset(pkg, file, { from: import.meta.url })
 }
 
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-	const res = await fetch(NODE_URL, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-	})
+async function rpc<T>(nodeUrl: string, method: string, params: unknown[]): Promise<T> {
+	const res = await postNodeRpc(nodeUrl, method, params)
 	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
 	const body = (await res.json()) as { jsonrpc?: string; result?: T; error?: { message: string } }
 	if (body.error) throw new Error(`${method}: RPC error — ${body.error.message}`)
@@ -85,12 +91,8 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
  * (parsed JSON, `jsonrpc` present, no `error`); truncated or non-JSON responses still throw at
  * `res.json()`, and HTTP/RPC errors throw as before — never mistaken for absence.
  */
-async function rpcOptional<T>(method: string, params: unknown[]): Promise<T | undefined> {
-	const res = await fetch(NODE_URL, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-	})
+async function rpcOptional<T>(nodeUrl: string, method: string, params: unknown[]): Promise<T | undefined> {
+	const res = await postNodeRpc(nodeUrl, method, params)
 	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
 	const body = (await res.json()) as { jsonrpc?: string; result?: T; error?: { message: string } }
 	if (body.error) throw new Error(`${method}: RPC error — ${body.error.message}`)
@@ -140,16 +142,16 @@ function selectDescriptor(here: string, info: LiveNodeInfo): FpcDescriptor {
 	return descriptor
 }
 
-export async function runFpcGate(mode: GateMode): Promise<void> {
+export async function runFpcGate(mode: GateMode, network: GateNetwork = "testnet"): Promise<void> {
+	const nodeUrl = requireDrpcNodeUrl(network, process.env)
 	const here = fileURLToPath(new URL(".", import.meta.url))
 	const pkg = JSON.parse(readFileSync(resolvePackageFile("@alejoamiras/private-fee-juice", "package.json"), "utf8"))
 	const artifactBytes = readFileSync(resolvePackageFile("@alejoamiras/private-fee-juice", "target/private_contract-PrivateFPC.json"))
 
-	const info = await rpc<LiveNodeInfo>("node_getNodeInfo", [])
+	const info = await rpc<LiveNodeInfo>(nodeUrl, "node_getNodeInfo", [])
 	const descriptor = selectDescriptor(here, info)
 
-	console.log("gate mode          :", mode)
-	console.log("node URL           :", NODE_URL)
+	console.log("gate mode          :", mode, `(${network})`)
 	console.log("network nodeVersion:", info.nodeVersion, `(l1ChainId=${info.l1ChainId}, rollupVersion=${info.rollupVersion})`)
 	console.log("installed package  :", String(pkg.version), "| descriptor:", descriptor.aztecVersion)
 	console.log("pinned FPC address :", PRIVATE_FPC_ADDRESS, `(salt ${PRIVATE_FPC_SALT})`)
@@ -160,7 +162,7 @@ export async function runFpcGate(mode: GateMode): Promise<void> {
 
 	assertNetworkCompat(descriptor, info, digest)
 
-	await assertLiveClass(artifactBytes, mode)
+	await assertLiveClass(nodeUrl, artifactBytes, mode)
 
 	console.log(`\n✓ FPC gate green (${mode}) — compat + identity + digest + live class all agree.`)
 }
@@ -253,9 +255,9 @@ function assertNetworkCompat(descriptor: FpcDescriptor, info: LiveNodeInfo, dige
  *  equal the expected class: checking only `original` would GREEN an UPGRADED contract — its
  *  original class stays correct while `current` points at different/malicious code that actually
  *  runs, and deposits to it can be consumed or stranded (fund loss). */
-async function assertLiveClass(artifactBytes: Buffer, mode: GateMode): Promise<void> {
+async function assertLiveClass(nodeUrl: string, artifactBytes: Buffer, mode: GateMode): Promise<void> {
 	const expectedClassId = (await getContractClassFromArtifact(loadContractArtifact(JSON.parse(artifactBytes.toString("utf8"))))).id
-	const live = await rpcOptional<{ originalContractClassId?: string; currentContractClassId?: string }>("node_getContract", [
+	const live = await rpcOptional<{ originalContractClassId?: string; currentContractClassId?: string }>(nodeUrl, "node_getContract", [
 		PRIVATE_FPC_ADDRESS,
 	])
 	// (RPC failure already threw above; a malformed no-result response now throws too — never absence.)
@@ -290,7 +292,8 @@ async function assertLiveClass(artifactBytes: Buffer, mode: GateMode): Promise<v
 /** True only when this file is the process entrypoint (not when imported). */
 const isMain = process.argv[1] ? fileURLToPath(import.meta.url) === resolve(process.argv[1]) : false
 if (isMain) {
-	runFpcGate(parseMode(process.argv.slice(2))).catch((err) => {
+	const argv = process.argv.slice(2)
+	runFpcGate(parseMode(argv), parseNetwork(argv)).catch((err) => {
 		console.error("\n✗ gate errored (treat as RED — an RPC failure is never absence):", err instanceof Error ? err.message : err)
 		process.exit(1)
 	})

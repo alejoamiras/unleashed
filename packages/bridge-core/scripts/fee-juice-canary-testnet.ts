@@ -12,7 +12,7 @@
  *      mainnet-shaped public claim lane (NO Sponsored FPC). Net balance = deposit − self-paid gas.
  *
  * Run: bun scripts/fee-juice-canary-testnet.ts --config <candidate.json>
- *      (PRIVATE_KEY + SEPOLIA_RPC_URL in packages/bridge-core/.env)
+ *      (a keyed run on testnet-l1.env.example: PRIVATE_KEY, SEPOLIA_RPC_URL, DRPC_API_KEY)
  */
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -29,10 +29,9 @@ import { ERC20_MIN_ABI } from "./script-l1"
 import { feeJuiceFor } from "./fee-juice-l2"
 import { deployAccountIfAbsent, freshSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { createL1Clients, createL2Wallet, createNode, loadManifestV2FromConfigArg, sepoliaChain, stopwatch } from "./script-bootstrap"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
 if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY required (packages/bridge-core/.env)")
 
@@ -180,6 +179,7 @@ async function runSelfPayClaim(p: {
 
 async function main() {
 	const mins = stopwatch()
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 	const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 	const { wallet, pub } = createL1Clients({ chain: sepolia, rpcUrl: SEPOLIA_RPC, account })
 	const l1: CanaryL1 = {
@@ -198,8 +198,8 @@ async function main() {
 	await ensureFeeAssetFunded(l1)
 
 	// L2 fresh account first (the deposit binds to its address), sponsored-FPC deploy.
-	const node = createNode(NODE_URL)
-	const ewallet = await createL2Wallet({ nodeUrl: NODE_URL, proverEnabled: true })
+	const node = createNode(nodeUrl)
+	const ewallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	// Bound and checked against the node before depositing: the claim secret lives only in this run.
 	const feeJuice = await feeJuiceFor(ewallet as never, node)
 	const { manager, from } = await freshSchnorrAccount(ewallet as never)
