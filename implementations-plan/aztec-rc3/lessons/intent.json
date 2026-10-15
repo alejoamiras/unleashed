@@ -56,5 +56,6 @@
 			"implementations-plan/aztec-rc3/lessons/",
 			"apps/tools/public/testnet-bridge.journal.jsonl"
 		]
-	}
+	},
+	"candidateSha256": "891ab834ee3c4bcbeeebe63599cced88bf001212e390184c678308b103d314dc"
 }

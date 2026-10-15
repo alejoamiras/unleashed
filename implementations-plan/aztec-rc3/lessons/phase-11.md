@@ -101,3 +101,11 @@ The samples were written outside the repository: 1 `register_and_claim_public`, 
 `register_token` puts one near 0.77 FJ, under the private plain claim. The result: `fjPerTx=1364643218342880000`
 and `fjRegister=2199729351956640000` (each worst value plus 20 %), down from the carried 3.28 and 2.94 FJ. The
 candidate is final.
+
+## Step 8: verify the candidate (`rc3-verify-candidate-a27ebeba`, testnet-rpc)
+
+Green. The candidate digest `891ab834ee3c4bcbeeebe63599cced88bf001212e390184c678308b103d314dc` is recorded in the
+intent. Every token's registration, decimals and metadata words agree. The four runtime code hashes are checked:
+TokenPortalImpl `0xb02b…2ea1`, PortalFactory `0xc924…5d4d`, SwapBridgeRouter `0x3e87…e195`, UniswapFuelSwap
+`0xf1bf…78a8`. "L1 verification passed". The hub's initialization hash and class match the manifest. Spend:
+0.000090 ETH.
