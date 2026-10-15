@@ -1,0 +1,15 @@
+{
+	"promotedAt": "2026-10-15T20:39:41.294Z",
+	"intent": "implementations-plan/aztec-rc3/lessons/intent.json",
+	"commitAtPromotion": "8c7ea1049a2bbe5f928c5e3cf77a70bde4d13a9b",
+	"mode": "bridge-only",
+	"bridge": {
+		"candidateSha256": "891ab834ee3c4bcbeeebe63599cced88bf001212e390184c678308b103d314dc",
+		"live": "apps/tools/public/testnet-bridge.json"
+	},
+	"faucet": {
+		"unchangedSha256": "d07a22bcf8ef0aae110ceff8aed568ef78a35c3e8bbe605e7a1c06f012574253",
+		"live": "apps/tools/src/contracts/deployments.json"
+	},
+	"generation": "first promotion: no live manifest, so the generation interlock compared nothing"
+}
