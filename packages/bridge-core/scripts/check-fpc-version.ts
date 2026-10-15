@@ -45,7 +45,7 @@ import { AztecAddress } from "@aztec-labs/stdlib/aztec-address"
 import { getContractClassFromArtifact, getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract"
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
 
-import { postNodeRpc, requireDrpcNodeUrl } from "../src/drpc-node"
+import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 
 export type GateMode = "predeploy" | "require-deployed"
@@ -74,10 +74,7 @@ function resolvePackageFile(pkg: string, file: string): string {
 }
 
 async function rpc<T>(nodeUrl: string, method: string, params: unknown[]): Promise<T> {
-	const res = await postNodeRpc(nodeUrl, method, params)
-	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
-	const body = (await res.json()) as { jsonrpc?: string; result?: T; error?: { message: string } }
-	if (body.error) throw new Error(`${method}: RPC error — ${body.error.message}`)
+	const body = await readNodeRpcBody<T>(await postNodeRpc(nodeUrl, method, params), method, nodeUrl)
 	// A response with NEITHER `result` nor `error` is malformed — an ERROR, never a clean absence.
 	// (Use `rpcOptional` for methods whose ABSENCE the node encodes by omitting the key.)
 	if (!("result" in body)) throw new Error(`${method}: malformed RPC response (no result, no error)`)
@@ -88,14 +85,11 @@ async function rpc<T>(nodeUrl: string, method: string, params: unknown[]): Promi
  * Like `rpc`, but for methods where the live node encodes "not found" by OMITTING the `result`
  * key entirely (JS `undefined` doesn't serialize — observed on the v5 testnet's
  * `node_getContract`). Absence is accepted ONLY for a well-formed JSON-RPC success envelope
- * (parsed JSON, `jsonrpc` present, no `error`); truncated or non-JSON responses still throw at
- * `res.json()`, and HTTP/RPC errors throw as before — never mistaken for absence.
+ * (parsed JSON, `jsonrpc` present, no `error`); truncated or non-JSON responses and HTTP/RPC
+ * errors still throw in `readNodeRpcBody` — never mistaken for absence.
  */
 async function rpcOptional<T>(nodeUrl: string, method: string, params: unknown[]): Promise<T | undefined> {
-	const res = await postNodeRpc(nodeUrl, method, params)
-	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
-	const body = (await res.json()) as { jsonrpc?: string; result?: T; error?: { message: string } }
-	if (body.error) throw new Error(`${method}: RPC error — ${body.error.message}`)
+	const body = await readNodeRpcBody<T>(await postNodeRpc(nodeUrl, method, params), method, nodeUrl)
 	if (!("result" in body)) {
 		if (body.jsonrpc !== "2.0") throw new Error(`${method}: malformed RPC response (no result, no error, no jsonrpc)`)
 		return undefined

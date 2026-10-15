@@ -36,3 +36,29 @@ export async function postNodeRpc(url: string, method: string, params: unknown[]
 		throw new Error(`${method}: node request failed${typeof code === "string" && ERROR_CODE.test(code) ? ` (${code})` : ""}`)
 	}
 }
+
+/**
+ * The JSON-RPC envelope of a `postNodeRpc` response from `url`. Throws `${method}: HTTP <status>` on
+ * a non-OK status, and a fixed `${method}: unreadable RPC response` when the body is unreadable or is
+ * not a JSON object: the runtime's read error is dropped because Bun's carries the URL. A JSON-RPC
+ * `error` throws with its message, every occurrence of `url` and of its last path segment (a dRPC
+ * key) replaced, since a server may echo either. Returns the envelope without checking `result`.
+ */
+export async function readNodeRpcBody<T>(res: Response, method: string, url: string): Promise<{ jsonrpc?: unknown; result?: T }> {
+	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
+	let body: unknown
+	try {
+		body = await res.json()
+	} catch {
+		throw new Error(`${method}: unreadable RPC response`)
+	}
+	if (typeof body !== "object" || body === null) throw new Error(`${method}: unreadable RPC response`)
+	const { error } = body as { error?: { message?: unknown } }
+	if (error) {
+		const key = url.slice(url.lastIndexOf("/") + 1)
+		let message = String(error.message).replaceAll(url, "<node-url>")
+		if (key) message = message.replaceAll(key, "<key>")
+		throw new Error(`${method}: RPC error — ${message}`)
+	}
+	return body as { jsonrpc?: unknown; result?: T }
+}

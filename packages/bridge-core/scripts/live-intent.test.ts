@@ -48,22 +48,29 @@ describe("a failing node call", () => {
 	const url = requireDrpcNodeUrl("testnet", { DRPC_API_KEY: sentinel })
 	afterEach(() => vi.unstubAllGlobals())
 
+	const failures: Record<string, () => Promise<Response>> = {
+		"a rejected fetch": () =>
+			Promise.reject(Object.assign(new TypeError(`fetch failed: ${url}`), { code: "ConnectionRefused", path: url })),
+		"an HTTP error": async () => new Response("", { status: 503 }),
+		"a JSON-RPC error": async () => Response.json({ jsonrpc: "2.0", id: 1, error: { message: "upstream unavailable" } }),
+		"a JSON-RPC error echoing the URL and the key": async () =>
+			Response.json({ jsonrpc: "2.0", id: 1, error: { message: `no route for ${url} (key ${sentinel})` } }),
+		"a body read that rejects": async () =>
+			new Response(
+				new ReadableStream({ start: (c) => c.error(Object.assign(new TypeError(`body read failed: ${url}`), { path: url })) }),
+			),
+	}
+
 	// `inspect` renders what a crash prints: message, stack, own properties and cause. Booleans only,
 	// so a failure never prints the key either.
-	it("never puts the node URL, and so its key, in the error", async () => {
-		const failures: Array<() => Promise<Response>> = [
-			() => Promise.reject(Object.assign(new TypeError(`fetch failed: ${url}`), { code: "ConnectionRefused", path: url })),
-			async () => new Response("", { status: 503 }),
-			async () => Response.json({ jsonrpc: "2.0", id: 1, error: { message: "upstream unavailable" } }),
-		]
-		for (const failure of failures) {
-			vi.stubGlobal("fetch", vi.fn(failure))
-			const err = await authenticatedNode(url).then(
-				() => undefined,
-				(e: unknown) => e,
-			)
-			expect(err instanceof Error).toBe(true)
-			expect(inspect(err).includes(sentinel)).toBe(false)
-		}
+	it.each(Object.entries(failures))("never puts the node URL or its key in the error: %s", async (_, failure) => {
+		vi.stubGlobal("fetch", vi.fn(failure))
+		const err = await authenticatedNode(url).then(
+			() => undefined,
+			(e: unknown) => e,
+		)
+		expect(err instanceof Error).toBe(true)
+		const printed = inspect(err)
+		expect(printed.includes(url) || printed.includes(sentinel)).toBe(false)
 	})
 })

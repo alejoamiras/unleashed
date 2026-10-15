@@ -38,7 +38,7 @@ import { FACTORY_CONSTANTS_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI } from "./
 import { deriveHubInstance } from "./script-l2"
 import { verifyL1Manifest } from "./verify-l1"
 import { walletChainIdOf } from "../src/wallet-chain-id"
-import { postNodeRpc, requireDrpcNodeUrl } from "../src/drpc-node"
+import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
 
 /**
  * The only L1 signers authorized to broadcast, one per network — keys never cross networks. Pinned
@@ -94,11 +94,7 @@ function castBin(): string {
 
 /** Errors name the method, never the URL: the keyed dRPC URL carries the key. */
 async function rpc<T>(url: string, method: string, params: unknown[]): Promise<T> {
-	const res = await postNodeRpc(url, method, params)
-	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
-	const body = (await res.json()) as { result?: T; error?: { message: string } }
-	if (body.error) throw new Error(`${method}: ${body.error.message}`)
-	return body.result as T
+	return (await readNodeRpcBody<T>(await postNodeRpc(url, method, params), method, url)).result as T
 }
 
 const sha256 = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex")

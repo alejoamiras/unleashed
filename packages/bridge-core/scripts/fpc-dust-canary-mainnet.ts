@@ -22,7 +22,7 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas } from "@aztec-labs/stdlib/gas"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { privateKeyToAccount } from "viem/accounts"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
 import { predictedWorstMinFees } from "../src/fee-juice"
 import { FeeJuicePortalAbi, feeJuiceDepositArgs, parseFeeJuiceDeposit, planPrivateFuelDeposit } from "../src/fuel"
 import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, privateMintAndPayFee } from "../src/private-fuel"
@@ -59,12 +59,14 @@ const ERC20_MIN = [
 const mainnet = mainnetChain(ETH_RPC)
 
 async function nodeL1(nodeUrl: string): Promise<{ portal: `0x${string}`; asset: `0x${string}` }> {
-	const res = await fetch(nodeUrl, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "node_getNodeInfo", params: [] }),
-	})
-	const a = (await res.json()).result.l1ContractAddresses as Record<string, { value?: string } | string>
+	const res = await postNodeRpc(nodeUrl, "node_getNodeInfo", [])
+	const body = await readNodeRpcBody<{ l1ContractAddresses: Record<string, { value?: string } | string> }>(
+		res,
+		"node_getNodeInfo",
+		nodeUrl,
+	)
+	if (!body.result) throw new Error("node_getNodeInfo: malformed RPC response (no result)")
+	const a = body.result.l1ContractAddresses
 	const pick = (v: unknown) => (typeof v === "object" && v ? (v as { value: string }).value : (v as string)) as `0x${string}`
 	return { portal: pick(a.feeJuicePortalAddress), asset: pick(a.feeJuiceAddress) }
 }
