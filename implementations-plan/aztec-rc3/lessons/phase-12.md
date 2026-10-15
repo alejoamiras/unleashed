@@ -1,0 +1,28 @@
+# Phase 12 — canaries and the final verify
+
+## The first canary run (`rc3-canaries-10a3d237`, testnet-l1)
+
+Strict `verify:l1` passed with the four runtime code hashes. `verify:deployments` matched the faucet record, the
+hub and all four tokens, and the FPC gate was green. The public fuel claim settled: claim fee
+1656099014975800000, FJ gained 41.10. Then the private send's `bridgeWithFuel` reverted
+(`0xbc3a3408…d472`).
+
+Root cause, from two public Sepolia RPCs: an out-of-gas revert. The transaction used its whole 1,058,108 limit
+and emitted no logs. The same calldata estimates 1,058,108 at the end of block 11922865 and 1,180,262 at the end
+of 11922866, where it was mined. With 1,058,108 gas it succeeds at the first and fails at the second. In 11922865
+the run's own public send moved the Inbox (`0xb3B9…b209`) from 80 to 82 messages and from tree 67 to 68. The
+first message of a window pays for a fresh tree, so the private send was estimated just after one had been paid
+for and was mined in the next window. No other swap or Inbox message touched those blocks. viem sends a local
+account's bare estimate. Nothing moved: no token pull, no swap, no deposit; only about 0.000001 ETH of gas.
+
+That run also measured the first plain public claim of this generation, 1.656 FJ, above the calibrated
+`fjPerTx` of 1.365 FJ. The owner chose to fix both inside this arc (D21, D22):
+
+- `runSend` estimates the exact call and sends that limit plus 25 %.
+- The two queued Codex findings were applied: the stricter FPC absence check and the smoke label.
+- The candidate was recalibrated with the public sample added (9 samples): `fjPerTx=1987318817970960000`,
+  `fjRegister=1577053752328560000`. Only those two fields differ from the live manifest; the candidate sha256 is
+  `6685544cf56460017f1738dbbe6768bf079b83eb0fa438d140abdbe359783a24`. A source change since the first intent
+  means a second intent, under `lessons/recalibration/`, whose receipt sits beside it.
+
+The canary retry filed before this (`rc3-canaries-retry-5688193a`) went void with the first fix commit.
