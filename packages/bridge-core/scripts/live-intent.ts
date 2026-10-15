@@ -168,6 +168,7 @@ const OPERATIONAL_ALLOWLIST = [
 	"implementations-plan/archive/tools-two-network/lessons/",
 	"implementations-plan/archive/any-erc20-bridge/lessons/",
 	"implementations-plan/archive/protocol-labels/lessons/",
+	"implementations-plan/aztec-rc3/lessons/",
 	"apps/tools/public/testnet-bridge.journal.jsonl",
 ]
 
@@ -186,7 +187,7 @@ function isNotAllowlisted(line: string): boolean {
 /** The committed intent every build pins the live identity against. A NETWORK RESET is the one
  *  event this pin is built to refuse, so a reset arc's first committed step is re-pointing it at
  *  the arc that recorded the new identity — never loosening the check. */
-const NO_RESET_BASELINE = "implementations-plan/archive/aztec-v6/lessons/intent.json"
+const NO_RESET_BASELINE = "implementations-plan/aztec-rc3/lessons/reset-baseline.json"
 
 /** Network-identity pinning against the COMMITTED baseline intent: no network reset has
  *  happened since the baseline recorded this network's identity, so every node-claimed L1
@@ -744,9 +745,9 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 	}
 	await verify(intentPath, paths.bridgeCandidate)
 
-	// Promotion enables the app's fuel path, which hard-uses PRIVATE_FPC_ADDRESS — an undeployed or
-	// upgraded-out FPC at that address must abort the promotion.
-	run("bun", [join(here, "check-fpc-version.ts"), "--mode", "require-deployed"], { stdio: "inherit" })
+	// Promotion enables the app's fuel path, which hard-uses PRIVATE_FPC_ADDRESS — a drifted
+	// derivation, or another or upgraded-out class published at that address, must abort it.
+	run("bun", [join(here, "check-fpc-version.ts")], { stdio: "inherit" })
 
 	assertPromotablePaths(paths, bridgeOnly)
 	const bytes = readPromotionBytes(paths, bridgeOnly, intent.candidateSha256)

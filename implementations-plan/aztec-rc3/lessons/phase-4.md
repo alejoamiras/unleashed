@@ -37,3 +37,14 @@ The aztec.js node clients still receive the keyed URL and may print it on a fail
 
 - A commit, or any change to the working tree, voids a pending keyed request: env-exec pins HEAD, requires a clean tree, and requires HEAD to be the tip of a pushed branch. Review fixes made while a request waits belong in another worktree, fast-forwarded in afterwards.
 - Resuming a worktree-isolated subagent with SendMessage moved this session's own worktree isolation onto that agent's worktree until the agent stopped. Spawn a fresh agent instead of resuming an isolated one.
+
+## Keyed probe (step 4)
+
+`testnet-rpc` run through `requireDrpcNodeUrl`, on PR A's head: http 200, nodeVersion `6.0.0-rc.3`, l1ChainId
+`11155111`, rollupVersion `3409706519`. The keyed node and the keyless one report the same `nodeVersion`, which is
+what Phase 8's compatibility entry pins.
+
+Two earlier attempts failed. The first returned dRPC 404, not 401/403: the 1Password field held a URL, so the
+composed URL had the wrong path. The owner's first fix still left a `/` in it, and the new key-shape refusal
+stopped that run before any request. A 404 from a keyed dRPC URL points at the field's shape; a 401/403 points at
+the IP restriction.

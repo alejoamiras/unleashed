@@ -5,7 +5,7 @@
 import type { ManifestV2 } from "../../src/manifest-v2"
 import { PRIVATE_HUB_EXIT_GAS } from "../../src/private-fuel"
 import { calibrateFuelBudgets } from "../calibration"
-import { buildContext, type Samples, type SmokeContext, tokenBlockOf } from "./context"
+import { assertPrivateFpcUnpublished, buildContext, type Samples, type SmokeContext, tokenBlockOf } from "./context"
 import {
 	flowConcurrentFirstClaims,
 	flowGasOnly,
@@ -140,6 +140,7 @@ export async function runSmoke(clients: SandboxClients, manifest: ManifestV2, ac
 	await step("(i) gas only, WETH single hop", () => flowGasOnlyWethSingleHop(s))
 	await step("(i) gas only, WETH single hop, private", () => flowGasOnlyWethSingleHop(s, true))
 	await step("(i) outbox: not consumed at proposal, consumed after finalization", () => flowOutboxRoundTrip(s, usdc, usdcL2))
+	await step("(j) the PrivateFPC remains unpublished after all flows", () => assertPrivateFpcUnpublished(s.l2))
 	const notes = [fuelBudgetNote(s.samples), ...exitGasNotes(s.samples)]
 	for (const n of notes) console.log(n)
 	return { results, samples: s.samples, notes }

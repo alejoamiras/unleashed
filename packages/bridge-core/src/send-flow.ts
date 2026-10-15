@@ -24,6 +24,14 @@ import { fromWord } from "./register-hash"
 
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address
+/** The Aztec Inbox charges the first message of each window for a fresh tree (about 120k gas), so an
+ *  estimate taken just after another message can be mined one window later and run out of gas. */
+const L1_GAS_HEADROOM_PERCENT = 125n
+
+/** The gas limit a send is given: the node's estimate plus the headroom above. */
+function sendGasLimit(estimate: bigint): bigint {
+	return (estimate * L1_GAS_HEADROOM_PERCENT + 99n) / 100n
+}
 
 export type SendStage = "signing" | "sending" | "confirming" | "done"
 
@@ -287,14 +295,9 @@ export async function runSend(
 					},
 					permit,
 				]
-	const txHash = await l1.wallet.writeContract({
-		address: g.router,
-		abi: g.routerAbi,
-		functionName: entry,
-		args,
-		account: l1.account,
-		chain: l1.wallet.chain,
-	} as never)
+	const call = { address: g.router, abi: g.routerAbi, functionName: entry, args, account: l1.account }
+	const estimate = await l1.pub.estimateContractGas(call as never)
+	const txHash = await l1.wallet.writeContract({ ...call, chain: l1.wallet.chain, gas: sendGasLimit(estimate) } as never)
 	recovery?.onSent?.(txHash)
 
 	onStage?.("confirming")

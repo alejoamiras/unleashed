@@ -386,7 +386,7 @@ expected-red test is named by file in that phase's lessons before the phase star
 
 ### Arc 1 — the key split (PR A, branch `worktree-aztec-rc3`)
 
-#### Phase 1: Scripts take the node from the keyed run only
+#### Phase 1: Scripts take the node from the keyed run only ✓
 
 1. Commit this plan folder (`plan.md`, `recon.md`, `lessons/`) and `implementations-plan/index.md`.
 2. Add `requireDrpcNodeUrl` (§ Key interfaces), with a unit test: unset, empty and a key with `/` or `?` throw,
@@ -412,7 +412,7 @@ expected-red test is named by file in that phase's lessons before the phase star
 - Pass criteria: the fast layers and `test:ci-gating` exit 0. The search prints nothing and exits 1.
 - Layers: typecheck/lint, unit.
 
-#### Phase 2: The keyless browser endpoint, and the guard
+#### Phase 2: The keyless browser endpoint, and the guard ✓
 
 1. Set the testnet node in `network-targets.ts` to `https://aztec-testnet.drpc.org`. Set mainnet `nodeUrl` to `""`,
    with a one-line reason. Correct the CSP comment.
@@ -427,7 +427,7 @@ expected-red test is named by file in that phase's lessons before the phase star
 - Pass criteria: every command exits 0. The key guard counts zero keys.
 - Layers: typecheck/lint, unit, build.
 
-#### Phase 3: Docs for the split
+#### Phase 3: Docs for the split ✓
 
 1. `AGENTS.md` § Security and `SECURITY.md`: the browser uses dRPC's keyless public endpoint, and no key is ever
    committed (`node-keys.test.ts`). Scripts use the owner's shared CLI key (`DRPC_API_KEY`), IP-restricted, which
@@ -441,7 +441,7 @@ expected-red test is named by file in that phase's lessons before the phase star
 - Pass criteria: both exit 0.
 - Layers: lint, unit.
 
-#### Phase 4: Arc 1 quality loop, the script key, PR A
+#### Phase 4: Arc 1 quality loop, the script key, PR A ✓
 
 > **Warning:** request no keyed run before the owner confirms the `Keyed-Runs/dRPC-CLI` item exists.
 
@@ -475,9 +475,8 @@ expected-red test is named by file in that phase's lessons before the phase star
 
 #### Phase 5: Preconditions
 
-1. Create `aztec-rc3-line` from arc 1's tip, once arc 1's loop converges, and cherry-pick stream L's commits
-   (§ Delivery). The rebase fork is later `git merge-base aztec-rc3-line worktree-aztec-rc3` (the local arc 1
-   branch), so no commit id is written down.
+1. Create `aztec-rc3-line` from `origin/main` once PR A has merged, and cherry-pick the streams' commits
+   (§ Delivery). PR A merged before arc 2's branch existed, so Phase 10 needs no rebase.
 2. Run `aztec-up install 6.0.0-rc.3`. Check that `~/.aztec/versions/6.0.0-rc.3` is complete. Keep the log.
 3. Copy or `forge install --no-git` the gitignored `contracts/bridge/evm/{lib,out}`. Never copy `cache/`: forge's
    broadcast cache holds the keyed `SEPOLIA_RPC_URL`. Delete `contracts/bridge/evm/lib/v4-core/.env`.
@@ -596,8 +595,7 @@ expected-red test is named by file in that phase's lessons before the phase star
 
 #### Phase 10: Rebase, then the arc 2 quality loop (before any key)
 
-1. Wait for PR A to merge. Fetch `origin/main`, and rebase `aztec-rc3-line` onto it from the fork
-   (§ Delivery). Check that Phase 8's FPC compatibility `nodeVersion` equals Phase 4's keyed probe. Re-run the
+1. If `main` moved after arc 2's branch was cut, rebase `aztec-rc3-line` onto `origin/main` before the loop. Check that Phase 8's FPC compatibility `nodeVersion` equals Phase 4's keyed probe. Re-run the
    Phase 9 gate.
 2. Run the quality loop over arc 2's diff (§ Post-implementation, step 1), focused on the deploy path.
 3. Commit every fix. Check `git status --porcelain` is empty.
@@ -711,6 +709,8 @@ Sources: **M** the lead's draft, **C** Codex's draft (`gpt-6.1-sol`), **F** the 
 | D19 | Independent work runs in parallel streams with disjoint files (§ Delivery) | owner (approval) | Run the phases in sequence: slower, and the owner asked for speed |
 | D20 | Scripts compose the node URL from the owner's shared CLI key, `op://Keyed-Runs/dRPC-CLI/DRPC_API_KEY`, in one helper | coordinator, for the owner | A per-project URL field (`AZTEC_NODE_URL` in `Unleashed-Testnet`): per-project caps and attribution, but one key to mint, restrict and rotate per project. Accepted costs: every project shares one CU cap and one blast radius, and use cannot be attributed per project. The IP restriction is the real control, because a TCP source IP cannot be spoofed the way an Origin header can. Rotation is one field edit |
 | D18 | `minFuelFj` keeps the carried floor this arc; the measured private ceiling becomes a follow-up | contradiction-check | Set it inside the window: a source edit there is drift, and a hand edit of the candidate is forbidden |
+| D21 | `runSend` sends an explicit L1 gas limit, the estimate plus 25 %, in PR B | owner, after the first canary run | A follow-up: the scripts and any wallet without headroom keep reverting on Inbox window turns |
+| D22 | Recalibrate inside this arc with run 7's plain public claim, through a second intent and promotion | owner, after the first canary run | Carry the low `fjPerTx` to the next generation: the review screen understates a public claim's fee by about 18 % |
 
 Still disputed after consolidation: none.
 
@@ -777,6 +777,14 @@ Its six conditions are all adopted:
 
 Resumed on the revised plan, the same session returned **`VERDICT: approve`, high confidence**: all six conditions
 met, no new contradiction or broken command, no window edit outside the allowlist.
+
+**Live-window findings.** Both came out of the first canary run, after promotion. Neither touches a deployed
+contract.
+
+| Finding | Disposition |
+|---|---|
+| The private canary's `bridgeWithFuel` ran out of gas: limit 1,058,108, all of it used. The same calldata needs 1,058,108 at the end of the block before and 1,180,262 at the end of its own. The Aztec Inbox charges the first message of each window for a fresh tree, and the estimate came right after the run's own public send had paid for one. viem sends a local account's bare estimate | D21: `runSend` adds 25 % headroom, on the scripts' path and on the app's wallet path |
+| `fjPerTx` 1.365 FJ under-quotes a plain public claim, which run 7 measured at 1.656 FJ. Run 4's matrix sampled no plain public claim: EURC's public claim was its first, registering one | D22: recalibrated with that sample; a second intent and promotion |
 
 ## Post-implementation
 
@@ -858,20 +866,18 @@ future reader, human or LLM, pays to re-read: they must be few, dense, and exact
   |---|---|---|---|
   | P, the key split | this worktree, `worktree-aztec-rc3` | 1–3 | arc 1's rows of the change map |
   | L, the rc.3 line | its own agent worktree and branch | 5 (toolchain), 6, 7 | arc 2's Pins, Line guards, Noir, and Class ids rows. Not `AGENTS.md` or `SECURITY.md` |
-  | F, FPC and identity | this worktree, `aztec-rc3-line` | 8, 9 steps 1–4 | arc 2's PrivateFPC and Identity rows, `contracts/bridge/evm/**` |
-  | D, arc 2 docs | this worktree, `aztec-rc3-line` | 6 step 3's wording, 8 step 5, 13 step 1 | arc 2's Docs row, and the exemption text in `AGENTS.md` and `SECURITY.md` |
-  | S, the rehearsal | this worktree, `aztec-rc3-line` | 9 steps 5–6 | the faucet record; nothing else |
+  | F, FPC and identity, then the rehearsal | its own agent worktree, cherry-picked here | 8, 9 steps 1–4 | arc 2's PrivateFPC and Identity rows, `contracts/bridge/evm/**` |
+  | D, arc 2 docs | its own agent worktree, cherry-picked here | 6 step 3's wording, 8 step 5, 13 step 1 | arc 2's Docs row, and the exemption text in `AGENTS.md` and `SECURITY.md` |
 
   - P and L start at once. L never edits a file in arc 1's rows; a type break it finds in one is reported, and
     fixed after the cherry-pick.
-  - When PR A's loop converges, the lead creates `aztec-rc3-line` from PR A's tip in this worktree and
-    cherry-picks L's commits. F and D then run together, and S runs after both.
+  - Each stream branches from PR A's tip plus L's commits, so the streams never wait on each other. The lead
+    cuts `aztec-rc3-line` from `main` after PR A merges and cherry-picks L, D and F in that order. Stream F runs
+    the rehearsal (Phase 9 steps 5–6) after its own code, because the rehearsal needs it.
   - Streams sharing this worktree run only their own package's tests. The lead runs each phase's full gate once
     the streams it covers have committed.
-- At Phase 10, after PR A merges, arc 2 rebases:
-  `git fetch origin main`, then `git rebase --onto origin/main <fork> aztec-rc3-line`, where `<fork>` is
-  `git merge-base aztec-rc3-line worktree-aztec-rc3`. Then `git push --force-with-lease` to this branch
-  only. Never rebase inside the live window (D11). If PR A cannot merge, the deploy waits.
+- If `main` moves before Phase 10, arc 2 rebases: `git fetch origin main`, then `git rebase origin/main`, then
+  `git push --force-with-lease` to this branch only. Never rebase inside the live window (D11).
 - The close-out is PR B's final commits, not a third PR (D1).
 - Each PR opens with `gh pr create` only after its quality loop converges. Add the `e2e:tools` label after it opens,
   never at creation. Check `mergeable` if no CI appears.

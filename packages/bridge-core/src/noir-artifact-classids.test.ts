@@ -8,14 +8,9 @@ import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifac
 import { describe, expect, it } from "vitest"
 
 /**
- * Supply-chain tripwire: the committed bridge Noir artifacts are NOT reproducibly bound to
- * source — CI has no nargo, Nargo.toml pins mutable git tags, and the multi-MiB JSONs merely
- * self-report `aztec_version`. A stale or hand-edited-yet-valid artifact would otherwise survive
- * CI and become the runtime + deploy input. This pins each artifact's DERIVED class id (bytecode +
- * ABI, the on-chain identity) AND its sha256 to the values recorded when they were compiled from
- * the pinned 6.0.0-rc.1 toolchain + AztecProtocol/aztec-standards@v6.0.0-rc.1. ANY drift in the committed
- * bytes trips this before a live deploy consumes them. Regenerate ONLY via `contracts/bridge/aztec/scripts/
- * compile.sh` on the pinned toolchain, then update the pins here consciously.
+ * Supply-chain tripwire: each committed bridge artifact must derive its pinned class id (bytecode + ABI, the
+ * on-chain identity) and self-report the pinned toolchain. Re-pin only after `contracts/bridge/aztec/scripts/compile.sh`
+ * rebuilds it on that toolchain; CI's `compile.sh --check` proves source parity.
  */
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -27,11 +22,11 @@ const PINS = [
 		// `contracts/bridge/aztec/scripts/compile.sh --check` (a rebuild must derive this id).
 		name: "TokenBridgeHub",
 		path: join(CONTRACTS, "token_bridge_hub", "target", "token_bridge_hub_contract-TokenBridgeHub.json"),
-		classId: "0x0acfdc7d692f9f1777ab75090b00b1df2e724c3a2df281ef077829c58776a58c",
+		classId: "0x198c190c4eb3f1522cad4802d001d444724358732dc01710203657f9aeafd124",
 	},
 ] as const
 
-describe("committed bridge Noir artifacts — class-id + digest tripwire (6.0.0-rc.1)", () => {
+describe("committed bridge Noir artifacts — class-id tripwire (6.0.0-rc.3)", () => {
 	for (const pin of PINS) {
 		it(`${pin.name} derives its pinned class id`, async () => {
 			const artifact = loadContractArtifact(JSON.parse(readFileSync(pin.path, "utf8")))
@@ -40,10 +35,10 @@ describe("committed bridge Noir artifacts — class-id + digest tripwire (6.0.0-
 		})
 	}
 
-	it("every artifact self-reports aztec_version 6.0.0-rc.1", () => {
+	it("every artifact self-reports aztec_version 6.0.0-rc.3", () => {
 		for (const pin of PINS) {
 			const raw = JSON.parse(readFileSync(pin.path, "utf8")) as { aztecVersion?: string; aztec_version?: string }
-			expect(raw.aztecVersion ?? raw.aztec_version).toBe("6.0.0-rc.1")
+			expect(raw.aztecVersion ?? raw.aztec_version).toBe("6.0.0-rc.3")
 		}
 	})
 })
@@ -56,13 +51,13 @@ describe("committed bridge Noir artifacts — class-id + digest tripwire (6.0.0-
  * of the runtime-loaded Token + Dripper artifacts binds their on-chain IDENTITY — the
  * wallet, tools, and bridge all register instances from these exact bytes.
  */
-describe("installed aztec-standards Token/Dripper — class-id tripwire (6.0.0-rc.1)", () => {
+describe("installed aztec-standards Token/Dripper — class-id tripwire (6.0.0-rc.3)", () => {
 	const STANDARDS = [
-		{ name: "Token", artifact: TokenContractArtifact, classId: "0x24c34002788720c941a327a20c369b12c8bdcff3b5a974673a8f618763471505" },
+		{ name: "Token", artifact: TokenContractArtifact, classId: "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a" },
 		{
 			name: "Dripper",
 			artifact: DripperContractArtifact,
-			classId: "0x1febf8925ddf9c9bf7f92eb14d391f78651d745c06e700d79b3e09d70a57c5f9",
+			classId: "0x0f4534726aabce58c1e4089bcf50215c60cd2e2a598e47a2e1d549f9897f53f1",
 		},
 	] as const
 	for (const std of STANDARDS) {

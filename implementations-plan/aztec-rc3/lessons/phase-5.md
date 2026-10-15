@@ -30,3 +30,15 @@ addresses are derived from the rc.3 artifacts.
 On `main`, `bun audit` exits 1: 20 package groups, 71 advisories (34 high, 30 moderate, 7 low), all transitive
 (`undici`, `ws`, `@opentelemetry/*`, and others under `@aztec-labs/*`, `jsdom` and `wrangler`). Phases 6 and 13
 pass when the bump adds no group beyond these.
+
+## F8, re-read on the rc.3 packages
+
+On the keyless node, the SponsoredFPC derived from the rc.3 artifact (`0x2adfb70e…2130`) is published with the
+artifact's class, and the rc.3 `STANDARD_AUTH_REGISTRY_ADDRESS` (`0x2ba87146…3a9c`) is published (class
+`0x2929c576…0b7e`). F8 holds.
+
+## Toolchain and forge (steps 2–3)
+
+Stream L installed `6.0.0-rc.3` with `aztec-up` (complete: 16 `bin/` and 6 `internal-bin/` entries). The install
+re-points `~/.aztec/current`, which other sessions on the host use, so it was restored to its previous target. The
+forge `lib/` and `out/` came from the canonical clone, without `cache/`, and `lib/v4-core/.env` was deleted.

@@ -33,7 +33,7 @@ repositories share exactly four facts, each with one owner:
 | Fact | Owner | Mirror | How it moves |
 |---|---|---|---|
 | Bridged-token L2 addresses | here: `apps/tools/public/*-bridge.json`, `tokens[].l2Token` | the wallet's default tokens and price map | The wallet mirrors a promoted generation by hand, as its own UI decision. It mirrors nothing today. |
-| PrivateFPC salt and canonical address | here: [`packages/bridge-core/src/private-fpc-canonical.json`](packages/bridge-core/src/private-fpc-canonical.json) | the wallet's `protocol-fpcs.ts`, pinned by its own test | A re-pin here is announced to the wallet's repository; on a reset network the wallet's private fee path waits for this repository's FPC deploy. |
+| PrivateFPC salt and canonical address | here: [`packages/bridge-core/src/private-fpc-canonical.json`](packages/bridge-core/src/private-fpc-canonical.json) | the wallet's `protocol-fpcs.ts`, pinned by its own test | A re-pin here is announced to the wallet's repository. Neither repository deploys the testnet FPC: the app and the wallet each register the instance locally, so on a reset network the wallet's private fee path waits for no deploy. |
 | The Aztec line (`@aztec-labs/*`, `@aztec-foundation/*`) | the wallet's repository, which publishes the shared packages | the exact pins here | The wallet publishes new versions of the three packages on the new line first; [`scripts/ci-cd/published-packages.test.ts`](scripts/ci-cd/published-packages.test.ts) holds every peer to this repository's pin, so a bump here cannot land before they exist. |
 | Chain identity (chainId, rollup version) | each repository, independently | none | [`apps/tools/src/lib/chain-constants.ts`](apps/tools/src/lib/chain-constants.ts) here; the wallet keeps its own copy. |
 
@@ -108,8 +108,9 @@ approval is not a sign-off.
   temporary `minimumReleaseAgeExcludes` entry that leaves in the same PR; prove it with
   `bun install --frozen-lockfile --force`. Until the version is 7 days old, a `package.json` edit in
   a workspace that reaches it re-gates it and fails the install: wait, or add the exclude locally and
-  do not commit it. The Nulo wallet's three `@nulo-sh/*` packages are a standing exemption (the
-  owner's decision); no other name is. Details: [`SECURITY.md`](SECURITY.md).
+  do not commit it. The Nulo wallet's three `@nulo-sh/*` packages and
+  `@alejoamiras/private-fee-juice` are standing exemptions, each the owner's decision; no other name
+  becomes one without the owner's decision. Details: [`SECURITY.md`](SECURITY.md).
 - **The Aztec line (`@aztec-labs/*`, `@aztec-foundation/*`) is exact-pinned and bumped by hand**, after the wallet's repository has published the
   shared packages on the new line. [`UPDATE.md`](UPDATE.md) lists what a bump touches; a bump that
   resets the network is a new bridge generation ([`bridge-generation`](.claude/skills/bridge-generation/SKILL.md)).

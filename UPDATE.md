@@ -12,12 +12,26 @@ the bump is also a new bridge generation, and how to deploy one, is the
 > wallet-sdk capability) adds an entry to § Couplings below, with its file, so the next bump has a
 > checklist.
 
-Current line: **`6.0.0-rc.1`**, one version for everything: the JS packages, the Noir contract
-source (the `Nargo.toml` tags, `contracts/bridge/aztec/scripts/compile.sh`, the committed
-`target/*.json`), `@aztec-foundation/aztec-standards` and `@alejoamiras/private-fee-juice`.
-[`scripts/ci-cd/aztec-line.test.ts`](scripts/ci-cd/aztec-line.test.ts) fails on any resolved
-`@aztec/*` other than `@aztec/viem` and on any `@aztec-labs/*` or `@aztec-foundation/*` off the pin. The
-hub's class ids depend on these inputs, so they move only with a new generation.
+Current line: **`6.0.0-rc.3`**. Labs and foundation publish it under two different version numbers,
+and the standards package keeps a pin of its own:
+
+- **`@aztec-labs/*` at `6.0.0-rc.3`**, the `@aztec-labs/aztec.js` pin. The rest of the line follows
+  this number: `@alejoamiras/private-fee-juice`, the Noir contract source (the aztec-nr tags in
+  every `Nargo.toml`, `contracts/bridge/aztec/scripts/compile.sh`, the committed `target/*.json`)
+  and the toolchain at `~/.aztec/versions/6.0.0-rc.3`. The Nulo wallet's packages sit at `0.2.0`,
+  whose Aztec peers are exact labs `6.0.0-rc.3` pins.
+- **`@aztec-foundation/*` at `6.0.0-rc.6`** (`bb.js`, `l1-artifacts`, `noir-acvm_js`,
+  `noir-noirc_abi`): the version the locked `@aztec-labs/aztec.js` requires. Foundation numbers its
+  releases on its own; it published no rc.3.
+- **`@aztec-foundation/aztec-standards` at `6.0.0-rc.3`**, its own pin. It follows the tags of
+  `AztecProtocol/aztec-standards`, which the hub's Noir `token` dep names too.
+
+[`scripts/ci-cd/aztec-line.test.ts`](scripts/ci-cd/aztec-line.test.ts) holds each scope to its own
+version, and writes none: labs at the aztec.js pin, foundation at the version labs' lock entry
+requires for `@aztec-foundation/l1-artifacts`, `aztec-standards` at its declared pin, and every
+root `patchedDependencies` key at the foundation version. It also fails on any resolved `@aztec/*`
+other than `@aztec/viem`, in the root lockfile and in the TXE server's. The hub's class ids depend
+on these inputs, so they move only with a new generation.
 
 ## Before you bump
 
@@ -33,24 +47,26 @@ hub's class ids depend on these inputs, so they move only with a new generation.
 ## The pin surface
 
 - `@aztec-labs/*` and `@aztec-foundation/*` exact pins in `apps/tools/package.json`,
-  `packages/bridge-core/package.json` and `contracts/bridge/aztec/txe-server/package.json`, all on one
-  version. `@aztec/viem` is versioned independently; leave it.
+  `packages/bridge-core/package.json` and `contracts/bridge/aztec/txe-server/package.json`, each scope
+  at its own version (above). `@aztec/viem` is versioned independently; leave it.
 - The three packages the Nulo wallet's repository publishes, at the versions published for the new line.
 - The Noir wasm patches: `patches/@aztec-foundation%2Fnoir-{acvm_js,noirc_abi}@<v>.patch` and the
-  `patchedDependencies` keys in the root `package.json`. The file names pin the version, so a bump
-  regenerates them or they silently stop applying.
+  `patchedDependencies` keys in the root `package.json`. The file names and the keys name the
+  foundation version, not the labs one. A bump regenerates them, or they silently stop applying;
+  `aztec-line.test.ts` fails on a key off the foundation version.
 - `bunfig.toml` `minimumReleaseAgeExcludes`: fresh publishes are blocked by the release-age gate,
   transitives included. Add every new-line name from `bun.lock` while `bun install` resolves the new
-  line, then delete them again in the same PR and prove the lockfile with
-  `bun install --frozen-lockfile --force`. For the following 7 days a `package.json` edit in a
-  workspace that reaches the new line re-gates it: land the bump's dependency changes in the bump
-  PR, and re-add the excludes locally, uncommitted, for a stray later edit.
+  line, then delete them again in the same PR (the standing exemptions stay) and prove the
+  lockfile with `bun install --frozen-lockfile --force`. For the following 7 days a `package.json`
+  edit in a workspace that reaches the new line re-gates it: land the bump's dependency changes in
+  the bump PR, and re-add the excludes locally, uncommitted, for a stray later edit.
 - `bun install` after editing the pins: targeted re-resolution is the default, and deleting
   `bun.lock` is a last resort (a full regeneration re-gates every locked version). Old-line entries
   left in `bun.lock` are a missed pin; `aztec-line.test.ts` names them.
-- CI resolves two toolchains separately: `.github/actions/setup-aztec` installs the JS line read from
-  `apps/tools/package.json`, and `_bridge-contracts.yml` installs the Noir toolchain from the crates'
-  `Nargo.toml` tag. Moving the JS line never touches the Noir pin, and the other way round.
+- CI resolves two toolchains separately: `.github/actions/setup-aztec` installs the toolchain at the
+  `@aztec-labs/aztec.js` pin read from `apps/tools/package.json`, and `_bridge-contracts.yml`
+  installs the Noir toolchain from the crates' `Nargo.toml` tag. Moving the JS line never touches the
+  Noir pin, and the other way round.
 - The Noir surface (compile script, the one-tag rule, the hub's `token` dep, `target/*.json`, the
   TXE server's lockfile) is in the skill's Phase 1.
 
@@ -76,16 +92,29 @@ hub's class ids depend on these inputs, so they move only with a new generation.
   boots `aztec start --local-network` from `~/.aztec/versions/<@aztec-labs/aztec.js pin>` (read from
   `packages/bridge-core/package.json`; it refuses a partial toolchain), while `compile.sh`,
   `nargo.sh` and `run-txe-tests.sh` default `AZTEC_HOME` to a literal version. Move both together.
-- **Canonical PrivateFPC**: `packages/bridge-core/src/private-fuel.ts` (`PRIVATE_FPC_ADDRESS`,
-  `PRIVATE_FPC_SALT = 0x…01`), `private-fpc-canonical.json` (artifact sha256, the human-curated
-  `compatibleNodeVersions` keyed by digest, the network identity pins) and
-  `scripts/check-fpc-version.ts` (`--mode predeploy|require-deployed`). A new artifact digest needs a
-  fresh compatibility entry (it fails closed), and every rebuild site uses `PRIVATE_FPC_SALT`. The
-  Nulo wallet pins the same address. `private-fuel.test.ts` holds `PRIVATE_FPC_ADDRESS` and the
-  salt equal to the installed package's `canonical-deployment.json`. Mainnet keeps its own descriptor
-  (`private-fpc-canonical-mainnet.json`, frozen at the FPC it runs) while `PRIVATE_FPC_ADDRESS` follows
-  testnet, so a network may enable a bridge only while its descriptor names that address
-  (`bridge-generation.test.ts`).
+  Both name the labs version, never the foundation one: on this line, `~/.aztec/versions/6.0.0-rc.3`
+  (`aztec-up install 6.0.0-rc.3`).
+- **Canonical PrivateFPC**: the address and the digest are pinned in
+  `packages/bridge-core/src/private-fuel.ts` (`PRIVATE_FPC_ADDRESS`, `PRIVATE_FPC_SALT = 0x…01`) and
+  `private-fpc-canonical.json` (`expectedAddress`, the artifact sha256, the human-curated
+  `compatibleNodeVersions` keyed by digest, the network identity pins). `private-fuel.test.ts`
+  re-derives the address from the installed artifact at that salt with deployer zero, and holds
+  `PRIVATE_FPC_ADDRESS` and the salt equal to the installed package's `canonical-deployment.json`.
+  A new artifact digest needs a fresh compatibility entry (it fails closed), and every rebuild site
+  uses `PRIVATE_FPC_SALT`. The Nulo wallet pins the same address.
+  - **Nothing deploys the testnet FPC.** The artifact has no initializer and no public function of
+    its own. The app and the wallet register the instance locally, and the node reads the fee
+    payer's balance by storage slot. Anyone may publish the instance, so the gate accepts either
+    state.
+  - **The gate has one behaviour.** `scripts/check-fpc-version.ts` checks the node version against
+    the digest's compatibility entry, the identity pins, the artifact digest and the descriptor's
+    coherence with the constants. At the pinned address, absence is green, and a published instance
+    must carry the expected original and current class. An RPC failure is an error, never absence.
+  - Mainnet keeps its own descriptor (`private-fpc-canonical-mainnet.json`, frozen at the FPC it
+    runs) and its scripts (`deploy-private-fpc-mainnet.ts`, `deploy-canonical-private-fpc.ts`, and
+    `fpc-dust-canary-mainnet.ts`, which keeps its own presence check). `PRIVATE_FPC_ADDRESS` follows
+    testnet, so a network may enable a bridge only while its descriptor names that address
+    (`bridge-generation.test.ts`).
 - **Fee Juice contract**: bound through `FeeJuiceContract.withWallet` from
   `@aztec-labs/aztec.js/protocol`. The scripts take it from `packages/bridge-core/scripts/fee-juice-l2.ts`,
   which asserts the bound address equals the node's `protocolContractAddresses.feeJuice`, so a wrong
