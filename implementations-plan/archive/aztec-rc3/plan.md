@@ -17,7 +17,7 @@ base: main (aecf311); the lifi-routing stack (#7–#14) lands after this plan, r
 ## Outcome
 
 - **Closed; delivered** in four PRs, squash-merged under A2: PR A (#18), the dRPC key split; PR B (#19), rc.3
-  and the generation; #20, the final pass's two code lows; and this close-out. Phases 1–13 are ✓.
+  and the generation; #20, the final pass's two code lows; and #21, this close-out. Phases 1–13 are ✓.
 - **The owner's calls.**
   - The live window opened before arc 2's Codex loop converged, with findings triaged by class (phase 11).
   - After the first canary run, relayed: *"Gas fix: add it to the rc.3 PR (PR B), not a follow-up. Fee
@@ -25,7 +25,7 @@ base: main (aecf311); the lifi-routing stack (#7–#14) lands after this plan, r
   - A6, on the recalibrated preview: *"I've just bridged from sepolia to aztec privately super good, nothing
     weird."*
   - PR B merged at its green head. The final cross-arc pass's fixes and this close-out followed it, as #20 and
-    this PR.
+    #21.
 - **Shipped: the key split (#18).** The testnet bundle talks to dRPC's keyless `https://aztec-testnet.drpc.org`
   and holds no key; mainnet's `nodeUrl` is empty. Every script composes its node URL from the owner's shared,
   IP-restricted CLI key through `requireDrpcNodeUrl`, and `node-keys.test.ts` allows no key anywhere in the tree.
@@ -50,7 +50,7 @@ base: main (aecf311); the lifi-routing stack (#7–#14) lands after this plan, r
   first message of each window for a fresh tree (D21). The FPC gate treats only a null result as absence.
   `aztec-line.test.ts` checks every declaration in every manifest, each dependency section on its own (#20).
 - **Reviews.** Arc 1's Codex loop converged in 3 rounds, arc 2's in 2, and the final cross-arc pass over PR B's
-  net diff found nothing material: of its three lows, the two in code are #20 and the runbook's is here.
+  net diff found nothing material: of its three lows, the two in code are #20 and the runbook's is in #21.
   `/code-review` was off.
 - **Dropped:** the testnet PrivateFPC deploy and the `require-deployed` gate (Q4); the rc.1 factory stays
   unpaused (A7).

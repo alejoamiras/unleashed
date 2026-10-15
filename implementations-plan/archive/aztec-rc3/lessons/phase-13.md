@@ -9,7 +9,7 @@ ceilings, and widened the `ensurePortal` entry to every Inbox writer and the lag
 
 Codex `gpt-6.1-sol`, high, fresh session, over PR B's net diff at `1d3bd11`: "No material findings at `1d3bd11` —
 moderate confidence overall; three low findings." All three were applied, after PR B merged at its green head:
-the two in code as #20, the runbook's with the close-out.
+the two in code as #20, the runbook's with the close-out, #21.
 
 1. `aztec-line.test.ts` merged the dependency sections, so an exact peer could hide a range in `dependencies`.
    Each section is now checked on its own.
