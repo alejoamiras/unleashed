@@ -20,7 +20,7 @@ import { safeSentence } from "@/lib/token-display"
  * through the fee-asset handler it names. Only a contract the generation itself lists can be trusted
  * to mint, each token's amount is capped by the per-transaction limit it was published with, and a
  * mainnet manifest lists neither, so this strip is the whole difference between the networks on this
- * step. AZTEC skips `minted`: the wizard hears it through `feeAssetMinted`, which Drip sets too.
+ * step. AZTEC reports through `feeAssetMinted`, not `minted`: Drip can mint while this strip is unmounted.
  */
 const emit = defineEmits<{ minted: [erc20: string] }>()
 

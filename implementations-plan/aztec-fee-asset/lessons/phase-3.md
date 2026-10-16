@@ -20,3 +20,5 @@ Round 1: three material findings, three minor; all six verified against the code
 - m5 cell 47: the tile only had to change. Fix: it must read exactly `formatBigInt(before + perCall, 18)`.
 - m6 comments: the strip header was trimmed; `useFeeAssetMint`'s lifetime note now says only the watch stops on unmount.
 - `awaitL1Receipt` already throws on a reverted receipt, so the composable's own `status !== "success"` check was dead and is gone. The unit mock now throws the way the real wait does.
+
+Round 2, resumed in the same session on a4b4090: "No material findings." Two minor comment notes. The strip header's AZTEC sentence now gives the real reason (Drip can mint while the strip is unmounted), and the card's comment that restated its ternary is gone. The header's older trust rationale stays: it predates this branch and states a security reason, not visible behaviour. The loop converged in two rounds.

@@ -30,7 +30,6 @@ const label = computed(() => {
 
 const loading = computed(() => feeAsset.minting.value || l1.isConnecting.value)
 
-/** Each step shows its own failure: the wallet's for connect and switch, the mint's for the mint. */
 const error = computed(() => (action.value === "mint" ? feeAsset.error.value : l1.error.value))
 
 const success = computed(() => {
