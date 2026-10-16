@@ -9,8 +9,9 @@ type PrivateFpcInstance = Awaited<ReturnType<typeof getContractInstanceFromInsta
 let cached: { instance: PrivateFpcInstance; artifact: ContractArtifact } | null = null
 
 /**
- * The universally-deployed PrivateFPC instance (canonical salt `PRIVATE_FPC_SALT`, deployer ZERO — the
- * same derivation `deploy-private-fpc-testnet.ts` pins) + its loaded artifact.
+ * The canonical PrivateFPC instance (salt `PRIVATE_FPC_SALT`, deployer ZERO — the derivation
+ * `PRIVATE_FPC_ADDRESS` pins) + its loaded artifact. Nothing publishes it on testnet; a wallet holds
+ * it only through a local registration.
  *
  * Registered at connect time (`useWalletConnection`). The wallet auto-registers the FPC when a tx
  * actually USES it as the fee payer (`fpc/service.ts`), but the no-fuel claim gate reads the private

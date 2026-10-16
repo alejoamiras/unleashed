@@ -9,12 +9,20 @@ import { tokenBridgeHubArtifact } from "../src/artifacts"
 import type { HubClaimParams } from "../src/hub-l2"
 import { deriveHubTokenInstance } from "../src/hub-token"
 import type { ManifestToken } from "../src/manifest-v2"
-import { claimTokensUntilSynced, deployAccountIfAbsent, deriveInstance, registerHub, registerHubToken } from "./script-l2"
+import { PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
+import {
+	claimTokensUntilSynced,
+	deployAccountIfAbsent,
+	deriveInstance,
+	registerHub,
+	registerHubToken,
+	registerPrivateFpc,
+} from "./script-l2"
 
 const FACTORY = "0x3333333333333333333333333333333333333333"
 const GUARDIAN = `0x${"0".repeat(61)}ab1`
-/** The installed aztec-standards@6.0.0-rc.1 Token class — the same pin as noir-artifact-classids.test.ts. */
-const TOKEN_CLASS_ID = "0x24c34002788720c941a327a20c369b12c8bdcff3b5a974673a8f618763471505"
+/** The installed aztec-standards@6.0.0-rc.3 Token class — the same pin as noir-artifact-classids.test.ts. */
+const TOKEN_CLASS_ID = "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a"
 const ERC20 = "0x00000000000000000000000000000000000e2c20"
 const HUB_SALT = `0x${"0".repeat(24)}${FACTORY.slice(2)}`
 
@@ -89,6 +97,13 @@ describe("script-l2", () => {
 		await expect(registerHubToken(guard.wallet, hub, { ...token, l2Token: `0x${"11".repeat(32)}` }, TOKEN_CLASS_ID)).rejects.toThrow(
 			/manifest token TST mismatch/,
 		)
+	})
+
+	it("registerPrivateFpc registers the instance the installed artifact derives at the pinned address", async () => {
+		const { wallet, registered } = fakeWallet()
+		const fpc = await registerPrivateFpc(wallet)
+		expect(fpc.instance.address.toString()).toBe(PRIVATE_FPC_ADDRESS)
+		expect(registered.instances).toEqual([PRIVATE_FPC_ADDRESS])
 	})
 
 	it("claimTokensUntilSynced retries only while the message is unsynced and returns the claim outcome", async () => {

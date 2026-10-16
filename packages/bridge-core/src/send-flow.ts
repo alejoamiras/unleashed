@@ -33,6 +33,13 @@ import { predictPortal } from "./portal-address"
 import { fromWord } from "./register-hash"
 
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex
+/** The Aztec Inbox charges the first message of each window for a fresh tree (about 120k gas), so an
+ *  estimate taken just after another message can be mined one window later and run out of gas. */
+const L1_GAS_HEADROOM_PERCENT = 125n
+
+function sendGasLimit(estimate: bigint): bigint {
+	return (estimate * L1_GAS_HEADROOM_PERCENT + 99n) / 100n
+}
 
 export type SendStage = "signing" | "sending" | "confirming" | "done"
 
@@ -302,14 +309,15 @@ export async function runSend(
 	const signature = await l1.wallet.signTypedData({ account: l1.account, ...typedData } as never)
 
 	onStage?.("sending")
-	const txHash = await l1.wallet.writeContract({
+	const call = {
 		address: g.router,
 		abi: DEPOSIT_ROUTER_ABI,
 		functionName: "bridgeWithPermit",
 		args: [intent, swapData, p.amount, { nonce: p.nonce, deadline: p.deadline, signature }],
 		account: l1.account,
-		chain: l1.wallet.chain,
-	} as never)
+	}
+	const estimate = await l1.pub.estimateContractGas(call as never)
+	const txHash = await l1.wallet.writeContract({ ...call, chain: l1.wallet.chain, gas: sendGasLimit(estimate) } as never)
 	recovery?.onSent?.(txHash)
 
 	onStage?.("confirming")

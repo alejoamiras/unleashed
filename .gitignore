@@ -47,3 +47,7 @@ apps/tools/.e2e-state/
 
 # wrangler's local state (dry runs, dev sessions)
 .wrangler/
+
+# the landing's browser smoke output
+apps/landing/test-results/
+apps/landing/playwright-report/

@@ -32,6 +32,7 @@ jobs:
       pull-requests: read
     outputs:
       needs-tools-build: ${{ steps.compute.outputs.needs-tools-build }}
+      needs-landing-build: ${{ steps.compute.outputs.needs-landing-build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,6 +55,11 @@ jobs:
               - 'packages/design/package.json'
               - 'contracts/bridge/aztec/token_bridge_hub/target/**'
               - '.github/workflows/_build-tools.yml'
+            landing:
+              - 'apps/landing/**'
+              - 'packages/design/src/**'
+              - 'packages/design/package.json'
+              - '.github/workflows/_build-landing.yml'
             workflows:
               - '.github/workflows/**'
               - '.github/actions/**'
@@ -72,6 +78,7 @@ jobs:
         env:
           DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
           TOOLS: ${{ steps.filter.outputs.tools }}
+          LANDING: ${{ steps.filter.outputs.landing }}
           WORKFLOWS: ${{ steps.filter.outputs.workflows }}
           ROOT: ${{ steps.filter.outputs.root-config }}
         run: |
@@ -79,6 +86,11 @@ jobs:
             echo "needs-tools-build=true" >> "$GITHUB_OUTPUT"
           else
             echo "needs-tools-build=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$DISPATCH" = "true" ] || [ "$LANDING" = "true" ] || [ "$WORKFLOWS" = "true" ] || [ "$ROOT" = "true" ]; then
+            echo "needs-landing-build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs-landing-build=false" >> "$GITHUB_OUTPUT"
           fi
 
   commitlint:
@@ -125,10 +137,18 @@ jobs:
       ref: ${{ github.event.pull_request.head.sha || github.ref }}
       target: ${{ matrix.target }}
 
+  build-landing:
+    name: Build Landing
+    needs: changes
+    if: needs.changes.outputs.needs-landing-build == 'true'
+    uses: ./.github/workflows/_build-landing.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.ref }}
+
   status:
     name: quality-status
     if: always()
-    needs: [changes, commitlint, lint-and-typecheck, unit-tests, build-tools]
+    needs: [changes, commitlint, lint-and-typecheck, unit-tests, build-tools, build-landing]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -141,6 +161,8 @@ jobs:
           LINT: ${{ needs.lint-and-typecheck.result }}
           UNIT: ${{ needs.unit-tests.result }}
           BUILD_TOOLS: ${{ needs.build-tools.result }}
+          NEEDS_LANDING_BUILD: ${{ needs.changes.outputs.needs-landing-build }}
+          BUILD_LANDING: ${{ needs.build-landing.result }}
         run: |
           # Exact states, not a failure denylist: a job that never ran must not read as green.
           fail=0
@@ -162,5 +184,10 @@ jobs:
             true) expect "Build Tools" "$BUILD_TOOLS" success ;;
             false) expect "Build Tools" "$BUILD_TOOLS" skipped ;;
             *) echo "::error::needs-tools-build is not true/false: '$NEEDS_TOOLS_BUILD'"; fail=1 ;;
+          esac
+          case "$NEEDS_LANDING_BUILD" in
+            true) expect "Build Landing" "$BUILD_LANDING" success ;;
+            false) expect "Build Landing" "$BUILD_LANDING" skipped ;;
+            *) echo "::error::needs-landing-build is not true/false: '$NEEDS_LANDING_BUILD'"; fail=1 ;;
           esac
           exit "$fail"

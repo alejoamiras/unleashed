@@ -1,15 +1,13 @@
 /**
- * Shared PrivateFPC canonical-deploy conductor — the protocol-correctness-
- * critical skeleton both network twins duplicated: stopwatch + node client +
- * pinned-address read + idempotent exists-early-return, then the canonical
- * deploy (PRIVATE_FPC_SALT, deployer ZERO) and the address===pin assertion
- * that proves the deployment landed where the tools app manifest and wallet
- * hardcode expect.
+ * PrivateFPC canonical-deploy conductor — the protocol-correctness-critical
+ * skeleton: stopwatch + node client + pinned-address read + idempotent
+ * exists-early-return, then the canonical deploy (PRIVATE_FPC_SALT, deployer
+ * ZERO) and the address===pin assertion that proves the deployment landed
+ * where the tools app manifest and wallet hardcode expect.
  *
- * The EXISTENCE CHECK RUNS FIRST, before any wallet creation — both callers
- * relied on that ordering (a no-op run must not create wallets or derive
- * keys). Only the fee/account setup genuinely differs per network; it is
- * injected as `prepare`, which receives the wallet + node + stopwatch and
+ * The EXISTENCE CHECK RUNS FIRST, before any wallet creation (a no-op run must
+ * not create wallets or derive keys). The fee/account setup is the network's;
+ * it is injected as `prepare`, which receives the wallet + node + stopwatch and
  * returns the deploy's `from` + fee payment.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"

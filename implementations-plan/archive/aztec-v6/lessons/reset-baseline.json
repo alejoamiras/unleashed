@@ -1,7 +1,7 @@
 {
 	"$comment": "Hand-written reset baseline for the v6 testnet (live-intent's NO_RESET_BASELINE). live-intent build refuses a reset by design, so this records the new identity once, from evidence independent of the node: see phase-5.md § Reset baseline.",
 	"recordedAt": "",
-	"primaryRpc": "https://lb.drpc.live/aztec-testnet/Ak_eT5HA2kbyqamqGTF702daoH37vEsR8YYxjmVXwXgc",
+	"primaryRpc": "https://lb.drpc.live/aztec-testnet/<KEY>",
 	"identity": {
 		"nodeVersion": "6.0.0-rc.1",
 		"l1ChainId": 11155111,

@@ -3,11 +3,8 @@ pragma solidity >=0.8.27;
 
 import {MintableERC20} from "../src/MintableERC20.sol";
 import {DepositRouter} from "../src/DepositRouter.sol";
+import {DepositPermit} from "./mocks/DepositPermit.sol";
 import {DepositRouterFixture} from "./mocks/DepositRouterFixture.sol";
-
-interface IPermit2Domain {
-    function DOMAIN_SEPARATOR() external view returns (bytes32);
-}
 
 /// The Permit2 reverts these tests expect, declared for their selectors.
 interface IPermit2Errors {
@@ -17,15 +14,11 @@ interface IPermit2Errors {
 }
 
 /// The REAL Permit2 on a mainnet fork against a router deployed over the shared fixture's stack (a fresh real
-/// factory on Aztec fakes, the mock FeeJuicePortal and LI.FI swap). Signatures are built from the router's own type
-/// string and typehash, never from `hashWitness`, so an accepted signature also proves the two agree. Permit2 is
+/// factory on Aztec fakes, the mock FeeJuicePortal and LI.FI swap), signed through `DepositPermit`. Permit2 is
 /// immutable and nothing else is read from chain, so the fork runs at the latest block. Opt-in: skips unless
-/// ETH_RPC_URL is set.
+/// ETH_RPC_URL is set. `LifiDestinationFork` signs the same way through LI.FI's real swap.
 contract DepositRouterPermit2ForkTest is DepositRouterFixture {
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-    bytes32 constant TOKEN_PERMISSIONS_TYPEHASH = keccak256("TokenPermissions(address token,uint256 amount)");
-    string constant PERMIT2_STUB =
-        "PermitWitnessTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline,";
 
     // Not a well-known test key: famous ones carry EIP-7702 delegations on live chains, which turns Permit2's EOA
     // signature check into an `isValidSignature` call.
@@ -49,24 +42,6 @@ contract DepositRouterPermit2ForkTest is DepositRouterFixture {
         swap.set(type(uint256).max, 5 ether);
     }
 
-    // ─── Signing: the digest real Permit2 re-derives ───
-
-    function _witness(DepositRouter.DepositIntent memory i, bytes memory swapData) internal view returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                router.DEPOSIT_WITNESS_TYPEHASH(),
-                i.aztecRecipient,
-                i.tokenSecretHash,
-                i.isPrivate,
-                i.fuelSlice,
-                i.fuelRecipient,
-                i.fuelSecretHash,
-                i.minFuelOutput,
-                keccak256(swapData)
-            )
-        );
-    }
-
     function _sign(
         DepositRouter.DepositIntent memory i,
         bytes memory swapData,
@@ -74,11 +49,7 @@ contract DepositRouterPermit2ForkTest is DepositRouterFixture {
         uint256 nonce,
         uint256 deadline
     ) internal view returns (DepositRouter.PermitParams memory) {
-        bytes32 typehash = keccak256(abi.encodePacked(PERMIT2_STUB, router.DEPOSIT_WITNESS_TYPE_STRING()));
-        bytes32 permitted = keccak256(abi.encode(TOKEN_PERMISSIONS_TYPEHASH, i.token, amount));
-        bytes32 structHash =
-            keccak256(abi.encode(typehash, permitted, address(router), nonce, deadline, _witness(i, swapData)));
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", IPermit2Domain(PERMIT2).DOMAIN_SEPARATOR(), structHash));
+        bytes32 digest = DepositPermit.digest(router, PERMIT2, i, swapData, amount, nonce, deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(USER_PK, digest);
         return DepositRouter.PermitParams({nonce: nonce, deadline: deadline, signature: abi.encodePacked(r, s, v)});
     }
