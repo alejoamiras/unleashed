@@ -11,7 +11,7 @@ const { ASSET, HANDLER, OWNER } = vi.hoisted(() => ({
 
 const chain = { live: 11155111 }
 const reads = { feeAsset: ASSET as string, mintAmount: 1000n * 10n ** 18n, failAmount: false }
-const receipt = { status: "success" as "success" | "reverted", logs: [] as Log[] }
+const receipt = { status: "success" as "success" | "reverted", logs: [] as Log[], confirmed: true }
 const writeContract = vi.fn(async () => "0xmint" as const)
 const address = ref<string | null>(OWNER)
 const isConnected = ref(true)
@@ -22,7 +22,14 @@ const readContract = vi.fn(async ({ functionName }: { functionName: string }) =>
 	return reads.mintAmount
 })
 
-vi.mock("@unleashed/bridge-core", () => ({ awaitL1Receipt: async () => receipt }))
+// Shaped like the real wait: a revert and an exhausted wait both throw.
+vi.mock("@unleashed/bridge-core", () => ({
+	awaitL1Receipt: async () => {
+		if (!receipt.confirmed) throw new Error("The Ethereum transaction 0xmint was not confirmed after 2 rounds of waiting.")
+		if (receipt.status === "reverted") throw new Error("The Ethereum transaction 0xmint reverted on-chain.")
+		return receipt
+	},
+}))
 vi.mock("@/contracts/bridge-generation", () => ({ FUEL_ASSET: ASSET, FUEL_ASSET_HANDLER: HANDLER }))
 vi.mock("@/lib/network", () => ({ NETWORK: { l1ChainId: 11155111, viemChain: { id: 11155111 } } }))
 vi.mock("./useSend", () => ({
@@ -66,6 +73,7 @@ beforeEach(() => {
 	reads.mintAmount = 1000n * 10n ** 18n
 	reads.failAmount = false
 	receipt.status = "success"
+	receipt.confirmed = true
 	receipt.logs = [transfer(zeroAddress, OWNER, 1000n * 10n ** 18n)]
 	address.value = OWNER
 	isConnected.value = true
@@ -82,6 +90,20 @@ describe("useFeeAssetMint", () => {
 		isConnected.value = false
 		await flushPromises()
 		isConnected.value = true
+		await flushPromises()
+		expect(m.amountText.value).toBe("1000")
+	})
+
+	it("a read still in flight from before a disconnect never overwrites the reconnect's amount", async () => {
+		let drop = (): void => {}
+		readContract.mockImplementationOnce(() => new Promise((_, reject) => (drop = () => reject(new Error("stale provider")))))
+		const m = mounted()
+		await flushPromises()
+		isConnected.value = false
+		await flushPromises()
+		isConnected.value = true
+		await flushPromises()
+		drop()
 		await flushPromises()
 		expect(m.amountText.value).toBe("1000")
 	})
@@ -128,6 +150,14 @@ describe("useFeeAssetMint", () => {
 		expect(await m.mint()).toBeNull()
 		expect(m.error.value).toContain("reverted")
 		expect(feeAssetMinted.value).toBeNull()
+	})
+
+	it("a sent mint whose receipt cannot be read names its hash and frees the lock", async () => {
+		receipt.confirmed = false
+		const m = mounted()
+		expect(await m.mint()).toBeNull()
+		expect(m.error.value).toContain("0xmint was sent but not confirmed")
+		expect(m.minting.value).toBe(false)
 	})
 
 	it("without an Ethereum wallet asks for one", async () => {

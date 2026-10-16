@@ -16,12 +16,11 @@ import { TESTIDS } from "@/lib/testids"
 import { safeSentence } from "@/lib/token-display"
 
 /**
- * One-tap Ethereum mints for the test tokens the manifest publishes as permissionless, plus AZTEC
- * from the fee-asset handler the manifest names. It renders for nothing else: only a contract the
- * generation itself lists can be trusted to mint, the amount is capped by the per-transaction limit
- * that token was published with, and a mainnet manifest lists neither — so this strip is the whole
- * difference between the networks on this step. An AZTEC mint reaches the wizard through
- * `feeAssetMinted`, not `minted`, because the Drip tab mints it too.
+ * One-tap Ethereum mints for the test tokens the manifest publishes as permissionless, and for AZTEC
+ * through the fee-asset handler it names. Only a contract the generation itself lists can be trusted
+ * to mint, each token's amount is capped by the per-transaction limit it was published with, and a
+ * mainnet manifest lists neither, so this strip is the whole difference between the networks on this
+ * step. AZTEC skips `minted`: the wizard hears it through `feeAssetMinted`, which Drip sets too.
  */
 const emit = defineEmits<{ minted: [erc20: string] }>()
 

@@ -78,8 +78,10 @@ test("cell 18c — plain, AZTEC as token + gas, public: the first send creates i
 	const factory = sandbox.manifest.bridge?.l1.factory as `0x${string}`
 	const portalOf = () =>
 		sandbox.clients.l1.pub.readContract({ address: factory, abi: PORTAL_FACTORY_ABI, functionName: "portalOf", args: [feeAsset] })
-	// No other cell gives the fee asset a token portal; a retry finds the one the first attempt made.
-	if (test.info().retry === 0) expect(await portalOf(), "the fee asset has no token portal yet").toBe(zeroAddress)
+	// No other cell gives the fee asset a token portal or registers its token; a retry finds both done
+	// by the first attempt.
+	const first = test.info().retry === 0
+	if (first) expect(await portalOf(), "the fee asset has no token portal yet").toBe(zeroAddress)
 	await mintFeeAsset(sandbox.clients.l1, feeAsset, l1.address, 20n * FJ)
 	const fjBefore = await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")
 
@@ -88,7 +90,7 @@ test("cell 18c — plain, AZTEC as token + gas, public: the first send creates i
 	await connectL1(page)
 	await connectAztec(page, { profile: "plain", account: actor.address })
 	await reviewDeposit(page, { l1ChainId: L1, erc20: feeAsset, amount: "20", intent: "token+gas", isPrivate: false })
-	await expect(page.locator(tid(TESTIDS.sendReviewFirstTime)), "the review says this send registers the token").toBeVisible()
+	if (first) await expect(page.locator(tid(TESTIDS.sendReviewFirstTime)), "the review says this send registers the token").toBeVisible()
 	await confirmReview(page)
 	const receipt = await waitForReceipt(page)
 	expect(receipt.gas, "the receipt carries the gas leg").not.toBeNull()

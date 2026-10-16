@@ -96,9 +96,15 @@ describe("MintFeeAssetCard", () => {
 		expect(bare).toEqual([])
 	})
 
-	it("explains a failed connect", async () => {
+	it("explains a failed connect or switch, even under an earlier mint's failure", async () => {
+		fee.error.value = "Mint transaction reverted on-chain."
 		wallet.error.value = "No Ethereum wallet detected. Install Rabby or MetaMask."
 		const w = mount(MintFeeAssetCard)
-		expect(status(w).text()).toContain("No Ethereum wallet detected")
+		expect(status(w).text()).toBe("No Ethereum wallet detected. Install Rabby or MetaMask.")
+		wallet.isConnected.value = true
+		wallet.wrongChain.value = true
+		wallet.error.value = "The wallet refused the network switch."
+		await flushPromises()
+		expect(status(w).text()).toBe("The wallet refused the network switch.")
 	})
 })

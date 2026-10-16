@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { FeeAssetHandlerAbi } from "@aztec-foundation/l1-artifacts"
 import { balanceOf, type DripDeploymentRecord, erc20BalanceOf, registerDripFixture } from "@unleashed/bridge-core/sandbox"
 import { formatUnits } from "viem"
+import { formatBigInt } from "../../../src/lib/format"
 import { TESTIDS } from "../../../src/lib/testids"
 import { expect, test } from "../fixtures/test"
 import { connectAztec, tid } from "../pages/connect"
@@ -102,9 +103,8 @@ test("cell 47 — the AZTEC card connects Ethereum from the Drip tab and mints w
 	await sendTab()
 	await page.locator(tid(TESTIDS.sendDirectionDeposit)).click()
 	const balance = page.locator(`${tid(TESTIDS.sendTokenTile)}[data-key="${L1}:${feeAsset}"] ${tid(TESTIDS.sendTokenBalance)}`)
-	await expect(balance).toContainText(/\d/)
-	const shown = (await balance.textContent()) ?? ""
 	const before = await erc20BalanceOf(sandbox.clients.l1, feeAsset, l1.address)
+	await expect(balance).toHaveText(formatBigInt(before, 18))
 
 	await page.locator(tid(TESTIDS.tabDrip)).dispatchEvent("click")
 	await button.click()
@@ -113,5 +113,5 @@ test("cell 47 — the AZTEC card connects Ethereum from the Drip tab and mints w
 	expect(l1.signatures, "the mint was one Ethereum transaction").toBe(1)
 
 	await sendTab()
-	await expect.poll(async () => balance.textContent(), { timeout: 60_000 }).not.toBe(shown)
+	await expect(balance).toHaveText(formatBigInt(before + perCall, 18), { timeout: 60_000 })
 })
