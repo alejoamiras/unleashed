@@ -9,6 +9,23 @@ slug: aztec-fee-asset
 trunk: main
 ---
 
+## Outcome
+
+- **Closed; delivered** in PR #22, one arc, awaiting the owner's merge. Phases 1–3 are ✓.
+- **Shipped.**
+  - The Send picker's first row is the network's fee asset: `AZTEC` · `Aztec gas (<L1 chain>)` · `AZ`, curated (`source: "manifest"`), with all three choices.
+  - A testnet `+N AZTEC` button on the mint strip, and an "AZTEC on Ethereum" card on the Faucet tab with its own connect and switch. Both go through `useFeeAssetMint`: one shared lock, the amount read live from `mintAmount()` and superseded on disconnect, a `FEE_ASSET()` check before signing, and the credit taken from the receipt's `Transfer` log. A receipt wait is two rounds and names the hash.
+  - The wizard refreshes on `feeAssetMinted`.
+  - The sandbox carries the node's own handler into its manifest and handle after one proved mint.
+  - Browser cells 18, 18b, 19 and 34 changed; 18c and 47 are new. The suite has 72 cells.
+- **Reviews.** Plan audit: 2 Codex rounds, 6 findings adopted. Implementation fix loop: 2 rounds; round 1 had 3 material and 3 minor findings, all fixed; round 2 found "No material findings." `/code-review` was off.
+- **Assumptions.** I1 held: the local network reports `feeAssetHandlerAddress`, so the fallback deploy was dropped. I2 held: cell 18c creates the fee asset's portal inline.
+- **Known limits:**
+  - the text "AZTEC" is not reserved: a token at another address may copy it, without curated status or the identity route;
+  - the handler's owner can change `mintAmount()`; the button shows the value read at the last connect, while the success line reports what the receipt credited.
+- **Open items:** the strip's manifest-token mint keeps the full receipt-wait budget; `AddressesView.test.ts` times out under heavy load. Both are in `follow-ups.md`. The owner's manual check on testnet.app follows the merge.
+- **Retired:** the `/goal` and `/loop` seeds below. This plan is a record, never a task list.
+
 # aztec-fee-asset — list $AZTEC in the Send picker and mint it on testnet
 
 People want to bridge only Fee Juice. The app still bridges $AZTEC one for one (the "identity" route), but $AZTEC is not in the picker, so the only way in is pasting its address. This plan pins $AZTEC as the first picker row with all three choices, and brings back a testnet "Mint $AZTEC" button in the Send mint strip and on a Drip-tab card.
