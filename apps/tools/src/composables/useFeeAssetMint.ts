@@ -29,13 +29,16 @@ export interface UseFeeAssetMintHandle {
 	/** The handler's per-call amount in whole units; null until read on the right chain. */
 	readonly amountText: ComputedRef<string | null>
 	readonly minting: Readonly<Ref<boolean>>
+	/** When the running mint started, on either surface; null while none runs. */
+	readonly startedAt: Readonly<Ref<number | null>>
 	/** This surface's last failure; another surface's mint never writes it. */
 	readonly error: Readonly<Ref<string | null>>
 	mint: () => Promise<FeeAssetMint | null>
 }
 
 const amount = ref<bigint | null>(null)
-const minting = ref(false)
+const startedAt = ref<number | null>(null)
+const minting = computed(() => startedAt.value !== null)
 const lastMinted = shallowRef<FeeAssetMint | null>(null)
 let amountRead: Promise<void> | null = null
 /** Bumped on every disconnect: a read started under an earlier connection never writes `amount`. */
@@ -125,7 +128,7 @@ export function useFeeAssetMint(): UseFeeAssetMintHandle {
 			error.value = "Connect your Ethereum wallet first."
 			return null
 		}
-		minting.value = true
+		startedAt.value = Date.now()
 		error.value = null
 		try {
 			const minted = await submitMint(l1, wallet, handler, owner)
@@ -135,14 +138,15 @@ export function useFeeAssetMint(): UseFeeAssetMintHandle {
 			error.value = e instanceof Error ? safeSentence(e.message) : "Mint failed"
 			return null
 		} finally {
-			minting.value = false
+			startedAt.value = null
 		}
 	}
 
 	return {
 		available: handler !== undefined,
 		amountText: computed(() => (amount.value === null ? null : formatWhole(amount.value))),
-		minting: readonly(minting),
+		minting,
+		startedAt: readonly(startedAt),
 		error: readonly(error),
 		mint,
 	}
@@ -156,7 +160,7 @@ export function formatWhole(value: bigint): string {
 /** Test-only: module state outlives a test's mounts. */
 export function __resetFeeAssetMintForTests(): void {
 	amount.value = null
-	minting.value = false
+	startedAt.value = null
 	lastMinted.value = null
 	amountRead = null
 	connection = 0

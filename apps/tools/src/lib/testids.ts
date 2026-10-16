@@ -70,6 +70,7 @@ export const TESTIDS = {
 	btnDripPublic: "tl-btn-drip-public",
 	btnDripPrivate: "tl-btn-drip-private",
 	dripStatus: "tl-drip-status",
+	dripTxLink: "tl-drip-tx-link",
 	dripLockReason: "tl-drip-lock-reason",
 
 	// One-click "Add to wallet" - calls registerToken on the connected wallet

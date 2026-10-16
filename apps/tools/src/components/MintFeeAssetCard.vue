@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { Card, DripButton, Icon, Tag } from "@unleashed/design"
-import { computed, ref, useId } from "vue"
+import { Card, DisclaimerTag, DripButton } from "@unleashed/design"
+import { computed, ref, useId, watch } from "vue"
+import DripStatus from "@/components/DripStatus.vue"
 import { type FeeAssetMint, formatWhole, useFeeAssetMint } from "@/composables/useFeeAssetMint"
 import { useL1Wallet } from "@/composables/useL1Wallet"
+import { useToast } from "@/composables/useToast"
+import { useNow } from "@/lib/clock"
+import { etherscanTxUrl } from "@/lib/explorer"
 import { NETWORK } from "@/lib/network"
+import { formatClock } from "@/lib/phase-clock"
 import { TESTIDS } from "@/lib/testids"
 
 /**
@@ -12,8 +17,28 @@ import { TESTIDS } from "@/lib/testids"
  */
 const l1 = useL1Wallet()
 const feeAsset = useFeeAssetMint()
+const { push, dismiss } = useToast()
 const headingId = useId()
+const now = useNow()
 const minted = ref<FeeAssetMint | null>(null)
+/** Set once a mint from another surface starts: this card's last outcome is no longer the latest. */
+const superseded = ref(false)
+/** When this card's own mint started; the shared lock means no other mint runs beside it. */
+let ownRun: number | null = null
+let lastToastId: number | null = null
+
+/** A mint in flight dismisses the last success toast, so its link is not live beside it. */
+function dropLastToast(): void {
+	if (lastToastId !== null) dismiss(lastToastId)
+	lastToastId = null
+}
+
+watch(feeAsset.startedAt, (started) => {
+	if (started === null || started === ownRun) return
+	superseded.value = true
+	minted.value = null
+	dropLastToast()
+})
 
 type Action = "connect" | "switch" | "mint"
 
@@ -25,49 +50,91 @@ const action = computed<Action>(() => {
 const label = computed(() => {
 	if (action.value === "connect") return "Connect Ethereum wallet"
 	if (action.value === "switch") return `Switch to ${NETWORK.viemChain.name}`
-	return feeAsset.amountText.value ? `+${feeAsset.amountText.value} AZTEC` : "Mint AZTEC"
+	return "Get AZTEC"
 })
+
+const ariaLabel = computed(() =>
+	action.value === "mint" && feeAsset.amountText.value ? `Get ${feeAsset.amountText.value} AZTEC into your Ethereum wallet` : undefined,
+)
 
 const loading = computed(() => feeAsset.minting.value || l1.isConnecting.value)
 
-const error = computed(() => (action.value === "mint" ? feeAsset.error.value : l1.error.value))
-
-const success = computed(() => {
-	if (!minted.value || error.value) return null
-	const amount = minted.value.amount
-	return amount === null ? "Minted." : `Minted ${formatWhole(amount)} AZTEC.`
+const error = computed(() => {
+	if (action.value !== "mint") return l1.error.value
+	return superseded.value ? null : feeAsset.error.value
 })
 
-async function onClick(): Promise<void> {
+const statusKind = computed(() => {
+	if (feeAsset.minting.value) return "dripping"
+	if (error.value) return "error"
+	return minted.value ? "ok" : null
+})
+
+const sentText = computed(() => (minted.value?.amount ? `${formatWhole(minted.value.amount)} AZTEC` : "AZTEC"))
+
+const elapsed = computed(() => formatClock(now.value - (feeAsset.startedAt.value ?? now.value)))
+
+async function mint(): Promise<void> {
+	dropLastToast()
+	superseded.value = false
+	minted.value = null
+	// `mint` claims the lock before its first await, so `startedAt` already names this run.
+	const pending = feeAsset.mint()
+	ownRun = feeAsset.startedAt.value
+	const result = await pending
+	minted.value = result
+	if (result) {
+		const href = etherscanTxUrl(result.txHash)
+		lastToastId = push({
+			kind: "ok",
+			text: `Dripped ${sentText.value} to your Ethereum wallet`,
+			link: href ? { label: "View tx", href } : undefined,
+		})
+	} else if (feeAsset.error.value) {
+		push({ kind: "error", text: feeAsset.error.value })
+	}
+}
+
+function onClick(): Promise<void> {
 	if (action.value === "connect") return l1.connect()
 	if (action.value === "switch") return l1.switchL1Network()
-	minted.value = null
-	minted.value = await feeAsset.mint()
+	return mint()
 }
 </script>
 
 <template>
 	<Card v-if="feeAsset.available" :data-testid="TESTIDS.dripFeeAssetCard" :aria-labelledby="headingId">
 		<header class="head">
-			<h2 :id="headingId" class="title">AZTEC on Ethereum</h2>
-			<Tag tone="testnet">Testnet</Tag>
+			<h2 :id="headingId" class="symbol">AZTEC</h2>
+			<DisclaimerTag />
 		</header>
 		<p class="sub">
-			Free test AZTEC on {{ NETWORK.viemChain.name }}. On Send, pick AZTEC, then Gas: it arrives as Fee Juice, one for one.
+			Fixed drip<template v-if="feeAsset.amountText.value">: <strong class="drip-amount">{{ feeAsset.amountText.value }} AZTEC</strong></template>
+			on {{ NETWORK.viemChain.name }}
 		</p>
 		<DripButton
 			variant="primary"
-			:icon="action === 'mint' ? 'download' : 'wallet'"
+			:icon="action === 'mint' ? undefined : 'wallet'"
 			:label="label"
+			:aria-label="ariaLabel"
 			:loading="loading"
 			:data-testid="TESTIDS.dripFeeAssetMint"
 			:data-action="action"
 			@click="onClick"
 		/>
-		<p class="status" aria-live="polite" :data-testid="TESTIDS.dripFeeAssetStatus" :data-error="error ? 'true' : undefined">
-			<template v-if="error">{{ error }}</template>
-			<template v-else-if="success"><Icon name="check" :size="12" class="ok" />{{ success }} Bridge it on Send.</template>
-		</p>
+		<DripStatus
+			v-if="statusKind"
+			:data-testid="TESTIDS.dripFeeAssetStatus"
+			:kind="statusKind"
+			emphasized
+			:label="statusKind === 'dripping' ? 'Submitting…' : (error ?? undefined)"
+			:elapsed="elapsed"
+			progress-label="AZTEC drip progress"
+			log="waiting for your Ethereum wallet, then the block"
+			:tx-url="minted ? etherscanTxUrl(minted.txHash) : undefined"
+		>
+			Sent <strong class="sent">{{ sentText }}</strong> to your Ethereum wallet
+		</DripStatus>
 	</Card>
 </template>
 
@@ -80,37 +147,21 @@ async function onClick(): Promise<void> {
 	gap: 8px 12px;
 }
 
-.title {
+.symbol {
 	font: 700 26px/1.15 var(--ul-font-body);
 	letter-spacing: var(--ul-tracking-heading);
 	color: var(--ul-ink);
 }
 
 .sub {
-	max-width: 56ch;
 	font: 400 14px/1.45 var(--ul-font-body);
 	color: var(--ul-ink-2);
 }
 
-.status {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	min-height: 1.45em;
-	margin: 0;
-	font: 400 14px/1.45 var(--ul-font-body);
-	color: var(--ul-ink-2);
-}
-
-.status:empty {
-	display: none;
-}
-
-.status[data-error] {
-	color: var(--ul-lost);
-}
-
-.ok {
-	color: var(--ul-carrier);
+.drip-amount,
+.sent {
+	font: 700 14px/1 var(--ul-font-mono);
+	color: var(--ul-ink);
+	white-space: nowrap;
 }
 </style>
