@@ -22,3 +22,26 @@ Round 1: three material findings, three minor; all six verified against the code
 - `awaitL1Receipt` already throws on a reverted receipt, so the composable's own `status !== "success"` check was dead and is gone. The unit mock now throws the way the real wait does.
 
 Round 2, resumed in the same session on a4b4090: "No material findings." Two minor comment notes. The strip header's AZTEC sentence now gives the real reason (Drip can mint while the strip is unmounted), and the card's comment that restated its ternary is gone. The header's older trust rationale stays: it predates this branch and states a security reason, not visible behaviour. The loop converged in two rounds.
+
+## The owner's preview pass
+
+The owner tried PR #22's testnet preview and asked for four changes:
+- the Faucet AZTEC card should match the SIGNAL and NOISE cards: shorter copy, "Get AZTEC", the progress panel, and the View tx row and toast;
+- the strip's buttons should lose the download icon;
+- token + gas with 100 AZTEC stopped at "Arrives as AZTEC 50" past about 24 transactions;
+- the stepper kept counting while nothing moved.
+
+The cause of the 50 is a pre-existing rule in `proposeGasShare`: the slice is capped at half the amount. It also sized the identity route with the swap's 3 % slippage, though that route signs its floor at the slice itself.
+
+The owner chose, via AskUserQuestion: "Lift it for AZTEC (Recommended)". The fixes:
+- the identity route passes `slippageBps: 0` and `maxFuelAmount: amount - 1n`;
+- `maxUncappedTxTarget` bisects for the last target whose slice is not clamped;
+- the wizard sizes for the stored target held under that stop (`txShown`).
+
+The card's status row was extracted from TokenCard into `DripStatus`, so both cards share one markup and style.
+
+Codex round 3, resumed in the same session, found two material bugs; both are fixed:
+- the stored target outran a smaller amount's stop, and `−` was then refused;
+- a mint started on the strip left the card showing its own older success and toast. The card now watches the shared `startedAt`, which `useFeeAssetMint` exposes.
+
+Round 4: "No material findings."

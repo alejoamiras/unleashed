@@ -14,15 +14,28 @@ trunk: main
 - **Closed; delivered** in PR #22, one arc, awaiting the owner's merge. Phases 1–3 are ✓.
 - **Shipped.**
   - The Send picker's first row is the network's fee asset: `AZTEC` · `Aztec gas (<L1 chain>)` · `AZ`, curated (`source: "manifest"`), with all three choices.
-  - A testnet `+N AZTEC` button on the mint strip, and an "AZTEC on Ethereum" card on the Faucet tab with its own connect and switch. Both go through `useFeeAssetMint`: one shared lock, the amount read live from `mintAmount()` and superseded on disconnect, a `FEE_ASSET()` check before signing, and the credit taken from the receipt's `Transfer` log. A receipt wait is two rounds and names the hash.
+  - A testnet `+N AZTEC` button on the mint strip, and an AZTEC card on the Faucet tab with its own connect and switch. Both go through `useFeeAssetMint`: one shared lock, the amount read live from `mintAmount()` and superseded on disconnect, a `FEE_ASSET()` check before signing, and the credit taken from the receipt's `Transfer` log. A receipt wait is two rounds and names the hash.
+  - After trying the preview, the owner asked for four changes, now shipped:
+    - the AZTEC card is built like the SIGNAL and NOISE cards: "Get AZTEC", a progress panel while minting, and a row and a toast with the Ethereum tx link. The cards share `DripStatus`, and a mint started on the Send strip supersedes the card's last outcome;
+    - the strip's buttons lost their icon;
+    - with AZTEC as token + gas, the slice has no half cap ("Lift it for AZTEC") and no slippage margin, since the identity route signs its floor at the slice;
+    - every token's transaction stepper now stops where its slice stops growing. A smaller amount holds the count shown under that stop, without changing the count the user set.
   - The wizard refreshes on `feeAssetMinted`.
   - The sandbox carries the node's own handler into its manifest and handle after one proved mint.
   - Browser cells 18, 18b, 19 and 34 changed; 18c and 47 are new. The suite has 72 cells.
-- **Reviews.** Plan audit: 2 Codex rounds, 6 findings adopted. Implementation fix loop: 2 rounds; round 1 had 3 material and 3 minor findings, all fixed; round 2 found "No material findings." `/code-review` was off.
+- **Reviews.**
+  - Plan audit: 2 Codex rounds, 6 findings adopted.
+  - Implementation fix loop: 4 rounds, all in one Codex session.
+    - Round 1: 3 material and 3 minor findings, all fixed.
+    - Round 2: "No material findings."
+    - Round 3, on the owner's preview changes: 2 material findings, fixed. A smaller amount had locked the stepper, and a strip mint left the card showing an old outcome.
+    - Round 4: "No material findings."
+  - `/code-review` was off.
 - **Assumptions.** I1 held: the local network reports `feeAssetHandlerAddress`, so the fallback deploy was dropped. I2 held: cell 18c creates the fee asset's portal inline.
 - **Known limits:**
   - the text "AZTEC" is not reserved: a token at another address may copy it, without curated status or the identity route;
-  - the handler's owner can change `mintAmount()`; the button shows the value read at the last connect, while the success line reports what the receipt credited.
+  - the handler's owner can change `mintAmount()`; the card shows the value read at the last connect, while the success row reports what the receipt credited;
+  - an AZTEC token + gas slice may leave as little as one base unit of AZTEC to send.
 - **Open items:** the strip's manifest-token mint keeps the full receipt-wait budget; `AddressesView.test.ts` times out under heavy load. Both are in `follow-ups.md`. The owner's manual check on testnet.app follows the merge.
 - **Retired:** the `/goal` and `/loop` seeds below. This plan is a record, never a task list.
 
