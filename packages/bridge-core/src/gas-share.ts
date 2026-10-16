@@ -26,6 +26,9 @@ export interface GasShareInput {
 	/** A dust quote: `probeOut` FeeJuice came out for `probeIn` token in. */
 	rate: { probeIn: bigint; probeOut: bigint }
 	slippageBps: number
+	/** The most of `amount` the slice may take. Half of it when omitted, so a swap never diverts most
+	 *  of a deposit. */
+	maxFuelAmount?: bigint
 }
 
 export interface GasShareResult {
@@ -33,7 +36,8 @@ export interface GasShareResult {
 	fuelAmount: bigint
 	/** The FeeJuice target that amount is sized to buy. */
 	fuelFj: bigint
-	capped: "min" | "half" | null
+	/** `half` and `max`: the slice was clamped to its cap and buys less than `fuelFj`. */
+	capped: "min" | "half" | "max" | null
 }
 
 function assertSlippage(bps: number): void {
@@ -60,10 +64,30 @@ export function proposeGasShare(i: GasShareInput): GasShareResult {
 	const quoteNeeded = (fuelFj * BPS + keep - 1n) / keep
 	const needed = (quoteNeeded * i.rate.probeIn + i.rate.probeOut - 1n) / i.rate.probeOut
 
-	// The half cap outranks the min floor: whichever term sized it, the clamp is what shipped.
-	const half = i.amount / 2n
-	if (needed > half) return { fuelAmount: half, fuelFj, capped: "half" }
+	// The cap outranks the min floor: whichever term sized it, the clamp is what shipped.
+	const cap = i.maxFuelAmount ?? i.amount / 2n
+	if (needed > cap) return { fuelAmount: cap, fuelFj, capped: i.maxFuelAmount === undefined ? "half" : "max" }
 	return { fuelAmount: needed, fuelFj, capped: minBinding ? "min" : null }
+}
+
+/**
+ * The largest transaction target in [1, limit] whose slice its cap leaves whole, or 0 when even one
+ * transaction's is clamped. The slice never shrinks as the target grows, so the edge is found by
+ * bisection.
+ */
+export function maxUncappedTxTarget(i: Omit<GasShareInput, "txTarget">, limit: number): number {
+	const fits = (txTarget: number): boolean => {
+		const { capped } = proposeGasShare({ ...i, txTarget })
+		return capped !== "half" && capped !== "max"
+	}
+	let lo = 0
+	let hi = limit
+	while (lo < hi) {
+		const mid = Math.ceil((lo + hi) / 2)
+		if (fits(mid)) lo = mid
+		else hi = mid - 1
+	}
+	return lo
 }
 
 /**

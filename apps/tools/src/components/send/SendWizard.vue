@@ -330,15 +330,44 @@ function floorFor(quote: bigint, outcome: RouteOutcome): bigint {
 	return outcome.kind === "route" ? gasShare.floorFor(quote) : quote
 }
 
-function buildGas(): { plan: GasLegPlan | null; error: string | null } {
+/** What the slice is sized from, while the token on screen has a priced way to gas. */
+const gasProposal = computed(() => {
 	const token = resolved.value
 	const units = amountUnits.value
 	const outcome = routeOutcome.value
-	if (!token || units === null || units <= 0n || !outcome) return { plan: null, error: null }
-	if (outcome.kind !== "route" && outcome.kind !== "identity") return { plan: null, error: null }
+	if (!token || units === null || units <= 0n || !outcome) return null
+	if (outcome.kind !== "route" && outcome.kind !== "identity") return null
 	const probeIn = probeAmountOf(token)
 	const rate = outcome.kind === "route" ? { probeIn, probeOut: outcome.quoteOut } : ONE_TO_ONE
-	const share = gasShare.propose({ amount: units, decimals: token.decimals, state: token.state, rate, isPrivate: isPrivate.value })
+	const identity = outcome.kind === "identity"
+	const input = { amount: units, decimals: token.decimals, state: token.state, rate, isPrivate: isPrivate.value, identity }
+	return { token, units, outcome, probeIn, input }
+})
+
+/** Where the transaction stepper stops: past it the slice would be clamped and stop growing. */
+const gasTxMax = computed(() => {
+	const proposal = gasProposal.value
+	if (!proposal || intent.value !== "token+gas") return null
+	try {
+		return gasShare.maxTxTarget(proposal.input)
+	} catch {
+		return null
+	}
+})
+
+/** The target the slice is sized for: the user's, held under the stepper's stop. The stored target is
+ *  left alone, so a count lowered by a smaller amount comes back when the amount grows again. */
+const txShown = computed(() => {
+	const target = gasShare.txTarget.value
+	const max = gasTxMax.value
+	return max !== null && max >= 1 && target > max ? max : target
+})
+
+function buildGas(): { plan: GasLegPlan | null; error: string | null } {
+	const proposal = gasProposal.value
+	if (!proposal) return { plan: null, error: null }
+	const { token, units, outcome, probeIn } = proposal
+	const share = gasShare.propose(proposal.input, txShown.value)
 	// A private slice is priced from live fees; until they arrive there is nothing to size, like a
 	// route probe still in flight.
 	if (share === "pricing") return { plan: null, error: null }
@@ -1330,7 +1359,8 @@ onBeforeUnmount(() => {
 				:gas="gas"
 				:route-kind="routeKind"
 				:route-loading="routeQuote.loading.value"
-				:tx-target="gasShare.txTarget.value"
+				:tx-target="txShown"
+				:tx-max="gasTxMax"
 				:fj-per-tx="fjPerTx"
 				:gas-set-aside="gasOnlySetAside(isPrivate)"
 				:gas-error="gasError"
