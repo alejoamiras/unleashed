@@ -60,6 +60,7 @@ pub unconstrained fn setup() -> Hub {
         0,
         0x50726f6265,
         AztecAddress::zero(),
+        0,
     );
     let token_class_id = probe.original_contract_class_id;
 
@@ -87,6 +88,8 @@ pub unconstrained fn pre_register_token(
         0,
         erc20.to_field(),
         h.hub,
+        // The immutables hash `derive_token` uses; any other value lands at another address.
+        0,
     );
     instance.to_address()
 }

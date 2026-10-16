@@ -1,0 +1,5 @@
+/* Without scripts nothing draws the card screens, so they take no space. This sheet loads before the
+   page's own, so it wins on specificity, not order. */
+.idx .screen {
+	display: none;
+}

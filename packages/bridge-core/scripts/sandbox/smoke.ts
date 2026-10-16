@@ -5,7 +5,7 @@
 import type { ManifestV2 } from "../../src/manifest-v2"
 import { PRIVATE_HUB_EXIT_GAS } from "../../src/private-fuel"
 import { calibrateFuelBudgets } from "../calibration"
-import { buildContext, type Samples, type SmokeContext, tokenBlockOf } from "./context"
+import { assertPrivateFpcUnpublished, buildContext, type Samples, type SmokeContext, tokenBlockOf } from "./context"
 import {
 	flowConcurrentFirstClaims,
 	flowGasOnly,
@@ -153,6 +153,7 @@ export async function runSmoke(clients: SandboxClients, manifest: ManifestV2, ac
 		await step("(j) cross-chain gas only, private credit", () => flowCrossChainFuelOnly(s, rig, usdc, true))
 		await step("(j) cross-chain into paused deposits, recovered on L1", () => flowCrossChainPausedRecovers(s, rig, usdc))
 	})
+	await step("(k) the PrivateFPC remains unpublished after all flows", () => assertPrivateFpcUnpublished(s.l2))
 	const notes = [fuelBudgetNote(s.samples), ...exitGasNotes(s.samples)]
 	for (const n of notes) console.log(n)
 	return { results, samples: s.samples, notes }

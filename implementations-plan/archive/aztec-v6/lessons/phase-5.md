@@ -2,7 +2,7 @@
 
 ## Node constant and CSP
 
-- `TESTNET_NODE_URL` (`packages/bridge-core/src/testnet-node.ts`) is the dRPC endpoint `https://lb.drpc.live/aztec-testnet/Ak_eT5HA2kbyqamqGTF702daoH37vEsR8YYxjmVXwXgc`. Its key is testnet-only and public by design (A3).
+- `TESTNET_NODE_URL` (`packages/bridge-core/src/testnet-node.ts`) is the dRPC endpoint `https://lb.drpc.live/aztec-testnet/<KEY>`. Its key is testnet-only and public by design (A3).
 - The constant replaces the literal in 11 scripts, `deploy-config.ts`, `network-targets.ts` (a Node-safe copy, held equal by `network-targets.test.ts`), both `.env.example` files and the `bridge-generation` SKILL.md probe.
 - The testnet `connect-src` is now `'self' data: blob: <TESTNET_NODE_URL> <TOKEN_LIST_URL>`. The `*.aztec-labs.com` and `*.aztec.network` wildcards are gone, wss included (A1: the wallet reports the same URL).
 - **No redirect.** A POST `node_getNodeInfo` returned `200` with an empty `redirect_url`, which matters because CSP stops path-matching after a redirect. A bare `HEAD` returns `405`; that is not a redirect.
