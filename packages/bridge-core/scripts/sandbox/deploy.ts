@@ -19,7 +19,6 @@ import {
 	sandboxChain,
 	sandboxSourceChain,
 } from "./constants"
-import { ensurePrivateFpc } from "./context"
 import { type CrossChainDeployment, deployCrossChain } from "./crosschain"
 import { deployDripFixture } from "./drip"
 import { ensureForgeArtifacts } from "./forge"
@@ -117,9 +116,6 @@ export async function deployEverything(net: SandboxNetwork, opts: DeployOptions)
 	const actor = await createActor(l2base.wallet, l2base.node, l2base.fee, SANDBOX_ACTOR_SECRET, SANDBOX_ACTOR_SALT)
 	await adoptGuardian(l2base, SANDBOX_ACTOR_SECRET, SANDBOX_ACTOR_SALT)
 	const l2 = l2CtxFor(l2base, actor.address)
-	// Part of the network like the sponsor is: tools pre-registers the pinned PrivateFPC at connect
-	// and a wallet syncs it from the node, so it must be published before any browser reads it.
-	await ensurePrivateFpc(l2)
 	const info = await l2.node.getNodeInfo()
 	const addrs = {
 		feeJuice: lc(info.l1ContractAddresses.feeJuiceAddress.toString()),

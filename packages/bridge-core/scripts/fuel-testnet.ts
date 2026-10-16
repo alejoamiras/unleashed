@@ -10,7 +10,7 @@
  *
  * Real proofs: expect ~30-60 min end to end.
  * Run: bun run scripts/fuel-testnet.ts --config <manifest> [--token <erc20>]
- *      (PRIVATE_KEY + SEPOLIA_RPC_URL in packages/bridge-core/.env)
+ *      (a keyed run on testnet-l1.env.example: PRIVATE_KEY, SEPOLIA_RPC_URL, DRPC_API_KEY)
  */
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -35,12 +35,12 @@ import {
 import type { SendResult } from "../src/send-flow"
 import { runSend } from "../src/send-flow"
 import { runFpcGate } from "./check-fpc-version"
-import { type FueledClaimResult, registerPrivateFpc, settleFueledClaim } from "./fuel-claim-l2"
+import { type FueledClaimResult, settleFueledClaim } from "./fuel-claim-l2"
 import { requirePinnedSigner } from "./live-intent"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
 import { feeJuiceFor } from "./fee-juice-l2"
-import { deployAccountIfAbsent, freshSchnorrAccount, registerHub, registerHubToken, sponsoredFpcFee } from "./script-l2"
+import { deployAccountIfAbsent, freshSchnorrAccount, registerHub, registerHubToken, registerPrivateFpc, sponsoredFpcFee } from "./script-l2"
 import { claimTokenBlock, planFuelLeg, requireSwap, selectToken, sendGenerationOf } from "./script-send"
 import {
 	createL1Clients,
@@ -51,12 +51,11 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
-if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY required (packages/bridge-core/.env)")
+if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY required (keyed run: testnet-l1.env.example)")
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CONFIG = loadManifestV2FromConfigArg(process.argv, {
@@ -332,9 +331,9 @@ async function buildL1(mins: () => string): Promise<L1Ctx> {
 	return l1
 }
 
-async function buildL2(l1: L1Ctx, mins: () => string): Promise<{ ctx: VariantCtx; fpc: ContractBase }> {
-	const node = createNode(NODE_URL)
-	const ewallet = await createL2Wallet({ nodeUrl: NODE_URL, proverEnabled: true })
+async function buildL2(l1: L1Ctx, nodeUrl: string, mins: () => string): Promise<{ ctx: VariantCtx; fpc: ContractBase }> {
+	const node = createNode(nodeUrl)
+	const ewallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	const { manager, from } = await freshSchnorrAccount(ewallet as never)
 	console.log("L2 recipient", from.toString())
 
@@ -351,7 +350,8 @@ async function buildL2(l1: L1Ctx, mins: () => string): Promise<{ ctx: VariantCtx
 	const hub = await registerHub(ewallet as never, BRIDGE.l2.hub)
 	const hubAddress = AztecAddress.fromStringUnsafe(BRIDGE.l2.hub.address)
 	const l2Token = await registerHubToken(ewallet as never, hubAddress, TOKEN, BRIDGE.l2.tokenClassId)
-	const privateFpc = await registerPrivateFpc(ewallet, mins)
+	const privateFpc = await registerPrivateFpc(ewallet as never)
+	console.log(`PrivateFPC ${PRIVATE_FPC_ADDRESS.slice(0, 12)}… registered (${mins()})`)
 	const feeJuice = await feeJuiceFor(ewallet as never, node)
 
 	const read = async (call: { simulate: (o: never) => Promise<unknown> }): Promise<bigint> => {
@@ -374,14 +374,15 @@ async function buildL2(l1: L1Ctx, mins: () => string): Promise<{ ctx: VariantCtx
 
 async function main() {
 	const mins = stopwatch()
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 
 	// This canary deposits Fee Juice and pays fees THROUGH the pinned PrivateFPC — an unrecoverable
-	// loss if that address is not the deployed, class-correct contract. The gate runs inline so it
-	// cannot be skipped before the first broadcast.
-	await runFpcGate("require-deployed")
+	// loss if that address is not the installed artifact's canonical instance, or is published with
+	// another class. The gate runs inline so it cannot be skipped before the first broadcast.
+	await runFpcGate()
 
 	const l1 = await buildL1(mins)
-	const { ctx, fpc } = await buildL2(l1, mins)
+	const { ctx, fpc } = await buildL2(l1, nodeUrl, mins)
 
 	// The public lane is the sanity check; the private-FPC lane is what the calibration needs, so run
 	// it repeatedly for a stable getFeeLimit across fee conditions. `PUBLIC_RUNS=0` skips the sanity

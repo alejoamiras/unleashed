@@ -1,0 +1,22 @@
+// Workers Builds, root directory = apps/landing (Workers Builds reads this file there, and its Worker
+// name must equal `name`):
+//   build                   cd ../.. && bun install --frozen-lockfile --filter @unleashed/landing && bun run --cwd apps/landing build
+//   deploy (main)           bun run worker:deploy
+//   non-production deploy   bun run worker:preview
+//   variables               BUN_VERSION=1.4.2, NODE_VERSION=24, SKIP_DEPENDENCY_INSTALL=1
+// SKIP_DEPENDENCY_INSTALL keeps Workers Builds from running its own install here, where npm would
+// meet the workspace links; the build command's frozen, filtered install is the only one. The build
+// guard runs inside `build`, so deploying must upload dist/ as built: this file never gains `main`,
+// `build` or `alias` (wrangler-config.test.ts).
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "unleashed-landing",
+	"compatibility_date": "2026-08-01",
+	// Assets only. The build writes dist/_headers. An unknown path serves the landing.
+	"assets": { "directory": "./dist", "not_found_handling": "single-page-application" },
+	// unleashed.systems and www are attached in the dashboard, Production only, and are not listed
+	// here on purpose: one `custom_domain` route makes this file the whole list and detaches the rest.
+	"workers_dev": true,
+	// Previews are noindex builds of non-production branches, served on workers.dev only.
+	"preview_urls": true
+}

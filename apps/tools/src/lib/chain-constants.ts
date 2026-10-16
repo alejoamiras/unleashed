@@ -18,10 +18,10 @@
 
 /** Sepolia — the L1 the alpha-testnet rollup settles to. */
 export const TESTNET_L1_CHAIN_ID = 11155111
-/** V6 alpha-testnet rollup version. */
-export const TESTNET_ROLLUP_VERSION = 2914217885
+/** The 6.0.0-rc.3 alpha-testnet rollup version. */
+export const TESTNET_ROLLUP_VERSION = 3409706519
 
-/** The wallet matches a network by `(l1 ^ rollupVersion) >>> 0` → `2904119610`. */
+/** The wallet matches a network by `(l1 ^ rollupVersion) >>> 0` → `3415328944`. */
 export const TESTNET_WALLET_CHAIN_ID = (TESTNET_L1_CHAIN_ID ^ TESTNET_ROLLUP_VERSION) >>> 0
 
 /** Ethereum mainnet — the L1 the Alpha/mainnet rollup settles to. */

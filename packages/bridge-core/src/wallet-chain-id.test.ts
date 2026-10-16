@@ -3,7 +3,7 @@ import { walletChainIdOf } from "./wallet-chain-id"
 
 describe("walletChainIdOf", () => {
 	it("reproduces the two live networks' wallet chain ids", () => {
-		expect(walletChainIdOf(11155111, 2914217885)).toBe(2904119610)
+		expect(walletChainIdOf(11155111, 3409706519)).toBe(3415328944)
 		expect(walletChainIdOf(1, 4248422647)).toBe(4248422646)
 	})
 

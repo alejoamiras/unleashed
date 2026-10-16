@@ -6,7 +6,7 @@ the map; this file is the ruleset. `CLAUDE.md` imports it.
 ## Read before you start
 
 - The README of the package you touch: [`apps/tools`](apps/tools/README.md),
-  [`packages/bridge-core`](packages/bridge-core/README.md), [`packages/design`](packages/design/README.md),
+  [`apps/landing`](apps/landing/README.md), [`packages/bridge-core`](packages/bridge-core/README.md), [`packages/design`](packages/design/README.md),
   [`contracts/bridge/evm`](contracts/bridge/evm/README.md), [`contracts/bridge/aztec`](contracts/bridge/aztec/README.md).
 - [`apps/tools/tests/browser/README.md`](apps/tools/tests/browser/README.md) before touching the
   browser suite: the parallel-safe runner, the fixtures, the egress rule.
@@ -33,7 +33,7 @@ repositories share exactly four facts, each with one owner:
 | Fact | Owner | Mirror | How it moves |
 |---|---|---|---|
 | Bridged-token L2 addresses | here: `apps/tools/public/*-bridge.json`, `tokens[].l2Token` | the wallet's default tokens and price map | The wallet mirrors a promoted generation by hand, as its own UI decision. It mirrors nothing today. |
-| PrivateFPC salt and canonical address | here: [`packages/bridge-core/src/private-fpc-canonical.json`](packages/bridge-core/src/private-fpc-canonical.json) | the wallet's `protocol-fpcs.ts`, pinned by its own test | A re-pin here is announced to the wallet's repository; on a reset network the wallet's private fee path waits for this repository's FPC deploy. |
+| PrivateFPC salt and canonical address | here: [`packages/bridge-core/src/private-fpc-canonical.json`](packages/bridge-core/src/private-fpc-canonical.json) | the wallet's `protocol-fpcs.ts`, pinned by its own test | A re-pin here is announced to the wallet's repository. Neither repository deploys the testnet FPC: the app and the wallet each register the instance locally, so on a reset network the wallet's private fee path waits for no deploy. |
 | The Aztec line (`@aztec-labs/*`, `@aztec-foundation/*`) | the wallet's repository, which publishes the shared packages | the exact pins here | The wallet publishes new versions of the three packages on the new line first; [`scripts/ci-cd/published-packages.test.ts`](scripts/ci-cd/published-packages.test.ts) holds every peer to this repository's pin, so a bump here cannot land before they exist. |
 | Chain identity (chainId, rollup version) | each repository, independently | none | [`apps/tools/src/lib/chain-constants.ts`](apps/tools/src/lib/chain-constants.ts) here; the wallet keeps its own copy. |
 
@@ -108,8 +108,9 @@ approval is not a sign-off.
   temporary `minimumReleaseAgeExcludes` entry that leaves in the same PR; prove it with
   `bun install --frozen-lockfile --force`. Until the version is 7 days old, a `package.json` edit in
   a workspace that reaches it re-gates it and fails the install: wait, or add the exclude locally and
-  do not commit it. The Nulo wallet's three `@nulo-sh/*` packages are a standing exemption (the
-  owner's decision); no other name is. Details: [`SECURITY.md`](SECURITY.md).
+  do not commit it. The Nulo wallet's three `@nulo-sh/*` packages and
+  `@alejoamiras/private-fee-juice` are standing exemptions, each the owner's decision; no other name
+  becomes one without the owner's decision. Details: [`SECURITY.md`](SECURITY.md).
 - **The Aztec line (`@aztec-labs/*`, `@aztec-foundation/*`) is exact-pinned and bumped by hand**, after the wallet's repository has published the
   shared packages on the new line. [`UPDATE.md`](UPDATE.md) lists what a bump touches; a bump that
   resets the network is a new bridge generation ([`bridge-generation`](.claude/skills/bridge-generation/SKILL.md)).
@@ -127,6 +128,11 @@ custom domains (`app.unleashed.systems`,
 [`apps/tools/README.md`](apps/tools/README.md) § Production build +
 hosting has the commands and the host model.
 
+The landing is a third assets-only Worker, `unleashed-landing` (`apps/landing/wrangler.jsonc`), deployed
+the same way from the root directory `apps/landing`. Its custom domains, `unleashed.systems` and
+`www.unleashed.systems`, are also attached in the dashboard. A deploy is checked against a reference
+build of the same commit: [`apps/landing/README.md`](apps/landing/README.md) § Hosting.
+
 ## Security
 
 Treat every change as attack surface. The bridge moves real funds on mainnet: a derivation, a
@@ -134,8 +140,12 @@ salt, a manifest field or an authwit scope is protocol, and a change to one is r
 Live deploys follow the runbook's authorization gates and never sign without them. Keys live in
 1Password and reach a run only as an owner-approved keyed run (`env-exec`, from the `*.env.example`
 templates), or in local `.env` files that git ignores; an agent never creates one, and none reaches
-CI. Security
-reports go through GitHub's private advisories ([`SECURITY.md`](SECURITY.md)).
+CI. The Aztec node needs no key in the browser: the testnet bundle calls dRPC's keyless public
+endpoint. Scripts compose their node URL from `DRPC_API_KEY`, the owner's shared, IP-restricted dRPC
+CLI key, which exists only in 1Password and reaches a run only as a keyed run; no script prints that
+URL or writes it to a file, and no dRPC key is ever committed (`scripts/ci-cd/node-keys.test.ts`). On
+a leak, disable the key in dRPC, mint a new one and replace the 1Password field. Security reports go
+through GitHub's private advisories ([`SECURITY.md`](SECURITY.md)).
 
 ## Code comments
 
@@ -171,7 +181,7 @@ committed file.
 | Contracts | the contract READMEs' build and test commands; CI runs them in `bridge-contracts.yml` |
 
 CI: `pr-quick.yml` (`quality-status`: commitlint, lint and typecheck, unit tests, both builds with
-`verify:build-target`), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
+`verify:build-target`, and the landing's build and browser smoke on the landing graph), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
 graph or the `e2e:tools` label), `bridge-contracts.yml` (`bridge-contracts-status`: Foundry, halmos,
 Noir, TXE, the sandbox integration suite), `actionlint.yml`. Every PR workflow opens with a
 `changes` paths-filter job; `workflow_dispatch` bypasses it.

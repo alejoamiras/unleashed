@@ -3,22 +3,17 @@
  * live canaries: public fuel is claimed in the claim's setup and pays the actual fee; private fuel is
  * minted into the PrivateFPC, which pays against the ceiling the claim commits to.
  */
-import { readFileSync } from "node:fs"
-import { loadContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { type ContractBase, getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js/contracts"
+import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { PublicKeys } from "@aztec-labs/aztec.js/keys"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas, type GasFees } from "@aztec-labs/stdlib/gas"
-import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { type MinFeeNode, predictedWorstMinFees, publicFeeJuicePayment } from "../src/fee-juice"
 import { claimViaHub, type HubClaimOutcome, hubTokenFor } from "../src/hub-l2"
 import type { JournalTokenBlock } from "../src/journal"
 import {
 	deriveBridgeSecret,
 	PRIVATE_FPC_ADDRESS,
-	PRIVATE_FPC_SALT,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	privateFeeJuicePayment,
@@ -26,33 +21,6 @@ import {
 } from "../src/private-fuel"
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-/** The PrivateFPC has no public functions and no initializer, so it needs no on-chain deploy — but
- *  the private kernel oracle needs both preimages locally, and the canonical salt must reproduce the
- *  pinned address or the artifact has drifted. */
-export async function registerPrivateFpc(ewallet: unknown, mins: () => string) {
-	const artifact = loadContractArtifact(
-		JSON.parse(
-			readFileSync(
-				resolvePackageAsset("@alejoamiras/private-fee-juice", "target/private_contract-PrivateFPC.json", { from: import.meta.url }),
-				"utf8",
-			),
-		),
-	)
-	const instance = await getContractInstanceFromInstantiationParams(artifact, {
-		salt: Fr.fromHexString(PRIVATE_FPC_SALT),
-		publicKeys: PublicKeys.default(),
-		deployer: AztecAddress.ZERO,
-	})
-	if (instance.address.toString() !== PRIVATE_FPC_ADDRESS) {
-		throw new Error(`PrivateFPC rebuilt ${instance.address} != pinned ${PRIVATE_FPC_ADDRESS} (artifact/version drift)`)
-	}
-	try {
-		await (ewallet as { registerContract: (i: unknown, a: unknown) => Promise<unknown> }).registerContract(instance, artifact)
-	} catch {}
-	console.log(`PrivateFPC ${PRIVATE_FPC_ADDRESS.slice(0, 12)}… registered (${mins()})`)
-	return { instance, artifact }
-}
 
 /** Where the send's bridged Fee Juice went, and what its claim needs. */
 export type BridgedFuel =

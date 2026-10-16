@@ -8,8 +8,7 @@
  * The L2 recipient is a throwaway account; the deposits are funded by PRIVATE_KEY. Real proofs make
  * each claim take minutes. Run:
  *   bun run scripts/smoke-existing-testnet.ts --config <path/to/testnet-bridge.candidate.json>
- * (needs PRIVATE_KEY + SEPOLIA_RPC_URL in packages/bridge-core/.env; AZTEC_NODE_URL defaults to the
- * public testnet RPC).
+ * (a keyed run on testnet-l1.env.example: PRIVATE_KEY, SEPOLIA_RPC_URL, DRPC_API_KEY).
  */
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
@@ -43,10 +42,9 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
 if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY required (packages/bridge-core/.env)")
 
@@ -194,6 +192,7 @@ async function assertExitsOpen(lane: Lane): Promise<void> {
 
 async function main(): Promise<void> {
 	const mins = stopwatch()
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 	const tokens = BRIDGE.tokens.slice(0, 2)
 	if (tokens.length < 2) throw new Error("the candidate carries fewer than two tokens — the smoke exists to prove the hub serves several")
 
@@ -202,8 +201,8 @@ async function main(): Promise<void> {
 	const { wallet, pub } = createL1Clients({ chain: sepoliaChain(SEPOLIA_RPC), rpcUrl: SEPOLIA_RPC, account })
 	const l1: L1Ctx = { wallet, pub, account }
 
-	const node = createNode(NODE_URL)
-	const ewallet = await createL2Wallet({ nodeUrl: NODE_URL, proverEnabled: true })
+	const node = createNode(nodeUrl)
+	const ewallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	const { manager, from } = await freshSchnorrAccount(ewallet as never)
 	console.log("L2 smoke account", from.toString())
 	const { fee } = await sponsoredFpcFee(ewallet)

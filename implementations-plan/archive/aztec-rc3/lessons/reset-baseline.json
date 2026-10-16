@@ -1,0 +1,16 @@
+{
+	"$comment": "Hand-written reset baseline for the rc.3 testnet (live-intent's NO_RESET_BASELINE). live-intent build refuses a reset by design, so this records the new identity once, from evidence independent of the node: two public Sepolia RPCs and the upstream network config (phase-5.md § Identity reads).",
+	"identity": {
+		"nodeVersion": "6.0.0-rc.3",
+		"l1ChainId": 11155111,
+		"rollupVersion": 3409706519,
+		"walletChainId": 3415328944
+	},
+	"l1": {
+		"rollup": "0xed1eb2eb670b42e2fb5a478c076a264b9604089d",
+		"feeJuicePortal": "0x6974bde62c47a0041f5b4a2e61c5506c2b59ce59",
+		"feeJuice": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
+		"feeAssetHandler": "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9",
+		"registry": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba"
+	}
+}

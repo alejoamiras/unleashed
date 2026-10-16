@@ -5,8 +5,8 @@
  *
  * Real proofs plus a proven-epoch wait make this slow — expect ~30-60 min end to end.
  * Run: bun run scripts/deposit-testnet.ts --config <manifest> [--token <erc20>]
- *      (PRIVATE_KEY + SEPOLIA_RPC_URL in packages/bridge-core/.env; AZTEC_NODE_URL defaults to the
- *      public testnet RPC). `--token` defaults to the manifest's first token.
+ *      (a keyed run on testnet-l1.env.example: PRIVATE_KEY, SEPOLIA_RPC_URL, DRPC_API_KEY).
+ *      `--token` defaults to the manifest's first token.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
@@ -40,10 +40,9 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
 if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY required (packages/bridge-core/.env)")
 
@@ -194,14 +193,15 @@ async function runWithdrawLeg(
 
 async function main() {
 	const mins = stopwatch()
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 
 	const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 	const { wallet, pub } = createL1Clients({ chain: sepolia, rpcUrl: SEPOLIA_RPC, account })
 	const l1: L1Ctx = { pub, wallet, account }
 	console.log(`bidirectional smoke: ${TOKEN.displaySymbol} ${TOKEN.erc20} → portal ${TOKEN.portal}, hub ${BRIDGE.l2.hub.address}`)
 
-	const node = createNode(NODE_URL)
-	const ewallet = await createL2Wallet({ nodeUrl: NODE_URL, proverEnabled: true })
+	const node = createNode(nodeUrl)
+	const ewallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	const { manager, from } = await freshSchnorrAccount(ewallet as never)
 	console.log("L2 smoke account", from.toString())
 
