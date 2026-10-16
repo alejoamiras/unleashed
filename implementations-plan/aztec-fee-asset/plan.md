@@ -90,7 +90,9 @@ Good enough: a monogram tile ("AZ"), not a drawn logo; no new mainnet surface.
 
 ## Phases
 
-### Phase 1 — The AZTEC row in the picker
+### Phase 1 — The AZTEC row in the picker ✓
+<!-- Gate passed: lint exit 0; typecheck:all exit 0; test:tools 1643/1643; test:e2e 29/29. Lessons: lessons/phase-1.md -->
+
 1. Add the row in `useTokenCatalog.ts`.
 2. Add `FUEL_ASSET` to every test mock of `bridge-generation`.
 3. Add unit cases:
