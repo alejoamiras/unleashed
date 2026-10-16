@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import type { L1Ctx } from "../src/flows"
 import { type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
@@ -12,10 +10,11 @@ import {
 	type RouterOnlyOptions,
 	routerOnlyCandidate,
 } from "./generation-router"
+import { preLifiTestnetManifest } from "./lifi-canary-fixture"
 
-const live = parseManifestV2(JSON.parse(readFileSync(join(import.meta.dirname, "../../../apps/tools/public/testnet-bridge.json"), "utf8")))
+const live = preLifiTestnetManifest()
 const bridge = live.bridge
-if (!bridge) throw new Error("the live testnet manifest carries no bridge")
+if (!bridge) throw new Error("the pre-promotion testnet manifest carries no bridge")
 const ROUTER = `0x${"d1".repeat(20)}` as const
 const SWAPPER = `0x${"f5".repeat(20)}` as const
 

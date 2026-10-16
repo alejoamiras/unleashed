@@ -75,7 +75,7 @@ export const PLAN_PINNED_L1_SIGNER = requirePinnedSigner("testnet")
  * refused while it is: pin the address and commit it before building the intent that covers the canary.
  */
 export const PLAN_PINNED_CANARY_SIGNERS: Record<"testnet" | "mainnet", string | null> = {
-	testnet: null,
+	testnet: "0x7A4f7Be599Afa3AfB0A41bb1D44762Ce441f8fAc",
 	mainnet: null,
 }
 

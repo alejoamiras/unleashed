@@ -9,6 +9,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import type { L1Ctx } from "../src/flows"
 import { toWord } from "../src/register-hash"
 import { openDeployJournal } from "./deploy-manifest"
+import type { PreCreateTokenOptions } from "./generation"
 import { deriveHubInstance } from "./script-l2"
 
 vi.mock("@aztec-labs/aztec.js/deployment", () => ({
@@ -377,14 +378,14 @@ describe("preCreateToken", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pre-create-"))
 	afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
-	it("teaches its own run's fresh wallet the hub before reading `token_for` on it", async () => {
+	const portal = "0x5555555555555555555555555555555555555555"
+	async function preCreated(journalName: string, opts?: PreCreateTokenOptions) {
 		const deployRun = fakeChain(5n)
-		const journal = openDeployJournal(join(dir, "generation.jsonl"))
+		const journal = openDeployJournal(join(dir, journalName))
 		answerReads(journal, deployRun)
 		const gen = await deployGeneration(deployRun.l1, deployRun.l2, inputs, journal)
 
 		const preCreateRun = fakeChain(7n, 5n)
-		const portal = "0x5555555555555555555555555555555555555555"
 		;(preCreateRun.l1.pub.readContract as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
 			portal,
 			decimals: 6,
@@ -394,10 +395,20 @@ describe("preCreateToken", () => {
 			registerKey: `0x${"1".repeat(64)}`,
 		})
 		const erc20 = "0x6666666666666666666666666666666666666666"
-		const token = await preCreateToken(preCreateRun.l1, preCreateRun.l2, gen, erc20, journal)
-		expect(token).toMatchObject({ portal, displaySymbol: "GBPC" })
+		return { gen, preCreateRun, token: await preCreateToken(preCreateRun.l1, preCreateRun.l2, gen, erc20, journal, opts) }
+	}
+
+	it("teaches its own run's fresh wallet the hub before reading `token_for` on it", async () => {
+		const { gen, preCreateRun, token } = await preCreated("generation.jsonl")
+		expect(token).toMatchObject({ portal, displaySymbol: "GBPC", source: "permissionless-mint", sourceContract: "MintableERC20" })
 		expect(preCreateRun.wallet.known).toContain(gen.l2.hub.address.toLowerCase())
 		expect(preCreateRun.wallet.known).toContain(token.l2Token.toLowerCase())
+	})
+
+	it("labels a canonical token without the mint contract the app would offer a mint button for", async () => {
+		const { token } = await preCreated("canonical.jsonl", { source: "canonical" })
+		expect(token.source).toBe("canonical")
+		expect(token).not.toHaveProperty("sourceContract")
 	})
 })
 
