@@ -7,8 +7,9 @@ it can connect.
 | Path | What it is |
 |---|---|
 | [`apps/tools`](apps/tools/README.md) | The tools app: Bridge (send and exit any ERC-20), Faucet (testnet tokens), Activity. |
+| [`apps/landing`](apps/landing/README.md) | The page at `unleashed.systems`: the lab's name, a pitch, one row per experiment. |
 | [`packages/bridge-core`](packages/bridge-core/README.md) | The bridge logic over `viem` and `aztec.js`, plus the conductor, verifier and canary scripts that deploy and check a generation. |
-| [`packages/design`](packages/design/README.md) | The app's design system: tokens, fonts, primitives. |
+| [`packages/design`](packages/design/README.md) | The design system of the app and the landing: tokens, fonts, primitives. |
 | [`contracts/bridge/evm`](contracts/bridge/evm/README.md) | L1 contracts (Foundry): `PortalFactory`, the portal clones, `SwapBridgeRouter`. |
 | [`contracts/bridge/aztec`](contracts/bridge/aztec/README.md) | L2 contracts (Noir): `TokenBridgeHub` and its derivation libraries. |
 | [`implementations-plan`](implementations-plan/index.md) | Plans, their lessons, and the closed plans under `archive/`. |
@@ -36,11 +37,15 @@ target is chosen at build time, never at runtime. Workers Builds deploys `main` 
 testnet Worker also uploads a preview for each other branch its dashboard settings let it build,
 and the mainnet Worker has no previews. Both mainnet hosts sit behind Cloudflare Access (application
 `unleashed-mainnet`, policy "Only Foundation & Labs": `@aztec.foundation` and `@aztec-labs.com`
-identities), so neither the public nor automation reaches them. Until a landing page exists,
-`unleashed.systems` and `www.unleashed.systems` redirect (302) to the testnet app: a dashboard
-redirect rule, to retarget when mainnet opens. No Cloudflare credential exists in
-GitHub Actions. Details:
+identities), so neither the public nor automation reaches them. Details:
 [`apps/tools/README.md`](apps/tools/README.md) § Production build + hosting.
+
+A third Worker, `unleashed-landing`, serves the landing at `unleashed.systems` and
+`www.unleashed.systems`, both custom domains, and at `unleashed-landing.alejo-amiras.workers.dev`.
+Workers Builds deploys `main` and uploads a `noindex` preview for every other branch. Details:
+[`apps/landing/README.md`](apps/landing/README.md) § Hosting.
+
+No Cloudflare credential exists in GitHub Actions.
 
 ## Where the rules live
 

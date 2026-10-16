@@ -1,0 +1,15 @@
+{
+	"promotedAt": "",
+	"intent": "implementations-plan/aztec-rc3/lessons/recalibration/intent.json",
+	"commitAtPromotion": "",
+	"mode": "bridge-only",
+	"bridge": {
+		"candidateSha256": "6685544cf56460017f1738dbbe6768bf079b83eb0fa438d140abdbe359783a24",
+		"live": "apps/tools/public/testnet-bridge.json"
+	},
+	"faucet": {
+		"unchangedSha256": "d07a22bcf8ef0aae110ceff8aed568ef78a35c3e8bbe605e7a1c06f012574253",
+		"live": "apps/tools/src/contracts/deployments.json"
+	},
+	"generation": "existing live manifest: the generation interlock passed"
+}

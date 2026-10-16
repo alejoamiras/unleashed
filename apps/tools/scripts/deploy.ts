@@ -5,6 +5,7 @@
  *
  * Run once per environment:
  *   DEPLOYER_SECRET="<32+ chars>" bun run deploy:testnet
+ * Live, it is a keyed run on testnet-faucet.env.example, which also carries the node's DRPC_API_KEY.
  *
  * Optional flags:
  *   --dry-run     compute + print addresses without sending txs
@@ -48,7 +49,7 @@ import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { ownedWalletStore } from "@unleashed/bridge-core/wallet-store"
 import { DripperContract, DripperContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Dripper.js"
 import { TokenContract, TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
-import { type DeploymentConfig, getDeploymentConfig, type Network } from "./deploy-config.js"
+import { type DeploymentConfig, getDeploymentConfig, type Network, nodeUrlFor } from "./deploy-config.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -304,7 +305,7 @@ async function run(): Promise<void> {
 	const opts = parseArgs(process.argv)
 	const config = getDeploymentConfig(opts.network)
 
-	logger.info(`Network: ${config.network.name} (${config.network.nodeUrl})`)
+	logger.info(`Network: ${config.network.name}`)
 
 	if (opts.dryRun) {
 		const computed = await computeAddresses(config)
@@ -316,8 +317,9 @@ async function run(): Promise<void> {
 
 	const account = await resolveDeployerKeys()
 
-	const node = createAztecNodeClient(config.network.nodeUrl)
-	const wallet = await EmbeddedWallet.create(config.network.nodeUrl, {
+	const nodeUrl = nodeUrlFor(config.network.name)
+	const node = createAztecNodeClient(nodeUrl)
+	const wallet = await EmbeddedWallet.create(nodeUrl, {
 		pxeConfig: {
 			proverEnabled: config.network.name !== "local-network",
 			// No disk fallback even on local-network: the keys are the operator's DEPLOYER_SECRET*.

@@ -12,8 +12,8 @@
  *
  * Real proofs: expect ~15-40 min. Run:
  *   bun run scripts/smoke-swap-existing-testnet.ts --config <manifest> [--token <erc20>]
- * (needs PRIVATE_KEY + SEPOLIA_RPC_URL in packages/bridge-core/.env). `--token` defaults to the
- * manifest's first token.
+ * (a keyed run on testnet-l1.env.example: PRIVATE_KEY, SEPOLIA_RPC_URL, DRPC_API_KEY). `--token`
+ * defaults to the manifest's first token.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
@@ -45,10 +45,9 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
 if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY required (packages/bridge-core/.env)")
 
@@ -103,9 +102,9 @@ interface L2Leg {
 }
 
 /** A throwaway recipient (the sponsored FPC pays ONLY its deploy) plus the hub and token it claims through. */
-async function buildL2Leg(mins: () => string): Promise<L2Leg> {
-	const node = createNode(NODE_URL)
-	const ewallet = await createL2Wallet({ nodeUrl: NODE_URL, proverEnabled: true })
+async function buildL2Leg(nodeUrl: string, mins: () => string): Promise<L2Leg> {
+	const node = createNode(nodeUrl)
+	const ewallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	const { manager, from } = await freshSchnorrAccount(ewallet as never)
 	console.log("L2 smoke account", from.toString())
 
@@ -130,6 +129,7 @@ async function buildL2Leg(mins: () => string): Promise<L2Leg> {
 
 async function main() {
 	const mins = stopwatch()
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 
 	const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 	const { wallet, pub } = createL1Clients({ chain: sepolia, rpcUrl: SEPOLIA_RPC, account })
@@ -140,7 +140,7 @@ async function main() {
 	const fuel = await planFuelLeg(pub, CONFIG, TOKEN.erc20 as Address, FUEL_SLICE)
 	console.log(`quote: ${FUEL_SLICE} ${TOKEN.displaySymbol}-units → ${fuel.quote} FJ-wei (floor ${fuel.minFuelOutput}) (${mins()})`)
 
-	const { hub, l2Token, feeJuice, from } = await buildL2Leg(mins)
+	const { hub, l2Token, feeJuice, from } = await buildL2Leg(nodeUrl, mins)
 
 	await ensureRouterPermit2(l1, {
 		usdc: TOKEN.erc20 as `0x${string}`,

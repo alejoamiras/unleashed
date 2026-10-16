@@ -36,9 +36,7 @@ import { type ManifestToken, type ManifestV2, manifestToken } from "../src/manif
 import { parseClaimDescriptor, type RelayClaimDescriptor, redactDescriptorForLog, requireRelayerSecret } from "../src/relay-claim"
 import { createL2Wallet, createNode, loadManifestV2FromConfigArg, requireBridge } from "./script-bootstrap"
 import { claimTokensUntilSynced, deployAccountIfAbsent, registerHub, registerHubToken, sponsoredFpcFee } from "./script-l2"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
-
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const MANIFEST_PATH = process.env.BRIDGE_MANIFEST ?? join(here, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json")
@@ -72,9 +70,9 @@ function tokenBlock(token: ManifestToken, registerIndex?: string): JournalTokenB
  * The relayer's own account: a FIXED account salt makes its address deterministic across runs, and
  * the sponsored FPC means it never needs Fee Juice of its own.
  */
-async function relayerWallet(secret: Fr) {
-	const node = createNode(NODE_URL)
-	const ewallet = await createL2Wallet({ nodeUrl: NODE_URL, proverEnabled: true })
+async function relayerWallet(secret: Fr, nodeUrl: string) {
+	const node = createNode(nodeUrl)
+	const ewallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	const { signingKey, secretKey } = await deriveNuloAccountKeys(secret)
 	const manager = await ewallet.createSchnorrAccount(secretKey, Fr.ZERO, signingKey)
 	const from = (await manager.getAccount()).getAddress()
@@ -137,9 +135,10 @@ async function main(): Promise<void> {
 		throw new Error(`descriptor names ${descriptor.bridge} but the manifest hub is ${bridge.l2.hub.address} — refusing`)
 	}
 	const relayerSecret = requireRelayerSecret(process.env)
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 	console.log(`relaying ${token.displaySymbol} claim:`, redactDescriptorForLog(descriptor))
 
-	const { ewallet, from, sendOpts } = await relayerWallet(relayerSecret)
+	const { ewallet, from, sendOpts } = await relayerWallet(relayerSecret, nodeUrl)
 	const hub = await registerHub(ewallet, bridge.l2.hub)
 	await registerHubToken(ewallet, hub.address, token, bridge.l2.tokenClassId)
 

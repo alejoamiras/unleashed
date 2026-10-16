@@ -10,19 +10,20 @@ pause exits only. `bind_token` / `bind_and_claim_public` are the publish-free tw
 on a real network no factory leaf can be spent through them (pinned). `claim_secret` and `register_hash` are the shared derivation libraries; `keystone`
 pins them against their TypeScript and Solidity mirrors.
 
-## Toolchain — the pinned 6.0.0-rc.1 nargo
+## Toolchain — the pinned 6.0.0-rc.3 nargo
 
 The crates pin aztec-nr and `compressed_string` (`aztec-labs-eng/aztec-nr`) and the standards `token`
-(`AztecProtocol/aztec-standards`) at the `v6.0.0-rc.1` tags, the same line the JS packages, the
-sandbox and the live testnet run. Every manifest names aztec-nr by the identical URL, with no
-trailing slash: a different spelling makes Nargo build a second `aztec` crate. The content-hash
-library is vendored at `token_portal_content_hash_lib/` (its header names the upstream commit and
-digest) and consumed by path. A mismatched toolchain fails with a flood of macro errors
+(`AztecProtocol/aztec-standards`) at the `v6.0.0-rc.3` tags: the `@aztec-labs/*` version, which the
+sandbox and the live testnet run (the `@aztec-foundation/*` packages carry their own number). Every
+manifest names aztec-nr by the identical URL, with no trailing slash: a different spelling makes
+Nargo build a second `aztec` crate. The content-hash library is vendored at
+`token_portal_content_hash_lib/` (its header names the upstream commit and digest) and consumed by
+path. A mismatched toolchain fails with a flood of macro errors
 (`cannot find self`, `Could not resolve 'at'`). Always compile via `scripts/compile.sh`, which
 selects it:
 
 ```bash
-scripts/compile.sh            # AZTEC_HOME defaults to ~/.aztec/versions/6.0.0-rc.1 (aztec-up install 6.0.0-rc.1 first)
+scripts/compile.sh            # AZTEC_HOME defaults to ~/.aztec/versions/6.0.0-rc.3 (aztec-up install 6.0.0-rc.3 first)
 scripts/compile.sh --check    # CI: the class id derived from a rebuild must equal the committed one
 ```
 

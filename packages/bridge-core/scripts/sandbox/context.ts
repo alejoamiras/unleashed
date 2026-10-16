@@ -18,7 +18,6 @@ import type { BridgeBlock, ManifestToken, ManifestV2 } from "../../src/manifest-
 import {
 	deriveBridgeSecret,
 	PRIVATE_FPC_ADDRESS,
-	PRIVATE_FPC_SALT,
 	PRIVATE_HUB_EXIT_GAS,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
@@ -29,7 +28,7 @@ import type { CalibrationSample } from "../calibration"
 import { feeJuiceFor } from "../fee-juice-l2"
 import { type L2Ctx, waitForL1ToL2Message } from "../generation"
 import { ensureRouterPermit2 } from "../script-l1"
-import { claimTokensUntilSynced, registerHub, registerHubToken } from "../script-l2"
+import { claimTokensUntilSynced, registerHub, registerHubToken, registerPrivateFpc } from "../script-l2"
 import { planFuelLeg, sendGenerationOf } from "../script-send"
 import { deadline, FEE_CEILING, PERMIT2, rndNonce } from "./constants"
 import type { SandboxClients } from "./handle"
@@ -353,28 +352,20 @@ export async function fpcClaimFee(s: SmokeContext, res: SendResult, bridgeSalt: 
 
 // ─── Private gas held at the PrivateFPC ──────────────────────────────────────
 
-/** The canonical PrivateFPC has no initializer and no owner, so a fresh chain just needs the
- *  universal deploy at its pinned salt before anything can pay through it. */
-export async function ensurePrivateFpc(l2: L2Ctx): Promise<void> {
-	const pinned = AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS)
-	const existing = await l2.node.getContract(pinned)
-	if (existing) {
-		// Deployed through another wallet (an earlier file, a kept network): this one still has to
-		// hold the instance and artifact before it can simulate against it.
-		await l2.wallet.registerContract(existing, PrivateFPCContract.artifact as never)
-		return
-	}
-	await PrivateFPCContract.deploy(l2.wallet as never, { salt: Fr.fromHexString(PRIVATE_FPC_SALT), universalDeploy: true } as never).send(
-		l2.deployOpts as never,
-	)
-	if (!(await l2.node.getContract(pinned))) throw new Error(`a deploy at the canonical salt did not land at ${PRIVATE_FPC_ADDRESS}`)
-}
-
-/** The pinned PrivateFPC as this wallet sees it, deployed at the canonical salt when the chain has none. */
+/** The pinned PrivateFPC as this wallet sees it: registered locally, the way a user's wallet holds
+ *  it, and never published. */
 export async function privateFpc(s: SmokeContext): Promise<ContractBase> {
-	await ensurePrivateFpc(s.l2)
+	await registerPrivateFpc(s.l2.wallet)
 	const at = await PrivateFPCContract.at(AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS), s.l2.wallet as never)
 	return at as unknown as ContractBase
+}
+
+/** Every PrivateFPC flow ran against a local registration only if the node still knows no contract
+ *  at the pinned address. A failed read throws, so it can never pass as absence. */
+export async function assertPrivateFpcUnpublished(l2: L2Ctx): Promise<string> {
+	const published = await l2.node.getContract(AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS))
+	if (published) throw new Error(`the node reports a contract at the PrivateFPC ${PRIVATE_FPC_ADDRESS}; nothing here may publish it`)
+	return `the node reports no contract at ${PRIVATE_FPC_ADDRESS}`
 }
 
 /** The account's credit at the FPC — `balance_of` is a utility, read through the wallet's own PXE. */

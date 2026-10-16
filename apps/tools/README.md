@@ -111,7 +111,8 @@ bun run deploy:testnet:dry      # addresses only, no tx
 ```
 
 Against the live testnet the two deployer values arrive as the `testnet-faucet.env.example` keyed
-run, never as exported shell variables.
+run, never as exported shell variables, together with `DRPC_API_KEY`: the owner's shared dRPC CLI
+key, which the deploy composes its node URL from. A dry run talks to no node and needs none of them.
 
 The bridge generation (factory + router + hub + pre-created tokens) is deployed by
 `packages/bridge-core/scripts/deploy-generation.ts`, candidate-first, and promoted into
@@ -156,11 +157,12 @@ has no previews, and both its hosts are behind Cloudflare Access (Foundation and
 only): dashboard state, so a check against a live mainnet host needs a logged-in browser.
 
 `bb.js` needs cross-origin isolation. The build GENERATES `dist/_headers` (`vite.config.ts`) with
-COOP/COEP + a tight CSP whose `connect-src` is the target's (`src/lib/network-targets.ts`): the
-Aztec node hosts, exactly one token-list file and, on testnet, the keyless read RPCs a cross-chain
-deposit is watched through plus the Across API it is quoted from (mainnet admits no remote origin).
-`dist/build.json` and a `<meta>` tag carry the build id and chain id; `verify:build-target` asserts
-a built `dist/` matches the target it claims, its `_headers` included.
+COOP/COEP + a tight CSP whose `connect-src` is the target's (`src/lib/network-targets.ts`). On
+testnet that is dRPC's keyless public node (`https://aztec-testnet.drpc.org`, so the bundle holds no
+key), exactly one token-list file and the keyless read RPCs a cross-chain deposit is built and watched
+through (Across's API is never asked: testnet sends ride fixed terms); on mainnet it names nothing
+remote. `dist/build.json` and a `<meta>` tag carry the build id and chain id; `verify:build-target`
+asserts a built `dist/` matches the target it claims, its `_headers` included.
 
 The app only works in a secure context: over insecure HTTP there is no `crypto.randomUUID` and
 COOP/COEP are ignored. `workers.dev` is HTTPS-only in browsers that honor the `.dev` preload; the
@@ -174,7 +176,8 @@ only from an HTTPS response, and a first HTTP response can be altered before the
 | Variable | Where it's read | Purpose |
 |---|---|---|
 | `DEPLOYER_SECRET_KEY` + `DEPLOYER_SALT` (or `DEPLOYER_SECRET`) | `scripts/deploy.ts` only | The faucet deployer account |
-| `AZTEC_NODE_URL` | `scripts/deploy.ts` only | Override the deploy RPC |
+| `DRPC_API_KEY` | `scripts/deploy.ts` only (testnet, mainnet) | The owner's shared dRPC CLI key the deploy's node URL is composed from; a keyed run only |
+| `AZTEC_NODE_URL` | `scripts/deploy.ts` only (`--network local-network`) | Override the sandbox node (default `http://localhost:8080`) |
 | `VITE_AZTEC_NODE_URL` | Frontend (dev/e2e only) | Override the target's node URL |
 | `VITE_EXPLORER_BASE_URL` | Frontend | Base for L2 explorer links |
 | `VITE_WALLET_INSTALL_URL` | Frontend (no-wallet CTA) | Chrome Web Store link |
