@@ -123,7 +123,8 @@ Good enough: a monogram tile ("AZ"), not a drawn logo; no new mainnet surface.
 
 **Validation gate**: the Phase 1 commands, plus `bun run --cwd apps/tools build:testnet` exit 0. Layers: lint, typecheck, unit, component, build.
 
-### Phase 3 — Sandbox handler and browser cells
+### Phase 3 — Sandbox handler and browser cells ✓
+<!-- Gate passed: bun run e2e:tools exit 0, 72 passed (1.7h, local wall-clock 6259 s at load ~210); I1 held, no fallback deploy. Baseline from CI (lessons/phase-3.md). -->
 **Warning**: a new worktree has no `contracts/bridge/evm/{lib,out,cache}`. Copy them in first (`implementations-plan/lessons.md`).
 1. Check I1 and wire the handler into the sandbox manifest.
 2. Measure the suite's wall-clock before the change.

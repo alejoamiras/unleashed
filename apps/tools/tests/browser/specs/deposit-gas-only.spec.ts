@@ -1,13 +1,16 @@
-/** Gas-only deposits (cells 18–21): every route shape, public and private, and what it adds to. */
-import { PRIVATE_FUEL_CLAIM_GAS } from "@unleashed/bridge-core"
+/** Gas deposits (cells 18–21): every route shape, public and private, and what it adds to; 18c sends
+ *  the fee asset itself as token + gas. */
+import { PORTAL_FACTORY_ABI, PRIVATE_FUEL_CLAIM_GAS } from "@unleashed/bridge-core"
 import { balanceOf, fundPublicFeeJuice, mint, mintFeeAsset, privateCreditOf, privateFpc } from "@unleashed/bridge-core/sandbox"
+import { zeroAddress } from "viem"
+import { TESTIDS } from "../../../src/lib/testids"
 import { expect, test } from "../fixtures/test"
-import { connectAztec } from "../pages/connect"
+import { connectAztec, tid } from "../pages/connect"
 import { keptFor } from "../pages/fees"
 import { depositRecords, fuelConservation } from "../pages/journal"
 import { confirmReview, connectL1, openSend, reviewDeposit, waitForReceipt } from "../pages/send"
 
-test.use({ family: "deposit-gas-only", cells: 6, l1Index: 5 })
+test.use({ family: "deposit-gas-only", cells: 7, l1Index: 5 })
 
 const USDC = 10n ** 6n
 const FJ = 10n ** 18n
@@ -39,7 +42,7 @@ async function bridgeGas(
 	for (const word of ["Gas ready", "you got"]) expect(receipt.text).not.toContain(word)
 }
 
-test("cell 18 — plain, the fee asset's identity route, public: Fee Juice arrives one for one, minus its claim's fee", async ({
+test("cell 18 — plain, AZTEC from its row, the identity route, public: Fee Juice arrives one for one, minus its claim's fee", async ({
 	page,
 	sandbox,
 	actor,
@@ -48,7 +51,7 @@ test("cell 18 — plain, the fee asset's identity route, public: Fee Juice arriv
 	const feeAsset = sandbox.clients.deployment.feeJuice
 	await mintFeeAsset(sandbox.clients.l1, feeAsset, l1.address, 5n * FJ)
 	const fjBefore = await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")
-	await bridgeGas(page, { profile: "plain", account: actor.address, erc20: feeAsset, amount: "5", isPrivate: false, viaLookup: true })
+	await bridgeGas(page, { profile: "plain", account: actor.address, erc20: feeAsset, amount: "5", isPrivate: false })
 	const { received, fee } = await fuelConservation(page, actor.s.l2.node)
 	expect(received).toBe(5n * FJ)
 	expect(await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")).toBe(fjBefore + received - fee)
@@ -60,8 +63,48 @@ test("cell 18b — selfpay, identity route, public FJ already held: it adds to i
 	await mintFeeAsset(sandbox.clients.l1, feeAsset, l1.address, 5n * FJ)
 	const fjBefore = await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")
 	expect(fjBefore).toBeGreaterThan(0n)
-	await bridgeGas(page, { profile: "selfpay", account: actor.address, erc20: feeAsset, amount: "5", isPrivate: false, viaLookup: true })
+	await bridgeGas(page, { profile: "selfpay", account: actor.address, erc20: feeAsset, amount: "5", isPrivate: false })
 	const { received, fee } = await fuelConservation(page, actor.s.l2.node)
+	expect(await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")).toBe(fjBefore + received - fee)
+})
+
+test("cell 18c — plain, AZTEC as token + gas, public: the first send creates its portal and both legs settle", async ({
+	page,
+	sandbox,
+	actor,
+	l1,
+}) => {
+	const feeAsset = sandbox.clients.deployment.feeJuice
+	const factory = sandbox.manifest.bridge?.l1.factory as `0x${string}`
+	const portalOf = () =>
+		sandbox.clients.l1.pub.readContract({ address: factory, abi: PORTAL_FACTORY_ABI, functionName: "portalOf", args: [feeAsset] })
+	// No other cell gives the fee asset a token portal; a retry finds the one the first attempt made.
+	if (test.info().retry === 0) expect(await portalOf(), "the fee asset has no token portal yet").toBe(zeroAddress)
+	await mintFeeAsset(sandbox.clients.l1, feeAsset, l1.address, 20n * FJ)
+	const fjBefore = await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")
+
+	await page.goto("/")
+	await openSend(page)
+	await connectL1(page)
+	await connectAztec(page, { profile: "plain", account: actor.address })
+	await reviewDeposit(page, { l1ChainId: L1, erc20: feeAsset, amount: "20", intent: "token+gas", isPrivate: false })
+	await expect(page.locator(tid(TESTIDS.sendReviewFirstTime)), "the review says this send registers the token").toBeVisible()
+	await confirmReview(page)
+	const receipt = await waitForReceipt(page)
+	expect(receipt.gas, "the receipt carries the gas leg").not.toBeNull()
+
+	const record = (await depositRecords(page)).at(-1)
+	const portal = (await portalOf()).toLowerCase()
+	expect(portal, "the send created the fee asset's portal inline").not.toBe(zeroAddress)
+	expect(record?.token?.erc20.toLowerCase()).toBe(feeAsset)
+	expect(record?.token?.portal.toLowerCase()).toBe(portal)
+	expect(receipt.hero, "the receipt names the token the factory registered").toContain(record?.token?.displaySymbol ?? "<none>")
+	const tokenLeg = BigInt(record?.amount ?? "0")
+	expect(tokenLeg).toBeGreaterThan(0n)
+	const l2 = await actor.s.l2TokenOf(record?.token as never)
+	expect(await balanceOf(l2, actor.actor.address, "public"), "the token leg arrived whole").toBe(tokenLeg)
+	const { received, fee } = await fuelConservation(page, actor.s.l2.node)
+	expect(tokenLeg + received, "the identity route splits the 20 AZTEC one for one").toBe(20n * FJ)
 	expect(await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")).toBe(fjBefore + received - fee)
 })
 
@@ -71,7 +114,7 @@ test("cell 19 — plain, identity route, private: the Fee Juice becomes credit a
 	const fpc = await privateFpc(actor.s)
 	const creditBefore = await privateCreditOf(actor.s, fpc)
 	const fjBefore = await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")
-	await bridgeGas(page, { profile: "plain", account: actor.address, erc20: feeAsset, amount: "5", isPrivate: true, viaLookup: true })
+	await bridgeGas(page, { profile: "plain", account: actor.address, erc20: feeAsset, amount: "5", isPrivate: true })
 	const kept = await fuelClaimKept(page, run, actor)
 	expect(await privateCreditOf(actor.s, fpc), "credit = the fuel minus exactly the claim's ceiling").toBe(creditBefore + 5n * FJ - kept)
 	expect(await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public"), "nothing public was touched").toBe(fjBefore)
