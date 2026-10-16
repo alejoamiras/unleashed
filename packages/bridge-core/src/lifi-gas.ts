@@ -27,7 +27,10 @@ export const LIFI_STARGATE_COMPOSE_OVERHEAD = 300_000n
 export const LIFI_MIN_COMPOSE_GAS = LIFI_TO_CONTRACT_GAS_LIMIT + LIFI_STARGATE_COMPOSE_OVERHEAD
 
 /**
- * Venues the fuel quotes deny: signed RFQ orders that expire within minutes (bitget's ~10), which a cross-chain
- * fill can outlive. The warp fork proves the venues LI.FI picks without them survive ETA × 3.
+ * Signed RFQ venues whose orders expire within minutes (bitget's ~10), which a cross-chain fill can outlive. The
+ * recorder asks with this list, so each recording shows which venue LI.FI picks without them.
  */
 export const LIFI_DENY_EXCHANGES = ["bitget"] as const
+
+/** Fuel venues: the warp fork proved nordstern (Ethereum block 26,128,734) and sushiswap (26,128,931) survive ETA × 3. */
+export const LIFI_ALLOW_EXCHANGES = ["nordstern", "sushiswap"] as const

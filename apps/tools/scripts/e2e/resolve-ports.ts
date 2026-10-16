@@ -4,7 +4,7 @@
  * from the static window below the kernel's ephemeral range, so the resolve → build → serve gap
  * cannot lose them to an outgoing connection's source port, and claimed in the host registry under
  * the run's id so every other run on the host (the sandbox this run boots next included) picks
- * around them. The sandbox reserves its own four the same way.
+ * around them. The sandbox reserves its own the same way.
  *
  *   bun scripts/e2e/resolve-ports.ts <state-dir> <run-id> <pid>   → writes <state-dir>/ports.json
  *   bun scripts/e2e/resolve-ports.ts --release <state-dir>         → drops the rows ports.json says it owns

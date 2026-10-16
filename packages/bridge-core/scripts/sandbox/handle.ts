@@ -1,6 +1,6 @@
 /** The run handle: strings only, so it crosses a process boundary and vitest's `provide()` intact.
  *  `openSandbox` turns it back into connected clients for whichever process holds it. */
-import { z } from "zod"
+import z from "zod"
 import type { L1Ctx } from "../../src/flows"
 import type { ManifestV2 } from "../../src/manifest-v2"
 import { manifestV2Schema } from "../../src/manifest-v2"
@@ -9,7 +9,7 @@ import { privateKeyToAccount } from "viem/accounts"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { ARTIFACT_FILES } from "./manifest"
-import { CHAIN_ID, sandboxChain } from "./constants"
+import { CHAIN_ID, SOURCE_CHAIN_ID, sandboxChain } from "./constants"
 import type { L1Deployment } from "./l1"
 import { adoptGuardian, connectL2, type L2Base } from "./l2"
 import { stopwatch } from "../script-bootstrap"
@@ -45,7 +45,26 @@ export const sandboxHandleSchema = z
 			swapTarget: address,
 			quoter: address,
 			tokens: z.record(z.string(), address),
+			/** Beside the old router, never replacing it; optional so a handle from before them still reads. */
+			depositRouter: address.optional(),
+			fuelSwapper: address.optional(),
 		}),
+		/** The source anvil and the LI.FI rail's sandbox contracts; absent on a handle from before them. */
+		crossChain: z
+			.object({
+				sourceUrl: z.string().url(),
+				sourceChainId: z.literal(SOURCE_CHAIN_ID),
+				/** Signs cross-chain sends on the source chain; its L1 address receives a recovered delivery. */
+				userKey: hex,
+				/** Fills on L1 for the relay loop. */
+				relayerKey: hex,
+				source: z.object({ spokePool: address, diamond: address, token: address }).strict(),
+				destination: z
+					.object({ spokePool: address, executor: address, erc20Proxy: address, receiverAcrossV4: address, token: address })
+					.strict(),
+			})
+			.strict()
+			.optional(),
 	})
 	.strict()
 

@@ -3,6 +3,7 @@
  * `fjRegister` the extra a token's first claim pays for registering it. Both are worst cases over
  * the measured matrix plus a margin, so a quote sized from them survives a fee bump.
  */
+import type { ManifestV2 } from "../src/manifest-v2"
 
 export type CalibrationShape = "claim_public" | "claim_private" | "transfer" | "register_and_claim_public" | "register_token"
 
@@ -44,5 +45,27 @@ export function calibrateFuelBudgets(samples: readonly CalibrationSample[], marg
 	return {
 		fjPerTx: withMargin(perTx, marginBps),
 		fjRegister: withMargin(registerExtra > 0n ? registerExtra : 0n, marginBps),
+	}
+}
+
+/**
+ * `m` with `budgets` in every block that carries fuel budgets: the DepositRouter's `fuel` and the legacy router's
+ * `swap`, side by side while both routers are live. The budgets measure L2 claim fees, so one calibration serves
+ * both. Throws when `m` has neither block, since a manifest with no fuel route has nothing to calibrate.
+ */
+export function applyFuelBudgets(m: ManifestV2, budgets: FuelBudgets): ManifestV2 {
+	const l1 = m.bridge?.l1
+	if (!m.bridge || !l1 || (!l1.fuel && !l1.swap)) throw new Error(`manifest for ${m.network} carries no fuel budgets to calibrate — STOP`)
+	const measured = { fjPerTx: budgets.fjPerTx.toString(), fjRegister: budgets.fjRegister.toString() }
+	return {
+		...m,
+		bridge: {
+			...m.bridge,
+			l1: {
+				...l1,
+				...(l1.fuel ? { fuel: { ...l1.fuel, ...measured } } : {}),
+				...(l1.swap ? { swap: { ...l1.swap, ...measured } } : {}),
+			},
+		},
 	}
 }

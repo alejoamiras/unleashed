@@ -1,11 +1,12 @@
 /**
- * A per-run local network (anvil + `aztec start --local-network`) the sandbox scripts OWN: ports
- * drawn from a static window below the ephemeral floor, data on real disk, and a `stop()` that
- * signals exactly the process GROUPS this module spawned. Other agents run their own anvil and
- * aztec on the same machine, so a name-matched kill would take down someone else's network.
+ * A per-run local network (anvil + `aztec start --local-network`, plus a second anvil as the
+ * cross-chain source) the sandbox scripts OWN: ports drawn from a static window below the ephemeral
+ * floor, data on real disk, and a `stop()` that signals exactly the process GROUPS this module
+ * spawned. Other agents run their own anvil and aztec on the same machine, so a name-matched kill
+ * would take down someone else's network.
  *
- * `SANDBOX_L1_RPC` + `SANDBOX_NODE_URL` together attach to an already-running network instead
- * (a no-op `stop()`), which is how `--keep` is re-entered.
+ * `SANDBOX_L1_RPC` + `SANDBOX_NODE_URL` + `SANDBOX_SOURCE_RPC` together attach to an
+ * already-running network instead (a no-op `stop()`), which is how `--keep` is re-entered.
  */
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
@@ -27,7 +28,7 @@ import { createServer } from "node:net"
 import { homedir } from "node:os"
 import { delimiter, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { ANVIL_ACCOUNTS } from "./constants"
+import { ANVIL_ACCOUNTS, CHAIN_ID, SOURCE_CHAIN_ID } from "./constants"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PACKAGE_ROOT = resolve(here, "..", "..")
@@ -105,12 +106,19 @@ export type SandboxPorts = {
 	aztec: number
 	aztecAdmin: number
 	aztecP2P: number
+	sourceAnvil: number
 }
 
-/** Four distinct loopback ports, bind-tested against each other and released for the spawn. */
+/** Five distinct loopback ports, bind-tested against each other and released for the spawn. */
 export async function reserveSandboxPorts(): Promise<SandboxPorts> {
-	const held = [await reservePort(), await reservePort(), await reservePort(), await reservePort()]
-	const ports = { anvil: held[0].port, aztec: held[1].port, aztecAdmin: held[2].port, aztecP2P: held[3].port }
+	const held = [await reservePort(), await reservePort(), await reservePort(), await reservePort(), await reservePort()]
+	const ports = {
+		anvil: held[0].port,
+		aztec: held[1].port,
+		aztecAdmin: held[2].port,
+		aztecP2P: held[3].port,
+		sourceAnvil: held[4].port,
+	}
 	await Promise.all(held.map((h) => h.release()))
 	return ports
 }
@@ -222,7 +230,7 @@ export async function releaseHostPorts(runId: string, ports: Record<string, numb
 
 const releasePorts = (runId: string, ports: SandboxPorts) => releaseHostPorts(runId, ports)
 
-/** Four ports reserved AND claimed: a pick another run claimed in between is simply picked again. */
+/** The ports reserved AND claimed: a pick another run claimed in between is simply picked again. */
 async function claimSandboxPorts(runId: string): Promise<SandboxPorts> {
 	for (let attempt = 0; ; attempt++) {
 		const ports = await reserveSandboxPorts()
@@ -406,7 +414,16 @@ function drainOutput(child: ChildProcess, label: string, logFile: string): void 
 	child.once("close", () => sink.end())
 }
 
-function spawnAnvil(tool: Toolchain, port: number, logFile: string): ChildProcess {
+interface AnvilSpec {
+	label: string
+	port: number
+	chainId: number
+	logFile: string
+	/** Where anvil persists the historical states it pages out of memory; its default is outside the run. */
+	cachePath?: string
+}
+
+function spawnAnvil(tool: Toolchain, a: AnvilSpec): ChildProcess {
 	const child = spawn(
 		tool.anvilBin,
 		// Every key the handle advertises (`deploy.ts` funds none itself) must be one anvil pre-funds.
@@ -414,18 +431,19 @@ function spawnAnvil(tool: Toolchain, port: number, logFile: string): ChildProces
 			"--host",
 			"127.0.0.1",
 			"--port",
-			String(port),
+			String(a.port),
 			"--chain-id",
-			"31337",
+			String(a.chainId),
 			"--slots-in-an-epoch",
 			"1",
 			"--accounts",
 			String(ANVIL_ACCOUNTS),
+			...(a.cachePath ? ["--cache-path", a.cachePath] : []),
 			"--silent",
 		],
 		{ stdio: "pipe", detached: true },
 	)
-	drainOutput(child, "anvil", logFile)
+	drainOutput(child, a.label, a.logFile)
 	return child
 }
 
@@ -482,21 +500,23 @@ function spawnNode(tool: Toolchain, p: { ports: SandboxPorts; anvilUrl: string; 
 export interface LocalNetwork {
 	anvilUrl: string
 	nodeUrl: string
+	/** The source-chain anvil (`SOURCE_CHAIN_ID`) cross-chain sends start on. */
+	sourceUrl: string
 	stop(): Promise<void>
 }
 
-/** Both env vars together mean "use the network already running"; one alone would boot a fresh
- *  network whose other half the operator pointed elsewhere, so it is refused rather than guessed. */
+const ATTACH_VARS = ["SANDBOX_L1_RPC", "SANDBOX_NODE_URL", "SANDBOX_SOURCE_RPC"] as const
+
+/** All three env vars together mean "use the network already running"; a subset would boot a fresh
+ *  network whose other parts the operator pointed elsewhere, so it is refused rather than guessed. */
 function attachedNetwork(): LocalNetwork | undefined {
-	const anvilUrl = process.env.SANDBOX_L1_RPC
-	const nodeUrl = process.env.SANDBOX_NODE_URL
-	if (!anvilUrl && !nodeUrl) return undefined
-	if (!anvilUrl || !nodeUrl) {
-		throw new Error(
-			`SANDBOX_L1_RPC and SANDBOX_NODE_URL must be set together — only ${anvilUrl ? "SANDBOX_L1_RPC" : "SANDBOX_NODE_URL"} is set`,
-		)
+	const [anvilUrl, nodeUrl, sourceUrl] = ATTACH_VARS.map((v) => process.env[v])
+	const set = ATTACH_VARS.filter((v) => process.env[v])
+	if (set.length === 0) return undefined
+	if (!anvilUrl || !nodeUrl || !sourceUrl) {
+		throw new Error(`${ATTACH_VARS.join(", ")} must be set together — only ${set.join(", ")} is set`)
 	}
-	return { anvilUrl, nodeUrl, stop: () => Promise.resolve() }
+	return { anvilUrl, nodeUrl, sourceUrl, stop: () => Promise.resolve() }
 }
 
 export interface StartLocalNetworkOptions {
@@ -520,20 +540,21 @@ export function reapOnSignals(stop: () => Promise<void>): void {
 }
 
 /**
- * Boots anvil + an aztec local network, or attaches to the one the env names. The data directory is
- * on real disk under `~/.cache`: a tmpfs store killed before teardown pins multi-GB of RAM in a
- * deleted-but-open file until its holder dies.
+ * Boots anvil + an aztec local network + the source-chain anvil, or attaches to the ones the env
+ * names. The data directory is on real disk under `~/.cache`: a tmpfs store killed before teardown
+ * pins multi-GB of RAM in a deleted-but-open file until its holder dies.
  */
 export async function startLocalNetwork(opts: StartLocalNetworkOptions): Promise<LocalNetwork> {
 	const attached = attachedNetwork()
 	if (attached) {
-		console.log(`[sandbox] attaching to ${attached.anvilUrl} + ${attached.nodeUrl}`)
+		console.log(`[sandbox] attaching to ${attached.anvilUrl} + ${attached.nodeUrl} + ${attached.sourceUrl}`)
 		return attached
 	}
 	const tool = resolveToolchain(opts.toolchainRoot ?? join(homedir(), ".aztec", "versions", aztecPin()))
 	const ports = await claimSandboxPorts(opts.runId)
 	const anvilUrl = `http://127.0.0.1:${ports.anvil}`
 	const nodeUrl = `http://127.0.0.1:${ports.aztec}`
+	const sourceUrl = `http://127.0.0.1:${ports.sourceAnvil}`
 	const dataDir = join(SANDBOX_CACHE_DIR, opts.runId)
 	mkdirSync(dataDir, { recursive: true })
 	const spawned: OwnedChild[] = []
@@ -562,11 +583,15 @@ export async function startLocalNetwork(opts: StartLocalNetworkOptions): Promise
 		}
 		rmSync(dataDir, { recursive: true, force: true })
 	})
+	const log = (name: string) => join(SANDBOX_LOG_DIR, `${opts.runId}-${name}.log`)
 	try {
-		console.log(`[sandbox] anvil ${anvilUrl}, aztec ${nodeUrl}, data ${dataDir}`)
-		spawned.push(own(spawnAnvil(tool, ports.anvil, join(SANDBOX_LOG_DIR, `${opts.runId}-anvil.log`))))
+		console.log(`[sandbox] anvil ${anvilUrl}, aztec ${nodeUrl}, source anvil ${sourceUrl}, data ${dataDir}`)
+		spawned.push(own(spawnAnvil(tool, { label: "anvil", port: ports.anvil, chainId: CHAIN_ID, logFile: log("anvil") })))
 		await waitHealthy(`anvil at ${anvilUrl}`, () => rpcResponds(anvilUrl, "eth_chainId"), 60_000)
-		spawned.push(own(spawnNode(tool, { ports, anvilUrl, dataDir, logFile: join(SANDBOX_LOG_DIR, `${opts.runId}-aztec.log`) })))
+		const source = { label: "source-anvil", port: ports.sourceAnvil, chainId: SOURCE_CHAIN_ID, logFile: log("source-anvil") }
+		spawned.push(own(spawnAnvil(tool, { ...source, cachePath: join(dataDir, "source-anvil") })))
+		await waitHealthy(`source anvil at ${sourceUrl}`, () => rpcResponds(sourceUrl, "eth_chainId"), 60_000)
+		spawned.push(own(spawnNode(tool, { ports, anvilUrl, dataDir, logFile: log("aztec") })))
 		await waitHealthy(`aztec node at ${nodeUrl}`, () => rpcResponds(nodeUrl, "node_getNodeInfo"), 180_000)
 	} catch (e) {
 		await stop()
@@ -574,5 +599,5 @@ export async function startLocalNetwork(opts: StartLocalNetworkOptions): Promise
 	}
 	const pids = spawned.map((o) => o.child.pid).filter((p): p is number => p !== undefined)
 	console.log(`[sandbox] local network ready — listening on ${listeningSockets(pids)}`)
-	return { anvilUrl, nodeUrl, stop }
+	return { anvilUrl, nodeUrl, sourceUrl, stop }
 }

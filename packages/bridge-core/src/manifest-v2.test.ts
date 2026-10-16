@@ -132,3 +132,64 @@ describe("manifest v2 (strict, self-deriving)", () => {
 		expect(() => parseManifestV2(unknown)).toThrow(/Unrecognized key/)
 	})
 })
+
+const ROUTER = "0x00000000000000000000000000000000000000d1"
+const SWAPPER = "0x00000000000000000000000000000000000000d2"
+const FUEL = { slippageBps: 100, crossChainSlippageBps: 150, minFuelFj: "1", fjPerTx: "2", fjRegister: "3" }
+const SOURCE_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+
+/** The fixture with a DepositRouter, its swapper and one LI.FI source delivering the manifest token. */
+async function routed() {
+	const raw = await fixture()
+	const l1 = raw.bridge.l1 as Record<string, unknown>
+	Object.assign(l1, { depositRouter: ROUTER, fuelSwapper: SWAPPER, fuel: FUEL, legacyRouters: [raw.bridge.l1.router] })
+	;(raw.bridge as Record<string, unknown>).routing = {
+		provider: "lifi",
+		sources: [{ chainId: 84532, rail: "acrossV4", tokens: [{ address: SOURCE_USDC, symbol: "USDC", decimals: 6, destToken: ERC20 }] }],
+	}
+	return raw as typeof raw & {
+		bridge: { l1: Record<string, unknown>; routing: { sources: { chainId: number; tokens: { destToken: string }[] }[] } }
+	}
+}
+
+describe("manifest v2 DepositRouter fields", () => {
+	it("accepts the router, swapper, budgets, legacy routers and routing; a manifest without them still parses", async () => {
+		const m = parseManifestV2(await routed())
+		expect(m.bridge?.l1.depositRouter).toBe(ROUTER)
+		expect(m.bridge?.routing?.sources[0].rail).toBe("acrossV4")
+		expect(parseManifestV2({ ...(await fixture()) }).bridge?.l1.depositRouter).toBeUndefined()
+	})
+
+	it("refuses the testnet swapper on mainnet and a router without its swapper or budgets elsewhere", async () => {
+		const mainnet = await routed()
+		Object.assign(mainnet, { l1ChainId: 1, walletChainId: 1 })
+		expect(() => parseManifestV2(mainnet)).toThrow(/fuel swapper is refused on Ethereum mainnet/)
+		mainnet.bridge.l1.fuelSwapper = undefined
+		expect(parseManifestV2(mainnet).bridge?.l1.fuelSwapper).toBeUndefined()
+
+		const noSwapper = await routed()
+		noSwapper.bridge.l1.fuelSwapper = undefined
+		expect(() => parseManifestV2(noSwapper)).toThrow(/fuelSwapper is present exactly when depositRouter is/)
+		const noBudgets = await routed()
+		noBudgets.bridge.l1.fuel = undefined
+		expect(() => parseManifestV2(noBudgets)).toThrow(/needs the fuel budgets/)
+	})
+
+	it("refuses routing to a token without a portal, a destination-chain source, duplicates and a routerless route", async () => {
+		const portalless = await routed()
+		portalless.bridge.routing.sources[0].tokens[0].destToken = "0x00000000000000000000000000000000000000e9"
+		expect(() => parseManifestV2(portalless)).toThrow(/destToken must be a manifest token/)
+		const loop = await routed()
+		loop.bridge.routing.sources[0].chainId = 31337
+		expect(() => parseManifestV2(loop)).toThrow(/cannot be the destination/)
+		const dupChain = await routed()
+		dupChain.bridge.routing.sources.push({ ...dupChain.bridge.routing.sources[0] })
+		expect(() => parseManifestV2(dupChain)).toThrow(/duplicate source chain/)
+		const legacy = await routed()
+		legacy.bridge.l1.legacyRouters = [ROUTER]
+		expect(() => parseManifestV2(legacy)).toThrow(/the current router is not legacy/)
+		const routerless = await routed()
+		for (const k of ["depositRouter", "fuelSwapper", "fuel"]) delete routerless.bridge.l1[k]
+		expect(() => parseManifestV2(routerless)).toThrow(/routing needs a depositRouter/)
+	})
+})

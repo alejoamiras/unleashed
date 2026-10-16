@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract, type ContractInstanceWithAddress } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { getContractAddress } from "viem"
+import { type Abi, encodeDeployData, getContractAddress, type Hex, keccak256, TransactionNotFoundError } from "viem"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import type { L1Ctx } from "../src/flows"
 import { toWord } from "../src/register-hash"
@@ -25,9 +25,19 @@ vi.mock("@aztec-labs/aztec.js/contracts", async (importOriginal) => {
 		},
 	}
 })
-vi.mock("./script-artifacts", () => ({
-	evmArtifact: (name: string) => ({ abi: [], bytecode: `0x${name.length.toString(16).padStart(2, "0")}` }),
-}))
+/** Appended to every mocked creation code: a non-empty suffix stands for a recompiled contract. */
+const recompiled = vi.hoisted(() => ({ suffix: "" }))
+vi.mock("./script-artifacts", () => {
+	// The adoptable contracts' real constructor arities: an adoption check re-encodes their arguments.
+	const arity: Record<string, number> = { TestnetFuelSwapper: 3, DepositRouter: 5 }
+	const inputs = (name: string) => Array.from({ length: arity[name] ?? 0 }, () => ({ type: "address" }))
+	return {
+		evmArtifact: (name: string) => ({
+			abi: [{ type: "constructor", stateMutability: "nonpayable", inputs: inputs(name) }],
+			bytecode: `0x${name.length.toString(16).padStart(2, "0")}${recompiled.suffix}`,
+		}),
+	}
+})
 vi.mock("../src/hub-l2", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../src/hub-l2")>()
 	return {
@@ -42,7 +52,9 @@ vi.mock("../src/hub-l2", async (importOriginal) => {
 	}
 })
 
-const { deployGeneration, preCreateToken } = await import("./generation")
+const { deployDepositRouter, deployFuelSwapper, deployGeneration, findAdoptable, fuelSwapperArgs, preCreateToken } = await import(
+	"./generation"
+)
 
 /** A wallet that, like a PXE on a fresh store, knows only the instances it was taught this run. */
 function freshWallet() {
@@ -386,5 +398,119 @@ describe("preCreateToken", () => {
 		expect(token).toMatchObject({ portal, displaySymbol: "GBPC" })
 		expect(preCreateRun.wallet.known).toContain(gen.l2.hub.address.toLowerCase())
 		expect(preCreateRun.wallet.known).toContain(token.l2Token.toLowerCase())
+	})
+})
+
+describe("deployFuelSwapper / deployDepositRouter — exact-match adoption", () => {
+	const dir = mkdtempSync(join(tmpdir(), "router-only-"))
+	afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+	interface Creation {
+		tx: { to: string | null; input: string }
+		receipt: { status: string; contractAddress: string | null }
+	}
+
+	/** An L1 where each deploy lands at the deployer's next CREATE address, keeps its creation transaction and
+	 *  receipt, and carries code from then on. */
+	function landingChain() {
+		let nonce = 3n
+		const code = new Set<string>()
+		const creations = new Map<string, Creation>()
+		const creation = (hash: string): Creation => {
+			const c = creations.get(hash)
+			if (!c) throw new TransactionNotFoundError({ hash: hash as Hex })
+			return c
+		}
+		type DeployArgs = { abi: Abi; bytecode: Hex; args: readonly unknown[]; nonce?: number }
+		const l1 = {
+			account: { address: DEPLOYER },
+			wallet: {
+				chain: undefined,
+				deployContract: vi.fn(async ({ abi, bytecode, args, nonce: pinned }: DeployArgs) => {
+					if (pinned === undefined || BigInt(pinned) !== nonce) throw new Error("deploy without the pinned nonce")
+					const address = getContractAddress({ from: DEPLOYER, nonce }).toLowerCase()
+					nonce += 1n
+					code.add(address)
+					const hash = `0x${address.slice(2).padStart(64, "0")}`
+					creations.set(hash, {
+						tx: { to: null, input: encodeDeployData({ abi, bytecode, args }) },
+						receipt: { status: "success", contractAddress: address },
+					})
+					return hash
+				}),
+			},
+			pub: {
+				getTransactionCount: vi.fn(async () => Number(nonce)),
+				getCode: vi.fn(async ({ address }: { address: string }) => (code.has(address.toLowerCase()) ? "0x60" : undefined)),
+				waitForTransactionReceipt: vi.fn(async ({ hash }: { hash: string }) => creation(hash).receipt),
+				getTransaction: vi.fn(async ({ hash }: { hash: string }) => creation(hash).tx),
+				getTransactionReceipt: vi.fn(async ({ hash }: { hash: string }) => creation(hash).receipt),
+			},
+		}
+		return { l1: l1 as unknown as L1Ctx, code, creations, deploys: l1.wallet.deployContract }
+	}
+
+	it("adopts only an identical contract with code on chain; changed arguments or code deploy anew and append", async () => {
+		const chain = landingChain()
+		const journal = openDeployJournal(join(dir, "adopt.jsonl"))
+		const swapperArgs = { feeAsset: inputs.feeJuice, owner: DEPLOYER }
+		const swapper = await deployFuelSwapper(chain.l1, journal, swapperArgs)
+		expect(swapper.adopted).toBe(false)
+		expect(journal.steps[0]).toMatchObject({
+			kind: "fuel-swapper-deployed",
+			address: swapper.address,
+			creationCodeHash: keccak256(`0x${"TestnetFuelSwapper".length.toString(16)}`),
+			// An absent faucet is the zero address, exactly as the constructor receives it.
+			constructorArgs: [inputs.feeJuice, `0x${"0".repeat(40)}`, DEPLOYER.toLowerCase()],
+		})
+		expect(await deployFuelSwapper(chain.l1, journal, swapperArgs)).toEqual({ address: swapper.address, adopted: true })
+
+		const routerArgs = { ...inputs, factory: inputs.registry, swapTarget: swapper.address, owner: DEPLOYER }
+		const router = await deployDepositRouter(chain.l1, journal, routerArgs)
+		const otherOwner = await deployDepositRouter(chain.l1, journal, { ...routerArgs, owner: inputs.feeJuicePortal })
+		recompiled.suffix = "ff"
+		const otherCode = await deployDepositRouter(chain.l1, journal, routerArgs)
+		recompiled.suffix = ""
+		expect(new Set([router.address, otherOwner.address, otherCode.address]).size).toBe(3)
+		expect([otherOwner.adopted, otherCode.adopted]).toEqual([false, false])
+		// Each change is a step of its own; the step naming the first router is never rewritten, and still adopts.
+		expect(journal.steps.map((s) => (s.kind === "deposit-router-deployed" ? s.address : s.kind))).toEqual([
+			"fuel-swapper-deployed",
+			router.address,
+			otherOwner.address,
+			otherCode.address,
+		])
+		expect(await deployDepositRouter(chain.l1, journal, routerArgs)).toEqual({ address: router.address, adopted: true })
+
+		// A journalled match whose address has no code here is not adopted.
+		chain.code.delete(swapper.address)
+		expect((await deployFuelSwapper(chain.l1, journal, swapperArgs)).adopted).toBe(false)
+		expect(chain.deploys).toHaveBeenCalledTimes(5)
+	})
+
+	it("adopts only what the journalled transaction provably created: a successful creation of that address from this code and these arguments", async () => {
+		const chain = landingChain()
+		const journal = openDeployJournal(join(dir, "provenance.jsonl"))
+		const swapperArgs = { feeAsset: inputs.feeJuice, owner: DEPLOYER }
+		const args = fuelSwapperArgs(swapperArgs)
+		const { address } = await deployFuelSwapper(chain.l1, journal, swapperArgs)
+		const [hash, landed] = [...chain.creations.entries()][0] as [string, Creation]
+		const adoptable = () => findAdoptable(chain.l1, journal, "fuel-swapper-deployed", args)
+		expect(await adoptable()).toBe(address)
+
+		const tampered: Array<[string, Creation | undefined]> = [
+			["other arguments", { ...landed, tx: { ...landed.tx, input: `${landed.tx.input.slice(0, -40)}${"ee".repeat(20)}` } }],
+			["another address", { ...landed, receipt: { ...landed.receipt, contractAddress: inputs.registry } }],
+			["reverted", { ...landed, receipt: { ...landed.receipt, status: "reverted" } }],
+			["a call, not a creation", { ...landed, tx: { ...landed.tx, to: address } }],
+			["absent from this chain", undefined],
+		]
+		for (const [label, creation] of tampered) {
+			if (creation) chain.creations.set(hash, creation)
+			else chain.creations.delete(hash)
+			expect(await adoptable(), label).toBeUndefined()
+		}
+		chain.creations.set(hash, landed)
+		expect(await adoptable()).toBe(address)
 	})
 })
