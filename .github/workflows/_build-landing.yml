@@ -1,0 +1,44 @@
+name: _Build landing (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to checkout.
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: vite build + browser smoke (landing)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: ./.github/actions/setup-bun
+
+      # `build` runs the offline guard over dist/ (CSP, inline code, links, fonts, sizes, build id).
+      - name: Build
+        run: bun run --cwd apps/landing build
+
+      - uses: ./.github/actions/setup-playwright
+
+      # Chromium only; WebKit runs in the local and live gates (CI does not install it).
+      - name: Browser smoke
+        run: bun run --cwd apps/landing test:browser
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: landing-playwright-report
+          path: apps/landing/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7

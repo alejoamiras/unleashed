@@ -5,6 +5,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [any-erc20-bridge](any-erc20-bridge/plan.md) — archived — any-erc20-bridge — plan
 - [aprime-fidelity](aprime-fidelity/plan.md) — archived — the app brought to the Dead Channel A′ boards: icons, static, token step, chrome, activity, receipt, faucet, amount and review, in-flight, phones
 - [aztec-v6](aztec-v6/plan.md) — archived — Aztec 6.0.0-rc.1 and a new testnet bridge generation after the network reset
+- [aztec-rc3](aztec-rc3/plan.md) — archived — Aztec 6.0.0-rc.3, a new testnet bridge generation, and split dRPC keys
 - [aztec-5.0.0-stable](aztec-5.0.0-stable/plan.md) — archived — aztec-5.0.0-stable
 - [aztec-5.0.1-line](aztec-5.0.1-line/plan.md) — archived — aztec-5.0.1-line
 - [bridge-evm-verification](bridge-evm-verification/plan.md) — archived — bridge-evm-verification
@@ -32,6 +33,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [fuel-l1-mint](fuel-l1-mint/plan.md) — archived — Fuel L1 mint — `/blueprint light`
 - [fuel-portal-v5-fix](fuel-portal-v5-fix/plan.md) — archived — Fuel-bridge Fee-Juice portal V5 fix
 - [journal-engine-decomposition](journal-engine-decomposition/plan.md) — archived — journal-engine-decomposition (arc 4, monster 3 of 3)
+- [landing](landing/plan.md) — archived — option C "Dither tide" at unleashed.systems and www, on its own assets-only Worker
 - [no-fuel-claim-fee-source](no-fuel-claim-fee-source/plan.md) — archived — No-fuel claim fee source — pay from public OR private Fee Juice
 - [operator-gates](operator-gates/plan.md) — archived — operator-gates — round 3, plan 3 (BL/C, 1–2 PRs)
 - [private-exit-fence](private-exit-fence/plan.md) — archived — private-exit-fence — a private exit never names a public fee payer

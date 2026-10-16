@@ -1,14 +1,17 @@
-import { TESTNET_NODE_URL, TOKEN_LIST_URL } from "@unleashed/bridge-core"
+import { TOKEN_LIST_URL } from "@unleashed/bridge-core"
 import { describe, expect, it } from "vitest"
 import { localTarget, MAINNET_TARGET, resolveToolsTarget, TESTNET_TARGET } from "./network-targets"
+
+const KEYLESS_TESTNET_NODE = "https://aztec-testnet.drpc.org"
 
 /** `connect-src` is generated into `dist/_headers` per target; an origin missing here is a runtime
  *  fetch the browser blocks with no visible error, so both targets pin their exact reach. */
 describe("cspConnectSrc", () => {
-	it("testnet reaches exactly its node, by path, and no other node host", () => {
-		expect(TESTNET_TARGET.nodeUrl).toBe(TESTNET_NODE_URL)
-		expect(TESTNET_TARGET.cspConnectSrc.split(" ")).toContain(TESTNET_NODE_URL)
-		expect(TESTNET_TARGET.cspConnectSrc).not.toMatch(/\*|aztec-labs\.com|aztec\.network|wss:/)
+	// Booleans: a node URL is never printed by a failing assertion.
+	it("testnet reaches exactly dRPC's keyless node and no other node host", () => {
+		expect(TESTNET_TARGET.nodeUrl === KEYLESS_TESTNET_NODE).toBe(true)
+		expect(TESTNET_TARGET.cspConnectSrc.split(" ").includes(KEYLESS_TESTNET_NODE)).toBe(true)
+		expect(/\*|aztec-labs\.com|aztec\.network|wss:|drpc\.live/.test(TESTNET_TARGET.cspConnectSrc)).toBe(false)
 	})
 
 	it("testnet reaches the community token list the catalog loads", () => {
@@ -19,8 +22,9 @@ describe("cspConnectSrc", () => {
 		expect(MAINNET_TARGET.cspConnectSrc).toBe("'self' data: blob:")
 	})
 
-	it("mainnet no longer reaches its node or the token list", () => {
-		expect(MAINNET_TARGET.cspConnectSrc).not.toContain("drpc.live")
+	it("mainnet names no node and reaches neither a node nor the token list", () => {
+		expect(MAINNET_TARGET.nodeUrl === "").toBe(true)
+		expect(MAINNET_TARGET.cspConnectSrc).not.toContain("drpc")
 		expect(MAINNET_TARGET.cspConnectSrc).not.toContain(TOKEN_LIST_URL)
 	})
 

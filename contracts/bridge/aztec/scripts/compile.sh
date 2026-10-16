@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Compile + AVM-transpile the deployable L2 bridge contracts.
 #
-# These contracts pin aztec-nr at the v6.0.0-rc.1 git tag, which needs the matching
-# 6.0.0-rc.1 toolchain. The `aztec` CLI + `bb` (the AVM transpiler) live under
+# These contracts pin aztec-nr at the v6.0.0-rc.3 git tag, which needs the matching
+# 6.0.0-rc.3 toolchain. The `aztec` CLI + `bb` (the AVM transpiler) live under
 # node_modules/.bin; nargo is exposed as `aztec-nargo` in bin/ (5.0 renamed the bundled
 # bare binaries to aztec-* on PATH). Plain `nargo compile` produces a NON-transpiled
 # artifact that aztec.js loadContractArtifact rejects ("public bytecode has not been
@@ -16,9 +16,9 @@
 #   compile.sh [--check] <crate>...   restrict to the named crates
 set -euo pipefail
 
-AZTEC_HOME="${AZTEC_HOME:-$HOME/.aztec/versions/6.0.0-rc.1}"
+AZTEC_HOME="${AZTEC_HOME:-$HOME/.aztec/versions/6.0.0-rc.3}"
 AZTEC="$AZTEC_HOME/node_modules/.bin/aztec"
-[ -x "$AZTEC" ] || { echo "6.0.0-rc.1 aztec CLI not found at $AZTEC — run: aztec-up install 6.0.0-rc.1" >&2; exit 1; }
+[ -x "$AZTEC" ] || { echo "6.0.0-rc.3 aztec CLI not found at $AZTEC — run: aztec-up install 6.0.0-rc.3" >&2; exit 1; }
 
 export PATH="$AZTEC_HOME/bin:$AZTEC_HOME/node_modules/.bin:$PATH"
 export NARGO="$AZTEC_HOME/bin/aztec-nargo"

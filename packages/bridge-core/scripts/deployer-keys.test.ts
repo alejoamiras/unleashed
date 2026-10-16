@@ -1,7 +1,35 @@
+import { Fr } from "@aztec-labs/aztec.js/fields"
+import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { describe, expect, it } from "vitest"
 import { resolveDeployerKeys } from "./deployer-keys"
 
 const SECRET = "correct-horse-battery-staple"
+
+/**
+ * The wallet repository's reference vectors (`reference/nulo-v6.1/vectors.json`, generated from the
+ * published packages, never from the code under test). A derivation that moves them moves the
+ * deployer's account, orphaning the hub's `guardianL2` and the deployer's Fee Juice: never re-pin.
+ */
+const NULO_ACCOUNT_VECTORS = [
+	{
+		seed: "0x0000000000000000000000000000000000000000000000000000000000000042",
+		signingKey: "0x2aabed87d5340c673eae6dc5faaa57382b8d773fa38247a80bdafbd5277729e3",
+		secretKey: "0x23fb2f8bb384a3d9bf850b70fee665f66225bd8bab53b10e07b041d7ceb2e20b",
+	},
+	{
+		seed: "0x0000000000000000000000000000000000000000000000000000000000001337",
+		signingKey: "0x1bc7e137bf0ad145b6b4fe7effb154cd89d9fa8f805950e4fee94dc9561cb005",
+		secretKey: "0x1dda6fd096042321f8ed2b61d368d343916828d13c2a3ee764e1343a3a9b5543",
+	},
+]
+
+describe("deriveNuloAccountKeys — the installed @nulo-sh/wallet-crypto derives the wallet's reference keys", () => {
+	it.each(NULO_ACCOUNT_VECTORS)("seed $seed", async ({ seed, signingKey, secretKey }) => {
+		const keys = await deriveNuloAccountKeys(Fr.fromHexString(seed))
+		expect(keys.signingKey.toString()).toBe(signingKey)
+		expect(keys.secretKey.toString()).toBe(secretKey)
+	})
+})
 const MAINNET = { BRIDGE_DEPLOYER_SECRET_MAINNET: SECRET, BRIDGE_DEPLOYER_PREFIX_MAINNET: "example-prefix" }
 
 describe("resolveDeployerKeys — stable, network-separated L2 deployer", () => {
