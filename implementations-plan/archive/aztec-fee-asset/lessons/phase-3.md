@@ -45,3 +45,5 @@ Codex round 3, resumed in the same session, found two material bugs; both are fi
 - a mint started on the strip left the card showing its own older success and toast. The card now watches the shared `startedAt`, which `useFeeAssetMint` exposes.
 
 Round 4: "No material findings."
+
+The new screenshots showed AZTEC as "1000" beside SIGNAL's "1,000". `formatWhole` now groups thousands. Round 5, on that commit: "No material findings."

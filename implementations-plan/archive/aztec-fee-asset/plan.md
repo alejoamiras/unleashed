@@ -25,11 +25,12 @@ trunk: main
   - Browser cells 18, 18b, 19 and 34 changed; 18c and 47 are new. The suite has 72 cells.
 - **Reviews.**
   - Plan audit: 2 Codex rounds, 6 findings adopted.
-  - Implementation fix loop: 4 rounds, all in one Codex session.
+  - Implementation fix loop: 5 rounds, all in one Codex session.
     - Round 1: 3 material and 3 minor findings, all fixed.
     - Round 2: "No material findings."
     - Round 3, on the owner's preview changes: 2 material findings, fixed. A smaller amount had locked the stepper, and a strip mint left the card showing an old outcome.
     - Round 4: "No material findings."
+    - Round 5, on grouping AZTEC's thousands ("1,000") like the SIGNAL card: "No material findings."
   - `/code-review` was off.
 - **Assumptions.** I1 held: the local network reports `feeAssetHandlerAddress`, so the fallback deploy was dropped. I2 held: cell 18c creates the fee asset's portal inline.
 - **Known limits:**
