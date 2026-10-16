@@ -47,7 +47,7 @@ vi.mock("./useL1Wallet", () => ({
 	}),
 }))
 
-import { __resetFeeAssetMintForTests, feeAssetMinted, useFeeAssetMint } from "./useFeeAssetMint"
+import { __resetFeeAssetMintForTests, feeAssetMinted, formatWhole, useFeeAssetMint } from "./useFeeAssetMint"
 
 function transfer(from: Address, to: Address, value: bigint, emitter: string = ASSET): Log {
 	return {
@@ -91,7 +91,15 @@ describe("useFeeAssetMint", () => {
 		await flushPromises()
 		isConnected.value = true
 		await flushPromises()
-		expect(m.amountText.value).toBe("1000")
+		expect(m.amountText.value).toBe("1,000")
+	})
+
+	it("words an amount with every digit and its thousands grouped", () => {
+		expect([formatWhole(1_000n * 10n ** 18n), formatWhole(1_234_500n * 10n ** 15n), formatWhole(5n * 10n ** 17n)]).toEqual([
+			"1,000",
+			"1,234.5",
+			"0.5",
+		])
 	})
 
 	it("a read still in flight from before a disconnect never overwrites the reconnect's amount", async () => {
@@ -105,7 +113,7 @@ describe("useFeeAssetMint", () => {
 		await flushPromises()
 		drop()
 		await flushPromises()
-		expect(m.amountText.value).toBe("1000")
+		expect(m.amountText.value).toBe("1,000")
 	})
 
 	it("mints to the connected account and reports the amount the Transfer log credited", async () => {

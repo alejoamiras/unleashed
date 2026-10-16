@@ -152,9 +152,12 @@ export function useFeeAssetMint(): UseFeeAssetMintHandle {
 	}
 }
 
-/** Whole AZTEC for button and status copy: `1000`, or `0.5` for a fractional amount. */
+/** AZTEC for button and status copy, every digit kept and thousands grouped like the Drip cards':
+ *  `1,000`, or `0.5` for a fractional amount. */
 export function formatWhole(value: bigint): string {
-	return toDecimalString(value, DECIMALS)
+	const [whole, fraction] = toDecimalString(value, DECIMALS).split(".")
+	const grouped = BigInt(whole ?? "0").toLocaleString("en-US")
+	return fraction ? `${grouped}.${fraction}` : grouped
 }
 
 /** Test-only: module state outlives a test's mounts. */

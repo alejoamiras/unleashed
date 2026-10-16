@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { FeeAssetHandlerAbi } from "@aztec-foundation/l1-artifacts"
 import { balanceOf, type DripDeploymentRecord, erc20BalanceOf, registerDripFixture } from "@unleashed/bridge-core/sandbox"
-import { formatUnits } from "viem"
 import { formatBigInt } from "../../../src/lib/format"
 import { TESTIDS } from "../../../src/lib/testids"
 import { expect, test } from "../fixtures/test"
@@ -82,7 +81,7 @@ test("cell 47 — the AZTEC card connects Ethereum from the Drip tab and mints w
 		functionName: "mintAmount",
 		args: [],
 	})
-	const whole = formatUnits(perCall, 18)
+	const whole = formatBigInt(perCall, 18, 0)
 
 	await page.goto("/")
 	await connectAztec(page, { profile: "plain", account: actor.address })

@@ -9,7 +9,7 @@ const wallet = { isConnected: ref(false), wrongChain: ref(false), isConnecting: 
 const TX = `0x${"ab".repeat(32)}`
 const fee = {
 	available: true,
-	amountText: ref<string | null>("1000"),
+	amountText: ref<string | null>("1,000"),
 	minting: ref(false),
 	startedAt: ref<number | null>(null),
 	error: ref<string | null>(null),
@@ -20,7 +20,7 @@ vi.mock("@/composables/useL1Wallet", () => ({ useL1Wallet: () => ({ ...wallet, .
 vi.mock("@/composables/useFeeAssetMint", async () => {
 	const { computed } = await import("vue")
 	return {
-		formatWhole: (v: bigint) => (v / 10n ** 18n).toString(),
+		formatWhole: (v: bigint) => (v / 10n ** 18n).toLocaleString("en-US"),
 		useFeeAssetMint: () => ({ ...fee, amountText: computed(() => fee.amountText.value) }),
 	}
 })
@@ -38,7 +38,7 @@ beforeEach(() => {
 	wallet.wrongChain.value = false
 	wallet.error.value = null
 	fee.available = true
-	fee.amountText.value = "1000"
+	fee.amountText.value = "1,000"
 	fee.minting.value = false
 	fee.startedAt.value = null
 	fee.error.value = null
@@ -67,7 +67,7 @@ describe("MintFeeAssetCard", () => {
 		wallet.wrongChain.value = false
 		await flushPromises()
 		expect(button(w).text()).toBe("Get AZTEC")
-		expect(button(w).attributes("aria-label")).toBe("Get 1000 AZTEC into your Ethereum wallet")
+		expect(button(w).attributes("aria-label")).toBe("Get 1,000 AZTEC into your Ethereum wallet")
 		await button(w).trigger("click")
 		await flushPromises()
 		expect(fee.mint).toHaveBeenCalledOnce()
@@ -89,10 +89,10 @@ describe("MintFeeAssetCard", () => {
 		await flushPromises()
 		const url = `https://sepolia.etherscan.io/tx/${TX}`
 		expect(status(w).attributes("data-drip-status")).toBe("ok")
-		expect(status(w).text()).toContain("Sent 1000 AZTEC to your Ethereum wallet")
+		expect(status(w).text()).toContain("Sent 1,000 AZTEC to your Ethereum wallet")
 		expect(status(w).find(sel(TESTIDS.dripTxLink)).attributes("href")).toBe(url)
 		expect(useToast().toasts.value.map((t) => [t.kind, t.text, t.link?.href])).toEqual([
-			["ok", "Dripped 1000 AZTEC to your Ethereum wallet", url],
+			["ok", "Dripped 1,000 AZTEC to your Ethereum wallet", url],
 		])
 	})
 
