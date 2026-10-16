@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** Services */
 import { awaitL1Receipt } from "@unleashed/bridge-core"
-import { BusyPixels, Icon, Tag } from "@unleashed/design"
+import { BusyPixels, Tag } from "@unleashed/design"
 import { computed, ref } from "vue"
 
 /** Composables */
@@ -116,7 +116,6 @@ async function mint(token: Mintable): Promise<void> {
 					:aria-busy="minting === token.erc20 || undefined"
 					@click="mint(token)"
 				>
-					<Icon name="download" :size="12" />
 					+{{ token.whole }} {{ token.symbol }}
 					<BusyPixels v-if="minting === token.erc20" aria-hidden="true" />
 				</button>
@@ -130,7 +129,6 @@ async function mint(token: Mintable): Promise<void> {
 					:aria-busy="feeAsset.minting.value || undefined"
 					@click="mintFeeAsset"
 				>
-					<Icon name="download" :size="12" />
 					{{ feeAsset.amountText.value ? `+${feeAsset.amountText.value} AZTEC` : "Mint AZTEC" }}
 					<BusyPixels v-if="feeAsset.minting.value" aria-hidden="true" />
 				</button>
