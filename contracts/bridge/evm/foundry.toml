@@ -13,9 +13,15 @@ test = "test"
 script = "script"
 libs = ["lib"]
 allow_paths = ["../../../node_modules"]
+# The LI.FI fork suites read their pinned fixtures and, under LIFI_RECORD=1, write the receipts beside them.
+fs_permissions = [{ access = "read-write", path = "./test/fixtures/lifi" }]
 solc = "0.8.28"
 via_ir = true
 
+# Off so a lib installed for another profile cannot re-route an import here: auto-detection would
+# map lib/lifi-contracts' `test/`, `ds-test/` and `lifi/` into this build. This list (mirrored by the
+# generated remappings.txt) is every remap the build uses.
+auto_detect_remappings = false
 remappings = [
   "@oz/=lib/openzeppelin-contracts/contracts/",
   "@aztec/=../../../node_modules/@aztec-foundation/l1-artifacts/l1-contracts/src/",
@@ -38,3 +44,26 @@ depth = 500
 # expected-revert cases in try/catch, but `sweep` on an empty balance and other benign
 # no-ops still revert, and failing the campaign on those would only add noise.
 fail_on_revert = false
+
+# LI.FI's destination contracts (lib/lifi-contracts, LGPL-3.0-only), built unmodified with LI.FI's own
+# compiler settings for the suites and the sandbox, which load them by artifact path. The entry file is
+# the only source, so no LGPL code joins a default-profile compilation unit.
+[profile.lifi]
+src = "lifi-build"
+test = "lifi-build"
+script = "lifi-build"
+out = "out-lifi"
+cache_path = "cache-lifi"
+solc = "0.8.29"
+evm_version = "cancun"
+via_ir = false
+optimizer = true
+optimizer_runs = 1000000
+remappings = [
+  "lifi/=lib/lifi-contracts/src/",
+  "@openzeppelin/=lib/lifi-contracts/lib/openzeppelin-contracts/",
+  "solady/=lib/lifi-contracts/lib/solady/src/",
+]
+
+[profile.lifi.lint]
+lint_on_build = false
