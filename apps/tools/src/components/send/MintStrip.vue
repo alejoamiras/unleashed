@@ -5,6 +5,7 @@ import { BusyPixels, Icon, Tag } from "@unleashed/design"
 import { computed, ref } from "vue"
 
 /** Composables */
+import { useFeeAssetMint } from "@/composables/useFeeAssetMint"
 import { useL1Wallet } from "@/composables/useL1Wallet"
 
 /** Utils */
@@ -15,10 +16,12 @@ import { TESTIDS } from "@/lib/testids"
 import { safeSentence } from "@/lib/token-display"
 
 /**
- * One-tap Ethereum mints for the test tokens the manifest publishes as permissionless. It renders
- * for nothing else: only a token the generation itself lists can be trusted to expose `mint`, the
- * amount is capped by the per-transaction limit that token was published with, and a mainnet
- * manifest lists none — so this strip is the whole difference between the networks on this step.
+ * One-tap Ethereum mints for the test tokens the manifest publishes as permissionless, plus AZTEC
+ * from the fee-asset handler the manifest names. It renders for nothing else: only a contract the
+ * generation itself lists can be trusted to mint, the amount is capped by the per-transaction limit
+ * that token was published with, and a mainnet manifest lists neither — so this strip is the whole
+ * difference between the networks on this step. An AZTEC mint reaches the wizard through
+ * `feeAssetMinted`, not `minted`, because the Drip tab mints it too.
  */
 const emit = defineEmits<{ minted: [erc20: string] }>()
 
@@ -47,15 +50,26 @@ const mintable = computed<Mintable[]>(() =>
 )
 
 const l1 = useL1Wallet()
-/** The token being minted; every button waits while one is in flight. */
+const feeAsset = useFeeAssetMint()
+/** The token being minted; every button waits while one is in flight, the AZTEC mint included. */
 const minting = ref<string | null>(null)
+const busy = computed(() => minting.value !== null || feeAsset.minting.value)
 const error = ref<string | null>(null)
+/** The line speaks for the latest tap only; the AZTEC mint keeps its own error. */
+const lastTap = ref<"token" | "fee-asset">("token")
 
 /** Only a failure is worth a line; the button itself says a mint is running. */
-const status = computed(() => error.value)
+const status = computed(() => (lastTap.value === "fee-asset" ? feeAsset.error.value : error.value))
+
+async function mintFeeAsset(): Promise<void> {
+	if (busy.value) return
+	lastTap.value = "fee-asset"
+	await feeAsset.mint()
+}
 
 async function mint(token: Mintable): Promise<void> {
-	if (minting.value) return
+	if (busy.value) return
+	lastTap.value = "token"
 	const wallet = l1.ensureWalletClient()
 	const owner = l1.address.value
 	if (!wallet || !owner) {
@@ -87,7 +101,7 @@ async function mint(token: Mintable): Promise<void> {
 </script>
 
 <template>
-	<div v-if="mintable.length > 0" class="strip ul-notch" :data-testid="TESTIDS.mintL1Card">
+	<div v-if="mintable.length > 0 || feeAsset.available" class="strip ul-notch" :data-testid="TESTIDS.mintL1Card">
 		<div class="row">
 			<Tag tone="testnet">Testnet</Tag>
 			<span class="lead">Free test tokens:</span>
@@ -97,7 +111,7 @@ async function mint(token: Mintable): Promise<void> {
 					:key="token.erc20"
 					type="button"
 					class="mint ul-notch"
-					:disabled="minting !== null"
+					:disabled="busy"
 					:data-testid="TESTIDS.mintL1"
 					:data-symbol="token.symbol"
 					:aria-busy="minting === token.erc20 || undefined"
@@ -107,9 +121,23 @@ async function mint(token: Mintable): Promise<void> {
 					+{{ token.whole }} {{ token.symbol }}
 					<BusyPixels v-if="minting === token.erc20" aria-hidden="true" />
 				</button>
+				<button
+					v-if="feeAsset.available"
+					type="button"
+					class="mint ul-notch"
+					:disabled="busy"
+					:data-testid="TESTIDS.mintL1"
+					data-symbol="AZTEC"
+					:aria-busy="feeAsset.minting.value || undefined"
+					@click="mintFeeAsset"
+				>
+					<Icon name="download" :size="12" />
+					{{ feeAsset.amountText.value ? `+${feeAsset.amountText.value} AZTEC` : "Mint AZTEC" }}
+					<BusyPixels v-if="feeAsset.minting.value" aria-hidden="true" />
+				</button>
 			</span>
 		</div>
-		<p v-if="status" class="status" aria-live="polite" :data-testid="TESTIDS.mintL1Status" :data-error="error ? 'true' : undefined">
+		<p v-if="status" class="status" aria-live="polite" :data-testid="TESTIDS.mintL1Status" data-error="true">
 			{{ status }}
 		</p>
 	</div>

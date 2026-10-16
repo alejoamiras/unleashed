@@ -105,7 +105,9 @@ Good enough: a monogram tile ("AZ"), not a drawn logo; no new mainnet surface.
 
 **Validation gate**: `bun run lint && bun run typecheck:all && bun run test:tools && bun run --cwd apps/tools test:e2e` exit 0. Layers: lint, typecheck, unit, jsdom e2e.
 
-### Phase 2 — The mint button and the Drip card
+### Phase 2 — The mint button and the Drip card ✓
+<!-- Gate passed: lint exit 0; typecheck:all exit 0; test:tools 1662/1662; test:e2e 29/29; build:testnet ok. Deviation: the card's testid sweep lives in its own test (lessons/phase-2.md). -->
+
 1. Add the ABI file and its pin test.
 2. Add `useFeeAssetMint`. Unit tests:
    - a handler that disagrees with the manifest is refused before signing;

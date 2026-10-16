@@ -154,6 +154,11 @@ export const TESTIDS = {
 	mintL1: "tl-mint-l1",
 	mintL1Status: "tl-mint-l1-status",
 
+	// The Drip tab's AZTEC faucet on Ethereum; distinct from the strip's, since both tabs stay mounted
+	dripFeeAssetCard: "tl-drip-fee-asset-card",
+	dripFeeAssetMint: "tl-drip-fee-asset-mint",
+	dripFeeAssetStatus: "tl-drip-fee-asset-status",
+
 	// Send - the in-flight journal (cards carry data-id/direction/stage/privacy/attention)
 	journal: "tl-bridge-journal",
 	journalEmpty: "tl-journal-empty",

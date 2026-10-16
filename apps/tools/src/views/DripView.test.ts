@@ -54,7 +54,7 @@ const TokenCardStub = defineComponent({
 
 function mountView() {
 	return mount(DripView, {
-		global: { stubs: { TokenCard: TokenCardStub } },
+		global: { stubs: { TokenCard: TokenCardStub, MintFeeAssetCard: { template: '<div class="fee-asset-card-stub" />' } } },
 	})
 }
 
@@ -65,6 +65,13 @@ describe("DripView — account-keyed token cards", () => {
 	})
 	afterEach(() => {
 		__resetWalletConnectionForTests()
+	})
+
+	it("offers the AZTEC faucet below the drip cards", () => {
+		const w = mountView()
+		expect(w.find(".cards + .fee-asset-card-stub").exists()).toBe(true)
+		w.unmount()
+		captured.length = 0
 	})
 
 	it("switching the active account REMOUNTS every card bound to the new account", async () => {

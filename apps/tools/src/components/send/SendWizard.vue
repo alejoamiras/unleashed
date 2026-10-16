@@ -36,6 +36,7 @@ import { useBridgeBackup } from "@/composables/useBridgeBackup"
 import { type RecordRuntime, useBridgeJournal } from "@/composables/useBridgeJournal"
 import { useBridgeWallet } from "@/composables/useBridgeWallet"
 import { useAddDripToken } from "@/composables/useAddDripToken"
+import { feeAssetMinted } from "@/composables/useFeeAssetMint"
 import { useGasHeld } from "@/composables/useGasHeld"
 import { useGasShare } from "@/composables/useGasShare"
 import { EXIT_TOKEN_NOT_REGISTERED, useHubExit } from "@/composables/useHubExit"
@@ -689,6 +690,9 @@ function onMinted(): void {
 	void selection.refreshBalances()
 	void rowBalances.refresh()
 }
+// AZTEC mints from the Drip tab too, and the strip exists only on the token step: the wizard, which
+// outlives both, is what refreshes after one.
+watch(feeAssetMinted, onMinted)
 
 // The row balances re-read themselves when the reader changes; the selected token's are read here.
 watch(l1Reader, () => void selection.refreshBalances())
