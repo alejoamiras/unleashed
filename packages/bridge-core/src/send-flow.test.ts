@@ -34,7 +34,7 @@ const gen: SendGeneration = {
 	swapTarget: "0x6666666666666666666666666666666666666666",
 	chainId: 31337,
 	hub: `0x${"7".padStart(64, "0")}`,
-	tokenClassId: "0x24c34002788720c941a327a20c369b12c8bdcff3b5a974673a8f618763471505",
+	tokenClassId: "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a",
 }
 
 const usdcPortal = predictPortal(FACTORY, IMPL, USDC)
@@ -119,6 +119,7 @@ function fakeL1(logs: unknown[]) {
 			}),
 		},
 		pub: {
+			estimateContractGas: vi.fn(async () => 1_000_001n),
 			waitForTransactionReceipt: vi.fn(async () => ({ status: "success", logs })),
 			readContract: vi.fn(async () => ({
 				portal: usdcPortal,
@@ -162,6 +163,25 @@ describe("send-flow — runSend", () => {
 		expect(res.token?.l2Token).toMatch(/^0x[0-9a-f]{64}$/)
 		expect(secrets).toHaveLength(1)
 		expect(res.fuelLeafIndex).toBeUndefined()
+	})
+
+	it("sends with the estimate of the exact call plus 25% headroom, rounded up", async () => {
+		const { l1, writes } = fakeL1([bridgeLog(9n)])
+		await runSend(l1, gen, {
+			intent: "token",
+			erc20: USDC,
+			amount: 500n,
+			aztecRecipient: RECIPIENT,
+			isPrivate: false,
+			nonce: 1n,
+			deadline: 2n,
+		})
+		const estimated = (l1.pub.estimateContractGas as unknown as { mock: { calls: [Record<string, unknown>][] } }).mock.calls[0][0]
+		const sent = writes[0] as Record<string, unknown>
+		expect(sent.gas).toBe(1_250_002n)
+		expect(estimated.functionName).toBe(sent.functionName)
+		expect(estimated.args).toEqual(sent.args)
+		expect(estimated.address).toBe(sent.address)
 	})
 
 	it("the fee asset's public gas-only is a bridge() into the FeeJuicePortal whose message is the gas leg", async () => {

@@ -6,14 +6,13 @@
  * @aztec-version + salt specific — depositing real Fee Juice to an address derived from the wrong
  * artifact is an UNRECOVERABLE loss.
  *
- *   bun packages/bridge-core/scripts/check-fpc-version.ts --mode predeploy|require-deployed
+ *   bun packages/bridge-core/scripts/check-fpc-version.ts [--network mainnet]
  *
- * against `TESTNET_NODE_URL`, or the node `AZTEC_NODE_URL` names.
+ * against the dRPC node of `--network` (default testnet), composed from `DRPC_API_KEY`.
  *
- * `--mode` is REQUIRED — callers choose consciously:
- *   - `predeploy`: a clean ABSENCE of the contract is green (the deploy script creates it).
- *   - `require-deployed`: absence is RED. MANDATORY before ANY funding, canary, or promotion —
- *     those steps must never run against a not-yet-deployed pin.
+ * The FPC has no initializer and no public function, so a wallet registers the derived instance
+ * locally and nothing has to publish it. Anyone may publish it, so both states are legitimate:
+ * absence is green, and a published instance must carry the pinned class.
  *
  * Checks (ALL must hold — exit 1 otherwise):
  *   1. Node-version COMPAT, digest-keyed + human-curated: the live nodeVersion must appear in the
@@ -26,12 +25,13 @@
  *      a gate run against any other network is a wrong-network operator error.
  *   2. Artifact digest: sha256 of the installed artifact == descriptor.artifactSha256.
  *   3. Descriptor/constants coherence: descriptor address+salt == the exported pins.
- *   4. Live class: if the pinned address is deployed, BOTH its original AND current class ids must
- *      equal the class computed from the installed artifact (a different class at our address =
- *      wrong contract; a drifted current = upgraded-out code — never deposit). An RPC failure is
- *      an ERROR (exit 1), never treated as absence.
+ *   4. Live class: if the pinned address is published, BOTH its original AND current class ids
+ *      must equal the class computed from the installed artifact (a different class at our
+ *      address = wrong contract; a drifted current = upgraded-out code — never deposit). An RPC
+ *      failure is an ERROR (exit 1), never treated as absence.
  *
- * Read-only, no keys. The live dust canary (pre-promotion) stays the authoritative on-net proof.
+ * Read-only and signs nothing; its one secret is the node key (a keyed run on `testnet-rpc.env.example`).
+ * The live dust canary (pre-promotion) stays the authoritative on-net proof.
  */
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
@@ -44,18 +44,17 @@ import { AztecAddress } from "@aztec-labs/stdlib/aztec-address"
 import { getContractClassFromArtifact, getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract"
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
 
+import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
 
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
+type GateNetwork = "testnet" | "mainnet"
 
-export type GateMode = "predeploy" | "require-deployed"
-
-function parseMode(argv: string[]): GateMode {
-	const i = argv.indexOf("--mode")
-	const value = i >= 0 ? argv[i + 1] : undefined
-	if (value === "predeploy" || value === "require-deployed") return value
-	console.error("\n✗ --mode predeploy|require-deployed is REQUIRED (require-deployed before any funding/canary/promotion).")
+function parseNetwork(argv: string[]): GateNetwork {
+	const i = argv.indexOf("--network")
+	if (i < 0) return "testnet"
+	const value = argv[i + 1]
+	if (value === "testnet" || value === "mainnet") return value
+	console.error("\n✗ --network takes testnet or mainnet.")
 	process.exit(1)
 }
 
@@ -63,15 +62,8 @@ function resolvePackageFile(pkg: string, file: string): string {
 	return resolvePackageAsset(pkg, file, { from: import.meta.url })
 }
 
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-	const res = await fetch(NODE_URL, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-	})
-	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
-	const body = (await res.json()) as { jsonrpc?: string; result?: T; error?: { message: string } }
-	if (body.error) throw new Error(`${method}: RPC error — ${body.error.message}`)
+async function rpc<T>(nodeUrl: string, method: string, params: unknown[]): Promise<T> {
+	const body = await readNodeRpcBody<T>(await postNodeRpc(nodeUrl, method, params), method)
 	// A response with NEITHER `result` nor `error` is malformed — an ERROR, never a clean absence.
 	// (Use `rpcOptional` for methods whose ABSENCE the node encodes by omitting the key.)
 	if (!("result" in body)) throw new Error(`${method}: malformed RPC response (no result, no error)`)
@@ -82,18 +74,11 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
  * Like `rpc`, but for methods where the live node encodes "not found" by OMITTING the `result`
  * key entirely (JS `undefined` doesn't serialize — observed on the v5 testnet's
  * `node_getContract`). Absence is accepted ONLY for a well-formed JSON-RPC success envelope
- * (parsed JSON, `jsonrpc` present, no `error`); truncated or non-JSON responses still throw at
- * `res.json()`, and HTTP/RPC errors throw as before — never mistaken for absence.
+ * (parsed JSON, `jsonrpc` present, no `error`); truncated or non-JSON responses and HTTP/RPC
+ * errors still throw in `readNodeRpcBody` — never mistaken for absence.
  */
-async function rpcOptional<T>(method: string, params: unknown[]): Promise<T | undefined> {
-	const res = await fetch(NODE_URL, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-	})
-	if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`)
-	const body = (await res.json()) as { jsonrpc?: string; result?: T; error?: { message: string } }
-	if (body.error) throw new Error(`${method}: RPC error — ${body.error.message}`)
+async function rpcOptional<T>(nodeUrl: string, method: string, params: unknown[]): Promise<T | undefined> {
+	const body = await readNodeRpcBody<T>(await postNodeRpc(nodeUrl, method, params), method)
 	if (!("result" in body)) {
 		if (body.jsonrpc !== "2.0") throw new Error(`${method}: malformed RPC response (no result, no error, no jsonrpc)`)
 		return undefined
@@ -106,12 +91,6 @@ const fail = (msg: string): never => {
 	throw new Error(msg)
 }
 
-/**
- * The FPC gate as an IMPORTABLE async function — throws on any RED so a fund-moving
- * script can `await runFpcGate("require-deployed")` inline BEFORE its first broadcast,
- * closing the "operator forgot the separate --mode require-deployed command" gap.
- * The CLI at the bottom wraps it.
- */
 interface FpcDescriptor {
 	aztecVersion: string
 	salt: string
@@ -140,16 +119,18 @@ function selectDescriptor(here: string, info: LiveNodeInfo): FpcDescriptor {
 	return descriptor
 }
 
-export async function runFpcGate(mode: GateMode): Promise<void> {
+/** The gate as an importable function: it throws on any RED, so a fund-moving script awaits it
+ *  inline before its first broadcast and cannot skip it. The CLI at the bottom wraps it. */
+export async function runFpcGate(network: GateNetwork = "testnet"): Promise<void> {
+	const nodeUrl = requireDrpcNodeUrl(network, process.env)
 	const here = fileURLToPath(new URL(".", import.meta.url))
 	const pkg = JSON.parse(readFileSync(resolvePackageFile("@alejoamiras/private-fee-juice", "package.json"), "utf8"))
 	const artifactBytes = readFileSync(resolvePackageFile("@alejoamiras/private-fee-juice", "target/private_contract-PrivateFPC.json"))
 
-	const info = await rpc<LiveNodeInfo>("node_getNodeInfo", [])
+	const info = await rpc<LiveNodeInfo>(nodeUrl, "node_getNodeInfo", [])
 	const descriptor = selectDescriptor(here, info)
 
-	console.log("gate mode          :", mode)
-	console.log("node URL           :", NODE_URL)
+	console.log("gate network       :", network)
 	console.log("network nodeVersion:", info.nodeVersion, `(l1ChainId=${info.l1ChainId}, rollupVersion=${info.rollupVersion})`)
 	console.log("installed package  :", String(pkg.version), "| descriptor:", descriptor.aztecVersion)
 	console.log("pinned FPC address :", PRIVATE_FPC_ADDRESS, `(salt ${PRIVATE_FPC_SALT})`)
@@ -160,9 +141,9 @@ export async function runFpcGate(mode: GateMode): Promise<void> {
 
 	assertNetworkCompat(descriptor, info, digest)
 
-	await assertLiveClass(artifactBytes, mode)
+	await assertLiveClass(nodeUrl, artifactBytes)
 
-	console.log(`\n✓ FPC gate green (${mode}) — compat + identity + digest + live class all agree.`)
+	console.log("\n✓ FPC gate green — compat + identity + digest + live class all agree.")
 }
 
 /** Stages 3 + 3b + 1 + 2: descriptor/constants coherence, address re-derived from the INSTALLED
@@ -249,32 +230,27 @@ function assertNetworkCompat(descriptor: FpcDescriptor, info: LiveNodeInfo, dige
 	}
 }
 
-/** 4. Live class at the pinned address (RPC failure = error, NOT absence). BOTH class ids must
- *  equal the expected class: checking only `original` would GREEN an UPGRADED contract — its
- *  original class stays correct while `current` points at different/malicious code that actually
- *  runs, and deposits to it can be consumed or stranded (fund loss). */
-async function assertLiveClass(artifactBytes: Buffer, mode: GateMode): Promise<void> {
+/** 4. Live class at the pinned address (RPC failure = error, NOT absence). Absence is green; a
+ *  published instance must carry the expected class in BOTH ids: checking only `original` would
+ *  GREEN an UPGRADED contract — its original class stays correct while `current` points at
+ *  different/malicious code that actually runs, and deposits to it can be consumed or stranded. */
+async function assertLiveClass(nodeUrl: string, artifactBytes: Buffer): Promise<void> {
 	const expectedClassId = (await getContractClassFromArtifact(loadContractArtifact(JSON.parse(artifactBytes.toString("utf8"))))).id
-	const live = await rpcOptional<{ originalContractClassId?: string; currentContractClassId?: string }>("node_getContract", [
+	const live = await rpcOptional<{ originalContractClassId?: string; currentContractClassId?: string }>(nodeUrl, "node_getContract", [
 		PRIVATE_FPC_ADDRESS,
 	])
-	// (RPC failure already threw above; a malformed no-result response now throws too — never absence.)
-	if (!live) {
-		if (mode === "require-deployed") {
-			fail(
-				"the pinned address is NOT deployed and --mode require-deployed was requested — " +
-					"funding/canary/promotion must never run against an undeployed pin. Deploy first (predeploy mode gates that).",
-			)
-		}
-		console.log("live contract      : absent (clean) — deploy via deploy-private-fpc-testnet.ts")
+	// Only a null or missing result is absence; an RPC failure or any non-object result throws.
+	if (live === undefined) {
+		console.log("live contract      : not published (wallets register the derived instance locally)")
 		return
 	}
+	if (typeof live !== "object") fail(`node_getContract returned a ${typeof live}, not a contract instance or null`)
 	const expected = expectedClassId.toString()
 	const originalClass = String(live.originalContractClassId ?? "")
 	const currentClass = String(live.currentContractClassId ?? "")
 	if (originalClass !== expected) {
 		fail(
-			`the pinned address is DEPLOYED with original class ${originalClass}, but the installed artifact ` +
+			`the pinned address is PUBLISHED with original class ${originalClass}, but the installed artifact ` +
 				`computes ${expected} — wrong contract at our address; never deposit.`,
 		)
 	}
@@ -284,13 +260,13 @@ async function assertLiveClass(artifactBytes: Buffer, mode: GateMode): Promise<v
 				"the running code is not the pinned artifact; never deposit.",
 		)
 	}
-	console.log("live contract      : DEPLOYED with the expected class (original == current ==", `${expected})`)
+	console.log("live contract      : PUBLISHED with the expected class (original == current ==", `${expected})`)
 }
 
 /** True only when this file is the process entrypoint (not when imported). */
 const isMain = process.argv[1] ? fileURLToPath(import.meta.url) === resolve(process.argv[1]) : false
 if (isMain) {
-	runFpcGate(parseMode(process.argv.slice(2))).catch((err) => {
+	runFpcGate(parseNetwork(process.argv.slice(2))).catch((err) => {
 		console.error("\n✗ gate errored (treat as RED — an RPC failure is never absence):", err instanceof Error ? err.message : err)
 		process.exit(1)
 	})

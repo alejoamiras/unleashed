@@ -102,7 +102,7 @@ first-time vs known `bridge()`, `bridgeWithPermit()` and `bridgeFromCaller()` ca
 | symbolic | `FormalFactory`, `FormalClone`, `FormalRouter`, `FormalDepositRouter` — see the header of each for what halmos can and cannot model (it has no sha256, so `createPortal` itself is forge-only) |
 | adversarial | `BlackhatFactory` (F-1…F-9), `BlackhatAudit` (F-A…F-M), `DepositRouterBlackhat`, `BlackhatV4Fork` |
 | fork | `FactoryFork`, `SwapBridgeRouterPermit2Fork`, `DepositRouterPermit2Fork` (real Permit2 on a mainnet fork, `ETH_RPC_URL`), `DeployFuelLive.fork`, `MainnetFuel.fork`, `BlackhatV4Fork` |
-| LI.FI fork | `LifiTestnetRailFork` (Base Sepolia → Across → Sepolia through LI.FI's deployed Diamond, receiver and Executor, into a portal or the router and swapper), `LifiDestinationFork` (Ethereum's receiver and Executor into the router: venue set, RFQ expiry, gas pin, recovery), `LifiStargateComposeFork` (compose gas floor and recovery), `LifiReplayFork` (a Base source transaction replayed into Ethereum's `lzCompose`) |
+| LI.FI fork | `LifiTestnetRailFork` (Base Sepolia → Across → Sepolia through LI.FI's deployed Diamond, receiver and Executor, into a portal or the router and swapper), `LifiDestinationFork` (Ethereum's receiver and Executor into the router: venue set, RFQ expiry, gas pin, recovery; and the Ethereum-origin entry, a Permit2 witness through the same recorded swap), `LifiStargateComposeFork` (compose gas floor and recovery), `LifiReplayFork` (a Base source transaction replayed into Ethereum's `lzCompose`) |
 
 ## Threat model — the factory-bound portal
 

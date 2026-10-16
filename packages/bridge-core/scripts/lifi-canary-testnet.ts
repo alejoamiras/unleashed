@@ -5,7 +5,7 @@
  *   bun scripts/lifi-canary-testnet.ts --config apps/tools/public/testnet-bridge.json [--dry-run] [--canary 0x…]
  *
  * Env: CANARY_PRIVATE_KEY (live; a dry run uses only its address, or `--canary`, or the pin),
- * SEPOLIA_RPC_URL, BASE_SEPOLIA_RPC_URL, AZTEC_NODE_URL. A live run replays the whole matrix as a dry run
+ * SEPOLIA_RPC_URL, BASE_SEPOLIA_RPC_URL, DRPC_API_KEY (live only). A live run replays the whole matrix as a dry run
  * first, so every refusal fires before its first send (the Aztec account deploy included). Prints the record.
  */
 import { FEE_JUICE_ADDRESS } from "@aztec-labs/constants"
@@ -14,10 +14,10 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, getAddress, type Hex, type LocalAccount, type PublicClient, pad, parseEther, toHex, type WalletClient } from "viem"
 import { privateKeyToAccount, privateKeyToAddress } from "viem/accounts"
 import type { DiscoveryChainReads } from "../src/crosschain-discovery"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 import type { L1Ctx } from "../src/flows"
 import { lifiBook } from "../src/lifi-addresses"
 import type { ManifestV2 } from "../src/manifest-v2"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
 import { runFpcGate } from "./check-fpc-version"
 import { type FillDeps, fillSourceDeposit } from "./fill-testnet"
 import { ACROSS_TESTNET_API } from "./lifi-canary-across"
@@ -56,7 +56,6 @@ export function parseCanaryArgs(argv: readonly string[]): CanaryArgs {
 export interface CanaryEdge {
 	cfg: CanaryConfig
 	rpc: { source: string; ethereum: string }
-	nodeUrl: string
 	acrossBase: string
 	signer?: LocalAccount
 }
@@ -137,7 +136,6 @@ export function canaryEdge(
 			source: sourceRpcUrl(SOURCE_CHAIN_ID, env) ?? BASE_SEPOLIA_RPC_DEFAULT,
 			ethereum: env.SEPOLIA_RPC_URL || SEPOLIA_RPC_DEFAULT,
 		},
-		nodeUrl: env.AZTEC_NODE_URL || TESTNET_NODE_URL,
 		acrossBase: ACROSS_TESTNET_API,
 		...(signer ? { signer } : {}),
 	}
@@ -154,16 +152,16 @@ export function canaryReads(edge: CanaryEdge): { source: PublicClient; ethereum:
 }
 
 /** Signers on both chains, the Aztec account and the filler. Sends the Aztec account deploy. */
-async function liveMode(edge: CanaryEdge, signer: LocalAccount): Promise<CanaryLive> {
+async function liveMode(edge: CanaryEdge, signer: LocalAccount, nodeUrl: string): Promise<CanaryLive> {
 	const { cfg } = edge
-	await runFpcGate("require-deployed")
+	await runFpcGate()
 	const src = createL1Clients({ chain: chainOf(SOURCE_CHAIN_ID, edge.rpc.source), rpcUrl: edge.rpc.source, account: signer })
 	const eth = createL1Clients({ chain: chainOf(cfg.manifest.l1ChainId, edge.rpc.ethereum), rpcUrl: edge.rpc.ethereum, account: signer })
 	const source: L1Ctx = { pub: src.pub as PublicClient, wallet: src.wallet as WalletClient, account: signer }
 	const ethereum: L1Ctx = { pub: eth.pub as PublicClient, wallet: eth.wallet as WalletClient, account: signer }
 	const destToken = canaryBindings(cfg.manifest, cfg.sourceChainId).destToken
 	const l2 = await openCanaryL2({
-		nodeUrl: edge.nodeUrl,
+		nodeUrl,
 		manifest: cfg.manifest,
 		tokens: [destToken],
 		registrations: ethereum.pub as never,
@@ -189,6 +187,8 @@ async function main(): Promise<void> {
 	const manifest = loadManifestV2FromConfigArg(process.argv, { mode: "required", requiredHint: "apps/tools/public/testnet-bridge.json" })
 	const args = parseCanaryArgs(process.argv)
 	const edge = canaryEdge(manifest, args, process.env)
+	// The node URL carries the dRPC key, so only a live run composes it, and before the preflight's minutes.
+	const live = !args.dryRun && edge.signer ? { signer: edge.signer, nodeUrl: requireDrpcNodeUrl("testnet", process.env) } : null
 	const reads = canaryReads(edge)
 	const base: Omit<CanaryDeps, "recipient" | "mode"> = {
 		reads: { source: reads.source as unknown as ChainReads, ethereum: reads.ethereum as unknown as ChainReads },
@@ -199,13 +199,13 @@ async function main(): Promise<void> {
 		log: (line) => console.log(line),
 	}
 	const preflight = await runCanary(edge.cfg, { ...base, recipient: await AztecAddress.random(), mode: { kind: "dry-run" } })
-	if (args.dryRun || !edge.signer) {
+	if (!live) {
 		console.log(formatCanaryRecord(preflight))
 		return
 	}
 	if (preflight.funding.length > 0) throw new CanaryRefusal(`the canary is not funded for the matrix (${preflight.funding.join("; ")})`)
-	const live = await liveMode(edge, edge.signer)
-	console.log(formatCanaryRecord(await runCanary(edge.cfg, { ...base, recipient: live.l2.recipient, mode: live })))
+	const mode = await liveMode(edge, live.signer, live.nodeUrl)
+	console.log(formatCanaryRecord(await runCanary(edge.cfg, { ...base, recipient: mode.l2.recipient, mode })))
 }
 
 if (import.meta.main) {

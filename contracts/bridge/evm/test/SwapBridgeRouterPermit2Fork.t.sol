@@ -40,7 +40,7 @@ contract SwapBridgeRouterPermit2ForkTest is Test {
     address constant WETH = 0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14;
     address constant FEE_JUICE = 0x762C132040fdA6183066Fa3B14d985ee55aA3C18;
     address constant FEE_ASSET_HANDLER = 0x5602c39A6E9C5AcE589F64F754927bcDa4f4BFc9;
-    address constant FEE_JUICE_PORTAL = 0x5Bb7523A95c1FDF1D2A3DD9fb7d497E7F5142D7F;
+    address constant FEE_JUICE_PORTAL = 0x6974Bde62C47A0041f5B4a2E61c5506c2B59Ce59;
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     bytes32 constant HUB = bytes32(uint256(0x4B));
 

@@ -8,9 +8,9 @@ use aztec::protocol::{
     address::{AztecAddress, EthAddress}, contract_class_id::ContractClassId, traits::{FromField, ToField},
 };
 
-// The installed aztec-standards@6.0.0-rc.1 Token class — pinned in bridge-core's
+// The installed aztec-standards@6.0.0-rc.3 Token class — pinned in bridge-core's
 // noir-artifact-classids.test.ts as well.
-global TOKEN_CLASS_ID: Field = 0x24c34002788720c941a327a20c369b12c8bdcff3b5a974673a8f618763471505;
+global TOKEN_CLASS_ID: Field = 0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a;
 
 #[test]
 fn keystone_hub_token_address_matches_bridge_core() {
@@ -29,7 +29,7 @@ fn keystone_hub_token_address_matches_bridge_core() {
         18,
     );
     assert(
-        token.to_field() == 0x058925d9258a1d0fcb8dde2076aae996ed03c1d6dc25dfa2562c8bef4ca01fd2,
+        token.to_field() == 0x1486166167759d2f698e0a95bed4da1d6f11d1c48a16f577c5079969e80ba750,
     );
 }
 

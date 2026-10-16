@@ -7,11 +7,12 @@
  *   bun scripts/deploy-generation.ts pre-create --config <candidate> --token <erc20> [--no-register]
  *   bun scripts/deploy-generation.ts calibrate  --config <candidate> --samples <fees.json>
  *
- * `deploy` needs PRIVATE_KEY (the pinned testnet signer) + SEPOLIA_RPC_URL; AZTEC_NODE_URL defaults
- * to the public testnet RPC. Every step is journalled, so a crashed run resumes with the recorded
- * identities. Real proofs: budget ~15 minutes. `--router-only` is L1-only (no L2 account, no proofs):
- * a DepositRouter and TestnetFuelSwapper beside the current generation's router, `--config` (default:
- * the live manifest) as the base of the candidate it writes.
+ * `deploy` and `pre-create` run as a keyed run on testnet-generation.env.example: PRIVATE_KEY (the
+ * pinned testnet signer), SEPOLIA_RPC_URL, BRIDGE_DEPLOYER_SECRET_TESTNET and DRPC_API_KEY, the node's
+ * key. Every step is journalled, so a crashed run resumes with the recorded identities. Real proofs:
+ * budget ~15 minutes. `--router-only` is L1-only (no L2 account, no proofs): a DepositRouter and
+ * TestnetFuelSwapper beside the current generation's router, `--config` (default: the live manifest)
+ * as the base of the candidate it writes.
  */
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -41,7 +42,7 @@ import {
 	stopwatch,
 } from "./script-bootstrap"
 import { deployAccountIfAbsent, deployerSchnorrAccount, sponsoredFpcFee } from "./script-l2"
-import { TESTNET_NODE_URL } from "../src/testnet-node"
+import { requireDrpcNodeUrl } from "../src/drpc-node"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(here, "..", "..", "..", "apps", "tools", "public")
@@ -51,7 +52,6 @@ const JOURNAL_PATH = join(here, "..", "deploy-journal", "testnet-generation.json
 const EVM_ROOT = join(here, "..", "..", "..", "contracts", "bridge", "evm")
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
-const NODE_URL = process.env.AZTEC_NODE_URL ?? TESTNET_NODE_URL
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
 
 /** Sepolia's Uniswap V4 + Permit2 + Multicall3 singletons. */
@@ -86,12 +86,13 @@ function requireSigner(): ReturnType<typeof privateKeyToAccount> {
  *  sponsored-fee-spending transaction, and nothing but an actual generation needs it on chain. */
 async function connect(mins: () => string, opts: { deployAccount: boolean }): Promise<{ l1: L1Ctx; l2: L2Ctx; addrs: NodeL1 }> {
 	const account = requireSigner()
+	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
 	// Before any account exists: the registry and portal read here become the generation's immutables.
-	const info = await authenticatedNode(NODE_URL)
+	const info = await authenticatedNode(nodeUrl)
 	const chain = sepoliaChain(SEPOLIA_RPC)
 	const l1: L1Ctx = { ...createL1Clients({ chain, rpcUrl: SEPOLIA_RPC, account }), account }
-	const node = createNode(NODE_URL)
-	const wallet = await createL2Wallet({ nodeUrl: NODE_URL, proverEnabled: true })
+	const node = createNode(nodeUrl)
+	const wallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	const { manager, from } = await deployerSchnorrAccount(wallet as never, "testnet")
 	const { fee } = await sponsoredFpcFee(wallet)
 	if (opts.deployAccount) {
@@ -322,7 +323,7 @@ async function commandRouterOnly(): Promise<void> {
 	if (!ratesPath) throw new Error('--router-only needs --rates <rates.json> ({ "<erc20>": "<fee-asset units per whole token>" })')
 	const routingPath = argValue("--routing")
 	const account = requireSigner()
-	const info = await authenticatedNode(NODE_URL)
+	const info = await authenticatedNode(requireDrpcNodeUrl("testnet", process.env))
 	const l1: L1Ctx = { ...createL1Clients({ chain: sepoliaChain(SEPOLIA_RPC), rpcUrl: SEPOLIA_RPC, account }), account }
 	const options = {
 		l1,
