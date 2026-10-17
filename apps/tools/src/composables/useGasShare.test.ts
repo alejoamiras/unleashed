@@ -141,6 +141,16 @@ describe("useGasShare", () => {
 		expect(result?.capped).toBe("half")
 	})
 
+	it("the fee asset sizes one for one with no slippage margin and may take all but one unit; the stepper stops where it does", () => {
+		const { propose, maxTxTarget } = sizedGasShare()
+		const one = { probeIn: 1n, probeOut: 1n }
+		const aztec = { amount: 3n * 10n ** 18n, decimals: 18, state: REGISTERED, rate: one, identity: true }
+		expect(propose(aztec)).toEqual({ fuelAmount: 20n * FJ_PER_TX, fuelFj: 20n * FJ_PER_TX, capped: null })
+		expect(maxTxTarget(aztec)).toBe(29)
+		// A swapped token at the same amount keeps the half cap and its slippage margin.
+		expect(maxTxTarget({ ...aztec, identity: false })).toBe(14)
+	})
+
 	it("sizes the input so the signed floor still reaches the Fee Juice target", () => {
 		const { propose } = sizedGasShare()
 		const result = propose({ amount: AMOUNT, decimals: 6, state: REGISTERED, rate: RATE })

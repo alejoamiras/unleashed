@@ -41,6 +41,7 @@ export const sandboxHandleSchema = z
 		deployment: z.object({
 			feeJuice: address,
 			feeJuicePortal: address,
+			feeAssetHandler: address.optional(),
 			registry: address,
 			swapTarget: address,
 			quoter: address,

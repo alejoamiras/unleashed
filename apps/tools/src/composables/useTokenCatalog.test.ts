@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
 	placeholder: { value: false },
 	tokens: { value: [] as unknown[] },
 	chainId: { value: 31337 },
+	feeAsset: { value: "" },
 	loadTokenList: vi.fn(),
 }))
 
@@ -26,6 +27,9 @@ vi.mock("@/contracts/bridge-generation", () => ({
 	get MANIFEST() {
 		return { l1ChainId: h.chainId.value }
 	},
+	get FUEL_ASSET() {
+		return h.feeAsset.value
+	},
 }))
 
 vi.mock("@unleashed/bridge-core", async (importOriginal) => {
@@ -36,6 +40,9 @@ vi.mock("@unleashed/bridge-core", async (importOriginal) => {
 const MANIFEST = parseManifestV2(rawManifest)
 const FIXTURE_TOKENS = MANIFEST.bridge?.tokens ?? []
 const USDC = FIXTURE_TOKENS[0].erc20.toLowerCase() as Address
+const FEE_ASSET = MANIFEST.feeJuice.asset.toLowerCase() as Address
+/** The pinned fee-asset row plus the generation's tokens. */
+const HEAD = FIXTURE_TOKENS.length + 1
 
 const listed = (address: string, symbol: string, name = symbol): CatalogToken => ({
 	chainId: 31337,
@@ -54,16 +61,37 @@ describe("useTokenCatalog", () => {
 		h.placeholder.value = false
 		h.tokens.value = FIXTURE_TOKENS
 		h.chainId.value = MANIFEST.l1ChainId
+		h.feeAsset.value = MANIFEST.feeJuice.asset
 		resolves([])
 	})
 
-	it("puts the generation's tokens first, in manifest order", async () => {
+	it("puts AZTEC first, then the generation's tokens in manifest order", async () => {
 		resolves([listed("0x00000000000000000000000000000000000000a1", "AAA")])
 		const c = useTokenCatalog()
 		await c.refresh()
-		expect(c.tokens.value.slice(0, 3).map((t) => t.address)).toEqual(FIXTURE_TOKENS.map((t) => t.erc20.toLowerCase()))
-		expect(c.tokens.value.slice(0, 3).every((t) => t.source === "manifest")).toBe(true)
-		expect(c.tokens.value[3]?.symbol).toBe("AAA")
+		expect(c.tokens.value[0]).toMatchObject({ address: FEE_ASSET, symbol: "AZTEC", source: "manifest", decimals: 18 })
+		expect(c.tokens.value[0]?.name).toMatch(/^Aztec gas \(.+\)$/)
+		expect(c.tokens.value.slice(1, HEAD).map((t) => t.address)).toEqual(FIXTURE_TOKENS.map((t) => t.erc20.toLowerCase()))
+		expect(c.tokens.value.slice(0, HEAD).every((t) => t.source === "manifest")).toBe(true)
+		expect(c.tokens.value[HEAD]?.symbol).toBe("AAA")
+	})
+
+	it("keeps AZTEC's own row when the remote list carries the fee asset", async () => {
+		resolves([listed(FEE_ASSET, "FEE", "FeeJuice")])
+		const c = useTokenCatalog()
+		await c.refresh()
+		const hits = c.tokens.value.filter((t) => t.address === FEE_ASSET)
+		expect(hits).toHaveLength(1)
+		expect(hits[0]).toMatchObject({ source: "manifest", symbol: "AZTEC" })
+	})
+
+	it("a list token named AZTEC at another address stays a list row, after the curated head", async () => {
+		const namesake = listed("0x00000000000000000000000000000000000000a2", "AZTEC")
+		resolves([namesake])
+		const c = useTokenCatalog()
+		await c.refresh()
+		expect(c.tokens.value.findIndex((t) => t.address === namesake.address)).toBe(HEAD)
+		expect(c.tokens.value[HEAD]?.source).toBe("list")
 	})
 
 	it("keeps the manifest entry when the remote list carries the same address", async () => {
@@ -91,7 +119,7 @@ describe("useTokenCatalog", () => {
 		expect(c.provenance.value).toBe("none")
 		await c.refresh()
 		expect(c.provenance.value).toBe("fallback")
-		expect(c.tokens.value).toHaveLength(FIXTURE_TOKENS.length)
+		expect(c.tokens.value).toHaveLength(HEAD)
 	})
 
 	it("never fetches a list on a network with no bridge", async () => {
@@ -118,6 +146,7 @@ describe("useTokenCatalog", () => {
 	it("refuses a duplicate however it is cased", () => {
 		const c = useTokenCatalog()
 		expect(() => c.addPasted(USDC.toUpperCase().replace("0X", "0x"))).toThrow(/already in the list/)
+		expect(() => c.addPasted(FEE_ASSET.toUpperCase().replace("0X", "0x"))).toThrow(/already in the list/)
 	})
 
 	it("adds a looked-up token under the identity the contract answered", () => {
@@ -133,14 +162,14 @@ describe("useTokenCatalog", () => {
 		expect(added).toMatchObject({ address: "0x00000000000000000000000000000000000000b7", source: "pasted", symbol: "", name: "" })
 		expect(added.decimals).toBe(-1)
 		expect(added.logoKey).toBe(`${MANIFEST.l1ChainId}:0x00000000000000000000000000000000000000b7`)
-		expect(c.tokens.value[FIXTURE_TOKENS.length]).toStrictEqual(added)
+		expect(c.tokens.value[HEAD]).toStrictEqual(added)
 	})
 
 	it("filters by symbol, name or address prefix", async () => {
 		resolves([listed("0x00000000000000000000000000000000000000c3", "WETH", "Wrapped Ether")])
 		const c = useTokenCatalog()
 		await c.refresh()
-		expect(c.filtered.value).toHaveLength(FIXTURE_TOKENS.length + 1)
+		expect(c.filtered.value).toHaveLength(HEAD + 1)
 		c.search.value = "usd"
 		expect(c.filtered.value.map((t) => t.symbol)).toEqual(["USDC", "USDT"])
 		c.search.value = "Wrapped"
@@ -160,7 +189,7 @@ describe("useTokenCatalog", () => {
 		expect(c.loading.value).toBe(false)
 		resolves([listed("0x00000000000000000000000000000000000000d2", "TWO")], "cache")
 		await c.refresh()
-		expect(c.tokens.value.map((t) => t.symbol)).toEqual([...FIXTURE_TOKENS.map((t) => t.displaySymbol), "TWO"])
+		expect(c.tokens.value.map((t) => t.symbol)).toEqual(["AZTEC", ...FIXTURE_TOKENS.map((t) => t.displaySymbol), "TWO"])
 		expect(c.provenance.value).toBe("cache")
 	})
 
@@ -169,7 +198,7 @@ describe("useTokenCatalog", () => {
 		const added = c.addPasted("0x00000000000000000000000000000000000000e4")
 		resolves([listed(added.address, "LATE", "Late Arrival")])
 		await c.refresh()
-		const row = c.tokens.value[FIXTURE_TOKENS.length]
+		const row = c.tokens.value[HEAD]
 		expect(row).toMatchObject({ address: added.address, symbol: "LATE", decimals: 18 })
 		expect(c.tokens.value.filter((t) => t.address === added.address)).toHaveLength(1)
 	})
@@ -182,7 +211,7 @@ describe("useTokenCatalog", () => {
 		c.dispose()
 		release({ tokens: [listed("0x00000000000000000000000000000000000000f9", "GONE")], provenance: "fresh" })
 		await pending
-		expect(c.tokens.value.map((t) => t.symbol)).toEqual(FIXTURE_TOKENS.map((t) => t.displaySymbol))
+		expect(c.tokens.value.map((t) => t.symbol)).toEqual(["AZTEC", ...FIXTURE_TOKENS.map((t) => t.displaySymbol)])
 		expect(c.provenance.value).toBe("none")
 		expect(c.loading.value).toBe(false)
 	})

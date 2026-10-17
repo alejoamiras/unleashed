@@ -70,6 +70,7 @@ export const TESTIDS = {
 	btnDripPublic: "tl-btn-drip-public",
 	btnDripPrivate: "tl-btn-drip-private",
 	dripStatus: "tl-drip-status",
+	dripTxLink: "tl-drip-tx-link",
 	dripLockReason: "tl-drip-lock-reason",
 
 	// One-click "Add to wallet" - calls registerToken on the connected wallet
@@ -153,6 +154,11 @@ export const TESTIDS = {
 	mintL1Card: "tl-mint-l1-card",
 	mintL1: "tl-mint-l1",
 	mintL1Status: "tl-mint-l1-status",
+
+	// The Drip tab's AZTEC faucet on Ethereum; distinct from the strip's, since both tabs stay mounted
+	dripFeeAssetCard: "tl-drip-fee-asset-card",
+	dripFeeAssetMint: "tl-drip-fee-asset-mint",
+	dripFeeAssetStatus: "tl-drip-fee-asset-status",
 
 	// Send - the in-flight journal (cards carry data-id/direction/stage/privacy/attention)
 	journal: "tl-bridge-journal",

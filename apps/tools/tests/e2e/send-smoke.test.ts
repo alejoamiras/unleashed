@@ -255,6 +255,9 @@ const MANIFEST_TOKENS = gen.MANIFEST_TOKENS as { erc20: string; decimals: number
 const CHAIN_ID = (gen.MANIFEST as { l1ChainId: number }).l1ChainId
 const SEND_GEN = gen.SEND_GENERATION as { factory: Hex; implementation: Hex }
 const USDC = MANIFEST_TOKENS[0].erc20
+const FEE_ASSET = gen.FUEL_ASSET as string
+/** AZTEC's pinned row, then the generation's tokens. */
+const HEAD = MANIFEST_TOKENS.length + 1
 
 const sel = (t: string) => `[data-testid="${t}"]`
 const keyOf = (erc20: string) => `${CHAIN_ID}:${erc20.toLowerCase()}`
@@ -518,18 +521,19 @@ describe("send wizard smoke", () => {
 		})
 	})
 
-	it("lists the manifest tokens first, then the remote list, and takes a pasted address", async () => {
+	it("lists AZTEC and the manifest tokens first, then the remote list, and takes a pasted address", async () => {
 		let release = (): void => {}
 		h.state.listGate = new Promise<void>((r) => {
 			release = r
 		})
 		const w = await mountView()
-		expect(w.findAll(sel(TESTIDS.sendTokenTile))).toHaveLength(MANIFEST_TOKENS.length)
+		expect(w.findAll(sel(TESTIDS.sendTokenTile))).toHaveLength(HEAD)
 
 		release()
 		await settle()
 		const keys = w.findAll(sel(TESTIDS.sendTokenTile)).map((t) => t.attributes("data-key"))
-		expect(keys.slice(0, MANIFEST_TOKENS.length)).toEqual(MANIFEST_TOKENS.map((t) => keyOf(t.erc20)))
+		expect(keys.slice(0, HEAD)).toEqual([keyOf(FEE_ASSET), ...MANIFEST_TOKENS.map((t) => keyOf(t.erc20))])
+		expect(tile(w, FEE_ASSET).text()).toContain("AZTEC")
 		expect(keys).toContain(keyOf(LIST_WBTC))
 
 		// An unlisted address typed into the search is read from the chain and offered for adding; the
@@ -544,9 +548,9 @@ describe("send wizard smoke", () => {
 		await w.find(sel(TESTIDS.sendAmountBack)).trigger("click")
 		await settle()
 		const tiles = w.findAll(sel(TESTIDS.sendTokenTile))
-		expect(tiles).toHaveLength(MANIFEST_TOKENS.length + 3)
-		expect(tiles[MANIFEST_TOKENS.length]?.text()).toContain("WBTC")
-		expect(tiles[MANIFEST_TOKENS.length]?.text()).toContain("added by you")
+		expect(tiles).toHaveLength(HEAD + 3)
+		expect(tiles[HEAD]?.text()).toContain("WBTC")
+		expect(tiles[HEAD]?.text()).toContain("added by you")
 
 		await w.find(sel(TESTIDS.sendTokenSearch)).setValue("0xnope")
 		await settle()
@@ -616,6 +620,19 @@ describe("send wizard smoke", () => {
 		// Granted in this run, the permission stays on the rail as its first, done phase.
 		expect(w.findAll(sel(TESTIDS.stepperPhase))[0]?.attributes("data-phase")).toBe("permit")
 		expect(w.findAll(sel(TESTIDS.stepperPhase))[0]?.attributes("data-state")).toBe("done")
+	})
+
+	it("AZTEC, picked from its row, offers all three choices and says gas arrives one for one", async () => {
+		h.state.route = { kind: "identity" }
+		const w = await mountView()
+		await pick(w, FEE_ASSET)
+		await toAmount(w, "1", { route: true })
+
+		for (const id of [TESTIDS.sendChoiceToken, TESTIDS.sendChoiceTokenGas, TESTIDS.sendChoiceGas]) {
+			expect(w.find(sel(id)).attributes("aria-disabled")).not.toBe("true")
+		}
+		expect(w.find(sel(TESTIDS.sendChoiceGas)).text()).toContain("One for one.")
+		expect(w.find(sel(TESTIDS.sendChoiceTokenGas)).text()).toContain("One for one.")
 	})
 
 	it("a token with no fuel route closes the gas choices but still sends the token", async () => {
