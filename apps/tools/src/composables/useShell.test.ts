@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type EffectScope, effectScope } from "vue"
 import { __resetShellForTests, syncShellWithUrl, useShell } from "./useShell"
 
@@ -75,15 +75,20 @@ describe("syncShellWithUrl", () => {
 		expect(location.pathname).toBe("/activity")
 		expect(history.length).toBe(entries + 1)
 
+		const pushes = vi.spyOn(history, "pushState")
 		const popped = new Promise((resolve) => window.addEventListener("popstate", resolve, { once: true }))
 		history.back()
 		await popped
 		expect(useShell().section.value).toBe("drip")
 		expect(location.pathname).toBe("/faucet")
-		expect(history.length).toBe(entries + 1)
+		expect(pushes).not.toHaveBeenCalled()
 
 		scope?.stop()
 		useShell().goTo("addresses")
 		expect(location.pathname).toBe("/faucet")
+		history.replaceState(null, "", "/activity")
+		window.dispatchEvent(new PopStateEvent("popstate"))
+		expect(useShell().section.value).toBe("addresses")
+		pushes.mockRestore()
 	})
 })

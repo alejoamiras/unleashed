@@ -22,7 +22,8 @@ sections on a left rail:
   mainnet real-funds line.
 
 Each section has its own path: `/bridge`, `/faucet`, `/activity`, `/addresses`. `/` and any other
-path open Bridge and rewrite the address to `/bridge`. The rail's entries are links, so a section
+path open Bridge and rewrite the address to `/bridge`; the mainnet placeholder has no sections and
+leaves the address alone. The rail's entries are links, so a section
 opens in a new tab and its address can be copied; Back and Forward move between sections
 (`src/composables/useShell.ts`).
 
