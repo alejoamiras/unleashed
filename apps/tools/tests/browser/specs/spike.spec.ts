@@ -55,6 +55,33 @@ test("plain: discovery, verification, a whole-pool grant, isolation in both fram
 	expect(added.toLowerCase()).toBe(expected.toLowerCase())
 })
 
+test("a section's path: a cold /faucet loads isolated on the Faucet, a link pushes its path and Back returns, a modified click opens a new tab", async ({
+	page,
+}) => {
+	// The server's fallback and the headers on a deep path, and the browser's own history and
+	// new-tab handling, are what jsdom cannot show.
+	await page.goto("/faucet")
+	await expect(page.locator(tid(TESTIDS.dripView))).toBeVisible()
+	await expect(page.locator(tid(TESTIDS.tabDrip))).toHaveAttribute("aria-current", "page")
+	expect(await page.evaluate(() => crossOriginIsolated)).toBe(true)
+
+	await page.locator(tid(TESTIDS.tabActivity)).click()
+	await expect(page).toHaveURL(/\/activity$/)
+	await expect(page.locator(tid(TESTIDS.activityView))).toBeVisible()
+	await page.goBack()
+	await expect(page).toHaveURL(/\/faucet$/)
+	await expect(page.locator(tid(TESTIDS.dripView))).toBeVisible()
+
+	const [opened] = await Promise.all([
+		page.context().waitForEvent("page"),
+		page.locator(tid(TESTIDS.tabAddresses)).click({ modifiers: ["ControlOrMeta"] }),
+	])
+	await expect(opened).toHaveURL(/\/addresses$/)
+	await expect(opened.locator(tid(TESTIDS.addressesView))).toBeVisible()
+	await expect(page).toHaveURL(/\/faucet$/)
+	await opened.close()
+})
+
 test("a wallet whose frame loads late is still discovered", async ({ page, run }) => {
 	// The SDK probes every listed wallet in parallel and tells frames apart by origin; a frame
 	// that is slower than its siblings must still be listed, which is why each profile has its
