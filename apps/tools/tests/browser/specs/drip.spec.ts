@@ -1,5 +1,5 @@
-/** The Drip tab (cells 35, 36, 38, 47): faucet drips land on the selected account, add-to-wallet fails
- *  open, and the AZTEC card mints on Ethereum. */
+/** The Drip tab (cells 35, 36, 38, 47, 48): faucet drips land on the selected account, add-to-wallet
+ *  fails open, the AZTEC card mints on Ethereum, and /faucet opens the tab from a cold load. */
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { FeeAssetHandlerAbi } from "@aztec-foundation/l1-artifacts"
@@ -118,4 +118,31 @@ test("cell 47 — the AZTEC card connects Ethereum from the Drip tab and mints w
 
 	await sendTab()
 	await expect(balance).toHaveText(formatBigInt(before + perCall, 18), { timeout: 60_000 })
+})
+
+test("cell 48 — a section's path: a cold /faucet loads isolated on the Faucet, a link pushes its path and Back returns, a modified click opens a new tab", async ({
+	page,
+}) => {
+	// The server's fallback and the headers on a deep path, and the browser's own history and
+	// new-tab handling, are what jsdom cannot show.
+	await page.goto("/faucet")
+	await expect(page.locator(tid(TESTIDS.dripView))).toBeVisible()
+	await expect(page.locator(tid(TESTIDS.tabDrip))).toHaveAttribute("aria-current", "page")
+	expect(await page.evaluate(() => crossOriginIsolated)).toBe(true)
+
+	await page.locator(tid(TESTIDS.tabActivity)).click()
+	await expect(page).toHaveURL(/\/activity$/)
+	await expect(page.locator(tid(TESTIDS.activityView))).toBeVisible()
+	await page.goBack()
+	await expect(page).toHaveURL(/\/faucet$/)
+	await expect(page.locator(tid(TESTIDS.dripView))).toBeVisible()
+
+	const [opened] = await Promise.all([
+		page.context().waitForEvent("page"),
+		page.locator(tid(TESTIDS.tabAddresses)).click({ modifiers: ["ControlOrMeta"] }),
+	])
+	await expect(opened).toHaveURL(/\/addresses$/)
+	await expect(opened.locator(tid(TESTIDS.addressesView))).toBeVisible()
+	await expect(page).toHaveURL(/\/faucet$/)
+	await opened.close()
 })
