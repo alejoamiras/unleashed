@@ -30,36 +30,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Pinned, not `stable`: a newer Foundry routes test-contract creation through the
-      # deployCode(string,bytes) cheatcode, which halmos 0.3.3 does not implement — setUp then
-      # finds no successful path and every proof fails. This is the version the suites were
-      # validated against. Bump it deliberately, re-running halmos when you do. 1.8.1 was tried
-      # with halmos 0.3.3: 0 of 12 proofs pass, and the gas snapshot moves by 8%.
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
-        with:
-          version: "1.7.1"
-
-      # lib/ is gitignored and installed per-checkout. Pinned to COMMITS, not floating tags: the
-      # README's unpinned install is what a contributor runs locally, but CI resolving a different
-      # forge-std than the one the suites were validated against is a silent divergence — an older
-      # one made halmos abort in setUp with "Unsupported cheat code", passing nothing.
-      #
-      # v4-core MUST stay v4.0.0: >=1.0.0 moves the SwapParams and ModifyLiquidityParams structs
-      # the fuel contracts use.
-      - name: Install forge libraries
-        working-directory: contracts/bridge/evm
-        run: |
-          forge install \
-            foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
-            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
-            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
-
-      # foundry.toml's @aztec/ and @aztec-blob-lib/ remaps assume a hoisted node_modules;
-      # this repo uses bun's isolated linker, so the generated remappings.txt is what makes
-      # the project resolve at all.
-      - name: Generate remappings
-        run: bun packages/bridge-core/scripts/gen-remappings.ts
+      - uses: ./.github/actions/setup-forge
 
       - name: forge build
         working-directory: contracts/bridge/evm
@@ -288,24 +259,10 @@ jobs:
         with:
           version: ${{ steps.aztec-pin.outputs.version }}
 
-      # Same pins as the forge job: the generation deploys from these artifacts.
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+      # The generation the integration suite deploys is built from these artifacts.
+      - uses: ./.github/actions/setup-forge
         with:
-          version: "1.7.1"
-
-      - name: Install forge libraries
-        working-directory: contracts/bridge/evm
-        run: |
-          forge install \
-            foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
-            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
-            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
-
-      - name: Generate remappings + forge build
-        run: |
-          bun packages/bridge-core/scripts/gen-remappings.ts
-          forge build --root contracts/bridge/evm
+          build: "true"
 
       - name: Integration suite
         run: bun run --cwd packages/bridge-core test:integration

@@ -184,4 +184,5 @@ CI: `pr-quick.yml` (`quality-status`: commitlint, lint and typecheck, unit tests
 `verify:build-target`, and the landing's build and browser smoke on the landing graph), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
 graph or the `e2e:tools` label), `bridge-contracts.yml` (`bridge-contracts-status`: Foundry, halmos,
 Noir, TXE, the sandbox integration suite), `actionlint.yml`. Every PR workflow opens with a
-`changes` paths-filter job; `workflow_dispatch` bypasses it.
+`changes` paths-filter job; `workflow_dispatch` bypasses it. A PR run restores only its own caches
+and main's, so `warm-caches.yml` saves main's copies whenever a push to main can move a cache key.

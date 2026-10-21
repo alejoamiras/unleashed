@@ -64,6 +64,7 @@ jobs:
               - '.github/workflows/_tools-e2e.yml'
               - '.github/actions/setup-aztec/**'
               - '.github/actions/setup-bun/**'
+              - '.github/actions/setup-forge/**'
               - '.github/actions/setup-playwright/**'
       - name: Decide
         id: decide

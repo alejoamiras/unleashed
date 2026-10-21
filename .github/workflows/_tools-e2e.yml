@@ -47,24 +47,10 @@ jobs:
         with:
           version: ${{ steps.aztec-pin.outputs.version }}
 
-      # Same pins as the bridge-contracts forge job: the generation deploys from these artifacts.
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+      # The generation the sandbox deploys is built from these artifacts.
+      - uses: ./.github/actions/setup-forge
         with:
-          version: "1.7.1"
-
-      - name: Install forge libraries
-        working-directory: contracts/bridge/evm
-        run: |
-          forge install \
-            foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
-            OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
-            Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
-
-      - name: Generate remappings + forge build
-        run: |
-          bun packages/bridge-core/scripts/gen-remappings.ts
-          forge build --root contracts/bridge/evm
+          build: "true"
 
       - uses: ./.github/actions/setup-playwright
 

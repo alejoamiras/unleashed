@@ -6,8 +6,8 @@ L1 contracts for the Unleashed any-ERC-20 bridge. Aztec L1 interfaces resolve to
 
 ## Dependencies (not committed — see `.gitignore`)
 
-`lib/` is gitignored. Install before building — at the COMMITS CI pins (`_bridge-contracts.yml`),
-not floating tags:
+`lib/` is gitignored. Install before building — at the COMMITS CI pins
+(`.github/actions/setup-forge/action.yml`), not floating tags:
 
 ```bash
 forge install \
