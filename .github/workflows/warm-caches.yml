@@ -1,0 +1,87 @@
+name: Warm caches
+
+# A pull request's run restores caches saved on its own merge ref or on main, never another PR's,
+# and nothing else runs on main. So without this, every PR's first run reinstalls the Aztec CLI
+# (about 85 s) in each sandbox job and rebuilds the contracts. This saves main's copy of each cache
+# those jobs restore whenever a push to main can move one of their keys, and twice a week, since
+# GitHub evicts a cache no run has read for 7 days. It runs main's code only, so a cache it saves
+# is never one a pull request wrote.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1,4"
+  push:
+    branches: [main]
+    paths:
+      - "bun.lock"
+      - "apps/tools/package.json"
+      - "packages/bridge-core/package.json"
+      - "packages/bridge-core/scripts/gen-remappings.ts"
+      - "contracts/bridge/evm/**"
+      - "contracts/bridge/aztec/*/Nargo.toml"
+      - ".github/actions/**"
+      - ".github/workflows/warm-caches.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-caches
+  cancel-in-progress: true
+
+jobs:
+  aztec-versions:
+    name: Aztec toolchains in use
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      versions: ${{ steps.list.outputs.versions }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The sources the PR jobs take their setup-aztec version from: bridge-core's pin for the
+      # sandbox jobs, each Noir crate's aztec-nr tag for the contract jobs.
+      - name: List them
+        id: list
+        run: |
+          versions=$({
+            jq -r '.dependencies["@aztec-labs/aztec.js"]' packages/bridge-core/package.json
+            sed -n 's/.*aztec-nr".*tag = "v\([^"]*\)".*/\1/p' \
+              contracts/bridge/aztec/keystone/Nargo.toml contracts/bridge/aztec/token_bridge_hub/Nargo.toml
+          } | sort -u | jq -Rnc '[inputs | select(length > 0)]')
+          echo "versions: $versions"
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
+  aztec:
+    name: Aztec CLI ${{ matrix.version }}
+    needs: aztec-versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        version: ${{ fromJSON(needs.aztec-versions.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # setup-aztec shells out to bun, so it has to be on PATH before that step runs.
+      - uses: ./.github/actions/setup-bun
+
+      - uses: ./.github/actions/setup-aztec
+        with:
+          version: ${{ matrix.version }}
+
+  toolchain:
+    name: Bun, forge and Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: ./.github/actions/setup-forge
+        with:
+          build: "true"
+
+      - uses: ./.github/actions/setup-playwright
