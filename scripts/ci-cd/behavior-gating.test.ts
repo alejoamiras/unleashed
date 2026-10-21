@@ -180,7 +180,7 @@ describe("CI behavior-gating guard", () => {
     for (const manifest of ["apps/tools/public/testnet-bridge.json", "apps/tools/public/mainnet-bridge.json"]) {
       expect(contracts, "a manifest bump is the frontend adopting a generation — the round trips must re-run").toContain(manifest)
     }
-    for (const p of ["package.json", "bun.lock", "bunfig.toml", "patches/**", ".github/actions/setup-aztec/**", ".github/actions/setup-bun/**"]) {
+    for (const p of ["package.json", "bun.lock", "bunfig.toml", "patches/**", ".github/actions/setup-aztec/**", ".github/actions/setup-bun/**", ".github/actions/setup-forge/**"]) {
       expect(contracts, `bridge-contracts must gate ${p}`).toContain(p)
     }
   })
@@ -199,6 +199,7 @@ describe("CI behavior-gating guard", () => {
       ".github/workflows/_tools-e2e.yml",
       ".github/actions/setup-aztec/**",
       ".github/actions/setup-bun/**",
+      ".github/actions/setup-forge/**",
       ".github/actions/setup-playwright/**",
     ]) {
       expect(filter, `tools-e2e must gate ${p}`).toContain(p)

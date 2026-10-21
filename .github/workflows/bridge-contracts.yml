@@ -57,6 +57,7 @@ jobs:
               - '.github/workflows/_bridge-contracts.yml'
               - '.github/actions/setup-aztec/**'
               - '.github/actions/setup-bun/**'
+              - '.github/actions/setup-forge/**'
       - name: Override for manual dispatch
         if: github.event_name == 'workflow_dispatch'
         id: override
