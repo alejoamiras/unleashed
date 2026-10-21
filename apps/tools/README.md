@@ -21,6 +21,12 @@ sections on a left rail:
   is promoted. No section has a footer of contract links; the bridge form's footer is only the
   mainnet real-funds line.
 
+Each section has its own path: `/bridge`, `/faucet`, `/activity`, `/addresses`. `/` and any other
+path open Bridge and rewrite the address to `/bridge`; the mainnet placeholder has no sections and
+leaves the address alone. The rail's entries are links, so a section
+opens in a new tab and its address can be copied; Back and Forward move between sections
+(`src/composables/useShell.ts`).
+
 Two build targets (`testnet.app.unleashed.systems`, `app.unleashed.systems`), selected at BUILD time by which vite
 config runs — never at runtime and never from a dashboard variable. A manifest with no `bridge`
 block renders the Send placeholder (both networks until a generation is promoted); the mainnet
@@ -153,9 +159,10 @@ so both open; the upload refuses a `dist/` that is not a testnet build. Mainnet
 has no previews, and both its hosts are behind Cloudflare Access (Foundation and Labs identities
 only): dashboard state, so a check against a live mainnet host needs a logged-in browser.
 
-`bb.js` needs cross-origin isolation. The build GENERATES `dist/_headers` (`vite.config.ts`) with
-COOP/COEP + a tight CSP whose `connect-src` is the target's (`src/lib/network-targets.ts`). On
-testnet that is dRPC's keyless public node (`https://aztec-testnet.drpc.org`, so the bundle holds no
+`bb.js` needs cross-origin isolation. The build GENERATES `dist/_headers` (`vite.config.ts`) for
+every path (`/*`), so a section's path loads isolated like `/`, through the Workers'
+`single-page-application` fallback to `index.html`. The headers are COOP/COEP + a tight CSP whose
+`connect-src` is the target's (`src/lib/network-targets.ts`). On testnet that is dRPC's keyless public node (`https://aztec-testnet.drpc.org`, so the bundle holds no
 key) plus exactly one token-list file; on mainnet it names nothing remote. `dist/build.json` and a
 `<meta>` tag carry the build id and chain id; `verify:build-target` asserts a built `dist/` matches
 the target it claims.
