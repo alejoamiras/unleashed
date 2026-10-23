@@ -61,3 +61,16 @@ Exit 1: **80 vulnerabilities (37 high, 35 moderate, 8 low)**. Advisory groups, b
 The Phase 2 gate compares its `bun audit` against this list: a new group is a finding, a group that
 drops out is a gain. All of these are transitive through the Aztec line or the test tooling; none is a
 direct dependency of a shipped bundle.
+
+## Gate
+
+On the plan commit, from the worktree root:
+
+| Command | Exit | Note |
+|---|---|---|
+| `bun install --frozen-lockfile` | 0 | |
+| `bun run lint` | 0 | |
+| `bun run typecheck:all` | 0 | |
+| `bun run test:all` | 0 | design 242, bridge-core 489 (1 skipped), landing 76, tools 1681 |
+
+No expected-red case is open yet. Phase 1 green.

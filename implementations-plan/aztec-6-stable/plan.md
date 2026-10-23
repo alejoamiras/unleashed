@@ -337,7 +337,7 @@ mechanics); lint and typecheck pass only at exit 0. "Both builds" means
 for `mainnet`. Every keyed run is `env-exec request --template <template> --slug <name> -- <command>`, filed after
 a commit and a push, with its id given to the owner as `op-remote alejo-box <id>`.
 
-### Phase 1: Preconditions and the reset evidence
+### Phase 1: Preconditions and the reset evidence ✓
 
 1. Commit this plan folder (`plan.md`, `recon.md`, `lessons/`) and the `implementations-plan/index.md` line.
 2. Write `lessons/reset-baseline.json` from F4 and F5 (§ Key interfaces), and `lessons/phase-1.md` with the two-RPC
