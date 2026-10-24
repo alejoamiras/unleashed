@@ -6,6 +6,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [aprime-fidelity](aprime-fidelity/plan.md) — archived — the app brought to the Dead Channel A′ boards: icons, static, token step, chrome, activity, receipt, faucet, amount and review, in-flight, phones
 - [aztec-v6](aztec-v6/plan.md) — archived — Aztec 6.0.0-rc.1 and a new testnet bridge generation after the network reset
 - [aztec-rc3](aztec-rc3/plan.md) — archived — Aztec 6.0.0-rc.3, a new testnet bridge generation, and split dRPC keys
+- [aztec-6-stable](aztec-6-stable/plan.md) — archived — Aztec 6.0.0 and a new testnet bridge generation on the reset rollup 679261766
 - [aztec-fee-asset](aztec-fee-asset/plan.md) — archived — $AZTEC first in the Send picker, and a testnet AZTEC mint on Send and the Faucet tab
 - [aztec-5.0.0-stable](aztec-5.0.0-stable/plan.md) — archived — aztec-5.0.0-stable
 - [aztec-5.0.1-line](aztec-5.0.1-line/plan.md) — archived — aztec-5.0.1-line

@@ -171,7 +171,7 @@ const OPERATIONAL_ALLOWLIST = [
 	"implementations-plan/archive/any-erc20-bridge/lessons/",
 	"implementations-plan/archive/protocol-labels/lessons/",
 	"implementations-plan/archive/aztec-rc3/lessons/",
-	"implementations-plan/aztec-6-stable/lessons/",
+	"implementations-plan/archive/aztec-6-stable/lessons/",
 	"apps/tools/public/testnet-bridge.journal.jsonl",
 ]
 
@@ -190,7 +190,7 @@ function isNotAllowlisted(line: string): boolean {
 /** The committed intent every build pins the live identity against. A NETWORK RESET is the one
  *  event this pin is built to refuse, so a reset arc's first committed step is re-pointing it at
  *  the arc that recorded the new identity — never loosening the check. */
-const NO_RESET_BASELINE = "implementations-plan/aztec-6-stable/lessons/reset-baseline.json"
+const NO_RESET_BASELINE = "implementations-plan/archive/aztec-6-stable/lessons/reset-baseline.json"
 
 /** Network-identity pinning against the COMMITTED baseline intent: no network reset has
  *  happened since the baseline recorded this network's identity, so every node-claimed L1
