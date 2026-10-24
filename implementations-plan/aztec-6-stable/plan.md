@@ -10,9 +10,76 @@ eli5_mode: artifact
 eli5_source: implementations-plan/aztec-6-stable/eli5.html
 eli5_url: https://claude.ai/artifact/GSHHUw4cs1HMrqenuBNBRA
 budget: "recon: 1 Sonnet agent; code-review: off; Codex on gpt-6.1-sol at high; Claude leg on Opus 5.5; no parallel lanes"
-status: approved
+status: closed
 base: main (b1a52e6)
 ---
+
+## Outcome
+
+- **Closed; delivered** in one PR, #26, with this close-out as its final commits. Phases 1–11 are ✓. The owner
+  merges it, squash, after the A4 wallet check on the preview of its final head (A3).
+- **The owner's calls.**
+  - At the gate: A4 *"Before Merge, I can test Nulo on the preview URL."*, A5 *"Leave it open"*, A6 *"Wait for
+    0.3.0"*, A7 (a), A8 (a).
+  - The live window ran from one stash, a one-time exception to one approval per keyed run: *"I'd love for you
+    to push through all the deployment and everything without my intervention … Im good with that risk,
+    specially for a disposable / testnet project."* One approved keyed run wrote the window's values to an
+    owner-only file in the user's tmpfs runtime directory. Every later step read it through env-exec's masker,
+    and the file was dropped when the window closed (phase 9).
+- **Shipped: the 6.0.0 line.**
+  - `@aztec-labs/*` and `@aztec-foundation/*` are at 6.0.0, as are `aztec-standards` and `private-fee-juice`.
+    `@nulo-sh/*` is at 0.3.0, published by the Nulo team on 6.0.0 peers (A6, D9).
+  - Bridge-core uses stock `viem@2.57.1`, and `@aztec/viem` has left the tree (D20).
+  - Noir is on aztec-nr `v6.0.0`. The hub was recompiled and its class ids re-pinned.
+  - The PrivateFPC is re-pinned to `0x0516ebb4…6915` (salt `0x…01`, artifact sha256 `bc1e27b0…9bde`). Nothing
+    deploys it.
+  - The testnet identity: rollupVersion 679261766, wallet chainId 685146337, FeeJuicePortal `0xe59a…f505`.
+    The fee asset, the handler and the registry did not move.
+- **Shipped: the generation**, on the pinned signer `0x7F42…6a9a`, cap 2.0 ETH, spend 0.000110 ETH:
+  - The contracts:
+    - factory `0x2509411e06a3b9512eca3d9f2668afd7821b7817`
+    - router `0xad08e65dda66eaed5ab9447f27b7610a850f4303`
+    - UniswapFuelSwap `0xab7a35ac6247328851880c1faa68e051fe8d8a84`
+    - hub `0x1d500beb91a75ccd2e5376d14980b0cabd494fe3397e710faddc371376de7530`
+  - Portals and L2 tokens:
+
+    | Token | Portal | L2 token |
+    |---|---|---|
+    | USDC | `0x8128…fb74` | `0x24903…7f32` |
+    | USDT | `0xe4b6…c247` | `0x09273…c505` |
+    | EURC | `0x6535…15cc` | `0x10b46…649d` |
+    | GBPC | `0x717a…d0d9` | `0x28af9…f06a` |
+
+    EURC and GBPC are pre-created and unregistered.
+  - The faucet: Dripper `0x057c…634b`, SIGNAL `0x1c31…bfa3`, NOISE `0x26bc…73f3`.
+  - Promoted once, as candidate `e17942e5…58f8`. Calibration matched rc.3 to the wei: `fjPerTx` 1.987 FJ,
+    `fjRegister` 1.577 FJ. The intent and the receipt are in `lessons/`.
+  - Every canary and the final verify are green (phase 10).
+- **Shipped: fixes on the way.**
+  - `createPortal` sends its estimate plus 25 % and fails a reverted receipt (A8, D17).
+  - The testnet Fee Juice canary refuses a manifest whose portal or chain id differs from the node's (phase 8).
+  - The sandbox anvil starts at a 7-wei base fee (D22).
+  - `aztec-line.test.ts` refuses every `@aztec/*` package (D23).
+  - `castBin` reads bridge-core's pin (D6).
+- **Reviews.**
+  - The plan had a dual audit and a fresh final Codex pass.
+  - The Phase 8 loop converged in 2 rounds.
+  - The final pass over the net diff converged in 3 rounds. Both of its mediums were in the window's deploy
+    script and are fixed. The live run, which needed no retry, was unaffected.
+  - `/code-review` was off.
+- **Dropped:** none of the scope. `MIN_FUEL_FJ` stays at 29.773 FJ, a recorded deferral (D17).
+- **Known limits:** the rc.3 factory `0xc68a…565a` stays unpaused, with only test tokens at stake (A5, D7). It
+  is filed as a closed `known-limit` issue, #27.
+- **Open items,** in `follow-ups.md`:
+  - rotate the shared dRPC CLI key, which sat in the window's stash
+  - zod 4.6.6
+  - `MIN_FUEL_FJ` from the measured ceiling
+  - `lifi-routing` onto 6.0.0
+  - the rc.3 records
+  - the conductor's lag-tolerant readbacks
+  - the forge cache deletion
+  - mainnet on its line
+- **Retired:** the `/goal` and `/loop` seeds below. This plan is a record, never a task list.
 
 # aztec-6-stable: Aztec 6.0.0 and a new testnet generation
 
