@@ -22,11 +22,11 @@ const PINS = [
 		// `contracts/bridge/aztec/scripts/compile.sh --check` (a rebuild must derive this id).
 		name: "TokenBridgeHub",
 		path: join(CONTRACTS, "token_bridge_hub", "target", "token_bridge_hub_contract-TokenBridgeHub.json"),
-		classId: "0x198c190c4eb3f1522cad4802d001d444724358732dc01710203657f9aeafd124",
+		classId: "0x2132a9de52d748417fb251b0924154633658534d6cf806bd9c3d79554d632abe",
 	},
 ] as const
 
-describe("committed bridge Noir artifacts — class-id tripwire (6.0.0-rc.3)", () => {
+describe("committed bridge Noir artifacts — class-id tripwire (6.0.0)", () => {
 	for (const pin of PINS) {
 		it(`${pin.name} derives its pinned class id`, async () => {
 			const artifact = loadContractArtifact(JSON.parse(readFileSync(pin.path, "utf8")))
@@ -35,10 +35,10 @@ describe("committed bridge Noir artifacts — class-id tripwire (6.0.0-rc.3)", (
 		})
 	}
 
-	it("every artifact self-reports aztec_version 6.0.0-rc.3", () => {
+	it("every artifact self-reports aztec_version 6.0.0", () => {
 		for (const pin of PINS) {
 			const raw = JSON.parse(readFileSync(pin.path, "utf8")) as { aztecVersion?: string; aztec_version?: string }
-			expect(raw.aztecVersion ?? raw.aztec_version).toBe("6.0.0-rc.3")
+			expect(raw.aztecVersion ?? raw.aztec_version).toBe("6.0.0")
 		}
 	})
 })

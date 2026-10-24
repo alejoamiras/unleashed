@@ -380,7 +380,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
   command exits 0 with only the ledger's open cases failing.
 - Layers: typecheck/lint, unit.
 
-### Phase 3: The Noir line
+### Phase 3: The Noir line ✓
 
 1. Move the seven tags in the five `Nargo.toml` files to `v6.0.0`: the `aztec` dep in every crate, the hub's
    `compressed_string`, and the hub's standards `token` dep (the one the Token class id depends on), with the
