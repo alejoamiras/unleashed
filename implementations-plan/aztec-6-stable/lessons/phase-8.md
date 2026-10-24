@@ -50,4 +50,19 @@ for it, and the tree stays frozen apart from Phase 7, which re-runs this gate.
 | `bun run test:all` | 1 | only the testnet-manifest case (promotion) |
 | `bun run test:ci-gating` | 1 | only `published-packages.test.ts` (Phase 7) |
 
-The re-run of the Phase 6 gate on the committed fix tree is recorded below when it completes.
+## The Phase 6 gate, re-run on the committed fix tree
+
+`.vite` cleared first; the integration and browser suites ran side by side after the smoke, each on its own
+sandbox, at load average 150–300 on 188 cores.
+
+| Command | Result |
+|---|---|
+| `bun run --cwd packages/bridge-core deploy:sandbox --smoke` | exit 0, `✅ sandbox deploy + smoke OK (17.7m)` |
+| `bun run --cwd packages/bridge-core test:integration` | exit 0, 6 files, 35 passed, 1743 s |
+| `bun run e2e:tools` | exit 0, `73 passed (2.0h)`, wall-clock 7509 s |
+| `bun run lint`, `bun run typecheck:all` | exit 0 |
+| `bun run test:all` | only `testnet-bridge.json is a valid v2 manifest for its own chain` fails (promotion) |
+| `bun run test:ci-gating` | only `published-packages.test.ts` fails (Phase 7) |
+| `verify:deployments`, both builds with `verify:build-target`, `build:landing` | exit 0 |
+
+`git status --porcelain` was empty after the run.

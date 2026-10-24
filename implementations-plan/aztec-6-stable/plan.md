@@ -489,7 +489,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
 - Pass criteria: every command exits 0; the ledger closes `published-packages.test.ts`.
 - Layers: unit, browser e2e.
 
-### Phase 8: The quality loop, before any key
+### Phase 8: The quality loop, before any key ✓
 
 1. If `main` moved, `git fetch origin main` and rebase this branch onto it; re-run the Phase 6 gate.
 2. Run the quality loop over this branch's diff from `origin/main` (§ Post-implementation), excluding
