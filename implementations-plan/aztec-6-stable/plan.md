@@ -410,7 +410,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
   > **Stop:** if the 6.0.0 L1 artifacts fail on 1.7.1, stop and ask the owner before moving the pin (D5).
 - Layers: contract suites, unit.
 
-### Phase 4: The PrivateFPC
+### Phase 4: The PrivateFPC ✓
 
 1. Set `PRIVATE_FPC_ADDRESS` and the descriptor from the installed 6.0.0 package: `aztecVersion`, `expectedAddress`
    (equal to its `canonical-deployment.json`), `artifactSha256`, a compatibility entry `["6.0.0"]`, the comments.

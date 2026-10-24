@@ -150,7 +150,7 @@ describe("private-fuel keystone", () => {
 		// human curation trips here first), and the network identity pins must name the Sepolia
 		// testnet this descriptor deploys to.
 		const compat = descriptor.compatibleNodeVersions[descriptor.artifactSha256]
-		expect(compat).toEqual(["6.0.0-rc.3"])
+		expect(compat).toEqual(["6.0.0"])
 		expect(descriptor.network.l1ChainId).toBe(11155111)
 		expect(descriptor.network.rollupVersion).toBe(3409706519)
 	})

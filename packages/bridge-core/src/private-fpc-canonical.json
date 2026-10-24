@@ -1,10 +1,10 @@
 {
-	"$comment": "Canonical PrivateFPC deployment descriptor — mirrors @alejoamiras/private-fee-juice's canonical-deployment.json at 6.0.0-rc.3, extended with the installed artifact's digest, the target-network identity pins, and the digest-keyed node-compat map. The address is derived from compiled bytecode + salt and is ONLY valid for this exact aztecVersion + artifact — depositing Fee Juice to a stale address is UNRECOVERABLE. The canonical salt is a fixed project constant from 5.0.0 onward. Machine-asserted by private-fuel.test.ts (derivation + digest + compat coherence + equality with the package's canonical-deployment.json) and consumed by check-fpc-version.ts (compat-gated version + digest + network-identity + live-class gate; an unpublished instance is green, a published one must carry the pinned class).",
-	"aztecVersion": "6.0.0-rc.3",
+	"$comment": "Canonical PrivateFPC deployment descriptor — mirrors @alejoamiras/private-fee-juice's canonical-deployment.json at 6.0.0, extended with the installed artifact's digest, the target-network identity pins, and the digest-keyed node-compat map. The address is derived from compiled bytecode + salt and is ONLY valid for this exact aztecVersion + artifact — depositing Fee Juice to a stale address is UNRECOVERABLE. The canonical salt is a fixed project constant from 5.0.0 onward. Machine-asserted by private-fuel.test.ts (derivation + digest + compat coherence + equality with the package's canonical-deployment.json) and consumed by check-fpc-version.ts (compat-gated version + digest + network-identity + live-class gate; an unpublished instance is green, a published one must carry the pinned class).",
+	"aztecVersion": "6.0.0",
 	"salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
 	"deployer": "0x0000000000000000000000000000000000000000000000000000000000000000",
-	"expectedAddress": "0x2e189d0c28cb86234a17951a94131e19620cda595fa8f9c5c10c24268ceb6db4",
-	"artifactSha256": "f9dd12290a47a2828fefea8c4e2976f1af1aee33a486cc6b2dd2929f5afb4e96",
+	"expectedAddress": "0x0516ebb4f9c7988eb3cf6dd9459a47556f7a92db06b17cfa47ffb37fd35c6915",
+	"artifactSha256": "bc1e27b0cfb48c8c1483071453288a27e302283c5da5fa40869a179a41079bde",
 	"artifactPath": "@alejoamiras/private-fee-juice/target/private_contract-PrivateFPC.json",
 	"network": {
 		"$comment": "Hard identity pins for the ONE network this descriptor serves (the Sepolia-anchored 6.0.0-rc.3 testnet, verified live). A gate run against any other network is a wrong-network operator error, not a compat question.",
@@ -12,7 +12,7 @@
 		"rollupVersion": 3409706519
 	},
 	"compatibleNodeVersions": {
-		"$comment": "HUMAN-CURATED, digest-keyed: node versions this exact artifact (by sha256) may run against. A new artifact digest REQUIRES a fresh entry — the gate fails closed on a missing key. 6.0.0-rc.3 = the artifact's own version; the rc.3 testnet node reports nodeVersion 6.0.0-rc.3.",
-		"f9dd12290a47a2828fefea8c4e2976f1af1aee33a486cc6b2dd2929f5afb4e96": ["6.0.0-rc.3"]
+		"$comment": "HUMAN-CURATED, digest-keyed: node versions this exact artifact (by sha256) may run against. A new artifact digest REQUIRES a fresh entry — the gate fails closed on a missing key. 6.0.0 = the artifact's own version; the reset 6.0.0 testnet node reports nodeVersion 6.0.0.",
+		"bc1e27b0cfb48c8c1483071453288a27e302283c5da5fa40869a179a41079bde": ["6.0.0"]
 	}
 }
