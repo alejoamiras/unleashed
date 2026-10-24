@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Phase 9 step 3, one keyed run on testnet-generation, from the repository root: the dry run, the
 # generation with USDC and USDT, then EURC and GBPC pre-created unregistered. Each signing command runs
-# behind `live-intent verify` and retries a lagging readback up to four times, a minute apart; the
-# conductor's journal makes each re-run adopt what already landed.
+# behind `live-intent verify`. A re-run adopts a landed factory, hub or portal, but not a swap target or
+# router whose receipt read failed before its journal line, so only the runbook's read-after-receipt lag
+# is retried (four attempts, a minute apart); any other failure stops for a reading.
 set -euo pipefail
 I=implementations-plan/aztec-6-stable/lessons/intent.json
 export SKIP_POOL_SEED=1
@@ -10,9 +11,16 @@ export SEED_TOKENS=0x8648424f0eae2368555d080c948b622d992651fc,0x8badb545be5d79f2
 v() { bun packages/bridge-core/scripts/live-intent.ts verify "$I"; }
 g() { bun run --cwd packages/bridge-core deploy:generation "$@"; }
 retry() {
+	local a out
 	for a in 1 2 3 4; do
-		if v && "$@"; then return 0; fi
-		echo "attempt $a failed: $*"
+		v
+		if out=$("$@" 2>&1); then
+			printf '%s\n' "$out"
+			return 0
+		fi
+		printf '%s\n' "$out"
+		if ! grep -q -E 'returned no data|landed but the factory has no registration' <<< "$out"; then return 1; fi
+		echo "attempt $a hit the readback lag: $*"
 		if [ "$a" -lt 4 ]; then sleep 60; fi
 	done
 	return 1

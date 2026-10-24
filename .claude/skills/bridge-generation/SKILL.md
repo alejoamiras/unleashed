@@ -229,8 +229,9 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    the new JS line (drift detector 4): all 31 steps, the PrivateFPC credit flows included, through the
    production modules, real `register_*` publications, the calibration line at the end. Green here is
    the precondition for spending on Sepolia.
-   - **The sandbox's anvil runs at a fixed 7-wei L1 base fee** (`local-network.ts`). From 6.0.0 the
-     L2 mana min fee follows the L1 fee, and under anvil's default (1 gwei, decaying with every
+   - **The sandbox's anvil starts at a 7-wei L1 base fee** (`--block-base-fee-per-gas 7` in
+     `local-network.ts`), where an under-target block's EIP-1559 decrease rounds to zero. From 6.0.0
+     the L2 mana min fee follows the L1 fee, and under anvil's default (1 gwei, decaying with every
      under-target block) it fell about 40,000-fold in five minutes, so the smoke's fragmented-credit
      step failed every time. A hand-started anvil needs the same flag.
 4. **Deploy the generation, candidate-first and journalled:**
