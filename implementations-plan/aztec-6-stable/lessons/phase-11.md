@@ -32,3 +32,25 @@ output could reach disk unmasked. Codex reproduced the spill with a harmless 20,
 the match is now a shell `case`, and the stub run passes both paths again. The live run used the earlier
 blanket retry, which captured nothing, so no spill happened.
 
+Round 3: "No new material finding (high confidence within the reviewed helpers)." Secret values reach only the
+stash, its runtime-dir precursor, the chosen command's environment and the masker's; the masker's argv carries
+names; nothing else writes captured output to a file, an external pipe or argv. Its stated limit: this covers the
+`keyed/` helpers, not every file the invoked tools write (forge's broadcast cache, which no step here produced).
+The pass converged.
+
+
+## The final local gate
+
+| Command | Result |
+|---|---|
+| `bun install --frozen-lockfile` | 0 |
+| `bun run lint` | 0 |
+| `bun run typecheck:all` | 0 |
+| `bun run test:all` | 0: tools 1681, bridge-core 490 (1 skipped), design 242, landing 76 |
+| `bun run test:ci-gating` | 1, then 0 (37 pass): the runbook linked the plan at its archive path before the move. It points at the active path until the archive commit re-points it |
+| `bun run audit:tools` | 0 |
+| `bun run lint:actions` | 0 |
+| `bun audit` | 1, advisory: 71 (34 high, 30 moderate, 7 low) against Phase 2's 70. The one new id is undici `GHSA-xjj6-f33q-929c` (`<7.30.1`), published since against the same lockfile |
+| both builds with `verify:build-target` | 0 |
+| `bun run build:landing` | 0 |
+| `e2e:tools` | 73 passed in 6087 s, no retries. Phase 7 recorded 73 in 5830 s; the rc.3 baseline was 70 in 4465 s |

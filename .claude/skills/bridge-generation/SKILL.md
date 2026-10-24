@@ -9,7 +9,7 @@ The bridge's runbook for an Aztec-line bump and for everything that deploys: a n
 one event that runs it in full. The bump itself (pins, lockfile, API churn) is listed in
 [`UPDATE.md`](../../../UPDATE.md); this skill is the part that decides whether a bump is also a new
 generation, and how to deploy one. Worked examples: the archived
-[`aztec-6-stable`](../../../implementations-plan/archive/aztec-6-stable/plan.md) (the latest reset, the
+[`aztec-6-stable`](../../../implementations-plan/aztec-6-stable/plan.md) (the latest reset, the
 rc.3 → 6.0.0 testnet: its `lessons/phase-9.md` is the full live window, step by step),
 [`aztec-5.0.0-stable`](../../../implementations-plan/archive/aztec-5.0.0-stable/plan.md) (a reset
 under the intent tooling) and [`aztec-5.0.1-line`](../../../implementations-plan/archive/aztec-5.0.1-line/plan.md)
