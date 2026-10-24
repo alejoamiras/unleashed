@@ -5,7 +5,7 @@ import { MAINNET_TARGET, TESTNET_TARGET } from "./network-targets"
 const TESTNET = {
 	key: "testnet" as const,
 	l1ChainId: 11155111,
-	walletChainId: 3415328944,
+	walletChainId: 685146337,
 	host: "testnet.app.unleashed.systems",
 	workersDevHost: "unleashed-testnet.alejo-amiras.workers.dev",
 }
@@ -21,7 +21,7 @@ describe("checkBuildIntegrity — fail-closed target/manifest/hostname", () => {
 	it("passes when target, manifest, and host all agree (prod)", () => {
 		const err = checkBuildIntegrity(
 			TESTNET,
-			{ l1ChainId: 11155111, walletChainId: 3415328944 },
+			{ l1ChainId: 11155111, walletChainId: 685146337 },
 			{ hostname: TESTNET.host, isProd: true },
 		)
 		expect(err).toBeNull()
@@ -31,7 +31,7 @@ describe("checkBuildIntegrity — fail-closed target/manifest/hostname", () => {
 	it("FAILS when the manifest chain != the build target (the placeholder-mainnet case)", () => {
 		const err = checkBuildIntegrity(
 			MAINNET,
-			{ l1ChainId: 11155111, walletChainId: 3415328944 },
+			{ l1ChainId: 11155111, walletChainId: 685146337 },
 			{ hostname: MAINNET.host, isProd: true },
 		)
 		expect(err).toMatch(/manifest chain .* != mainnet target/)
@@ -46,7 +46,7 @@ describe("checkBuildIntegrity — fail-closed target/manifest/hostname", () => {
 	it("FAILS in prod when the hostname != the target host (mis-hosted build)", () => {
 		const err = checkBuildIntegrity(
 			TESTNET,
-			{ l1ChainId: 11155111, walletChainId: 3415328944 },
+			{ l1ChainId: 11155111, walletChainId: 685146337 },
 			{ hostname: MAINNET.host, isProd: true },
 		)
 		expect(err).toMatch(/mis-hosted build/)
@@ -54,7 +54,7 @@ describe("checkBuildIntegrity — fail-closed target/manifest/hostname", () => {
 
 	// A preview is a PROD build at a host of the Worker's own: `<label>-<workers.dev host>`.
 	it("runs a testnet build at any preview host of its Worker, and a mainnet build at none", () => {
-		const manifest = { l1ChainId: 11155111, walletChainId: 3415328944 }
+		const manifest = { l1ChainId: 11155111, walletChainId: 685146337 }
 		const previews = { ...TESTNET, acceptsPreviewHosts: true }
 		const at = (label: string) => `${label}${TESTNET.workersDevHost}`
 		for (const hostname of [at("p-0a1b2c3d-feat-x-"), at("4182ff98-")]) {
@@ -70,7 +70,7 @@ describe("checkBuildIntegrity — fail-closed target/manifest/hostname", () => {
 	it("SKIPS the hostname check outside prod (localhost dev / e2e)", () => {
 		const err = checkBuildIntegrity(
 			TESTNET,
-			{ l1ChainId: 11155111, walletChainId: 3415328944 },
+			{ l1ChainId: 11155111, walletChainId: 685146337 },
 			{ hostname: "localhost", isProd: false },
 		)
 		expect(err).toBeNull()

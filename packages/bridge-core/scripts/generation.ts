@@ -36,6 +36,7 @@ import type { SendOpts } from "../src/hub-l2"
 import type { ManifestToken } from "../src/manifest-v2"
 import { fromWord } from "../src/register-hash"
 import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
+import { sendGasLimit } from "../src/send-flow"
 import type { DeployJournal, DeployStep, DeployStepKind } from "./deploy-manifest"
 import { evmArtifact } from "./script-artifacts"
 import { ROUTER_CONSTANTS_ABI } from "./script-l1"
@@ -433,15 +434,13 @@ export interface PreCreateTokenOptions {
 async function ensurePortal(l1: L1Ctx, factory: Address, erc20: Address): Promise<{ reg: Registration; txHash?: Hex }> {
 	const existing = await readRegistration(l1.pub as never, factory, erc20)
 	if (existing) return { reg: existing }
-	const txHash = await l1.wallet.writeContract({
-		address: factory,
-		abi: PORTAL_FACTORY_ABI,
-		functionName: "createPortal",
-		args: [erc20],
-		account: l1.account,
-		chain: l1.wallet.chain,
-	} as never)
-	await l1.pub.waitForTransactionReceipt({ hash: txHash })
+	// createPortal sends the factory's register message through the Inbox, so it takes a bridge send's
+	// gas headroom; a bare estimate has run out of gas on it.
+	const call = { address: factory, abi: PORTAL_FACTORY_ABI, functionName: "createPortal", args: [erc20], account: l1.account }
+	const estimate = await l1.pub.estimateContractGas(call as never)
+	const txHash = await l1.wallet.writeContract({ ...call, chain: l1.wallet.chain, gas: sendGasLimit(estimate) } as never)
+	const receipt = await l1.pub.waitForTransactionReceipt({ hash: txHash })
+	if (receipt.status !== "success") throw new Error(`createPortal(${erc20}) REVERTED (${txHash}) — no portal was created; inspect the tx`)
 	const reg = await readRegistration(l1.pub as never, factory, erc20)
 	if (!reg) throw new Error(`createPortal(${erc20}) landed but the factory has no registration — STOP`)
 	return { reg, txHash }

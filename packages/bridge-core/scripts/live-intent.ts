@@ -33,6 +33,7 @@ import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
 import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
 import { git, resolveBin, run } from "./run"
+import { aztecPin } from "./sandbox/local-network"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
 import { FACTORY_CONSTANTS_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI } from "./script-l1"
 import { deriveHubInstance } from "./script-l2"
@@ -78,14 +79,15 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..")
 let castPath: string | undefined
 
-/** `CAST_BIN` → the current Aztec toolchain → the 5.0.0 pin → PATH; resolved on first use so
- *  importing this module for its signer constants never requires `cast` to exist. */
+/** `CAST_BIN` → the toolchain of bridge-core's Aztec pin → the current toolchain → PATH. The pin
+ *  comes first because `current` is shared by every session on the host and may name another line.
+ *  Resolved on first use, so importing this module for its signer constants never needs `cast`. */
 function castBin(): string {
 	castPath ??= resolveBin("cast", {
 		envVar: "CAST_BIN",
 		candidates: [
+			join(homedir(), ".aztec", "versions", aztecPin(), "internal-bin", "cast"),
 			join(homedir(), ".aztec", "current", "internal-bin", "cast"),
-			join(homedir(), ".aztec", "versions", "5.0.0", "internal-bin", "cast"),
 		],
 		prefer: "candidates",
 	})
@@ -169,6 +171,7 @@ const OPERATIONAL_ALLOWLIST = [
 	"implementations-plan/archive/any-erc20-bridge/lessons/",
 	"implementations-plan/archive/protocol-labels/lessons/",
 	"implementations-plan/archive/aztec-rc3/lessons/",
+	"implementations-plan/archive/aztec-6-stable/lessons/",
 	"apps/tools/public/testnet-bridge.journal.jsonl",
 ]
 
@@ -187,7 +190,7 @@ function isNotAllowlisted(line: string): boolean {
 /** The committed intent every build pins the live identity against. A NETWORK RESET is the one
  *  event this pin is built to refuse, so a reset arc's first committed step is re-pointing it at
  *  the arc that recorded the new identity — never loosening the check. */
-const NO_RESET_BASELINE = "implementations-plan/archive/aztec-rc3/lessons/reset-baseline.json"
+const NO_RESET_BASELINE = "implementations-plan/archive/aztec-6-stable/lessons/reset-baseline.json"
 
 /** Network-identity pinning against the COMMITTED baseline intent: no network reset has
  *  happened since the baseline recorded this network's identity, so every node-claimed L1

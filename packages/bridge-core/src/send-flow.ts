@@ -24,11 +24,12 @@ import { fromWord } from "./register-hash"
 
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address
-/** The Aztec Inbox charges the first message of each window for a fresh tree (about 120k gas), so an
- *  estimate taken just after another message can be mined one window later and run out of gas. */
+/** An Inbox message's gas depends on the bucket state it lands in (the first message of an L1 block
+ *  opens a new bucket), which an earlier estimate cannot see; bare estimates have run out of gas. */
 const L1_GAS_HEADROOM_PERCENT = 125n
 
-function sendGasLimit(estimate: bigint): bigint {
+/** An L1 gas limit for a transaction that sends an Inbox message. */
+export function sendGasLimit(estimate: bigint): bigint {
 	return (estimate * L1_GAS_HEADROOM_PERCENT + 99n) / 100n
 }
 
