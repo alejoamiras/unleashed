@@ -59,8 +59,8 @@ Exit 1: **80 vulnerabilities (37 high, 35 moderate, 8 low)**. Advisory groups, b
 `undici@5.29.0`, `uuid@9.0.1`, `vite@8.2.1`, `vitest@4.1.10`, `ws@8.18.3`.
 
 The Phase 2 gate compares its `bun audit` against this list: a new group is a finding, a group that
-drops out is a gain. All of these are transitive through the Aztec line or the test tooling; none is a
-direct dependency of a shipped bundle.
+drops out is a gain. Only `vite` and `vitest` are direct dependencies of a workspace (build and test
+tooling); every other group is transitive.
 
 ## Gate
 

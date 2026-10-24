@@ -33,6 +33,7 @@ import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
 import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
 import { git, resolveBin, run } from "./run"
+import { aztecPin } from "./sandbox/local-network"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
 import { FACTORY_CONSTANTS_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI } from "./script-l1"
 import { deriveHubInstance } from "./script-l2"
@@ -78,14 +79,15 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..")
 let castPath: string | undefined
 
-/** `CAST_BIN` → the current Aztec toolchain → the 5.0.0 pin → PATH; resolved on first use so
- *  importing this module for its signer constants never requires `cast` to exist. */
+/** `CAST_BIN` → the toolchain of bridge-core's Aztec pin → the current toolchain → PATH. The pin
+ *  comes first because `current` is shared by every session on the host and may name another line.
+ *  Resolved on first use, so importing this module for its signer constants never needs `cast`. */
 function castBin(): string {
 	castPath ??= resolveBin("cast", {
 		envVar: "CAST_BIN",
 		candidates: [
+			join(homedir(), ".aztec", "versions", aztecPin(), "internal-bin", "cast"),
 			join(homedir(), ".aztec", "current", "internal-bin", "cast"),
-			join(homedir(), ".aztec", "versions", "5.0.0", "internal-bin", "cast"),
 		],
 		prefer: "candidates",
 	})

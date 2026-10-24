@@ -133,15 +133,18 @@ None change. The reset baseline keeps the rc.3 shape:
 - **The Nulo peers under the isolated linker.** Bun does not nest a second `@aztec-labs/foundation` for a peer
   pinned at rc.3: it links the workspace's 6.0.0 and prints `warn: incorrect peer dependency` (F13). So the tree
   has one `Fr` class and the lockfile holds no rc entry; `aztec-line.test.ts` is green, and
-  `published-packages.test.ts` is the one tripwire, red until Phase 7 pins the 6.0.0 packages.
+  `published-packages.test.ts` is the one tripwire, red until Phase 7 pins the 6.0.0 packages. That holds from a
+  fresh resolution only: an existing lockfile carries the rc.3 peer resolution forward as nested entries, which
+  Phase 2 deletes (D21).
 - **The expected-red ledger.** Each gate names the cases that may fail and the phase that greens them:
-  `published-packages.test.ts` (Phase 7); `noir-artifact-classids.test.ts`, `hub-token.test.ts` and the
-  `registerHubToken` cases of `scripts/script-l2.test.ts`, whose `TOKEN_CLASS_ID` literal is the standards Token
-  class (Phase 3); `private-fuel.test.ts` and the `registerPrivateFpc` case of `script-l2.test.ts`, which derives
+  `published-packages.test.ts` (Phase 7); the hub's class id and `aztec_version` in
+  `noir-artifact-classids.test.ts` and `hub-token.test.ts`'s in-circuit vector (Phase 3; the standards Token and
+  Dripper class ids move with the npm package and are re-pinned in Phase 2, in that tripwire and in every test
+  that takes the Token class as an input); `private-fuel.test.ts` and the `registerPrivateFpc` case of `script-l2.test.ts`, which derives
   the installed artifact and holds it to `PRIVATE_FPC_ADDRESS` (Phase 4; the network-pin case of
-  `private-fuel.test.ts` Phase 5); the "passes the live file" case of `deployments-records.test.ts`, which
-  re-derives the committed faucet record from the standards Dripper class (Phase 6, when the sandbox's record is
-  committed); the fixture-derived cases, which parse `fixtures/sandbox-manifest.json` strictly and rebuild its hub
+  `private-fuel.test.ts` Phase 5); `deployments-records.test.ts`'s "passes the live file" case and the three
+  tamper cases that run against the live file, which re-derive the committed faucet record from the standards
+  Dripper class (Phase 6, when the sandbox's record is committed); the fixture-derived cases, which parse `fixtures/sandbox-manifest.json` strictly and rebuild its hub
   and tokens from the installed artifacts: `manifest-v2.fixture.test.ts`, the sandbox cases of
   `bridge-generation.test.ts`, and the `useTokenSelection`, `useTokenCatalog` and `useSend` tests (Phase 6, when
   the fixture is copied from the smoke); and `bridge-generation.test.ts`'s testnet-manifest case (promotion,
@@ -350,7 +353,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
 - Pass criteria: every command exits 0 with no open ledger case. `lessons/phase-1.md` quotes F4 from both RPCs.
 - Layers: typecheck/lint, unit.
 
-### Phase 2: The JS line
+### Phase 2: The JS line ✓
 
 1. Set every `@aztec-labs/*` and `@aztec-foundation/*` pin, `aztec-standards`, `private-fee-juice` and
    `@aztec-labs/txe` to `6.0.0`. Leave `@aztec/viem` and `@nulo-sh/*` as they are.
@@ -384,9 +387,9 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
    aztec-nr URL spelled as the standards spell it.
 2. Update the vendored lib's header to tag `v6.0.0`, commit `d2e67c1d…`, same digest (F10).
 3. Move the `AZTEC_HOME` defaults in `compile.sh`, `nargo.sh` and `run-txe-tests.sh` to `6.0.0`.
-4. Recompile and commit `target/*.json`. Re-pin the hub class id, the standards Token and Dripper class ids
-   (`noir-artifact-classids.test.ts` and the `TOKEN_CLASS_ID` literal in `scripts/script-l2.test.ts`), the
-   derived-address vector in `hub-token.test.ts` and `keystone.nr`'s comment.
+4. Recompile and commit `target/*.json`. Re-pin the hub class id and `aztec_version` in
+   `noir-artifact-classids.test.ts`, and the in-circuit vector shared by `hub-token.test.ts` and `keystone.nr`
+   (its `TOKEN_CLASS_ID` input moves to the 6.0.0 standards class, `0x2ff0…ea9f`).
 5. Install the TXE server's lockfile at `@aztec-labs/txe@6.0.0`.
 
 **Validation gate**
@@ -602,6 +605,8 @@ Claude leg (Opus 5.5), **O** the owner.
 | D16 | The young line runs beside the signer, the owner having chosen A7(a) with the exposure stated in full: the host user boundary from Phase 2, the keyed secrets inside the window | F, C2, O | Decide silently: the rc.3 plan's "no attestation, as before" held for one young package, not the whole line; or state the blast radius as "testnet funds and the dRPC key" |
 | D17 | `createPortal` headroom and receipt check in Phase 5 (the owner chose A8(a)); `MIN_FUEL_FJ` stays with a recorded deferral | F, O | Skip both follow-ups silently in the generation they name |
 | D18 | `out/` is rebuilt right before `build` with the forge a keyed run resolves (`/opt/foundry/bin/forge`, env-exec's PATH), and nothing builds again until the final strict verify | C2 | Pass `FORGE_BIN` into the keyed run: env-exec rebuilds the environment and fixes the PATH by design; or leave `out/` to the sandbox's 1.8.5 and let a 1.4.1 rebuild judge it after the spend |
+| D20 | `bridge-core` pins stock `viem@2.57.1`, the exact viem the 6.0.0 line depends on, instead of `npm:@aztec/viem@2.38.3`; `@aztec/viem` leaves the tree | M (Phase 2) | Keep the alias, as the plan first said: 6.0.0 dropped the fork, so the alias would put a second viem copy behind `flows.ts`'s `OutboxContract` client, the one boundary the alias existed for |
+| D21 | Delete the 43 lockfile entries that nest rc.3 copies under the Nulo packages' peers, and let Bun re-resolve each peer edge to 6.0.0 | M (Phase 2) | Keep them until Phase 7: two `Fr` classes in the rehearsal and a red `aztec-line.test.ts`; or regenerate the whole lockfile, which re-resolves every unrelated dependency |
 | D19 | Phase 7 runs before Phase 9 step 1 or after Phase 10 step 4, never inside the window | C2 | Let it float freely: a publish inside the window would edit `package.json` and the lockfile and void the intent |
 
 Still disputed after consolidation: none. The one open evidence question, how Bun resolves the mismatched Nulo
