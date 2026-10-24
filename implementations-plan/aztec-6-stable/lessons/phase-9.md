@@ -88,6 +88,14 @@ delete.
 
 The candidate (gitignored until promotion) holds no URL; the journal has 12 lines.
 
+## Step 4: verify and the faucet
+
+`verify` on testnet-rpc was green (spend 0.000094 of 2 ETH). `deploy:testnet --output` on testnet-faucet, written
+outside the repository, deployed the faucet account `0x029ca664…cc3e`, the Dripper `0x057ca596…634b` (its class
+published in the same transaction), SIGNAL `0x1c313062…bfa3` and NOISE `0x26bc4fcf…73f3`, all paid through the
+SponsoredFPC `0x2d8fff82…69d3`. The output equals the committed `deployments.json` byte for byte (`cmp` exit 0).
+Nothing touched L1.
+
 ## Spend (gross, per broadcast group)
 
 | Group | Run | ETH |
