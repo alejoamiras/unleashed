@@ -130,6 +130,23 @@ hash and class match the manifest. The four runtime code hashes equal rc.3's: To
 PortalFactory `0xc924…5d4d`, SwapBridgeRouter `0x3e87…e195`, UniswapFuelSwap `0xf1bf…78a8`. The intent now records
 the candidate digest `e17942e5…58f8`.
 
+`apps/tools/public/testnet-bridge.json` (rc.3's dead generation) was deleted in its own commit (`a12b6f5`). The FPC
+gate was green again (the pinned address unpublished; wallets register it locally), then `promote --bridge-only`
+(testnet-rpc) re-ran the strict verify and took the first-promotion path ("no live manifest yet"). The live
+manifest's sha256 is the verified candidate's, `e17942e5…58f8`; the receipt records the faucet file unchanged
+(`964fe449…242a`). Neither file holds a URL.
+
+## Step 9: the L2 token addresses
+
+For the wallet's repository, which mirrors a promoted generation by hand:
+
+| Token | `l2Token` |
+|---|---|
+| USDC | `0x249038d2cc0a301b8cc7d2d87da06c5861112b983060405dcaa75240d5837f32` |
+| USDT | `0x09273f734ea96c47a1eccf4bfc9ee08dab36fe11fad44af6a1b8a1867324c505` |
+| EURC | `0x10b4653676004b7c5dd4d10d7a582b5968f350d71e1d6db1a5e792d5d455649d` |
+| GBPC | `0x28af9cb09c9bd7cc9a01781c00893b5eea2de716cf49ce9c654cb154224ef06a` |
+
 ## Spend (gross, per broadcast group)
 
 | Group | Run | ETH |
