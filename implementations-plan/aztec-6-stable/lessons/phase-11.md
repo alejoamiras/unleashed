@@ -24,3 +24,11 @@ published-peer and committed-key checks (10 passed).
 | Medium: `keyed/step3-deploy.sh` retried any failure, and `deploySwapTarget` (like the router) journals only after its receipt read, so a failed read after a landed broadcast would deploy a second contract on retry | Accepted. Verified in `deploy-generation.ts`. The retry now fires only on the runbook's two lag signatures (`returned no data`, `landed but the factory has no registration`) and stops on anything else; a stub run proved both paths. The live run needed no retry, so nothing deployed is affected; the script as it ran is at `a8d57d9` |
 | Low: the runbook called the anvil base fee "fixed"; the flag sets the start, and full blocks can raise it | Accepted: "starts at a 7-wei L1 base fee, where an under-target block's EIP-1559 decrease rounds to zero" |
 | Low: the `keyed/` script headers cite phases and narrate their steps | Declined: they are this plan's own record and are archived with it; the no-workflow-references rule is for code that outlives a plan |
+
+Round 2 (same session) confirmed the retry's control flow and the decline, and found one more medium: the
+fix's `grep … <<< "$out"` hands the captured output to a here-string, which Bash spills to a temp file once it
+passes the pipe buffer, and `/tmp` on this host is overlayfs, not tmpfs, so a keyed URL in a failed deploy's
+output could reach disk unmasked. Codex reproduced the spill with a harmless 20,000-character string. Accepted:
+the match is now a shell `case`, and the stub run passes both paths again. The live run used the earlier
+blanket retry, which captured nothing, so no spill happened.
+

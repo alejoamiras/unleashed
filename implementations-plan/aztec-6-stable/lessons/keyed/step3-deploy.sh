@@ -19,7 +19,11 @@ retry() {
 			return 0
 		fi
 		printf '%s\n' "$out"
-		if ! grep -q -E 'returned no data|landed but the factory has no registration' <<< "$out"; then return 1; fi
+		# A here-string past the pipe buffer spills to an unmasked temp file, so match in the shell.
+		case $out in
+			*"returned no data"* | *"landed but the factory has no registration"*) ;;
+			*) return 1 ;;
+		esac
 		echo "attempt $a hit the readback lag: $*"
 		if [ "$a" -lt 4 ]; then sleep 60; fi
 	done
