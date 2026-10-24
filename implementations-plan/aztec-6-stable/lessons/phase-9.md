@@ -96,8 +96,35 @@ published in the same transaction), SIGNAL `0x1c313062…bfa3` and NOISE `0x26bc
 SponsoredFPC `0x2d8fff82…69d3`. The output equals the committed `deployments.json` byte for byte (`cmp` exit 0).
 Nothing touched L1.
 
+## Steps 5–6: the gate, the smokes and the fuel samples (`keyed/step6-smokes-fuel.sh`, testnet-l1)
+
+Green with no retry, in minutes rather than the hour the runbook budgets. The FPC gate was green four times
+("compat + identity + digest + live class all agree"). The candidate smoke bridged USDC and USDT, public and
+private, in 4.1 minutes. The fueled smoke settled a self-paying claim in 1.6 minutes: 1.5 USDC in, 40.28 FJ
+gained.
+
+Fees in FJ-wei, each identical to rc.3's digit for digit: the same circuits burn the same L2 gas, and both
+networks bill it at 1.25e12 FJ-wei per unit.
+
+| Run | Path | Claim fee | Register fee | Ceiling (`getFeeLimit`) |
+|---|---|---|---|---|
+| EURC public | register+claim | 2970310475249600000 | (inside) | — |
+| EURC private ×3 | claim | 1137202681952400000, 1068358920937400000 ×2 | — | 2838685858590000000 |
+| GBPC private first | register,claim | 1026798914287800000 | 2203834102613400000 | 8516057575770000000 |
+| GBPC private ×2 | claim | 1068358920937400000 ×2 | — | 2838685858590000000 |
+| USDC public | claim | 1656099014975800000 | — | — |
+
+## Step 7: calibrate
+
+The Stop condition does not hold: the worst measured private ceiling, 8.516 FJ on GBPC's private first claim,
+sits below `MIN_FUEL_FJ` (29.773 FJ). The nine samples, written outside the repository (1
+`register_and_claim_public`, 6 `claim_private`, 1 `register_token`, 1 `claim_public`), give
+`fjPerTx=1987318817970960000` and `fjRegister=1577053752328560000`, equal to the carried values, so the
+candidate did not change (sha256 `e17942e5…58f8` before and after).
+
 ## Spend (gross, per broadcast group)
 
 | Group | Run | ETH |
 |---|---|---|
 | Step 3 | generation, USDC, USDT, EURC, GBPC | 0.000094 (balance 2.903570 → 2.903475, public RPC) |
+| Steps 5–6 | smokes and eight fee samples | 0.000013 (balance 2.903475 → 2.903462) |
