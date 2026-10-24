@@ -453,7 +453,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
   search hits only `apps/tools/public/testnet-bridge.json`, which changes at promotion.
 - Layers: typecheck/lint, unit, build.
 
-### Phase 6: The local rehearsal
+### Phase 6: The local rehearsal ✓
 
 1. Run the sandbox smoke. Copy `packages/bridge-core/sandbox-deploy/deployments.json` to
    `apps/tools/src/contracts/deployments.json` and `packages/bridge-core/sandbox-deploy/manifest.json` to
@@ -607,6 +607,8 @@ Claude leg (Opus 5.5), **O** the owner.
 | D18 | `out/` is rebuilt right before `build` with the forge a keyed run resolves (`/opt/foundry/bin/forge`, env-exec's PATH), and nothing builds again until the final strict verify | C2 | Pass `FORGE_BIN` into the keyed run: env-exec rebuilds the environment and fixes the PATH by design; or leave `out/` to the sandbox's 1.8.5 and let a 1.4.1 rebuild judge it after the spend |
 | D20 | `bridge-core` pins stock `viem@2.57.1`, the exact viem the 6.0.0 line depends on, instead of `npm:@aztec/viem@2.38.3`; `@aztec/viem` leaves the tree | M (Phase 2) | Keep the alias, as the plan first said: 6.0.0 dropped the fork, so the alias would put a second viem copy behind `flows.ts`'s `OutboxContract` client, the one boundary the alias existed for |
 | D21 | Delete the 43 lockfile entries that nest rc.3 copies under the Nulo packages' peers, and let Bun re-resolve each peer edge to 6.0.0 | M (Phase 2) | Keep them until Phase 7: two `Fr` classes in the rehearsal and a red `aztec-line.test.ts`; or regenerate the whole lockfile, which re-resolves every unrelated dependency |
+| D22 | The sandbox anvil starts at a 7-wei base fee (`--block-base-fee-per-gas 7`), the EIP-1559 fixed point under under-target blocks | M (Phase 6) | Leave anvil's 1 gwei default: on 6.0.0 the mana min fee follows the decaying L1 fee about 40,000-fold in five minutes and the smoke's fragmented-credit step fails deterministically; or loosen the step's note sizing, which would test a different note selection |
+| D23 | `aztec-line.test.ts` refuses every `@aztec/*` package, `@aztec/viem` included | M (Phase 5) | Keep the exemption: nothing on 6.0.0 resolves it, so it would only let a returning fork pass unseen |
 | D19 | Phase 7 runs before Phase 9 step 1 or after Phase 10 step 4, never inside the window | C2 | Let it float freely: a publish inside the window would edit `package.json` and the lockfile and void the intent |
 
 Still disputed after consolidation: none. The one open evidence question, how Bun resolves the mismatched Nulo
