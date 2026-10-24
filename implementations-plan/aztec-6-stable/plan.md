@@ -469,7 +469,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
   own process group.
 - Layers: unit, sandbox smoke, browser e2e, integration.
 
-### Phase 7: The Nulo packages (floats; before the PR opens)
+### Phase 7: The Nulo packages (floats; before the PR opens) ✓
 
 > **Warning:** this phase starts when `@nulo-sh/wallet-crypto` and `wallet-sdk-schema-patch` publish versions
 > whose peers are `6.0.0` (the Nulo team's `0.3.0`); a watcher polls npm. The owner chose A6(a): Phase 9 waits
