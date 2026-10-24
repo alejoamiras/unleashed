@@ -153,3 +153,6 @@ For the wallet's repository, which mirrors a promoted generation by hand:
 |---|---|---|
 | Step 3 | generation, USDC, USDT, EURC, GBPC | 0.000094 (balance 2.903570 → 2.903475, public RPC) |
 | Steps 5–6 | smokes and eight fee samples | 0.000013 (balance 2.903475 → 2.903462) |
+| Phase 10 canaries | fuel canary, fee-juice canary | 0.000003 (balance 2.903462 → 2.903460) |
+
+Total: 0.000110 ETH gross, equal to the balance delta (no incoming ETH), against the 2.0 ETH cap.

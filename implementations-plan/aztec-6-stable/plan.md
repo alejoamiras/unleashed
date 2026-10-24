@@ -502,7 +502,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
 - Pass criteria: the loop's last round yields no material finding, quoted in `lessons/phase-8.md`.
 - Layers: all local layers.
 
-### Phase 9: The live generation (keyed runs, A1)
+### Phase 9: The live generation (keyed runs, A1) ✓
 
 > **Warning:** from step 1 until Phase 10's final verify, change nothing outside `OPERATIONAL_ALLOWLIST`: no
 > edit to `plan.md`, no ✓ mark, no rebase. Record progress in `lessons/` only. Run one signing command at a time.
@@ -549,7 +549,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
   and exits 1. The ledger closes the testnet-manifest case.
 - Layers: live testnet.
 
-### Phase 10: Canaries, the preview, the final verify
+### Phase 10: Canaries, the preview, the final verify ✓
 
 1. The runbook's step 9 canaries against the promoted manifest: `verify:l1 --strict` (testnet-rpc; its `--force`
    rebuild runs on the keyed PATH's forge, the binary of Phase 9 step 1, and its printed version is quoted in
