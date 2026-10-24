@@ -40,6 +40,28 @@ the repository's own `buildFuelRoute` and `quoteFuelPath`, against the carried 2
 `FUEL_SLICE_UNITS=1500000` for every fueled run, as on rc.3: USDC's 1.5 clears the floor after slippage, and
 the swap smoke's default whole token (27.978 FJ) would not.
 
+## The window's keys
+
+The owner, after approving the intent build: "I'd love for you to push through all the deployment and
+everything without my intervention, basically just calling me / or waiting for me at the end, so I can
+smoke-test it manually. Is there a way I can send you my credentials via an op-remote run that rights it to the
+mainframe with specific permissions and when you finished, you delete it? Im good with that risk, specially for
+a disposable / testnet project."
+
+So the rest of the window runs from one stash instead of one approval per step (`keyed/`):
+
+- `stash-window-env.sh` is the one owner-approved keyed run, on `keyed/window.env.example` (the union of the
+  four run templates). It writes the six testnet values to `aztec-6-stable-window.env` in the per-user runtime
+  dir (tmpfs, mode 700), mode 600, and prints names only.
+- `with-window-env.sh <template> <cmd>` runs each step the way env-exec does: only the names that step's own
+  template lists, env-exec's keyed PATH, no stdin, and env-exec's own masker over every stashed value.
+- `drop-window-env.sh` removes the stash when the window closes.
+
+The residuals the owner accepted: every agent session on the host runs as the same user, so the mode keeps out
+other users, not other sessions; and `DRPC_API_KEY` is the owner's shared CLI key, not a testnet one, so it is
+worth rotating after the window. A dummy-value test passed: least privilege per template, case-insensitive hex
+masking, the exit code carried, the stash refused twice, the drop.
+
 ## Spend (gross, per broadcast group)
 
 | Group | Run | ETH |
