@@ -22,11 +22,11 @@ const PINS = [
 		// `contracts/bridge/aztec/scripts/compile.sh --check` (a rebuild must derive this id).
 		name: "TokenBridgeHub",
 		path: join(CONTRACTS, "token_bridge_hub", "target", "token_bridge_hub_contract-TokenBridgeHub.json"),
-		classId: "0x198c190c4eb3f1522cad4802d001d444724358732dc01710203657f9aeafd124",
+		classId: "0x2132a9de52d748417fb251b0924154633658534d6cf806bd9c3d79554d632abe",
 	},
 ] as const
 
-describe("committed bridge Noir artifacts — class-id tripwire (6.0.0-rc.3)", () => {
+describe("committed bridge Noir artifacts — class-id tripwire (6.0.0)", () => {
 	for (const pin of PINS) {
 		it(`${pin.name} derives its pinned class id`, async () => {
 			const artifact = loadContractArtifact(JSON.parse(readFileSync(pin.path, "utf8")))
@@ -35,10 +35,10 @@ describe("committed bridge Noir artifacts — class-id tripwire (6.0.0-rc.3)", (
 		})
 	}
 
-	it("every artifact self-reports aztec_version 6.0.0-rc.3", () => {
+	it("every artifact self-reports aztec_version 6.0.0", () => {
 		for (const pin of PINS) {
 			const raw = JSON.parse(readFileSync(pin.path, "utf8")) as { aztecVersion?: string; aztec_version?: string }
-			expect(raw.aztecVersion ?? raw.aztec_version).toBe("6.0.0-rc.3")
+			expect(raw.aztecVersion ?? raw.aztec_version).toBe("6.0.0")
 		}
 	})
 })
@@ -51,13 +51,13 @@ describe("committed bridge Noir artifacts — class-id tripwire (6.0.0-rc.3)", (
  * of the runtime-loaded Token + Dripper artifacts binds their on-chain IDENTITY — the
  * wallet, tools, and bridge all register instances from these exact bytes.
  */
-describe("installed aztec-standards Token/Dripper — class-id tripwire (6.0.0-rc.3)", () => {
+describe("installed aztec-standards Token/Dripper — class-id tripwire (6.0.0)", () => {
 	const STANDARDS = [
-		{ name: "Token", artifact: TokenContractArtifact, classId: "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a" },
+		{ name: "Token", artifact: TokenContractArtifact, classId: "0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f" },
 		{
 			name: "Dripper",
 			artifact: DripperContractArtifact,
-			classId: "0x0f4534726aabce58c1e4089bcf50215c60cd2e2a598e47a2e1d549f9897f53f1",
+			classId: "0x000a28895ddc01c312b2a660446b54667c4a3c4f4cc6142ff3463343a153a5f3",
 		},
 	] as const
 	for (const std of STANDARDS) {
