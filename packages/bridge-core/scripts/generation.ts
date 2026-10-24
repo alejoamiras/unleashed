@@ -434,8 +434,8 @@ export interface PreCreateTokenOptions {
 async function ensurePortal(l1: L1Ctx, factory: Address, erc20: Address): Promise<{ reg: Registration; txHash?: Hex }> {
 	const existing = await readRegistration(l1.pub as never, factory, erc20)
 	if (existing) return { reg: existing }
-	// createPortal sends the factory's register message through the Inbox, so it needs the same
-	// fresh-tree headroom as a bridge send; a bare estimate has run out of gas on it.
+	// createPortal sends the factory's register message through the Inbox, so it takes a bridge send's
+	// gas headroom; a bare estimate has run out of gas on it.
 	const call = { address: factory, abi: PORTAL_FACTORY_ABI, functionName: "createPortal", args: [erc20], account: l1.account }
 	const estimate = await l1.pub.estimateContractGas(call as never)
 	const txHash = await l1.wallet.writeContract({ ...call, chain: l1.wallet.chain, gas: sendGasLimit(estimate) } as never)
