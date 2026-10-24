@@ -24,8 +24,8 @@
 		"verify:l1": "bun scripts/verify-l1.ts"
 	},
 	"dependencies": {
-		"@nulo-sh/resolve-asset": "0.2.0",
-		"@nulo-sh/wallet-crypto": "0.2.0",
+		"@nulo-sh/resolve-asset": "0.3.0",
+		"@nulo-sh/wallet-crypto": "0.3.0",
 		"zod": "^4.4.3",
 		"@aztec-labs/aztec.js": "6.0.0",
 		"@aztec-labs/accounts": "6.0.0",

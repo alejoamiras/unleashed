@@ -18,8 +18,8 @@ package keeps a pin of its own:
 - **`@aztec-labs/*` at `6.0.0`**, the `@aztec-labs/aztec.js` pin. The rest of the line follows
   this number: `@alejoamiras/private-fee-juice`, the Noir contract source (the aztec-nr tags in
   every `Nargo.toml`, `contracts/bridge/aztec/scripts/compile.sh`, the committed `target/*.json`)
-  and the toolchain at `~/.aztec/versions/6.0.0`. The Nulo wallet's packages sit at `0.2.0`,
-  whose Aztec peers are exact labs `6.0.0-rc.3` pins, until the wallet publishes them on `6.0.0`.
+  and the toolchain at `~/.aztec/versions/6.0.0`. The Nulo wallet's packages sit at `0.3.0`,
+  whose Aztec peers are exact labs `6.0.0` pins.
 - **`@aztec-foundation/*` at `6.0.0`** (`bb.js`, `l1-artifacts`, `noir-acvm_js`,
   `noir-noirc_abi`): the version the locked `@aztec-labs/aztec.js` requires. Foundation numbers its
   releases on its own: its release candidates ran ahead of labs' (rc.6 beside labs' rc.3), and the
