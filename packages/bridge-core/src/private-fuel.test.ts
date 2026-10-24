@@ -152,7 +152,7 @@ describe("private-fuel keystone", () => {
 		const compat = descriptor.compatibleNodeVersions[descriptor.artifactSha256]
 		expect(compat).toEqual(["6.0.0"])
 		expect(descriptor.network.l1ChainId).toBe(11155111)
-		expect(descriptor.network.rollupVersion).toBe(3409706519)
+		expect(descriptor.network.rollupVersion).toBe(679261766)
 	})
 
 	it("MAINNET DESCRIPTOR — frozen 5.0.1 identity, mainnet pins, FAIL-CLOSED compat", () => {

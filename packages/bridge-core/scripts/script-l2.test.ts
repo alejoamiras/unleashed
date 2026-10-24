@@ -21,7 +21,7 @@ import {
 
 const FACTORY = "0x3333333333333333333333333333333333333333"
 const GUARDIAN = `0x${"0".repeat(61)}ab1`
-/** The installed aztec-standards@6.0.0-rc.3 Token class — the same pin as noir-artifact-classids.test.ts. */
+/** The installed aztec-standards@6.0.0 Token class — the same pin as noir-artifact-classids.test.ts. */
 const TOKEN_CLASS_ID = "0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f"
 const ERC20 = "0x00000000000000000000000000000000000e2c20"
 const HUB_SALT = `0x${"0".repeat(24)}${FACTORY.slice(2)}`

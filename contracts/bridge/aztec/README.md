@@ -10,10 +10,10 @@ pause exits only. `bind_token` / `bind_and_claim_public` are the publish-free tw
 on a real network no factory leaf can be spent through them (pinned). `claim_secret` and `register_hash` are the shared derivation libraries; `keystone`
 pins them against their TypeScript and Solidity mirrors.
 
-## Toolchain — the pinned 6.0.0-rc.3 nargo
+## Toolchain — the pinned 6.0.0 nargo
 
 The crates pin aztec-nr and `compressed_string` (`aztec-labs-eng/aztec-nr`) and the standards `token`
-(`AztecProtocol/aztec-standards`) at the `v6.0.0-rc.3` tags: the `@aztec-labs/*` version, which the
+(`AztecProtocol/aztec-standards`) at the `v6.0.0` tags: the `@aztec-labs/*` version, which the
 sandbox and the live testnet run (the `@aztec-foundation/*` packages carry their own number). Every
 manifest names aztec-nr by the identical URL, with no trailing slash: a different spelling makes
 Nargo build a second `aztec` crate. The content-hash library is vendored at
@@ -23,7 +23,7 @@ path. A mismatched toolchain fails with a flood of macro errors
 selects it:
 
 ```bash
-scripts/compile.sh            # AZTEC_HOME defaults to ~/.aztec/versions/6.0.0-rc.3 (aztec-up install 6.0.0-rc.3 first)
+scripts/compile.sh            # AZTEC_HOME defaults to ~/.aztec/versions/6.0.0 (aztec-up install 6.0.0 first)
 scripts/compile.sh --check    # CI: the class id derived from a rebuild must equal the committed one
 ```
 

@@ -28,7 +28,8 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address
  *  estimate taken just after another message can be mined one window later and run out of gas. */
 const L1_GAS_HEADROOM_PERCENT = 125n
 
-function sendGasLimit(estimate: bigint): bigint {
+/** An L1 gas limit for a transaction that sends an Inbox message: the estimate plus the fresh-tree headroom. */
+export function sendGasLimit(estimate: bigint): bigint {
 	return (estimate * L1_GAS_HEADROOM_PERCENT + 99n) / 100n
 }
 
