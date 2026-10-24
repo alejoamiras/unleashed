@@ -62,7 +62,34 @@ other users, not other sessions; and `DRPC_API_KEY` is the owner's shared CLI ke
 worth rotating after the window. A dummy-value test passed: least privilege per template, case-insensitive hex
 masking, the exit code carried, the stash refused twice, the drop.
 
+## Step 3: the deploy (`keyed/step3-deploy.sh`, testnet-generation)
+
+Green in one pass, no retry used: `verify`, the dry run (L1 deployer `0x7F42…6a9a`, L2 deployer
+`0x15aa2cfc…e9e1`, chain 11155111/679261766, USDC and USDT), the L2 account, then the generation. The Token
+class was already published on the reset network (class publication is permissionless and content-addressed);
+the hub class was published by this run. Every readback passed: `factory.L2_HUB`, the router's `FACTORY`,
+`FEE_ASSET`, `permit2`, `feeJuicePortal` and `swapTarget`, `hub.token_for`. EURC and GBPC were pre-created
+unregistered in the same run. No forge broadcast ran (`SKIP_POOL_SEED=1`), so there is no broadcast cache to
+delete.
+
+| Contract | Address |
+|---|---|
+| UniswapFuelSwap | `0xab7a35ac6247328851880c1faa68e051fe8d8a84` |
+| PortalFactory | `0x2509411e06a3b9512eca3d9f2668afd7821b7817` |
+| SwapBridgeRouter | `0xad08e65dda66eaed5ab9447f27b7610a850f4303` |
+| TokenBridgeHub | `0x1d500beb91a75ccd2e5376d14980b0cabd494fe3397e710faddc371376de7530` |
+
+| Token | L1 | Portal | Hub registration |
+|---|---|---|---|
+| USDC | `0x8648…51fc` | `0x8128d00bb1349e1b21d2281167925e9e3187fb74` | registered |
+| USDT | `0x8bad…238f` | `0xe4b6a28350ad82eb03b3167587d6cb06c096c247` | registered |
+| EURC | `0xc10b…4d24` | `0x6535a0f1426524a8ed5bb64692e7645c033d15cc` | on the first claim |
+| GBPC | `0x177e…efca` | `0x717ae3636685489c87cf331af663cfa75723d0d9` | on the first claim |
+
+The candidate (gitignored until promotion) holds no URL; the journal has 12 lines.
+
 ## Spend (gross, per broadcast group)
 
 | Group | Run | ETH |
 |---|---|---|
+| Step 3 | generation, USDC, USDT, EURC, GBPC | 0.000094 (balance 2.903570 → 2.903475, public RPC) |
