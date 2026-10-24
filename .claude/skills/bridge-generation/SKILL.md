@@ -9,6 +9,8 @@ The bridge's runbook for an Aztec-line bump and for everything that deploys: a n
 one event that runs it in full. The bump itself (pins, lockfile, API churn) is listed in
 [`UPDATE.md`](../../../UPDATE.md); this skill is the part that decides whether a bump is also a new
 generation, and how to deploy one. Worked examples: the archived
+[`aztec-6-stable`](../../../implementations-plan/archive/aztec-6-stable/plan.md) (the latest reset, the
+rc.3 → 6.0.0 testnet: its `lessons/phase-9.md` is the full live window, step by step),
 [`aztec-5.0.0-stable`](../../../implementations-plan/archive/aztec-5.0.0-stable/plan.md) (a reset
 under the intent tooling) and [`aztec-5.0.1-line`](../../../implementations-plan/archive/aztec-5.0.1-line/plan.md)
 plans and their `lessons/`. Non-trivial bumps still get a plan; this skill is the checklist the plan
@@ -227,6 +229,10 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    the new JS line (drift detector 4): all 31 steps, the PrivateFPC credit flows included, through the
    production modules, real `register_*` publications, the calibration line at the end. Green here is
    the precondition for spending on Sepolia.
+   - **The sandbox's anvil runs at a fixed 7-wei L1 base fee** (`local-network.ts`). From 6.0.0 the
+     L2 mana min fee follows the L1 fee, and under anvil's default (1 gwei, decaying with every
+     under-target block) it fell about 40,000-fold in five minutes, so the smoke's fragmented-credit
+     step failed every time. A hand-started anvil needs the same flag.
 4. **Deploy the generation, candidate-first and journalled:**
    ```bash
    # from the repo root, like every command in this runbook
@@ -327,7 +333,8 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      worst registering shape's excess over it), both plus 20 %; sponsored samples are excluded. The
      matrix needs a plain `claim_public` too (`fuel-testnet.ts` with `PUBLIC_RUNS=1` on an already
      registered token): on rc.3 it cost 1.66 FJ, above every private plain claim, and a matrix without it
-     under-quoted `fjPerTx` by 18 %. A
+     under-quoted `fjPerTx` by 18 %. 6.0.0 measured the same nine fees as rc.3 to the wei (the same
+     gas, billed at 1.25e12 FJ-wei per unit), so its calibration rewrote the carried budgets unchanged. A
      candidate promoted with the carried placeholders under-quotes the gas slice on the new line.
    - `live-intent.ts verify <intent> --candidate <candidate>`: records the digest (the intent file
      changes: **commit it now**, `promote` refuses an uncommitted intent), runs strict `verify-l1` and
@@ -386,6 +393,9 @@ script: an assignment after it is just another argument. `pre-create` and `calib
     answers `node_getNodeInfo` without a redirect to another host, and that its CORS preflight
     (`OPTIONS` with `Access-Control-Request-Headers: content-type`) admits the production and a
     preview Origin. The list has exactly one entry, the file `TOKEN_LIST_URL` names.
+    Check the branch preview only after the promotion push: before it, the bundle carries the old
+    manifest against the new target, and the page refuses to boot ("build integrity check failed")
+    while Workers Builds still reports the build green, since that check runs in the page.
 
 Then Branch A's delivery gates. Live-deploy discipline: fix forward carefully, never blind-retry a
 live step, and stop and surface after a few failures on one step.
