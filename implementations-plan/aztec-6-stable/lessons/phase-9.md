@@ -122,6 +122,14 @@ sits below `MIN_FUEL_FJ` (29.773 FJ). The nine samples, written outside the repo
 `fjPerTx=1987318817970960000` and `fjRegister=1577053752328560000`, equal to the carried values, so the
 candidate did not change (sha256 `e17942e5…58f8` before and after).
 
+## Step 8: verify the candidate, retire the rc.3 manifest, promote
+
+`verify --candidate` (testnet-rpc) was green: every token's registration, decimals and metadata words agree,
+"L1 verification passed", "candidate strict-valid + privileged readbacks agree", and the hub's initialization
+hash and class match the manifest. The four runtime code hashes equal rc.3's: TokenPortalImpl `0xb02b…2ea1`,
+PortalFactory `0xc924…5d4d`, SwapBridgeRouter `0x3e87…e195`, UniswapFuelSwap `0xf1bf…78a8`. The intent now records
+the candidate digest `e17942e5…58f8`.
+
 ## Spend (gross, per broadcast group)
 
 | Group | Run | ETH |
