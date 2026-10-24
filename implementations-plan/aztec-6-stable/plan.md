@@ -425,7 +425,7 @@ a commit and a push, with its id given to the owner as `op-remote alejo-box <id>
   testnet-manifest case.
 - Layers: unit.
 
-### Phase 5: Chain cascade, L1 constants, the baseline wiring
+### Phase 5: Chain cascade, L1 constants, the baseline wiring ✓
 
 1. Set `TESTNET_ROLLUP_VERSION = 679261766`. Update every old-identity literal in `recon.md` § Literal inventory,
    the `live-intent.test.ts` fixtures, the FPC descriptor's network pins and `private-fuel.test.ts`'s testnet
