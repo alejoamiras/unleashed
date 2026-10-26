@@ -34,13 +34,25 @@ budget: "research: lead 4 subagents + the fable and codex drafts' own; code-revi
     `0x75988b1cd1ff2d014acc8589f6fbda2621a34d64`).
   - The canary matrix passed on fixed terms with exclusive self-fills.
   - Arc 5 retired the old router `0xb6d603f425519a5009d7d426f31d92177da7cfab` into `legacyRouters`.
+- **Rebased onto Aztec 6.0.0 and redeployed.** Main's 6.0.0 reset (#22–#26) voided the deployment above. The stack
+  merged main through every arc and redeployed in one owner-approved live window (`lessons/aztec-6.md`):
+  - `DepositRouter` `0x6e5566894908e945a12245f9810b4055c4a1035b` and `TestnetFuelSwapper`
+    `0x2b2244a4d36ba117a273b0b5a810daa0b84c86ab` on the 6.0.0 generation's factory
+    `0x2509411e06a3b9512eca3d9f2668afd7821b7817`, beside main's Uniswap router.
+  - Circle USDC and WETH pre-created as real tokens (portals `0x5dda1b3182bd0dd4c469461708a846edd395b188`,
+    `0xf5ab7b75495420b4eaaa6400e892e552747f106d`).
+  - Arc 5 retired main's Uniswap router `0xad08e65dda66eaed5ab9447f27b7610a850f4303` into `legacyRouters`.
+  - The fueled validator settled a public and a private self-paying claim through the new router. The LI.FI
+    canary's dry run built and verified all five rows; its live run waits for the canary's Base Sepolia top-up.
 - **Shipped: the app.** The app sends cross-chain from Base Sepolia through `verifyRoute`, watches the send over
   pinned read RPCs and claims, all to the signed hybrid boards. Every Phase 8 deviation was signed by the owner
   (D48, D50).
-- **Deployment record** (`lessons/intent.json`, `intent-gates.json`, `promotion-receipt.json`, `arc5/`):
+- **Deployment record** (`lessons/intent.json`, `intent-gates.json`, `promotion-receipt.json`, `arc5/`; on 6.0.0,
+  `lessons/v6/` and `v6-arc5/`):
   - Caps: deployer 2.0 ETH; canary 0.05 ETH on Base Sepolia and 0.2 ETH on Sepolia.
   - Canary spend: 18 of 24 USDC at the source.
-  - Promoted candidates: `1fb9b646…4a85d` (arc 3), `6d8fa238…f748` (arc 5, zero spend).
+  - Promoted candidates: `1fb9b646…4a85d` (arc 3), `6d8fa238…f748` (arc 5, zero spend); on 6.0.0,
+    `18ef1085…25c5` (arc 3) and `cf23bb75…28cf` (arc 5), the deployer's spend under 0.000001 ETH.
   - Timestamps and commit ids are blanked: a branch commit does not survive the squash, so these records can never
     authorise a run.
 - **Reviews.** The Codex loops converged in every arc: 3, 6, 4, 5, 3 and 3 rounds (D43, D44, D47, D51, D52, D53).
