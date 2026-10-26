@@ -41,6 +41,7 @@ export const sandboxHandleSchema = z
 		deployment: z.object({
 			feeJuice: address,
 			feeJuicePortal: address,
+			feeAssetHandler: address.optional(),
 			registry: address,
 			tokens: z.record(z.string(), address),
 			/** Optional so a handle written before the router existed still reads. */

@@ -11,13 +11,25 @@ import { TESTIDS } from "@/lib/testids"
 // The mint strip is the one step component that reaches a wallet and the manifest; both are stood
 // in for so its buttons render and the sweep can reach them.
 vi.mock("@/composables/useL1Wallet", () => ({
-	useL1Wallet: () => ({ address: ref("0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d"), publicClient: {}, ensureWalletClient: () => null }),
+	useL1Wallet: () => ({
+		address: ref("0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d"),
+		isConnected: ref(false),
+		wrongChain: ref(false),
+		isConnecting: ref(false),
+		error: ref(null),
+		publicClient: {},
+		ensureWalletClient: () => null,
+		connect: async () => {},
+		switchL1Network: async () => {},
+	}),
 }))
 vi.mock("@/contracts/bridge-generation", () => ({
 	MANIFEST_TOKENS: [
 		{ erc20: "0x70e0ba845a1a0f2da3359c97e0285013525ffc49", decimals: 6, displaySymbol: "USDC", source: "permissionless-mint" },
 	],
 	FEE_JUICE: { asset: "0x000000000000000000000000000000000000fee0" },
+	FUEL_ASSET: "0x000000000000000000000000000000000000fee0",
+	FUEL_ASSET_HANDLER: "0x000000000000000000000000000000000000fee1",
 	FUEL: undefined,
 }))
 

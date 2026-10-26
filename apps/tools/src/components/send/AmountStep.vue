@@ -53,6 +53,8 @@ const props = defineProps<{
 	routeKind: RouteKind | null
 	routeLoading: boolean
 	txTarget: number
+	/** Where the transaction stepper stops; null when nothing bounds it below its own limit. */
+	txMax?: number | null
 	fjPerTx: bigint | null
 	/** Fee Juice a gas-only claim sets aside before it pays for any transaction; null while unpriced. */
 	gasSetAside?: bigint | null
@@ -316,6 +318,7 @@ function onUseAll(): void {
 			:intent="intent"
 			:gas="gas"
 			:tx-target="txTarget"
+			:tx-max="txMax ?? null"
 			:fj-per-tx="fjPerTx"
 			:set-aside="gasSetAside"
 			:loading="routeLoading"

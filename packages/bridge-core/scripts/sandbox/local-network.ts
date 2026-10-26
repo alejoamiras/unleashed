@@ -427,6 +427,9 @@ function spawnAnvil(tool: Toolchain, a: AnvilSpec): ChildProcess {
 	const child = spawn(
 		tool.anvilBin,
 		// Every key the handle advertises (`deploy.ts` funds none itself) must be one anvil pre-funds.
+		// The base fee starts at 7 wei, below which EIP-1559's per-block decrease rounds to zero. From anvil's
+		// default 1 gwei it falls 12.5 % a block, and on 6.0.0 the rollup's mana min fee follows it down in
+		// steps (about 40,000-fold in a run's first five minutes), breaking flows that size credit to a ceiling.
 		[
 			"--host",
 			"127.0.0.1",
@@ -436,6 +439,8 @@ function spawnAnvil(tool: Toolchain, a: AnvilSpec): ChildProcess {
 			String(a.chainId),
 			"--slots-in-an-epoch",
 			"1",
+			"--block-base-fee-per-gas",
+			"7",
 			"--accounts",
 			String(ANVIL_ACCOUNTS),
 			...(a.cachePath ? ["--cache-path", a.cachePath] : []),

@@ -1,5 +1,6 @@
 import { mount } from "@vue/test-utils"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
+import { nextTick } from "vue"
 import { __resetShellForTests, useShell } from "@/composables/useShell"
 import { TESTIDS } from "@/lib/testids"
 import RailNav from "./RailNav.vue"
@@ -8,27 +9,24 @@ const sel = (t: string) => `[data-testid="${t}"]`
 
 describe("RailNav", () => {
 	beforeEach(() => __resetShellForTests())
-	afterEach(() => vi.unstubAllGlobals())
 
-	it("is one roving tablist: the active section is the only Tab stop", () => {
+	it("is a nav of links to each section's path, the current one marked as the page", () => {
 		const w = mount(RailNav, { props: { activityCount: 0 } })
-		expect(w.get(sel(TESTIDS.tabs)).attributes("role")).toBe("tablist")
-		expect(w.get(sel(TESTIDS.tabSend)).attributes("tabindex")).toBe("0")
-		expect(w.get(sel(TESTIDS.tabSend)).text()).toBe("Bridge")
-		expect(w.get(sel(TESTIDS.tabDrip)).attributes("tabindex")).toBe("-1")
-		expect(w.get(sel(TESTIDS.tabActivity)).attributes("aria-selected")).toBe("false")
+		expect(w.get(sel(TESTIDS.tabs)).element.tagName).toBe("NAV")
+		const links = [TESTIDS.tabSend, TESTIDS.tabDrip, TESTIDS.tabActivity, TESTIDS.tabAddresses].map((t) => w.get(sel(t)))
+		expect(links.map((l) => l.attributes("href"))).toEqual(["/bridge", "/faucet", "/activity", "/addresses"])
+		expect(links.map((l) => l.attributes("aria-current"))).toEqual(["page", undefined, undefined, undefined])
+		expect(links[0]?.text()).toBe("Bridge")
 	})
 
-	it("clicking switches the shell's section; arrows walk the list and wrap", async () => {
-		const w = mount(RailNav, { props: { activityCount: 0 }, attachTo: document.body })
-		await w.get(sel(TESTIDS.tabDrip)).trigger("click")
+	it("a plain click switches the section in place and marks the new page", async () => {
+		const w = mount(RailNav, { props: { activityCount: 0 } })
+		const click = new MouseEvent("click", { bubbles: true, cancelable: true })
+		w.get(sel(TESTIDS.tabDrip)).element.dispatchEvent(click)
+		await nextTick()
+		expect(click.defaultPrevented).toBe(true)
 		expect(useShell().section.value).toBe("drip")
-		await w.get(sel(TESTIDS.tabSend)).trigger("keydown", { key: "ArrowUp" })
-		expect(useShell().section.value).toBe("addresses")
-		expect(document.activeElement).toBe(w.get(sel(TESTIDS.tabAddresses)).element)
-		await w.get(sel(TESTIDS.tabAddresses)).trigger("keydown", { key: "ArrowRight" })
-		expect(useShell().section.value).toBe("send")
-		w.unmount()
+		expect(w.get(sel(TESTIDS.tabDrip)).attributes("aria-current")).toBe("page")
 	})
 
 	it("shows the needs-you count as a chip named in words, and nothing when it is zero", () => {
@@ -40,19 +38,5 @@ describe("RailNav", () => {
 		expect(chip.text()).toBe("2")
 		expect(chip.attributes("aria-hidden")).toBe("true")
 		expect(tab.get(".sr-only").text()).toBe(", 2 needs you")
-	})
-
-	it("announces horizontal once it renders as the top row", () => {
-		vi.stubGlobal("matchMedia", (query: string) => ({
-			matches: query === "(max-width: 760px)",
-			media: query,
-			addEventListener() {},
-			removeEventListener() {},
-		}))
-		expect(
-			mount(RailNav, { props: { activityCount: 0 } })
-				.get(sel(TESTIDS.tabs))
-				.attributes("aria-orientation"),
-		).toBe("horizontal")
 	})
 })

@@ -77,12 +77,12 @@ describe("shell smoke", () => {
 		document.body.innerHTML = ""
 	})
 
-	it("1. the rail lands on the bridge with three sections, and Tab reaches exactly one of them", async () => {
+	it("1. the bare origin lands on the bridge at /bridge, and the rail links every section's path", async () => {
 		wrapper = await mountApp()
-		const rail = wrapper.get(sel(TESTIDS.tabs))
-		expect(rail.attributes("role")).toBe("tablist")
-		const tabs = [TESTIDS.tabSend, TESTIDS.tabDrip, TESTIDS.tabActivity].map((id) => wrapper?.get(sel(id)))
-		expect(tabs.map((t) => t?.attributes("tabindex"))).toEqual(["0", "-1", "-1"])
+		expect(location.pathname).toBe("/bridge")
+		const links = [TESTIDS.tabSend, TESTIDS.tabDrip, TESTIDS.tabActivity, TESTIDS.tabAddresses].map((id) => wrapper?.get(sel(id)))
+		expect(links.map((l) => l?.attributes("href"))).toEqual(["/bridge", "/faucet", "/activity", "/addresses"])
+		expect(wrapper.get(sel(TESTIDS.tabSend)).attributes("aria-current")).toBe("page")
 		expect(wrapper.get(sel(TESTIDS.tabSend)).text()).toBe("Bridge")
 		expect(wrapper.find(sel(TESTIDS.sendView)).isVisible()).toBe(true)
 		expect(wrapper.find(sel(TESTIDS.dripView)).isVisible()).toBe(false)
@@ -198,21 +198,5 @@ describe("shell smoke", () => {
 		expect(released.attributes("data-group")).toBe("needs-you")
 		expect(released.attributes("aria-current")).toBeUndefined()
 		expect(released.get(sel(TESTIDS.activityRowAction)).text()).toBe("Claim")
-	})
-
-	it("5. the rail's keyboard: arrows move between sections without leaving the tablist", async () => {
-		wrapper = await mountApp()
-		await wrapper.get(sel(TESTIDS.tabSend)).trigger("keydown", { key: "ArrowDown" })
-		await flushPromises()
-		expect(wrapper.find(sel(TESTIDS.dripView)).isVisible()).toBe(true)
-		await wrapper.get(sel(TESTIDS.tabDrip)).trigger("keydown", { key: "ArrowDown" })
-		await flushPromises()
-		expect(wrapper.find(sel(TESTIDS.activityView)).exists()).toBe(true)
-		await wrapper.get(sel(TESTIDS.tabActivity)).trigger("keydown", { key: "ArrowDown" })
-		await flushPromises()
-		expect(wrapper.find(sel(TESTIDS.addressesView)).exists()).toBe(true)
-		await wrapper.get(sel(TESTIDS.tabAddresses)).trigger("keydown", { key: "ArrowDown" })
-		await flushPromises()
-		expect(wrapper.find(sel(TESTIDS.sendView)).isVisible()).toBe(true)
 	})
 })
