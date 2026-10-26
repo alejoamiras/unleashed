@@ -37,7 +37,7 @@ vi.mock("@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js", as
 
 import { __resetDockStateForTests } from "@/composables/useDockState"
 import { __resetDripForTests } from "@/composables/useDrip"
-import { __resetShellForTests, useShell } from "@/composables/useShell"
+import { __resetShellForTests } from "@/composables/useShell"
 import { __resetToastsForTests } from "@/composables/useToast"
 import { __resetWalletConnectionForTests } from "@/composables/useWalletConnection"
 import { TESTIDS } from "@/lib/testids"
@@ -64,8 +64,8 @@ describe("tools smoke", () => {
 		__resetShellForTests()
 		__resetDockStateForTests()
 		resetBoundary()
-		// The faucet smoke drives the faucet chip's connect flow; the app itself lands on the bridge.
-		useShell().goTo("drip")
+		// The faucet smoke drives the faucet chip's connect flow, so it opens the faucet's own path.
+		history.replaceState(null, "", "/faucet")
 	})
 
 	afterEach(() => {

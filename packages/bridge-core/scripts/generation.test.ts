@@ -392,6 +392,26 @@ describe("preCreateToken", () => {
 		expect(token.source).toBe("canonical")
 		expect(token).not.toHaveProperty("sourceContract")
 	})
+
+	it("sends createPortal with the Inbox headroom and fails a reverted receipt as a revert, journalling nothing", async () => {
+		const deployRun = fakeChain(5n)
+		const journal = openDeployJournal(join(dir, "reverted.jsonl"))
+		answerReads(journal, deployRun)
+		const gen = await deployGeneration(deployRun.l1, deployRun.l2, inputs, journal)
+
+		const run = fakeChain(7n, 5n)
+		const pub = run.l1.pub as unknown as Record<string, ReturnType<typeof vi.fn>>
+		pub.readContract.mockResolvedValue({ portal: "0x0000000000000000000000000000000000000000" })
+		pub.estimateContractGas = vi.fn(async () => 300_000n)
+		pub.waitForTransactionReceipt.mockResolvedValue({ status: "reverted" })
+		const writeContract = vi.fn(async () => `0x${"cd".repeat(32)}`)
+		;(run.l1.wallet as unknown as Record<string, unknown>).writeContract = writeContract
+
+		const erc20 = "0x6666666666666666666666666666666666666666"
+		await expect(preCreateToken(run.l1, run.l2, gen, erc20, journal)).rejects.toThrow(/createPortal\(0x6{40}\) REVERTED/)
+		expect(writeContract).toHaveBeenCalledWith(expect.objectContaining({ functionName: "createPortal", gas: 375_000n }))
+		expect(journal.has("token-precreated", erc20)).toBe(false)
+	})
 })
 
 describe("deployFuelSwapper / deployDepositRouter — exact-match adoption", () => {
