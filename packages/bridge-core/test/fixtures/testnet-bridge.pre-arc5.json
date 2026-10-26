@@ -1,0 +1,168 @@
+{
+	"schema": 2,
+	"network": "testnet",
+	"l1ChainId": 11155111,
+	"walletChainId": 685146337,
+	"bridge": {
+		"l1": {
+			"registry": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba",
+			"factory": "0x2509411e06a3b9512eca3d9f2668afd7821b7817",
+			"implementation": "0x43462651c21c66c9f473c8c47462667b8cbf9f1e",
+			"guardian": "0x7f42018f47451417fa4d39edb6ad1e1c14c26a9a",
+			"router": "0xad08e65dda66eaed5ab9447f27b7610a850f4303",
+			"permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+			"swapTarget": "0xab7a35ac6247328851880c1faa68e051fe8d8a84",
+			"feeJuicePortal": "0xe59acba462a0324b1d619a7a1b219419f156f505",
+			"swap": {
+				"poolManager": "0xe03a1074c86cfedd5c142c4f04f1a1536e203543",
+				"quoter": "0x61b3f2011a92d183c7dbadbda940a7555ccf9227",
+				"multicall3": "0xca11bde05977b3631167028862be2a173976ca11",
+				"weth": "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
+				"feeJuice": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
+				"tiers": [
+					{
+						"fee": 3000,
+						"tickSpacing": 60
+					}
+				],
+				"ethFj": {
+					"fee": 987,
+					"tickSpacing": 10
+				},
+				"slippageBps": 300,
+				"minFuelFj": "29773418555864000000",
+				"fjPerTx": "1987318817970960000",
+				"fjRegister": "1577053752328560000"
+			},
+			"depositRouter": "0x6e5566894908e945a12245f9810b4055c4a1035b",
+			"fuelSwapper": "0x2b2244a4d36ba117a273b0b5a810daa0b84c86ab",
+			"fuel": {
+				"slippageBps": 300,
+				"crossChainSlippageBps": 300,
+				"minFuelFj": "29773418555864000000",
+				"fjPerTx": "1987318817970960000",
+				"fjRegister": "1577053752328560000"
+			}
+		},
+		"l2": {
+			"hub": {
+				"address": "0x1d500beb91a75ccd2e5376d14980b0cabd494fe3397e710faddc371376de7530",
+				"salt": "0x0000000000000000000000002509411e06a3b9512eca3d9f2668afd7821b7817",
+				"constructorArtifact": "constructor",
+				"constructorArgs": [
+					"0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f",
+					"0x2509411e06a3b9512eca3d9f2668afd7821b7817",
+					"0x15aa2cfccc0a07ff6478fcb830910189b1ce65236c7a050a06c5b626bd2eb9e1"
+				]
+			},
+			"guardian": "0x15aa2cfccc0a07ff6478fcb830910189b1ce65236c7a050a06c5b626bd2eb9e1",
+			"tokenClassId": "0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f",
+			"tokenArtifactSha256": "f18cccf8dd26bd50417d09ec2dbd94f69e536ddf99bdec231d8ef10815f343e0"
+		},
+		"tokens": [
+			{
+				"erc20": "0x8648424f0eae2368555d080c948b622d992651fc",
+				"portal": "0x8128d00bb1349e1b21d2281167925e9e3187fb74",
+				"l2Token": "0x249038d2cc0a301b8cc7d2d87da06c5861112b983060405dcaa75240d5837f32",
+				"nameWord": "0x0054657374205553444300000000000000000000000000000000000000000000",
+				"symbolWord": "0x0055534443000000000000000000000000000000000000000000000000000000",
+				"decimals": 6,
+				"displayName": "Test USDC",
+				"displaySymbol": "USDC",
+				"source": "permissionless-mint",
+				"sourceContract": "MintableERC20",
+				"maxWholePerTx": 1000000
+			},
+			{
+				"erc20": "0x8badb545be5d79f28d516844bf1713cc7a3f238f",
+				"portal": "0xe4b6a28350ad82eb03b3167587d6cb06c096c247",
+				"l2Token": "0x09273f734ea96c47a1eccf4bfc9ee08dab36fe11fad44af6a1b8a1867324c505",
+				"nameWord": "0x0054657374205553445400000000000000000000000000000000000000000000",
+				"symbolWord": "0x0055534454000000000000000000000000000000000000000000000000000000",
+				"decimals": 6,
+				"displayName": "Test USDT",
+				"displaySymbol": "USDT",
+				"source": "permissionless-mint",
+				"sourceContract": "MintableERC20",
+				"maxWholePerTx": 1000000
+			},
+			{
+				"erc20": "0xc10bcb5a0519934e68b489a3a89ee28af8624d24",
+				"portal": "0x6535a0f1426524a8ed5bb64692e7645c033d15cc",
+				"l2Token": "0x10b4653676004b7c5dd4d10d7a582b5968f350d71e1d6db1a5e792d5d455649d",
+				"nameWord": "0x0054657374204555524300000000000000000000000000000000000000000000",
+				"symbolWord": "0x0045555243000000000000000000000000000000000000000000000000000000",
+				"decimals": 6,
+				"displayName": "Test EURC",
+				"displaySymbol": "EURC",
+				"source": "permissionless-mint",
+				"sourceContract": "MintableERC20",
+				"maxWholePerTx": 1000000
+			},
+			{
+				"erc20": "0x177ead2a677858e376941390548fcf01a6ebefca",
+				"portal": "0x717ae3636685489c87cf331af663cfa75723d0d9",
+				"l2Token": "0x28af9cb09c9bd7cc9a01781c00893b5eea2de716cf49ce9c654cb154224ef06a",
+				"nameWord": "0x0054657374204742504300000000000000000000000000000000000000000000",
+				"symbolWord": "0x0047425043000000000000000000000000000000000000000000000000000000",
+				"decimals": 6,
+				"displayName": "Test GBPC",
+				"displaySymbol": "GBPC",
+				"source": "permissionless-mint",
+				"sourceContract": "MintableERC20",
+				"maxWholePerTx": 1000000
+			},
+			{
+				"erc20": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
+				"portal": "0x5dda1b3182bd0dd4c469461708a846edd395b188",
+				"l2Token": "0x2452d54ee633021f35ede143dd916aed01db96f9987cfffb4fe626ea29bddc98",
+				"nameWord": "0x0055534443000000000000000000000000000000000000000000000000000000",
+				"symbolWord": "0x0055534443000000000000000000000000000000000000000000000000000000",
+				"decimals": 6,
+				"displayName": "USDC",
+				"displaySymbol": "USDC",
+				"source": "canonical"
+			},
+			{
+				"erc20": "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
+				"portal": "0xf5ab7b75495420b4eaaa6400e892e552747f106d",
+				"l2Token": "0x0807b34ec61051997d940107021399e8736da66e55a02c0cdbd1e63a787f9add",
+				"nameWord": "0x0057726170706564204574686572000000000000000000000000000000000000",
+				"symbolWord": "0x0057455448000000000000000000000000000000000000000000000000000000",
+				"decimals": 18,
+				"displayName": "Wrapped Ether",
+				"displaySymbol": "WETH",
+				"source": "canonical"
+			}
+		],
+		"routing": {
+			"provider": "lifi",
+			"sources": [
+				{
+					"chainId": 84532,
+					"rail": "acrossV4",
+					"tokens": [
+						{
+							"address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+							"symbol": "USDC",
+							"decimals": 6,
+							"destToken": "0x1c7D4B196Cb0C7B01d743fbc6116a902379C7238"
+						}
+					]
+				}
+			]
+		}
+	},
+	"feeJuice": {
+		"portal": "0xe59acba462a0324b1d619a7a1b219419f156f505",
+		"asset": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
+		"feeAssetHandler": "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9",
+		"minFj": "16000000000000000000"
+	},
+	"privateFpc": {
+		"address": "0x0516ebb4f9c7988eb3cf6dd9459a47556f7a92db06b17cfa47ffb37fd35c6915",
+		"version": "6.0.0",
+		"artifactDigest": "bc1e27b0cfb48c8c1483071453288a27e302283c5da5fa40869a179a41079bde"
+	},
+	"privateClaimMode": "salt-v2"
+}
