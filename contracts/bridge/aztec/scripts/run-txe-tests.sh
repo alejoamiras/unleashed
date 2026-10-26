@@ -20,7 +20,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"          # contracts/bridge/aztec
 repo_root="$(cd "$here/../../.." && pwd)"
-AZTEC_HOME="${AZTEC_HOME:-$HOME/.aztec/versions/6.0.0-rc.1}"
+AZTEC_HOME="${AZTEC_HOME:-$HOME/.aztec/versions/6.0.0}"
 NARGO="$AZTEC_HOME/bin/aztec-nargo"
 [ -x "$NARGO" ] || { echo "aztec-nargo not found at $NARGO" >&2; exit 1; }
 

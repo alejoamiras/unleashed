@@ -179,15 +179,23 @@ describe("AppShell", () => {
 		}
 	})
 
-	it("the brand is a home button: from any section it returns to the bridge", async () => {
+	it("the brand is a home link: from any section it returns to the bridge", async () => {
 		const w = shell()
 		useShell().goTo("activity")
 		await nextTick()
 		const brand = w.get(sel(TESTIDS.brandHome))
-		expect(brand.element.tagName).toBe("BUTTON")
+		expect(brand.attributes("href")).toBe("/bridge")
 		expect(brand.attributes("aria-label")).toBe("Unleashed home")
 		await brand.trigger("click")
 		expect(useShell().section.value).toBe("send")
+	})
+
+	it("opens the section its path names, and keeps the address bar on the section shown", async () => {
+		history.replaceState(null, "", "/faucet")
+		const w = shell()
+		expect(w.get(sel(TESTIDS.app)).attributes("data-section")).toBe("drip")
+		await w.get(sel(TESTIDS.tabActivity)).trigger("click")
+		expect(location.pathname).toBe("/activity")
 	})
 
 	it("landmarks: the named rail sits beside <main>, which holds the header and the views", () => {

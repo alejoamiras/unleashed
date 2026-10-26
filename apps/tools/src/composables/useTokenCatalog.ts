@@ -6,7 +6,8 @@
 import { type CatalogToken, type KV, loadTokenList, TOKEN_LIST_URL, type TokenListProvenance } from "@unleashed/bridge-core"
 import type { Address } from "viem"
 import { computed, type ComputedRef, ref, type Ref } from "vue"
-import { IS_PLACEHOLDER, MANIFEST, MANIFEST_TOKENS } from "@/contracts/bridge-generation"
+import { FUEL_ASSET, IS_PLACEHOLDER, MANIFEST, MANIFEST_TOKENS } from "@/contracts/bridge-generation"
+import { NETWORK } from "@/lib/network"
 import { resolveToolsTarget } from "@/lib/network-targets"
 import { logoKeyOf, type SelectableToken, type TokenIdentity } from "@/lib/send-model"
 
@@ -49,9 +50,26 @@ function catalogKv(): KV {
 	return memoryKv
 }
 
-/** The generation's own tokens, in manifest order — the curated head of every catalog. */
+/** The fee asset, sent as Gas, arrives as Fee Juice one for one. Its contract calls itself "FEE", a
+ *  symbol nobody searches for, so the row carries the name testers know; `source: "manifest"` is what
+ *  keeps that label through selection. It is not a manifest token: it has no pre-created portal. */
+function feeAssetRow(): SelectableToken {
+	const address = FUEL_ASSET.toLowerCase() as Address
+	return {
+		chainId: MANIFEST.l1ChainId,
+		address,
+		symbol: "AZTEC",
+		name: `Aztec gas (${NETWORK.viemChain.name})`,
+		decimals: 18,
+		source: "manifest",
+		logoKey: logoKeyOf(MANIFEST.l1ChainId, address),
+	}
+}
+
+/** The fee asset, then the generation's own tokens in manifest order: the curated head of every catalog. */
 function manifestCatalog(): SelectableToken[] {
-	return MANIFEST_TOKENS.map((t) => {
+	if (IS_PLACEHOLDER) return []
+	const generation = MANIFEST_TOKENS.map((t) => {
 		const address = t.erc20.toLowerCase() as Address
 		return {
 			chainId: MANIFEST.l1ChainId,
@@ -63,6 +81,7 @@ function manifestCatalog(): SelectableToken[] {
 			logoKey: logoKeyOf(MANIFEST.l1ChainId, address),
 		}
 	})
+	return [feeAssetRow(), ...generation]
 }
 
 function fromCatalog(t: CatalogToken): SelectableToken {

@@ -9,10 +9,12 @@ import {TokenPortalImpl} from "../src/TokenPortalImpl.sol";
 import {ILiFiSwap} from "../src/interfaces/ILiFiSwap.sol";
 import {RelayData} from "./lifi/LifiForkBase.sol";
 import {MainnetLifiFork, SameChainQuote} from "./lifi/MainnetLifiFork.sol";
+import {DepositPermit} from "./mocks/DepositPermit.sol";
 
 /// LI.FI's real Ethereum destination stack delivering into `DepositRouter`: a relayer's Across fill runs SpokePool →
 /// ReceiverAcrossV4 → Executor → router → LI.FI Diamond (the recorded USDC → AZTEC calldata) → FeeJuicePortal and the
-/// USDC clone, at the block `lifi-fixtures.ts mainnet` recorded. Needs an archive `ETH_RPC_URL`; skips without one.
+/// USDC clone, at the block `lifi-fixtures.ts mainnet` recorded. The Ethereum-origin entry runs the same swap behind a
+/// user's signature to the real Permit2. Needs an archive `ETH_RPC_URL`; skips without one.
 contract LifiDestinationFork is MainnetLifiFork {
     /// `LIFI_TO_CONTRACT_GAS_LIMIT` in packages/bridge-core/src/lifi-gas.ts.
     uint256 internal constant LIFI_TO_CONTRACT_GAS_LIMIT = 1_000_000;
@@ -28,6 +30,9 @@ contract LifiDestinationFork is MainnetLifiFork {
     /// The deployed Inbox's event, older than the artifacts' `IInbox`: checkpoint (topic 1), index, message hash
     /// (topic 2, the key a portal returns), rolling hash.
     bytes32 internal constant INBOX_MESSAGE_SENT = keccak256("MessageSent(uint256,uint256,bytes32,bytes16)");
+    /// The Ethereum-origin signer. Not a well-known test key: famous ones carry EIP-7702 delegations on live chains,
+    /// which turns Permit2's EOA signature check into an `isValidSignature` call.
+    uint256 internal constant SIGNER_PK = 0x5EC12E7_E7_0816;
 
     struct Deposited {
         bytes32 tokenSecretHash;
@@ -281,6 +286,55 @@ contract LifiDestinationFork is MainnetLifiFork {
         );
     }
 
+    // ---- Ethereum origin: a user's signature to the real Permit2, then the same recorded swap ----
+
+    function test_ethereumOrigin_publicTokenAndPublicFuel_throughPermit2AndLifi() public {
+        SameChainQuote memory q = _sameChain("deadlineFree");
+        _ethereumOrigin(
+            DepositRouter.DepositIntent({
+                token: usdc,
+                aztecRecipient: bytes32(uint256(0xa2ec1)),
+                tokenSecretHash: bytes32(uint256(0x70ce)),
+                isPrivate: false,
+                fuelSlice: q.fromAmount,
+                fuelRecipient: bytes32(uint256(0xa2ec1)),
+                fuelSecretHash: bytes32(uint256(0xf0e1)),
+                minFuelOutput: q.toAmountMin
+            }),
+            q.data
+        );
+    }
+
+    function test_ethereumOrigin_worstShape_throughPermit2AndLifi() public {
+        _ethereumOrigin(_crossChainIntent("baseUsdc"), _sameChain("deadlineFree").data);
+    }
+
+    /// `t` of the signer's USDC under one standing Permit2 approval and one witness signature.
+    function _ethereumOrigin(DepositRouter.DepositIntent memory intent, bytes memory swapData) internal {
+        address signer = vm.addr(SIGNER_PK);
+        assertEq(signer.code.length, 0, "the signer is not a plain EOA at the fixture block");
+        address permit2 = vm.parseJsonAddress(json, ".ethereum.permit2");
+        deal(usdc, signer, t);
+        vm.prank(signer);
+        IERC20(usdc).approve(permit2, type(uint256).max);
+        uint256 deadline = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(SIGNER_PK, DepositPermit.digest(depositRouter, permit2, intent, swapData, t, 0, deadline));
+
+        Balances memory b = _balances();
+        vm.recordLogs();
+        vm.prank(signer);
+        depositRouter.bridgeWithPermit(
+            intent,
+            swapData,
+            t,
+            DepositRouter.PermitParams({nonce: 0, deadline: deadline, signature: abi.encodePacked(r, s, v)})
+        );
+        Deposited memory d = _assertDeposit(vm.getRecordedLogs(), intent, signer, t, intent.fuelSlice);
+        _assertSettled(b, t - intent.fuelSlice, d.fuelOut);
+        assertEq(IERC20(usdc).balanceOf(signer), 0, "Permit2 did not pull exactly the signed amount");
+    }
+
     // ---- delivery ----
 
     function _fill(uint256 amount, bytes memory routerCall) internal returns (Vm.Log[] memory logs, bytes32 txId) {
@@ -368,25 +422,34 @@ contract LifiDestinationFork is MainnetLifiFork {
         _assertNoResidue(aztec, b.aztecResidue);
     }
 
-    /// LI.FI completed `txId` after the transport event, and the router's `Deposited` matches the intent, the
-    /// portals' events and the Inbox messages field by field.
+    /// LI.FI completed `txId` after the transport event, and the Executor's deposit passes `_assertDeposit`.
     function _assertDelivered(
         Vm.Log[] memory logs,
         bytes32 txId,
         DepositRouter.DepositIntent memory intent,
         uint256 received,
         uint256 fuelIn
-    ) internal view returns (Deposited memory d) {
+    ) internal view returns (Deposited memory) {
         uint256 completed = _find(logs, executor, TRANSFER_COMPLETED, txId);
         assertTrue(completed != NOT_FOUND, "no LiFiTransferCompleted");
         assertTrue(_find(logs, spokePool, FILLED_RELAY, NONE) < completed, "the message ran before FilledRelay");
         assertEq(_find(logs, receiverAcrossV4, TRANSFER_RECOVERED, txId), NOT_FOUND, "recovered");
+        return _assertDeposit(logs, intent, executor, received, fuelIn);
+    }
 
+    /// The router's `Deposited` matches the intent, the portals' events and the Inbox messages field by field.
+    function _assertDeposit(
+        Vm.Log[] memory logs,
+        DepositRouter.DepositIntent memory intent,
+        address payer,
+        uint256 received,
+        uint256 fuelIn
+    ) internal view returns (Deposited memory d) {
         d = _deposited(logs);
         assertEq(d.tokenSecretHash, intent.tokenSecretHash, "tokenSecretHash");
         assertEq(d.fuelSecretHash, intent.fuelSecretHash, "fuelSecretHash");
         assertEq(d.token, intent.token, "token");
-        assertEq(d.payer, executor, "payer");
+        assertEq(d.payer, payer, "payer");
         assertEq(d.received, received, "received");
         assertEq(d.fuelIn, fuelIn, "fuelIn");
         assertEq(d.tokenAmount, received - fuelIn, "tokenAmount");

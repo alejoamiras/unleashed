@@ -19,7 +19,33 @@ const writeContract = vi.fn(async () => "0xmint")
 const receiptStatus = { value: "success" as "success" | "reverted" }
 const address = ref<string | null>("0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d")
 
+const feeAsset = vi.hoisted(() => ({
+	available: true,
+	amountText: { value: "1000" as string | null },
+	minting: { value: false },
+	error: { value: null as string | null },
+	mint: vi.fn(async () => null),
+}))
+
 vi.mock("@unleashed/bridge-core", () => ({ awaitL1Receipt: async () => ({ status: receiptStatus.value }) }))
+vi.mock("@/composables/useFeeAssetMint", async () => {
+	const { computed, ref } = await import("vue")
+	const minting = ref(false)
+	const error = ref<string | null>(null)
+	const amountText = ref<string | null>("1000")
+	Object.assign(feeAsset, { minting, error, amountText })
+	return {
+		useFeeAssetMint: () => ({
+			get available() {
+				return feeAsset.available
+			},
+			amountText: computed(() => amountText.value),
+			minting,
+			error,
+			mint: feeAsset.mint,
+		}),
+	}
+})
 vi.mock("@/contracts/bridge-generation", () => ({
 	get MANIFEST_TOKENS() {
 		return tokens.value
@@ -43,19 +69,52 @@ beforeEach(() => {
 	receiptStatus.value = "success"
 	address.value = "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d"
 	tokens.value = tokens.all
+	feeAsset.available = true
+	feeAsset.amountText.value = "1000"
+	feeAsset.minting.value = false
+	feeAsset.error.value = null
+	feeAsset.mint.mockClear()
 })
 
 describe("MintStrip", () => {
-	it("renders nothing when the manifest publishes no permissionless token — a mainnet build", () => {
+	it("renders nothing when the manifest publishes no permissionless token and no fee-asset handler — a mainnet build", () => {
 		tokens.value = tokens.all.filter((t) => t.source === "canonical")
+		feeAsset.available = false
 		expect(mount(MintStrip).find(sel(TESTIDS.mintL1Card)).exists()).toBe(false)
 	})
 
-	it("offers one tap per permissionless token, 100 whole units or the token's own cap", () => {
+	it("offers one tap per permissionless token, 100 whole units or the token's own cap, then AZTEC", () => {
 		const w = mount(MintStrip)
 		const buttons = w.findAll(sel(TESTIDS.mintL1))
-		expect(buttons.map((b) => b.text())).toEqual(["+100 USDC", "+5 CAP"])
-		expect(buttons.map((b) => b.attributes("data-symbol"))).toEqual(["USDC", "CAP"])
+		expect(buttons.map((b) => b.text())).toEqual(["+100 USDC", "+5 CAP", "+1000 AZTEC"])
+		expect(buttons.map((b) => b.attributes("data-symbol"))).toEqual(["USDC", "CAP", "AZTEC"])
+	})
+
+	it("names no AZTEC amount until the handler's has been read", () => {
+		feeAsset.amountText.value = null
+		expect(
+			mount(MintStrip)
+				.find(`${sel(TESTIDS.mintL1)}[data-symbol="AZTEC"]`)
+				.text(),
+		).toBe("Mint AZTEC")
+	})
+
+	it("an AZTEC mint in flight, from either tab, holds every tap, and its failure is the strip's line", async () => {
+		const w = mount(MintStrip)
+		feeAsset.minting.value = true
+		await flushPromises()
+		expect(w.findAll(sel(TESTIDS.mintL1)).every((b) => b.attributes("disabled") === "")).toBe(true)
+		feeAsset.minting.value = false
+		await flushPromises()
+		feeAsset.mint.mockImplementationOnce(async () => {
+			feeAsset.error.value = "Mint transaction reverted on-chain."
+			return null
+		})
+		await w.find(`${sel(TESTIDS.mintL1)}[data-symbol="AZTEC"]`).trigger("click")
+		await flushPromises()
+		expect(feeAsset.mint).toHaveBeenCalledTimes(1)
+		expect(w.find(sel(TESTIDS.mintL1Status)).text()).toContain("reverted")
+		expect(w.emitted("minted")).toBeUndefined()
 	})
 
 	it("mints the whole amount in the token's own decimals, waits on every tap meanwhile, then reports", async () => {
@@ -63,11 +122,11 @@ describe("MintStrip", () => {
 		let release = (): void => {}
 		writeContract.mockImplementationOnce(() => new Promise<string>((r) => (release = () => r("0xmint"))))
 		await w.findAll(sel(TESTIDS.mintL1))[0]?.trigger("click")
-		expect(w.findAll(sel(TESTIDS.mintL1)).map((b) => b.attributes("disabled"))).toEqual(["", ""])
+		expect(w.findAll(sel(TESTIDS.mintL1)).map((b) => b.attributes("disabled"))).toEqual(["", "", ""])
 		// The busy button keeps its label and shows its state in pixels and aria-busy, not in words.
 		const busy = w.findAll(sel(TESTIDS.mintL1))
 		expect(busy[0]?.text()).toBe("+100 USDC")
-		expect(busy.map((b) => b.attributes("aria-busy"))).toEqual(["true", undefined])
+		expect(busy.map((b) => b.attributes("aria-busy"))).toEqual(["true", undefined, undefined])
 		// The button is the whole status; nothing else narrates a running mint.
 		expect(w.find(sel(TESTIDS.mintL1Status)).exists()).toBe(false)
 		release()

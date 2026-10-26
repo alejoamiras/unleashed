@@ -20,7 +20,7 @@ import WalletPickerModal from "./components/WalletPickerModal.vue"
 import { useActivityFeed } from "@/composables/useActivityFeed"
 import { useCompletionToasts } from "@/composables/useCompletionToasts"
 import { PHONE_QUERY, useMediaQuery } from "@/composables/useMediaQuery"
-import { type Section, useShell } from "@/composables/useShell"
+import { SECTION_PATHS, type Section, syncShellWithUrl, useShell } from "@/composables/useShell"
 
 /** Utils */
 import { computed } from "vue"
@@ -30,6 +30,7 @@ import { TESTIDS } from "@/lib/testids"
 
 const shell = useShell()
 const section = shell.section
+syncShellWithUrl()
 
 // The one place completion toasts come from, whichever section is visible. A network with no
 // bridge generation instantiates none of the journal machinery, here or anywhere: the feed is
@@ -87,13 +88,13 @@ const MARK_INK =
 <template>
 	<div class="shell" :data-testid="TESTIDS.app" :data-section="section">
 		<aside class="rail" aria-label="Unleashed">
-			<button type="button" class="brand" aria-label="Unleashed home" :data-testid="TESTIDS.brandHome" @click="shell.goTo('send')">
+			<a class="brand" :href="SECTION_PATHS.send" aria-label="Unleashed home" :data-testid="TESTIDS.brandHome" @click="shell.follow($event, 'send')">
 				<svg class="mark" viewBox="0 0 8 8" width="16" height="16" shape-rendering="crispEdges" aria-hidden="true">
 					<path :d="MARK_INK" fill="currentColor" />
 					<path class="mark-signal" d="M6 0h2v8h-2z" />
 				</svg>
 				<span class="wordmark">Unleashed</span>
-			</button>
+			</a>
 			<RailNav :activity-count="activityCount" />
 			<div class="rail-foot">
 				<ThemeToggle />
@@ -166,6 +167,7 @@ const MARK_INK =
 	height: 36px;
 	margin-bottom: 14px;
 	padding: 0 10px;
+	color: inherit;
 }
 
 .mark {

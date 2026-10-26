@@ -43,7 +43,8 @@ export interface ToolsTarget {
 	/** Layer 5 also accepts any `<label>-<workersDevHost>`: the alias and version hosts of the Worker's
 	 *  preview uploads. Testnet only; a mainnet build runs at its two production hosts and nowhere else. */
 	acceptsPreviewHosts?: boolean
-	/** Aztec node RPC endpoint (overridable in dev/e2e via VITE_AZTEC_NODE_URL). */
+	/** Aztec node RPC endpoint (overridable in dev/e2e via VITE_AZTEC_NODE_URL); empty on mainnet, which
+	 *  calls no node. */
 	nodeUrl: string
 	/** L1 block-explorer base (Etherscan-style), no trailing slash. */
 	l1ExplorerBaseUrl: string
@@ -71,7 +72,11 @@ export const LOCAL_L1_CHAIN_ID = 31337
  * paths after a redirect, which is one more reason the loader refuses redirects.
  */
 const TOKEN_LIST_SOURCE = "https://cdn.jsdelivr.net/npm/@uniswap/default-token-list@22.20.0/build/uniswap-default.tokenlist.json"
-const TESTNET_NODE_SOURCE = "https://lb.drpc.live/aztec-testnet/Ak_eT5HA2kbyqamqGTF702daoH37vEsR8YYxjmVXwXgc"
+/**
+ * dRPC's keyless public Aztec testnet endpoint: the bundle holds no key, so nothing in it can be
+ * lifted and spent. It must answer without a redirect to another host, which the CSP would block.
+ */
+const TESTNET_NODE_SOURCE = "https://aztec-testnet.drpc.org"
 
 /** PublicNode answered consistent supersets over 1k–50k-block `Transfer` scans; the gateways that truncated were refused. */
 const SEPOLIA_READ_RPCS = ["https://ethereum-sepolia-rpc.publicnode.com"] as const
@@ -146,11 +151,10 @@ export const TESTNET_TARGET: ToolsTarget = {
 	host: "testnet.app.unleashed.systems",
 	workersDevHost: "unleashed-testnet.alejo-amiras.workers.dev",
 	acceptsPreviewHosts: true,
-	// bridge-core's TESTNET_NODE_URL, repeated to stay Node-safe; a test holds the two equal.
 	nodeUrl: TESTNET_NODE_SOURCE,
 	l1ExplorerBaseUrl: "https://sepolia.etherscan.io",
-	// The node by its exact path (the wallet reports the same one), the community token list the send
-	// wizard's catalog fetches (omitted, the catalog degrades to manifest-only), and the read RPCs a
+	// dRPC's keyless node (the bundle holds no key), the community token list the send wizard's catalog
+	// fetches (omitted, the catalog degrades to manifest-only), and the read RPCs a
 	// cross-chain send is built and watched through. Testnet sends ride fixed terms, so Across's API is never asked.
 	cspConnectSrc: ["'self' data: blob:", TESTNET_NODE_SOURCE, TOKEN_LIST_SOURCE, ...readOrigins(TESTNET_READ_RPCS)].join(" "),
 	readRpcUrls: TESTNET_READ_RPCS,
@@ -164,8 +168,8 @@ export const MAINNET_TARGET: ToolsTarget = {
 	manifestFile: "mainnet-bridge.json",
 	host: "app.unleashed.systems",
 	workersDevHost: "unleashed-mainnet.alejo-amiras.workers.dev",
-	// The Alpha node, on the same dRPC host the wallet pins.
-	nodeUrl: "https://lb.drpc.live/aztec-mainnet/Ak_eT5HA2kbyqamqGTF702cdsdWqLTIR8YdadmahlY6k",
+	// No node: the placeholder never calls one (main.ts skips the boot probe), and its CSP blocks one.
+	nodeUrl: "",
 	l1ExplorerBaseUrl: "https://etherscan.io",
 	// The mainnet build renders a static placeholder: no node handshake, no wallet transport, no token
 	// list. Every remote origin is therefore removed — the narrowest CSP a build can ship, and the one

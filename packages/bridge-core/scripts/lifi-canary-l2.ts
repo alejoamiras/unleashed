@@ -11,7 +11,8 @@ import { readRegistration } from "../src/factory-registry"
 import type { HubClaimOutcome } from "../src/hub-l2"
 import type { JournalTokenBlock } from "../src/journal"
 import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
-import { type BridgedFuel, registerPrivateFpc, settleFueledClaim } from "./fuel-claim-l2"
+import { PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
+import { type BridgedFuel, settleFueledClaim } from "./fuel-claim-l2"
 import type { RowSecrets } from "./lifi-canary-build"
 import { CanaryRefusal, type ClaimRecord } from "./lifi-canary-plan"
 import { createL2Wallet, createNode, requireBridge } from "./script-bootstrap"
@@ -21,6 +22,7 @@ import {
 	freshSchnorrAccount,
 	registerHub,
 	registerHubToken,
+	registerPrivateFpc,
 	sponsoredFpcFee,
 } from "./script-l2"
 
@@ -129,7 +131,8 @@ export async function openCanaryL2(o: {
 	const l2Tokens = new Map<string, ContractBase>()
 	for (const t of o.tokens)
 		l2Tokens.set(t.erc20.toLowerCase(), await registerHubToken(ewallet as never, hubAddress, t, bridge.l2.tokenClassId))
-	await registerPrivateFpc(ewallet, o.mins)
+	await registerPrivateFpc(ewallet as never)
+	console.log(`PrivateFPC ${PRIVATE_FPC_ADDRESS.slice(0, 12)}… registered (${o.mins()})`)
 	const factory = bridge.l1.factory as Address
 
 	return {

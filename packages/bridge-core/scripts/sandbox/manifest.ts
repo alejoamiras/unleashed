@@ -41,7 +41,12 @@ export function buildManifest(
 		l1ChainId: CHAIN_ID,
 		walletChainId: walletChainIdOf(CHAIN_ID, rollupVersion),
 		bridge: { l1: { ...gen.l1, ...router }, l2: gen.l2, tokens } as BridgeBlock,
-		feeJuice: { portal: deployment.feeJuicePortal, asset: deployment.feeJuice, minFj: MIN_FJ.toString() },
+		feeJuice: {
+			portal: deployment.feeJuicePortal,
+			asset: deployment.feeJuice,
+			...(deployment.feeAssetHandler ? { feeAssetHandler: deployment.feeAssetHandler } : {}),
+			minFj: MIN_FJ.toString(),
+		},
 		privateClaimMode: "salt-v2",
 	}
 }

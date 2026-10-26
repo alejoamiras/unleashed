@@ -6,6 +6,8 @@
 		"packages/*"
 	],
 	"scripts": {
+		"dev:landing": "bun run --cwd apps/landing dev",
+		"build:landing": "bun run --cwd apps/landing build",
 		"dev:tools": "bun run --cwd apps/tools dev",
 		"build:tools": "bun run --cwd apps/tools build",
 		"test:tools": "bun run --cwd apps/tools test",
@@ -36,7 +38,7 @@
 		"vite": "^8.0.0"
 	},
 	"patchedDependencies": {
-		"@aztec-foundation/noir-acvm_js@6.0.0-rc.1": "patches/@aztec-foundation%2Fnoir-acvm_js@6.0.0-rc.1.patch",
-		"@aztec-foundation/noir-noirc_abi@6.0.0-rc.1": "patches/@aztec-foundation%2Fnoir-noirc_abi@6.0.0-rc.1.patch"
+		"@aztec-foundation/noir-acvm_js@6.0.0": "patches/@aztec-foundation%2Fnoir-acvm_js@6.0.0.patch",
+		"@aztec-foundation/noir-noirc_abi@6.0.0": "patches/@aztec-foundation%2Fnoir-noirc_abi@6.0.0.patch"
 	}
 }

@@ -45,8 +45,9 @@ import { type RecordRuntime, useBridgeJournal } from "@/composables/useBridgeJou
 import { useBridgeWallet } from "@/composables/useBridgeWallet"
 import { readClientFor } from "@/composables/useEthereumReader"
 import { useAddDripToken } from "@/composables/useAddDripToken"
+import { feeAssetMinted } from "@/composables/useFeeAssetMint"
 import { useGasHeld } from "@/composables/useGasHeld"
-import { useGasShare } from "@/composables/useGasShare"
+import { type GasShareProposal, useGasShare } from "@/composables/useGasShare"
 import { EXIT_TOKEN_NOT_REGISTERED, useHubExit } from "@/composables/useHubExit"
 import { useL1Wallet } from "@/composables/useL1Wallet"
 import { type FuelOutcome, type QuotedFuel, useFuelQuote } from "@/composables/useFuelQuote"
@@ -449,13 +450,44 @@ interface GasAsk {
 	isPrivate: boolean
 }
 
+/** What a send's slice is sized from, while its outcome gives the token a priced way to gas. */
+function proposalOf(a: GasAsk): GasShareProposal | null {
+	const { token, units, outcome } = a
+	if (outcome.kind !== "route" && outcome.kind !== "identity") return null
+	const rate = outcome.kind === "route" ? { probeIn: probeAmountOf(token), probeOut: outcome.probeOut } : ONE_TO_ONE
+	return {
+		amount: units,
+		decimals: token.decimals,
+		state: token.state,
+		rate,
+		isPrivate: a.isPrivate,
+		identity: outcome.kind === "identity",
+	}
+}
+
+/** Where the transaction stepper stops: past it the slice would be clamped and stop growing. */
+function txMaxOf(a: GasAsk, input: GasShareProposal): number | null {
+	if (a.intent !== "token+gas") return null
+	try {
+		return gasShare.maxTxTarget(input)
+	} catch {
+		return null
+	}
+}
+
+/** The target a slice is sized for: the user's, held under the stepper's stop. The stored target is
+ *  left alone, so a count lowered by a smaller amount comes back when the amount grows again. */
+function heldTarget(max: number | null): number {
+	const target = gasShare.txTarget.value
+	return max !== null && max >= 1 && target > max ? max : target
+}
+
 /** The gas slice a send of `units` carries, as the amount step sizes it. */
 function gasPlanFor(a: GasAsk): { plan: GasLegPlan | null; error: string | null } {
 	const { token, units, outcome } = a
-	if (outcome.kind !== "route" && outcome.kind !== "identity") return { plan: null, error: null }
-	const probeIn = probeAmountOf(token)
-	const rate = outcome.kind === "route" ? { probeIn, probeOut: outcome.probeOut } : ONE_TO_ONE
-	const share = gasShare.propose({ amount: units, decimals: token.decimals, state: token.state, rate, isPrivate: a.isPrivate })
+	const input = proposalOf(a)
+	if (!input) return { plan: null, error: null }
+	const share = gasShare.propose(input, heldTarget(txMaxOf(a, input)))
 	// A private slice is priced from live fees; until they arrive there is nothing to size, like a
 	// route probe still in flight.
 	if (share === "pricing") return { plan: null, error: null }
@@ -463,7 +495,7 @@ function gasPlanFor(a: GasAsk): { plan: GasLegPlan | null; error: string | null 
 	// Gas-only spends the whole amount; the router refuses any other split.
 	const fuelAmount = a.intent === "gas" ? units : share.fuelAmount
 	if (a.intent === "token+gas" && fuelAmount >= units) return { plan: null, error: GAS_TOO_SMALL }
-	const quote = outcome.kind === "route" ? (fuelAmount * outcome.probeOut) / probeIn : fuelAmount
+	const quote = outcome.kind === "route" ? (fuelAmount * outcome.probeOut) / input.rate.probeIn : fuelAmount
 	const minFuelOutput = floorFor(quote, outcome)
 	const shortfall = quoteShortfall(quote) ?? (a.intent === "gas" ? null : privateSliceShortfall(token.state, minFuelOutput, a.isPrivate))
 	if (shortfall) return { plan: null, error: shortfall }
@@ -474,12 +506,25 @@ function gasPlanFor(a: GasAsk): { plan: GasLegPlan | null; error: string | null 
 	}
 }
 
-function buildGas(): { plan: GasLegPlan | null; error: string | null } {
+/** The send on screen, while the token has an amount and a route answer. */
+const gasAsk = computed<GasAsk | null>(() => {
 	const token = resolved.value
 	const units = amountUnits.value
 	const outcome = routeOutcome.value
-	if (!token || units === null || units <= 0n || !outcome) return { plan: null, error: null }
-	return gasPlanFor({ token, units, outcome, intent: intent.value, isPrivate: isPrivate.value })
+	if (!token || units === null || units <= 0n || !outcome) return null
+	return { token, units, outcome, intent: intent.value, isPrivate: isPrivate.value }
+})
+
+const gasTxMax = computed(() => {
+	const a = gasAsk.value
+	const input = a && proposalOf(a)
+	return a && input ? txMaxOf(a, input) : null
+})
+const txShown = computed(() => heldTarget(gasTxMax.value))
+
+function buildGas(): { plan: GasLegPlan | null; error: string | null } {
+	const a = gasAsk.value
+	return a ? gasPlanFor(a) : { plan: null, error: null }
 }
 
 /** The slice may have been capped at half the amount, far under what the transactions asked for. */
@@ -849,6 +894,9 @@ function onMinted(): void {
 	void rowBalances.refresh()
 	void sourceChain.refresh()
 }
+// AZTEC mints from the Drip tab too, and the strip exists only on the token step: the wizard, which
+// outlives both, is what refreshes after one.
+watch(feeAssetMinted, onMinted)
 
 // The row balances re-read themselves when the reader changes; the selected token's are read here.
 watch(l1Reader, () => void selection.refreshBalances())
@@ -1740,7 +1788,8 @@ onBeforeUnmount(() => {
 				:gas="stepRoute.gas"
 				:route-kind="stepRoute.kind"
 				:route-loading="stepRoute.loading"
-				:tx-target="gasShare.txTarget.value"
+				:tx-target="xcRow ? gasShare.txTarget.value : txShown"
+				:tx-max="xcRow ? null : gasTxMax"
 				:fj-per-tx="fjPerTx"
 				:gas-set-aside="gasOnlySetAside(isPrivate)"
 				:gas-error="stepRoute.gasError"

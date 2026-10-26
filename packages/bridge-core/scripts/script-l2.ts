@@ -1,9 +1,11 @@
 /**
  * L2-side helpers shared by the operator scripts: deterministic instance derivation, the
  * manifest-bound hub and hub-token registration (recompute the recorded address, then teach the
- * wallet the instance), and the claim loop the smoke gates share while an L1→L2 message syncs.
+ * wallet the instance), the PrivateFPC registration, and the claim loop the smoke gates share
+ * while an L1→L2 message syncs.
  */
-import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
+import { readFileSync } from "node:fs"
+import { type ContractArtifact, loadContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import {
 	Contract,
@@ -19,6 +21,7 @@ import { SPONSORED_FPC_SALT } from "@aztec-labs/constants"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC"
 import { computeSiloedPrivateInitializationNullifier } from "@aztec-labs/stdlib/hash"
+import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
 import { tokenBridgeHubArtifact } from "../src/artifacts"
@@ -26,6 +29,7 @@ import { claimViaHub, hubAt, type HubClaimOutcome, type HubClaimParams } from ".
 import { deriveHubTokenInstance } from "../src/hub-token"
 import type { SendOpts } from "../src/hub-l2"
 import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
+import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { type DeployerNetwork, resolveDeployerKeys } from "./deployer-keys"
 
 /** The manifest's hub record: address + the salt and constructor args it derives from. */
@@ -107,6 +111,36 @@ export async function registerHubToken(
 	assertDerived(`token ${token.displaySymbol}`, instance, token.l2Token)
 	await teachWallet(wallet, instance, TokenContractArtifact)
 	return Contract.at(instance.address, TokenContractArtifact, wallet)
+}
+
+type PrivateFpc = { instance: ContractInstanceWithAddress; artifact: ContractArtifact }
+let privateFpcDerivation: Promise<PrivateFpc> | undefined
+
+/** The installed artifact's canonical instance; the derivation hashes a 2.4 MB artifact, so it runs once. */
+async function derivePrivateFpc(): Promise<PrivateFpc> {
+	const path = resolvePackageAsset("@alejoamiras/private-fee-juice", "target/private_contract-PrivateFPC.json", { from: import.meta.url })
+	const artifact = loadContractArtifact(JSON.parse(readFileSync(path, "utf8")))
+	const instance = await getContractInstanceFromInstantiationParams(artifact, {
+		salt: Fr.fromHexString(PRIVATE_FPC_SALT),
+		publicKeys: PublicKeys.default(),
+		deployer: AztecAddress.ZERO,
+	})
+	if (instance.address.toString() !== PRIVATE_FPC_ADDRESS) {
+		throw new Error(`PrivateFPC rebuilt ${instance.address} != pinned ${PRIVATE_FPC_ADDRESS} (artifact/version drift)`)
+	}
+	return { instance, artifact }
+}
+
+/**
+ * Register (never publish) the canonical PrivateFPC with `wallet`. It has no initializer and no
+ * public function, so nothing needs it on chain, but the private kernel needs both preimages
+ * locally. Throws when the installed artifact no longer derives `PRIVATE_FPC_ADDRESS`.
+ */
+export async function registerPrivateFpc(wallet: Wallet): Promise<PrivateFpc> {
+	privateFpcDerivation ??= derivePrivateFpc()
+	const fpc = await privateFpcDerivation
+	await wallet.registerContract(fpc.instance, fpc.artifact)
+	return fpc
 }
 
 /** The L1→L2 message is not in the tree yet — the ONE failure a claim retries. Every other revert

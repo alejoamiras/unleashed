@@ -1,0 +1,62 @@
+{
+	"accounts-single.spec.ts": {
+		"tests": 1,
+		"seconds": 30
+	},
+	"accounts.spec.ts": {
+		"tests": 5,
+		"seconds": 257
+	},
+	"activity.spec.ts": {
+		"tests": 3,
+		"seconds": 167
+	},
+	"deposit-gas-only.spec.ts": {
+		"tests": 9,
+		"seconds": 442
+	},
+	"deposit-token-gas.spec.ts": {
+		"tests": 7,
+		"seconds": 390
+	},
+	"deposit-token.spec.ts": {
+		"tests": 6,
+		"seconds": 467
+	},
+	"drip.spec.ts": {
+		"tests": 6,
+		"seconds": 178
+	},
+	"exits.spec.ts": {
+		"tests": 7,
+		"seconds": 522
+	},
+	"fee-states.spec.ts": {
+		"tests": 6,
+		"seconds": 222
+	},
+	"l1-wallet.spec.ts": {
+		"tests": 5,
+		"seconds": 207
+	},
+	"recovery.spec.ts": {
+		"tests": 4,
+		"seconds": 238
+	},
+	"registration-retry.spec.ts": {
+		"tests": 2,
+		"seconds": 119
+	},
+	"spike.spec.ts": {
+		"tests": 7,
+		"seconds": 235
+	},
+	"tokens-hostile.spec.ts": {
+		"tests": 1,
+		"seconds": 35
+	},
+	"tokens.spec.ts": {
+		"tests": 4,
+		"seconds": 145
+	}
+}

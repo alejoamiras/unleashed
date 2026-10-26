@@ -15,6 +15,7 @@ import { deriveBridgeSecret, PRIVATE_FPC_ADDRESS, PRIVATE_HUB_CLAIM_GAS } from "
 import type { SendResult } from "../../src/send-flow"
 import { waitForL1ToL2Message } from "../generation"
 import { ensureRouterPermit2 } from "../script-l1"
+import { registerPrivateFpc } from "../script-l2"
 import { MIN_FJ, PERMIT2, ZERO_L1 } from "./constants"
 import {
 	balanceOf,
@@ -22,7 +23,6 @@ import {
 	type ClaimPlan,
 	claimOnce,
 	depositFresh,
-	ensurePrivateFpc,
 	exitCeiling,
 	type FeeMode,
 	fpcClaimFee,
@@ -510,7 +510,7 @@ async function rejectTamperedRegistration(s: SmokeContext, block: JournalTokenBl
 }
 
 export async function flowRejectedRegistration(s: SmokeContext, mode: FeeMode): Promise<string> {
-	if (mode === "private-fpc") await ensurePrivateFpc(s.l2)
+	if (mode === "private-fpc") await registerPrivateFpc(s.l2.wallet)
 	const unit = 10n ** 6n
 	const total = 100n * unit
 	const fuelAmount = mode === "sponsored" ? 0n : 40n * unit

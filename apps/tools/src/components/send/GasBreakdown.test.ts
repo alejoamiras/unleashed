@@ -40,6 +40,7 @@ type Props = {
 	intent: "token+gas" | "gas"
 	gas: GasLegPlan | null
 	txTarget: number
+	txMax?: number | null
 	fjPerTx: bigint | null
 	setAside?: bigint | null
 	loading: boolean
@@ -148,6 +149,26 @@ describe("GasBreakdown", () => {
 		w.unmount()
 	})
 
+	it("stops stepping where the slice stops growing, and a typed count past that stop lands on it", async () => {
+		const w = breakdown({ txTarget: 24, txMax: 24 })
+		expect(w.find(sel(TESTIDS.sendGasTxMore)).attributes("disabled")).toBeDefined()
+		const field = w.find(sel(TESTIDS.sendGasTxTarget))
+		await field.setValue("60")
+		expect((field.element as HTMLInputElement).value).toBe("24")
+		await field.setValue("12")
+		expect(w.emitted("update:txTarget")).toEqual([[12]])
+		w.unmount()
+	})
+
+	it("with no count fitting at all, the count can still come down", async () => {
+		const w = breakdown({ txTarget: 20, txMax: 0 })
+		expect(w.find(sel(TESTIDS.sendGasTxMore)).attributes("disabled")).toBeDefined()
+		await w.find(sel(TESTIDS.sendGasTxFewer)).trigger("click")
+		await w.find(sel(TESTIDS.sendGasTxTarget)).setValue("5")
+		expect(w.emitted("update:txTarget")).toEqual([[19], [5]])
+		w.unmount()
+	})
+
 	it("explains nothing about how the gas is sized — the two arrival lines are the whole card", () => {
 		const w = breakdown({ txTarget: 3 })
 		expect(w.text()).not.toMatch(/sized|floor|at least|swapped/i)
@@ -168,6 +189,9 @@ describe("GasBreakdown", () => {
 		expect(w.find(sel(TESTIDS.sendGasBreakdown)).attributes("data-capped")).toBe("half")
 		expect(w.find(sel(TESTIDS.sendGasBreakdown)).text()).toContain("capped at half")
 		w.unmount()
+		const all = breakdown({ gas: gasPlan({ capped: "max" }) })
+		expect(all.find(sel(TESTIDS.sendGasBreakdown)).text()).toContain("capped to leave some USDC")
+		all.unmount()
 	})
 
 	it("a gas-only send shows only what arrives and what it is enough for", () => {

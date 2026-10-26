@@ -36,7 +36,7 @@ const gen: SendGeneration = {
 	feeAsset: FEE_ASSET,
 	chainId: 31337,
 	hub: `0x${"7".padStart(64, "0")}`,
-	tokenClassId: "0x24c34002788720c941a327a20c369b12c8bdcff3b5a974673a8f618763471505",
+	tokenClassId: "0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f",
 }
 
 const usdcPortal = predictPortal(FACTORY, IMPL, USDC)
@@ -63,6 +63,7 @@ function fakeL1(status: "success" | "reverted" = "success") {
 			}),
 		},
 		pub: {
+			estimateContractGas: vi.fn(async () => 1_000_001n),
 			waitForTransactionReceipt: vi.fn(async () => ({ status, logs: [] })),
 			readContract: vi.fn(async (req: { functionName: string }) => {
 				reads.push(req.functionName)
@@ -133,6 +134,18 @@ describe("runSend", () => {
 		expect(signed[0].message.witness.swapDataHash).toBe(keccak256(SWAP_DATA))
 		expect(readRouterDeposit.mock.calls[0][3].fuel).toEqual({ secretHash: res.fuelSecretHashHex, recipient: RECIPIENT })
 		expect([res.fuelLeafIndex, res.fuelReceived, res.tokenLeafIndex]).toEqual([8n, 123n, 7n])
+	})
+
+	it("sends with the estimate of the exact call plus 25% headroom, rounded up", async () => {
+		readRouterDeposit.mockResolvedValueOnce(facts({ token: TOKEN_LEG }))
+		const { l1, writes } = fakeL1()
+		await runSend(l1, gen, { ...base, intent: "token", amount: 500n, isPrivate: false })
+		const estimated = (l1.pub.estimateContractGas as unknown as { mock: { calls: [Record<string, unknown>][] } }).mock.calls[0][0]
+		const sent = writes[0] as unknown as Record<string, unknown>
+		expect(sent.gas).toBe(1_250_002n)
+		expect(estimated.functionName).toBe(sent.functionName)
+		expect(estimated.args).toEqual(sent.args)
+		expect(estimated.address).toBe(sent.address)
 	})
 
 	it("sends gas only in the fuel-only shape, naming the gas recipient and no token leg", async () => {
