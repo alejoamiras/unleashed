@@ -13,7 +13,8 @@ import { formatBigInt } from "@/lib/format"
 import { formatClock } from "@/lib/phase-clock"
 import { TESTIDS } from "@/lib/testids"
 import { walletLabel } from "@/lib/wallet-name"
-import { BalanceRow, Button, Card, DisclaimerTag, DripButton, Icon, ProgressBar } from "@unleashed/design"
+import { BalanceRow, Button, Card, DisclaimerTag, DripButton, Icon } from "@unleashed/design"
+import DripStatus from "./DripStatus.vue"
 
 const props = defineProps<{
 	token: DripToken
@@ -249,30 +250,20 @@ onBeforeUnmount(() => {
 			</Button>
 		</div>
 		<p v-if="!connected" class="hint bottom">Connect a wallet to drip.</p>
-		<div
+		<DripStatus
 			v-else-if="statusKind !== 'idle'"
-			class="status-row bottom ul-notch"
-			role="status"
+			class="bottom"
 			:data-testid="TESTIDS.dripStatus"
-			:data-drip-status="statusKind"
-			:data-emphasized="statusEmphasized || undefined"
+			:kind="statusKind"
+			:emphasized="statusEmphasized"
+			:label="statusLabel"
+			:elapsed="elapsed"
+			:progress-label="`${token.symbol} drip progress`"
+			log="waiting for your wallet to prove and send"
+			:tx-url="statusKind === 'ok' ? lastDrip?.txUrl : undefined"
 		>
-			<template v-if="statusKind === 'ok' && lastDrip">
-				<Icon name="check" :size="12" class="ok-mark" />
-				<span class="status-text">Sent <strong class="sent">{{ token.displayAmount }} {{ token.symbol }}</strong> to {{ lastDrip.target }}</span>
-				<a v-if="lastDrip.txUrl" class="status-link" :href="lastDrip.txUrl" target="_blank" rel="noopener noreferrer">View tx<Icon name="external-link" :size="12" /></a>
-			</template>
-			<template v-else-if="statusKind === 'dripping'">
-				<div class="panel-head">
-					<strong>{{ statusLabel }}</strong>
-					<!-- Hidden so the status region is not re-announced every second. -->
-					<span class="clock" aria-hidden="true">{{ elapsed }}</span>
-				</div>
-				<ProgressBar :label="`${token.symbol} drip progress`" />
-				<span class="log">waiting for your wallet to prove and send<span class="cursor" aria-hidden="true">_</span></span>
-			</template>
-			<span v-else class="status-text">{{ statusLabel }}</span>
-		</div>
+			Sent <strong class="sent">{{ token.displayAmount }} {{ token.symbol }}</strong> to {{ lastDrip?.target }}
+		</DripStatus>
 	</Card>
 </template>
 
@@ -336,80 +327,8 @@ onBeforeUnmount(() => {
 	color: var(--ul-ink-3);
 }
 
-/* The fill carries the outcome while it is fresh: carrier for a drip that landed, lost for one that
-   failed; a drip in flight sits in the well. */
-.status-row {
-	--ul-fill: var(--ul-raised);
-	--ul-notch: var(--ul-notch-2);
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 12px 14px;
-	font: 400 14px/1.35 var(--ul-font-body);
-	color: var(--ul-ink-2);
-}
-
-.status-row[data-drip-status="dripping"] {
-	--ul-fill: var(--ul-field);
-	flex-direction: column;
-	align-items: stretch;
-	gap: 8px;
-	color: var(--ul-ink);
-}
-
-.panel-head {
-	display: flex;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: 12px;
-}
-
-.clock,
-.log {
-	font: 400 12.5px/1.4 var(--ul-font-mono);
-	color: var(--ul-ink-2);
-}
-
-.cursor {
-	color: var(--ul-accent-text);
-}
-
-.status-row[data-drip-status="ok"][data-emphasized] {
-	--ul-fill: var(--ul-carrier-bg);
-	color: var(--ul-ink);
-}
-
-.status-row[data-drip-status="error"][data-emphasized] {
-	--ul-fill: var(--ul-lost-bg);
-	color: var(--ul-lost);
-}
-
-.status-text {
-	flex-grow: 1;
-}
-
-.ok-mark {
-	color: var(--ul-carrier);
-}
-
 .sent {
 	font: 700 14px/1 var(--ul-font-mono);
 	white-space: nowrap;
-}
-
-.status-link {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	flex: none;
-	font: 700 14px/1 var(--ul-font-body);
-	color: var(--ul-accent-text);
-	text-decoration: none;
-	white-space: nowrap;
-}
-
-.status-link:hover {
-	text-decoration: underline;
-	text-underline-offset: 4px;
 }
 </style>

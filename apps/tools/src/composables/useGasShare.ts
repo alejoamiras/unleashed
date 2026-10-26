@@ -8,12 +8,14 @@
  */
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import {
+	type GasShareInput,
 	type GasShareResult,
 	type HubGas,
 	PRIVATE_FUEL_CLAIM_GAS,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	ownGasTxs,
+	maxUncappedTxTarget,
 	predictedWorstMinFees,
 	privateFpcFeeLimit,
 	proposeGasShare,
@@ -24,6 +26,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { ref, type Ref } from "vue"
 import { SWAP } from "@/contracts/bridge-generation"
 import { NETWORK } from "@/lib/network"
+import { MAX_TX_TARGET } from "@/lib/send-model"
 import { clampGas, walletMaxFees } from "@/lib/wallet-fee-budget"
 
 /** Enough for a first session on L2 without over-diverting the deposit. */
@@ -43,6 +46,9 @@ export interface GasShareProposal {
 	rate: { probeIn: bigint; probeOut: bigint }
 	/** A private send's claim forfeits fee ceilings, sized from live fees instead of the calibration. */
 	isPrivate?: boolean
+	/** The fee asset itself: it arrives one for one with no swap, so there is no slippage to size for
+	 *  and no half cap; the slice may take all but one base unit, which keeps a token part to send. */
+	identity?: boolean
 }
 
 /** `null` = this network has no swap venue; "pricing" = a private slice awaits the network's fees. */
@@ -50,7 +56,11 @@ export type GasShareOutcome = GasShareResult | null | "pricing"
 
 export interface UseGasShareHandle {
 	readonly txTarget: Ref<number>
-	propose: (input: GasShareProposal) => GasShareOutcome
+	/** Sized for `target`, the stored `txTarget` when omitted. */
+	propose: (input: GasShareProposal, target?: number) => GasShareOutcome
+	/** The largest target `propose` would size without clamping it to its cap (0 when even one is
+	 *  clamped); null when there is nothing to size, as for a null or "pricing" proposal. */
+	maxTxTarget: (input: GasShareProposal) => number | null
 	floorFor: (quote: bigint) => bigint
 	/** The Fee Juice a private claim commits to fee ceilings — the claim's, plus a registration's for
 	 *  a token the hub does not know yet — at the last priced fees; null until priced or once stale. */
@@ -81,6 +91,31 @@ export interface GasShareDeps {
 	 *  them, not from the network's prediction, which no stock wallet honors verbatim. */
 	aztec?: () => unknown
 	account?: () => string | undefined
+}
+
+type Swap = NonNullable<typeof SWAP>
+
+function shareInputOf(input: GasShareProposal, swap: Swap, ceilings: bigint | undefined): Omit<GasShareInput, "txTarget"> {
+	return {
+		amount: input.amount,
+		decimals: input.decimals,
+		fjPerTx: BigInt(swap.fjPerTx),
+		// The first claim of an unregistered token also registers it, and that costs more than a transfer.
+		fjRegister: input.state.kind === "registered" ? undefined : BigInt(swap.fjRegister),
+		fjCeilings: ceilings,
+		minFuelFj: BigInt(swap.minFuelFj),
+		rate: input.rate,
+		slippageBps: input.identity ? 0 : swap.slippageBps,
+		maxFuelAmount: input.identity ? input.amount - 1n : undefined,
+	}
+}
+
+function floorFor(quote: bigint): bigint {
+	const swap = SWAP
+	// Refusing beats returning a zero floor: a floor of zero lets the swap land Fee Juice too
+	// small to claim, stranding it on L1.
+	if (!swap) throw new Error("This network has no swap venue, so a deposit cannot buy gas.")
+	return signedMinFuelOutput(quote, swap.slippageBps, BigInt(swap.minFuelFj))
 }
 
 /** `null` from `propose` (and a throw from `floorFor`) means this network has no swap venue. */
@@ -162,31 +197,21 @@ export function useGasShare(deps: GasShareDeps = {}): UseGasShareHandle {
 		return ceilingsFor(state) ?? "pricing"
 	}
 
-	function propose(input: GasShareProposal): GasShareOutcome {
-		const swap = SWAP
-		if (!swap) return null
+	/** Everything but the target; null and "pricing" as `propose` reports them. */
+	function shareInput(input: GasShareProposal): Omit<GasShareInput, "txTarget"> | null | "pricing" {
+		if (!SWAP) return null
 		const ceilings = input.isPrivate ? privateCeilings(input.state) : undefined
-		if (ceilings === "pricing") return "pricing"
-		return proposeGasShare({
-			amount: input.amount,
-			decimals: input.decimals,
-			txTarget: txTarget.value,
-			fjPerTx: BigInt(swap.fjPerTx),
-			// The first claim of an unregistered token also registers it, and that costs more than a transfer.
-			fjRegister: input.state.kind === "registered" ? undefined : BigInt(swap.fjRegister),
-			fjCeilings: ceilings,
-			minFuelFj: BigInt(swap.minFuelFj),
-			rate: input.rate,
-			slippageBps: swap.slippageBps,
-		})
+		return ceilings === "pricing" ? "pricing" : shareInputOf(input, SWAP, ceilings)
 	}
 
-	function floorFor(quote: bigint): bigint {
-		const swap = SWAP
-		// Refusing beats returning a zero floor: a floor of zero lets the swap land Fee Juice too
-		// small to claim, stranding it on L1.
-		if (!swap) throw new Error("This network has no swap venue, so a deposit cannot buy gas.")
-		return signedMinFuelOutput(quote, swap.slippageBps, BigInt(swap.minFuelFj))
+	function propose(input: GasShareProposal, target = txTarget.value): GasShareOutcome {
+		const base = shareInput(input)
+		return base === null || base === "pricing" ? base : proposeGasShare({ ...base, txTarget: target })
+	}
+
+	function maxTxTarget(input: GasShareProposal): number | null {
+		const base = shareInput(input)
+		return base === null || base === "pricing" ? null : maxUncappedTxTarget(base, MAX_TX_TARGET)
 	}
 
 	function reset(): void {
@@ -205,5 +230,18 @@ export function useGasShare(deps: GasShareDeps = {}): UseGasShareHandle {
 	// A re-entered wizard proposes from the default, never from the last session's target.
 	const dispose = reset
 
-	return { txTarget, propose, floorFor, ceilingsFor, fuelClaimCeiling, ownGasCeilingFor, prime, invalidate, pricingError, reset, dispose }
+	return {
+		txTarget,
+		propose,
+		maxTxTarget,
+		floorFor,
+		ceilingsFor,
+		fuelClaimCeiling,
+		ownGasCeilingFor,
+		prime,
+		invalidate,
+		pricingError,
+		reset,
+		dispose,
+	}
 }

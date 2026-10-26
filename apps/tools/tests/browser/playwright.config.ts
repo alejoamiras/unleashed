@@ -8,7 +8,8 @@ const appRoot = new URL("../../", import.meta.url).pathname
 
 /**
  * One sandbox, one browser, one worker: every spec file owns a context, every test a fresh actor,
- * and parallelism is `--shard` (each shard is its own `agent.sh` run with its own sandbox).
+ * and parallelism is `--shard` (each shard is its own `agent.sh` run with its own sandbox), split by
+ * recorded duration through `shard-reporter.ts`.
  */
 export default defineConfig({
 	testDir: `${here}specs`,
@@ -18,7 +19,11 @@ export default defineConfig({
 	retries: Number(process.env.UNLEASHED_E2E_RETRIES ?? 0),
 	timeout: 10 * 60_000,
 	expect: { timeout: 60_000 },
-	reporter: process.env.CI ? [["list"], ["html", { open: "never", outputFolder: `${env.stateDir}/playwright-report` }]] : "list",
+	reporter: [
+		["list"],
+		...(process.env.CI ? [["html", { open: "never", outputFolder: `${env.stateDir}/playwright-report` }] as const] : []),
+		[`${here}shard-reporter.ts`],
+	],
 	outputDir: `${env.stateDir}/test-results`,
 	use: {
 		...devices["Desktop Chrome"],

@@ -34,7 +34,7 @@ export const DOM_SEP__FPC_BRIDGE_SECRET = 3952304070
  * constant for every network, so a network whose own descriptor names another FPC (mainnet's, frozen
  * at 5.0.1) must ship without a bridge.
  */
-export const PRIVATE_FPC_ADDRESS = "0x2e189d0c28cb86234a17951a94131e19620cda595fa8f9c5c10c24268ceb6db4"
+export const PRIVATE_FPC_ADDRESS = "0x0516ebb4f9c7988eb3cf6dd9459a47556f7a92db06b17cfa47ffb37fd35c6915"
 
 /** The canonical instance salt (fixed from 5.0.0 onward — see PRIVATE_FPC_ADDRESS). */
 export const PRIVATE_FPC_SALT = "0x0000000000000000000000000000000000000000000000000000000000000001"

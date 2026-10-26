@@ -2,22 +2,22 @@
 	"schema": 2,
 	"network": "sandbox",
 	"l1ChainId": 31337,
-	"walletChainId": 2613056719,
+	"walletChainId": 1685367866,
 	"bridge": {
 		"l1": {
-			"factory": "0xc3b46224b36dc119e0206a272b9fff4688ad5ac3",
-			"implementation": "0x2527b90c10bb1f9dde454acd76f0eaae7e6eb49b",
-			"router": "0x8fa7ffaf818b7157823340cbf3e0c5b3f0a5a0c0",
+			"factory": "0x8fa7ffaf818b7157823340cbf3e0c5b3f0a5a0c0",
+			"implementation": "0xf495e6ba740d2d0c5d319d2c1122f931a097a819",
+			"router": "0x3ec1d64ec1678ba1c008c9dbf7564058155fab23",
 			"permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
 			"feeJuicePortal": "0x3e180b566a1ef3ad836ee42c9519be95b13e7473",
 			"swapTarget": "0x162459bb429a63d2e31fe2d1cdb5b058f2d31adf",
 			"registry": "0xa51c1fc2f0d1a1b8494ed1fe312d7c3a78ed91c0",
 			"guardian": "0xcd3b766ccdd6ae721141f452c550ca635964ce71",
 			"swap": {
-				"poolManager": "0xba39a2885ccaa6e139ef8a8ba833b140a3346f7c",
-				"quoter": "0xba39a2885ccaa6e139ef8a8ba833b140a3346f7c",
+				"poolManager": "0x3a8e1e5669fea47f03478e945946aadf6889fd5f",
+				"quoter": "0x3a8e1e5669fea47f03478e945946aadf6889fd5f",
 				"multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
-				"weth": "0xc96ec6b304965cf1313c2f9c2bcfb3115b799b4c",
+				"weth": "0xba39a2885ccaa6e139ef8a8ba833b140a3346f7c",
 				"feeJuice": "0x2279b7a0a67db372996a5fab50d91eaa73d2ebe6",
 				"tiers": [
 					{
@@ -37,24 +37,24 @@
 		},
 		"l2": {
 			"hub": {
-				"address": "0x0429ab04e9028f7c19896d97d3f64df33562b24af99d9b3d3080ff8a46d28df5",
-				"salt": "0x000000000000000000000000c3b46224b36dc119e0206a272b9fff4688ad5ac3",
+				"address": "0x1ceab66ed43bacc732301703e511e3ac7c21be569a6025ef8183b8093460be7c",
+				"salt": "0x0000000000000000000000008fa7ffaf818b7157823340cbf3e0c5b3f0a5a0c0",
 				"constructorArtifact": "constructor",
 				"constructorArgs": [
-					"0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a",
-					"0xc3b46224b36dc119e0206a272b9fff4688ad5ac3",
-					"0x170ff5d8b3b3ee094b9ca71367942fd283ac26e5114d23ed788bb901f1d346bc"
+					"0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f",
+					"0x8fa7ffaf818b7157823340cbf3e0c5b3f0a5a0c0",
+					"0x0e0b8fcae80d2aadcf0d6ddb9f8c4c396a52f724cd4b10bd40763456d90af907"
 				]
 			},
-			"guardian": "0x170ff5d8b3b3ee094b9ca71367942fd283ac26e5114d23ed788bb901f1d346bc",
-			"tokenClassId": "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a",
-			"tokenArtifactSha256": "d7614e3fc8fbf381393b605fcf37cf93b7d0ee42311fb801fcc7d474f25dcecb"
+			"guardian": "0x0e0b8fcae80d2aadcf0d6ddb9f8c4c396a52f724cd4b10bd40763456d90af907",
+			"tokenClassId": "0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f",
+			"tokenArtifactSha256": "f18cccf8dd26bd50417d09ec2dbd94f69e536ddf99bdec231d8ef10815f343e0"
 		},
 		"tokens": [
 			{
-				"erc20": "0x7cb3dccd91a0723f61145b7a18e588771ca5a54d",
-				"portal": "0xcfe47eb09e1b9d14bdd1f99992334bec6098ce0b",
-				"l2Token": "0x1f5b67780e756b5a1afd0e6bf51b5b8a5587c5d25ec3683b349360acae64f222",
+				"erc20": "0x016e5d3f654556ce0d8e10396c3b5f279f339c50",
+				"portal": "0x2be50ae52c29535924926103b71f47a9e2434344",
+				"l2Token": "0x036e1b6c532978803699d180f44db0d7d3f1a78f66a15e6d2eb0d83af7306834",
 				"nameWord": "0x0054657374205553444300000000000000000000000000000000000000000000",
 				"symbolWord": "0x0055534443000000000000000000000000000000000000000000000000000000",
 				"decimals": 6,
@@ -65,9 +65,9 @@
 				"maxWholePerTx": 1000000
 			},
 			{
-				"erc20": "0x016e5d3f654556ce0d8e10396c3b5f279f339c50",
-				"portal": "0xcb123ed9d8d0c98d80ba73ece893a181bb0facaa",
-				"l2Token": "0x0c3c96a0a679f42894c5607c4e512ba88740e7b225e89f96fb237801f5b15231",
+				"erc20": "0x6386430503cc0b986bafc59834bdedd9bfe31906",
+				"portal": "0x0e0e04ce1d402813b3577a7accc1c55ed20a587a",
+				"l2Token": "0x2659b846c026c6093f4bc85d9e582507444e56e9f2492744b03f84bbc52c42fa",
 				"nameWord": "0x0054657374205553445400000000000000000000000000000000000000000000",
 				"symbolWord": "0x0055534454000000000000000000000000000000000000000000000000000000",
 				"decimals": 6,
@@ -78,9 +78,9 @@
 				"maxWholePerTx": 1000000
 			},
 			{
-				"erc20": "0xd350458385565e0620c3e7252126903f44117af2",
-				"portal": "0xde05ba3f0f995aa3353c713241a92ca0374a1325",
-				"l2Token": "0x00b1a339ce943d9a1c8c62f15d16e0fb02e4c03af9588430e5ea874fbbf6ebfd",
+				"erc20": "0xc96ec6b304965cf1313c2f9c2bcfb3115b799b4c",
+				"portal": "0xa8aef81250ec3d438c47197cb567de86e18f534f",
+				"l2Token": "0x0801b2f383e4b76d93b7aca3dfb07dd3b478260d0c3a891dcca84c1fc92b9af3",
 				"nameWord": "0x00506f7274616c204f6e6c790000000000000000000000000000000000000000",
 				"symbolWord": "0x0050584f00000000000000000000000000000000000000000000000000000000",
 				"decimals": 18,
@@ -95,6 +95,7 @@
 	"feeJuice": {
 		"portal": "0x3e180b566a1ef3ad836ee42c9519be95b13e7473",
 		"asset": "0x2279b7a0a67db372996a5fab50d91eaa73d2ebe6",
+		"feeAssetHandler": "0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae",
 		"minFj": "1000000000000000000"
 	},
 	"privateClaimMode": "salt-v2"

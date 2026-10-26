@@ -117,12 +117,16 @@ export async function deployEverything(net: SandboxNetwork, opts: DeployOptions)
 	await adoptGuardian(l2base, SANDBOX_ACTOR_SECRET, SANDBOX_ACTOR_SALT)
 	const l2 = l2CtxFor(l2base, actor.address)
 	const info = await l2.node.getNodeInfo()
+	const handler = info.l1ContractAddresses.feeAssetHandlerAddress
 	const addrs = {
 		feeJuice: lc(info.l1ContractAddresses.feeJuiceAddress.toString()),
 		feeJuicePortal: lc(info.l1ContractAddresses.feeJuicePortalAddress.toString()),
 		registry: lc(info.l1ContractAddresses.registryAddress.toString()),
+		...(handler && !handler.isZero() ? { feeAssetHandler: lc(handler.toString()) } : {}),
 	}
-	console.log(`  node L1: registry ${addrs.registry}, feeJuice ${addrs.feeJuice}, feeJuicePortal ${addrs.feeJuicePortal}`)
+	console.log(
+		`  node L1: registry ${addrs.registry}, feeJuice ${addrs.feeJuice}, feeJuicePortal ${addrs.feeJuicePortal}, feeAssetHandler ${addrs.feeAssetHandler ?? "none"}`,
+	)
 	const deployment = await deployL1Fixtures(l1, addrs)
 
 	mkdirSync(opts.artifactsDir, { recursive: true })

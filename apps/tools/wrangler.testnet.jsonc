@@ -6,8 +6,8 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "unleashed-testnet",
 	"compatibility_date": "2026-08-01",
-	// Assets only. The build writes dist/_headers (COOP/COEP and the target's CSP). The app has no
-	// path routes, so an unknown path serves index.html.
+	// Assets only. The build writes dist/_headers (COOP/COEP and the target's CSP). A path that is no
+	// file serves index.html, and the app reads its section from the path (/faucet, /activity).
 	"assets": { "directory": "./dist", "not_found_handling": "single-page-application" },
 	// testnet.app.unleashed.systems is attached in the dashboard, Production only, and is not listed
 	// here on purpose: one `custom_domain` route makes this file the whole list and detaches the rest.
