@@ -1,5 +1,5 @@
 {
-	"builtAt": "2026-10-26T13:48:39.138Z",
+	"builtAt": "",
 	"identity": {
 		"nodeVersion": "6.0.0",
 		"l1ChainId": 11155111,
@@ -38,7 +38,7 @@
 		}
 	},
 	"source": {
-		"commit": "86db954a2bbdd5d9eacb6797d6601a19c2042b3c",
+		"commit": "",
 		"treeClean": true,
 		"operationalAllowlist": [
 			"apps/tools/public/testnet-bridge.candidate.json",
@@ -58,11 +58,52 @@
 			"apps/tools/public/testnet-bridge.journal.jsonl"
 		]
 	},
-	"retireRouter": {
-		"live": {
-			"path": "apps/tools/public/testnet-bridge.json",
-			"sha256": "18ef10851161a24298f2ecc4b953f04f39b5e51a68933b1fdf3505f2a2bb25c5"
+	"routerOnly": {
+		"generation": {
+			"factory": "0x2509411e06a3b9512eca3d9f2668afd7821b7817",
+			"implementation": "0x43462651c21c66c9f473c8c47462667b8cbf9f1e",
+			"registry": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba",
+			"guardian": "0x7f42018f47451417fa4d39edb6ad1e1c14c26a9a",
+			"permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+			"feeJuicePortal": "0xe59acba462a0324b1d619a7a1b219419f156f505",
+			"hub": "0x1d500beb91a75ccd2e5376d14980b0cabd494fe3397e710faddc371376de7530"
 		},
+		"legacyRouters": [
+			"0xad08e65dda66eaed5ab9447f27b7610a850f4303"
+		],
+		"tokens": [
+			{
+				"erc20": "0x8648424f0eae2368555d080c948b622d992651fc",
+				"portal": "0x8128d00bb1349e1b21d2281167925e9e3187fb74",
+				"l2Token": "0x249038d2cc0a301b8cc7d2d87da06c5861112b983060405dcaa75240d5837f32"
+			},
+			{
+				"erc20": "0x8badb545be5d79f28d516844bf1713cc7a3f238f",
+				"portal": "0xe4b6a28350ad82eb03b3167587d6cb06c096c247",
+				"l2Token": "0x09273f734ea96c47a1eccf4bfc9ee08dab36fe11fad44af6a1b8a1867324c505"
+			},
+			{
+				"erc20": "0xc10bcb5a0519934e68b489a3a89ee28af8624d24",
+				"portal": "0x6535a0f1426524a8ed5bb64692e7645c033d15cc",
+				"l2Token": "0x10b4653676004b7c5dd4d10d7a582b5968f350d71e1d6db1a5e792d5d455649d"
+			},
+			{
+				"erc20": "0x177ead2a677858e376941390548fcf01a6ebefca",
+				"portal": "0x717ae3636685489c87cf331af663cfa75723d0d9",
+				"l2Token": "0x28af9cb09c9bd7cc9a01781c00893b5eea2de716cf49ce9c654cb154224ef06a"
+			},
+			{
+				"erc20": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
+				"portal": "0x5dda1b3182bd0dd4c469461708a846edd395b188",
+				"l2Token": "0x2452d54ee633021f35ede143dd916aed01db96f9987cfffb4fe626ea29bddc98"
+			},
+			{
+				"erc20": "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
+				"portal": "0xf5ab7b75495420b4eaaa6400e892e552747f106d",
+				"l2Token": "0x0807b34ec61051997d940107021399e8736da66e55a02c0cdbd1e63a787f9add"
+			}
+		],
+		"preCreate": [],
 		"journal": {
 			"path": "packages/bridge-core/deploy-journal/testnet-generation.jsonl",
 			"steps": 16
@@ -82,6 +123,5 @@
 			"84532": 0.07999496267864382,
 			"11155111": 0.2957523340749349
 		}
-	},
-	"candidateSha256": "cf23bb7527df4d8d6e819b40bbe6bbd3449a8b648c2117f3f3a3d7723a0f28cf"
+	}
 }

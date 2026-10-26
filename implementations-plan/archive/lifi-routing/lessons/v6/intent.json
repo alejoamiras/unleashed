@@ -1,5 +1,5 @@
 {
-	"builtAt": "2026-10-26T13:10:28.829Z",
+	"builtAt": "",
 	"identity": {
 		"nodeVersion": "6.0.0",
 		"l1ChainId": 11155111,
@@ -39,7 +39,7 @@
 		}
 	},
 	"source": {
-		"commit": "d9965df0952388bf223a31d722259ab675d3ffd2",
+		"commit": "",
 		"treeClean": true,
 		"operationalAllowlist": [
 			"apps/tools/public/testnet-bridge.candidate.json",
