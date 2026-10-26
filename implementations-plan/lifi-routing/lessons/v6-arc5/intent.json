@@ -1,0 +1,86 @@
+{
+	"builtAt": "2026-10-26T13:48:39.138Z",
+	"identity": {
+		"nodeVersion": "6.0.0",
+		"l1ChainId": 11155111,
+		"rollupVersion": 679261766,
+		"walletChainId": 685146337
+	},
+	"l1": {
+		"rollup": "0x1f435a7f2da358caf887a470faeee7d5d5f4efba",
+		"feeJuicePortal": "0xe59acba462a0324b1d619a7a1b219419f156f505",
+		"feeJuice": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
+		"feeAssetHandler": "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9",
+		"registry": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba"
+	},
+	"l1Corroboration": {
+		"rollupHasCode": true,
+		"portalHasCode": true,
+		"source": "direct eth_getCode via SEPOLIA_RPC_URL"
+	},
+	"secondEndpoint": {
+		"posture": "SINGLE-L2-NODE (documented residual: no second public endpoint; L1-anchored; caps bound exposure)"
+	},
+	"signer": "0x7F42018F47451417Fa4D39eDb6ad1e1C14C26a9a",
+	"caps": {
+		"maxTotalEthSpend": "2.0"
+	},
+	"startingBalanceEth": 2.9034599112987296,
+	"artifacts": {
+		"privateFpc": {
+			"address": "0x0516ebb4f9c7988eb3cf6dd9459a47556f7a92db06b17cfa47ffb37fd35c6915",
+			"salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
+			"sha256": "bc1e27b0cfb48c8c1483071453288a27e302283c5da5fa40869a179a41079bde"
+		},
+		"noirTargets": {
+			"token_bridge_hub/target/token_bridge_hub_contract-TokenBridgeHub.json": "d7e3be3c0b51718cddb0a28e9a9a7e163d5d88c7f120b3daecc013532bfe328a",
+			"keystone/target/keystone.json": "122b35e084d19cd40b54c1f5d77e603562efe976c593de7a621a099fecfda6ee"
+		}
+	},
+	"source": {
+		"commit": "86db954a2bbdd5d9eacb6797d6601a19c2042b3c",
+		"treeClean": true,
+		"operationalAllowlist": [
+			"apps/tools/public/testnet-bridge.candidate.json",
+			"apps/tools/public/testnet-bridge.json",
+			"apps/tools/src/contracts/deployments.candidate.json",
+			"apps/tools/src/contracts/deployments.json",
+			"packages/bridge-core/deploy-journal.jsonl",
+			"packages/bridge-core/deploy-journal/",
+			"implementations-plan/archive/aztec-5.0.0-stable/lessons/",
+			"implementations-plan/archive/aztec-5.0.1-line/lessons/",
+			"implementations-plan/archive/tools-two-network/lessons/",
+			"implementations-plan/archive/any-erc20-bridge/lessons/",
+			"implementations-plan/archive/protocol-labels/lessons/",
+			"implementations-plan/lifi-routing/lessons/",
+			"implementations-plan/archive/aztec-rc3/lessons/",
+			"implementations-plan/archive/aztec-6-stable/lessons/",
+			"apps/tools/public/testnet-bridge.journal.jsonl"
+		]
+	},
+	"retireRouter": {
+		"live": {
+			"path": "apps/tools/public/testnet-bridge.json",
+			"sha256": "18ef10851161a24298f2ecc4b953f04f39b5e51a68933b1fdf3505f2a2bb25c5"
+		},
+		"journal": {
+			"path": "packages/bridge-core/deploy-journal/testnet-generation.jsonl",
+			"steps": 16
+		}
+	},
+	"canary": {
+		"signer": "0x7A4f7Be599Afa3AfB0A41bb1D44762Ce441f8fAc",
+		"caps": {
+			"84532": {
+				"maxEthSpend": "0.05"
+			},
+			"11155111": {
+				"maxEthSpend": "0.2"
+			}
+		},
+		"startingBalancesEth": {
+			"84532": 0.07999496267864382,
+			"11155111": 0.2957523340749349
+		}
+	}
+}
