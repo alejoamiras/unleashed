@@ -23,6 +23,8 @@ artifacts, both `dist`s, logs, traces.
 | Path | Role |
 |---|---|
 | `playwright.config.ts` | chromium, `workers: 1`, the two servers, traces on failure |
+| `shard-reporter.ts` | under `--shard`, splits by duration instead of test count (see CI) |
+| `shard-durations.json` | each spec file's tests and the seconds its CI shard spent on it, worker start and actor pool included |
 | `env.ts` | the run's coordinates from the env the runner sets |
 | `global-setup.ts` | the handle names chain 31337, the build is `local`, the sandbox's drip record equals the committed one |
 | `fixtures/test.ts` | the `test` every spec uses: sandbox access, an actor pool per file, a fresh actor per test, the L1 shim, the egress fence, the parked wallet panel |
@@ -64,7 +66,7 @@ The wallet accepts only tools' app id and the sandbox's chain, is framed only by
 
 - **The FPC ceiling is the wallet's.** A claim, a registration or a private exit paid through the
   PrivateFPC sets aside `gasLimits · maxFeesPerGas` of ITS transaction, and the wallet decides the
-  max fee (the aztec.js 6.0.0-rc.3 option schema names the cap `maxFeePerGas`; wallets read
+  max fee (the aztec.js 6.0.0 option schema names the cap `maxFeePerGas`; wallets read
   `maxFeesPerGas`; a stock wallet prices it itself, 1.5× the prediction). The app therefore reads the
   figure from the wallet (`src/lib/wallet-fee-budget.ts`: a no-op simulated under the app's limits,
   the applied settings read back), and so does the suite: `pages/fees.ts` runs the same probe
@@ -91,6 +93,21 @@ You can take PR screenshots with a throwaway spec, `specs/zz-*.spec.ts`. It driv
 `.github/workflows/pr-tools-e2e.yml` → `_tools-e2e.yml`, 6 shards (`--shard=i/6`), one sandbox
 each, `tools-e2e-status` as the aggregator; runs on the `tools-e2e` paths-filter or the `e2e:tools`
 label. Traces (`retain-on-failure`) and the sandbox's logs are uploaded when a shard fails.
+
+Playwright's own `--shard` cuts by test count. Here a file's tests average anywhere from half a minute to well over a
+minute each, so equal counts made unequal shards. `shard-reporter.ts` takes over the split:
+- It deals whole spec files, slowest first, each to the shard with the least estimated time so far (`scripts/e2e/shard-plan.ts`).
+- A file's estimate scales with its current test count. A file missing from `shard-durations.json` is estimated
+  at the record's average per test.
+- Each shard prints its files and estimate (`[shard] 3/6 by duration: …`).
+- A shard whose run holds anything other than its planned files fails.
+
+A stale record only costs balance, never coverage. Refresh it from a green run when the shard times drift
+apart:
+
+```bash
+gh run view <run-id> --log | bun scripts/e2e/record-shard-durations.ts   # from apps/tools
+```
 
 ## Rules
 

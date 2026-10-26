@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type GasShareInput, proposeGasShare, signedMinFuelOutput } from "./gas-share"
+import { type GasShareInput, maxUncappedTxTarget, proposeGasShare, signedMinFuelOutput } from "./gas-share"
 
 /** 20 tx × 1e6 FJ = 2e7 FJ target; the dust quote says 1e3 token buys 4e3 FJ; 3% slippage. */
 const BASE: GasShareInput = {
@@ -62,6 +62,19 @@ describe("proposeGasShare", () => {
 		})
 	})
 
+	it("an explicit cap replaces the half, and says it was the cap that bound", () => {
+		expect(proposeGasShare({ ...BASE, amount: 10_000_000n, maxFuelAmount: 9_999_999n })).toEqual({
+			fuelAmount: 5_154_640n,
+			fuelFj: 20_000_000n,
+			capped: null,
+		})
+		expect(proposeGasShare({ ...BASE, amount: 10_000_000n, maxFuelAmount: 4_000_000n })).toEqual({
+			fuelAmount: 4_000_000n,
+			fuelFj: 20_000_000n,
+			capped: "max",
+		})
+	})
+
 	it("rounds the input UP — a floored input buys less fuel than the target", () => {
 		// 1000 FJ × 3/7, no slippage: 428.57… The floor (428) under-buys.
 		const result = proposeGasShare({
@@ -81,6 +94,25 @@ describe("proposeGasShare", () => {
 		expect(() => proposeGasShare({ ...BASE, rate: { probeIn: 1_000n, probeOut: 0n } })).toThrow(/probeOut/)
 		expect(() => proposeGasShare({ ...BASE, txTarget: 0 })).toThrow(/txTarget/)
 		expect(() => proposeGasShare({ ...BASE, slippageBps: 10_000 })).toThrow(/slippageBps/)
+	})
+})
+
+describe("maxUncappedTxTarget", () => {
+	it("is the last target whose slice the cap leaves whole, under the half cap and an explicit one", () => {
+		for (const input of [
+			{ ...BASE, amount: 10_000_000n },
+			{ ...BASE, amount: 10_000_000n, maxFuelAmount: 9_999_999n, slippageBps: 0 },
+		]) {
+			const max = maxUncappedTxTarget(input, 999)
+			expect(max).toBeGreaterThan(1)
+			expect(proposeGasShare({ ...input, txTarget: max }).capped).toBeNull()
+			expect(proposeGasShare({ ...input, txTarget: max + 1 }).capped).not.toBeNull()
+		}
+	})
+
+	it("is 0 when one transaction's slice is already clamped, and the limit when nothing clamps", () => {
+		expect(maxUncappedTxTarget({ ...BASE, amount: 100n }, 999)).toBe(0)
+		expect(maxUncappedTxTarget({ ...BASE, amount: 10n ** 30n }, 999)).toBe(999)
 	})
 })
 

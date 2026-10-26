@@ -13,7 +13,7 @@ const AZTEC_RECIPIENT = `0x${"a".padStart(64, "0")}` as const
 const ADDR = "0x1111111111111111111111111111111111111111" as const
 
 // Hand-built BridgeWithFuel log (tokenIndex 3, fuelIndex 7, fuelAmount 5000): 1 indexed
-// (aztecRecipient) + 9 non-indexed in data, assembled by hand (the @aztec/viem fork has no encodeEventLog).
+// (aztecRecipient) + 9 non-indexed in data, assembled by hand so the layout is pinned independently of viem's encoder.
 const bridgeWithFuelLog = {
 	address: ADDR,
 	topics: [

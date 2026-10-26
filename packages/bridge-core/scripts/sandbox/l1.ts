@@ -1,6 +1,6 @@
 /** L1 side of the sandbox: canonical singletons installed from the vendored code, the fixtures the
  *  generation and the flows need, and the small write helpers every flow shares. */
-import { TestERC20Abi } from "@aztec-foundation/l1-artifacts"
+import { FeeAssetHandlerAbi, TestERC20Abi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, keccak256 } from "viem"
 import type { L1Ctx } from "../../src/flows"
 import { evmArtifact } from "../script-artifacts"
@@ -92,9 +92,23 @@ export async function ensureFeeAssetMinter(l1: L1Ctx, feeJuice: Address): Promis
 	if (!granted) throw new Error(`the fee asset still refuses ${l1.account.address} as a minter`)
 }
 
+/** The manifest names the node's handler only after one real mint through it credited the fee asset
+ *  by `mintAmount()`: the app builds its testnet mint UI from that name alone. */
+export async function proveFeeAssetHandler(l1: L1Ctx, handler: Address, feeJuice: Address): Promise<void> {
+	const asset = lc(String(await l1.pub.readContract({ address: handler, abi: FeeAssetHandlerAbi, functionName: "FEE_ASSET", args: [] })))
+	if (asset !== feeJuice) throw new Error(`the node's fee asset handler ${handler} mints ${asset}, not the fee asset ${feeJuice}`)
+	const amount = await l1.pub.readContract({ address: handler, abi: FeeAssetHandlerAbi, functionName: "mintAmount", args: [] })
+	const before = await erc20BalanceOf(l1, feeJuice, l1.account.address)
+	await writeL1(l1, handler, FeeAssetHandlerAbi, "mint", [l1.account.address])
+	const credited = (await erc20BalanceOf(l1, feeJuice, l1.account.address)) - before
+	if (credited !== amount) throw new Error(`a mint through ${handler} credited ${credited}, not its mintAmount ${amount}`)
+}
+
 export interface L1Deployment {
 	feeJuice: Address
 	feeJuicePortal: Address
+	/** The node's permissionless fee-asset mint; absent when the node reports none. */
+	feeAssetHandler?: Address
 	registry: Address
 	swapTarget: Address
 	/** MockV4Quoter — answers discovery for the routable tokens with quotes the swap target settles exactly. */
@@ -109,7 +123,7 @@ export async function setRoutable(l1: L1Ctx, quoter: Address, token: Address, ok
 
 export async function deployL1Fixtures(
 	l1: L1Ctx,
-	addrs: { feeJuice: Address; feeJuicePortal: Address; registry: Address },
+	addrs: { feeJuice: Address; feeJuicePortal: Address; feeAssetHandler?: Address; registry: Address },
 ): Promise<L1Deployment> {
 	const swapTarget = await deployEvm(l1, "MockSwapTarget", [addrs.feeJuice])
 	await writeL1(l1, swapTarget, evmArtifact("MockSwapTarget").abi, "setRate", [MOCK_RATE_NUM, 1n])
@@ -117,6 +131,10 @@ export async function deployL1Fixtures(
 	await mintFeeAsset(l1, addrs.feeJuice, swapTarget, 10n ** 30n)
 	await mintFeeAsset(l1, addrs.feeJuice, l1.account.address, 10n ** 24n)
 	console.log(`  MockSwapTarget: ${swapTarget} (rate 1:${MOCK_RATE_NUM}, funded)`)
+	if (addrs.feeAssetHandler) {
+		await proveFeeAssetHandler(l1, addrs.feeAssetHandler, addrs.feeJuice)
+		console.log(`  FeeAssetHandler: ${addrs.feeAssetHandler} (one mint proved)`)
+	}
 
 	// Sequential on purpose: these share one L1 account, and viem assigns each tx the nonce it reads
 	// at build time — issuing them together makes every tx after the first "nonce too low".

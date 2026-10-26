@@ -26,8 +26,8 @@ jobs:
   e2e:
     name: tools e2e (${{ inputs.shard }})
     runs-on: ubuntu-latest
-    # The heaviest shard runs its suite for 22–27 minutes after about 3 minutes of setup, so 30
-    # cancelled it on ordinary runs; 45 leaves room without hiding a hung shard for long.
+    # Shards split by recorded duration (apps/tools/tests/browser/shard-durations.json), so each runs
+    # about a sixth of the suite after about 3 minutes of setup; 45 is headroom for a slow runner.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

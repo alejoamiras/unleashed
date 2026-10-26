@@ -93,7 +93,7 @@ describe("the sandbox generation", () => {
 
 describe("the shipped manifests", () => {
 	it.each([
-		["testnet-bridge.json", "testnet", 11155111, 3415328944],
+		["testnet-bridge.json", "testnet", 11155111, 685146337],
 		["mainnet-bridge.json", "mainnet", 1, 4248422646],
 	])("%s is a valid v2 manifest for its own chain", (file, network, l1ChainId, walletChainId) => {
 		const m = parseManifestV2(JSON.parse(readFileSync(join(PUBLIC_DIR, file as string), "utf8")))

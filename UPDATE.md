@@ -1,7 +1,7 @@
 # Updating the Aztec line and Noir
 
 What a bump of the Aztec line touches in this repository. From 6.0 the line publishes as
-`@aztec-labs/*` and `@aztec-foundation/*` (only `@aztec/viem` keeps the old scope); it is
+`@aztec-labs/*` and `@aztec-foundation/*`, and nothing resolves under the old `@aztec/*` scope; it is
 exact-pinned and bumped by hand. A bump installs fresh publishes, so it clears the 7-day release-age gate only through the
 temporary excludes in § The pin surface, removed in the same PR ([`AGENTS.md`](AGENTS.md)
 § Dependency policy). Whether
@@ -12,26 +12,28 @@ the bump is also a new bridge generation, and how to deploy one, is the
 > wallet-sdk capability) adds an entry to § Couplings below, with its file, so the next bump has a
 > checklist.
 
-Current line: **`6.0.0-rc.3`**. Labs and foundation publish it under two different version numbers,
-and the standards package keeps a pin of its own:
+Current line: **`6.0.0`**. Labs and foundation number their releases separately, and the standards
+package keeps a pin of its own:
 
-- **`@aztec-labs/*` at `6.0.0-rc.3`**, the `@aztec-labs/aztec.js` pin. The rest of the line follows
+- **`@aztec-labs/*` at `6.0.0`**, the `@aztec-labs/aztec.js` pin. The rest of the line follows
   this number: `@alejoamiras/private-fee-juice`, the Noir contract source (the aztec-nr tags in
   every `Nargo.toml`, `contracts/bridge/aztec/scripts/compile.sh`, the committed `target/*.json`)
-  and the toolchain at `~/.aztec/versions/6.0.0-rc.3`. The Nulo wallet's packages sit at `0.2.0`,
-  whose Aztec peers are exact labs `6.0.0-rc.3` pins.
-- **`@aztec-foundation/*` at `6.0.0-rc.6`** (`bb.js`, `l1-artifacts`, `noir-acvm_js`,
+  and the toolchain at `~/.aztec/versions/6.0.0`. The Nulo wallet's packages sit at `0.3.0`,
+  whose Aztec peers are exact labs `6.0.0` pins.
+- **`@aztec-foundation/*` at `6.0.0`** (`bb.js`, `l1-artifacts`, `noir-acvm_js`,
   `noir-noirc_abi`): the version the locked `@aztec-labs/aztec.js` requires. Foundation numbers its
-  releases on its own; it published no rc.3.
-- **`@aztec-foundation/aztec-standards` at `6.0.0-rc.3`**, its own pin. It follows the tags of
+  releases on its own: its release candidates ran ahead of labs' (rc.6 beside labs' rc.3), and the
+  two numbers met again at `6.0.0`.
+- **`@aztec-foundation/aztec-standards` at `6.0.0`**, its own pin. It follows the tags of
   `AztecProtocol/aztec-standards`, which the hub's Noir `token` dep names too.
 
 [`scripts/ci-cd/aztec-line.test.ts`](scripts/ci-cd/aztec-line.test.ts) holds each scope to its own
 version, and writes none: labs at the aztec.js pin, foundation at the version labs' lock entry
 requires for `@aztec-foundation/l1-artifacts`, `aztec-standards` at its declared pin, and every
 root `patchedDependencies` key at the foundation version, and every Aztec declaration in every manifest at
-exactly its scope's version. It also fails on any resolved `@aztec/*`
-other than `@aztec/viem`, in the root lockfile and in the TXE server's. The hub's class ids depend
+exactly its scope's version. It also fails on any resolved `@aztec/*` package, in the root
+lockfile and in the TXE server's: from 6.0.0 the line depends on stock `viem`, and the
+`@aztec/viem` fork has left the tree. The hub's class ids depend
 on these inputs, so they move only with a new generation.
 
 ## Before you bump
@@ -49,7 +51,9 @@ on these inputs, so they move only with a new generation.
 
 - `@aztec-labs/*` and `@aztec-foundation/*` exact pins in `apps/tools/package.json`,
   `packages/bridge-core/package.json` and `contracts/bridge/aztec/txe-server/package.json`, each scope
-  at its own version (above). `@aztec/viem` is versioned independently; leave it.
+  at its own version (above). `packages/bridge-core` pins stock `viem` at exactly the version the
+  line depends on (`2.57.1` on 6.0.0), so `flows.ts`'s `OutboxContract` client shares the Aztec
+  packages' copy; move it with the line.
 - The three packages the Nulo wallet's repository publishes, at the versions published for the new line.
 - The Noir wasm patches: `patches/@aztec-foundation%2Fnoir-{acvm_js,noirc_abi}@<v>.patch` and the
   `patchedDependencies` keys in the root `package.json`. The file names and the keys name the
@@ -93,8 +97,8 @@ on these inputs, so they move only with a new generation.
   boots `aztec start --local-network` from `~/.aztec/versions/<@aztec-labs/aztec.js pin>` (read from
   `packages/bridge-core/package.json`; it refuses a partial toolchain), while `compile.sh`,
   `nargo.sh` and `run-txe-tests.sh` default `AZTEC_HOME` to a literal version. Move both together.
-  Both name the labs version, never the foundation one: on this line, `~/.aztec/versions/6.0.0-rc.3`
-  (`aztec-up install 6.0.0-rc.3`).
+  Both name the labs version, never the foundation one: on this line, `~/.aztec/versions/6.0.0`
+  (`aztec-up install 6.0.0`).
 - **Canonical PrivateFPC**: the address and the digest are pinned in
   `packages/bridge-core/src/private-fuel.ts` (`PRIVATE_FPC_ADDRESS`, `PRIVATE_FPC_SALT = 0x…01`) and
   `private-fpc-canonical.json` (`expectedAddress`, the artifact sha256, the human-curated
