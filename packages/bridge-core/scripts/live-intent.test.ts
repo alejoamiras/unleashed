@@ -1,10 +1,8 @@
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
 import { inspect } from "node:util"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { TESTNET_FILLER } from "../src/across-self-built"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
-import { type ManifestToken, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import type { DeployStep } from "./deploy-manifest"
 import { preLifiTestnetManifest } from "./lifi-canary-fixture"
 import {
