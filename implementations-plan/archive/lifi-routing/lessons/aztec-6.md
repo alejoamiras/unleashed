@@ -42,6 +42,20 @@ through every arc and redeployed its router on the new generation. The rc.3 rout
   under `v6-arc5/intent-gates.json`): 1.5 test USDC quoted 48 FJ against a 46.56 FJ floor; the public self-paying
   claim cost 1.656099 FJ, to the wei main's calibration sample (`fjPerTx` is it plus 20 %), and the private-FPC
   claim 1.137 FJ. Its one-sample `minFuelFj` suggestion (11.35 FJ) moves nothing: one sample may only raise the floor.
+- **The LI.FI canary passed all five rows on the 6.0.0 router** (arc 5's manifest, under `v6-arc5/intent-gates.json`,
+  between two green `verify`s). Each cross-chain row ran on an Across quote (6 USDC in, 5.997002 out) held exclusive
+  to the canary, which self-filled it. Spend: source 18 of the 24 USDC cap, Ethereum at most 23 of 30 USDC; gas
+  0.0000036 ETH on Base Sepolia and under 0.000001 ETH on Sepolia, inside both caps. Fuel priced at the swapper's
+  32 FJ per USDC.
+
+  | Row | Source tx | Ethereum tx (fill) | `Deposited` / outcome | L2 claim | Discovery |
+  |---|---|---|---|---|---|
+  | crosschain-public | `0x59ecafed106c0d38a335ddca2962a0d51eb21dc2e384ff03662b39588216321b` | `0x64aa867637c086ed45cc679bdb12468faa477e2cf23e335b128371b3a395a567` (self) | received 5,997,002; token 4,665,705 leaf 453; fuel 1,331,297 → 42.60 FJ leaf 452 | `0x2c3a0fbd7f402e4a48a9c0c22877ba271686250f8f7c30d03a37cb51d529ab73` | `deposited` |
+  | crosschain-private | `0x71ecabd440c4850422be93ac1935cf1ec3d6e85c4be46d85d564c0ca48f497b2` | `0xfdf4ad189b0347bd6bf7343b36342aa3a3b2ec4b244493eafb62e81b95a7cb63` (self) | received 5,997,002; token 4,665,705 leaf 455; fuel 1,331,297 → 42.60 FJ leaf 454 | `0x0f9c04ee711970f94de8459f35d2365e4a03cabe27d04b45225af7764dc91ff5` | `deposited` |
+  | ethereum-plain | — | `0x613daf01f3331d24b7589004eb701be154888cbb19ed9d45722b5988cb221cc4` | received 2,000,000; token leaf 456 | `0x239d9f83bdf5f24ea09cb212621b11b866efd1aaa956b712b21a1b635f09dc29` | — |
+  | ethereum-fueled | — | `0x67a4a7b913e455a72bf837ebb0dd85d1d2b6d5fb39412da2a1144752363f689a` | received 3,000,000; token 1,668,703 leaf 458; fuel 1,331,297 → 42.60 FJ leaf 457 | `0x27c850de8ec48ef7a0271a5269a2bed8824b4264bf54b0e2ec649b170ceb4599` | — |
+  | crosschain-recovery | `0x7a7e09aaf4625315fdaaa2ed6892b0b06799c3d905c90fd92ae289edad0b7e2c` | `0x98a5cd3cbac7751ede6a252efeb36234e9b5f015e263869d5294b64f029f1df4` (self) | `LiFiTransferRecovered` 5,997,002; the canary's Sepolia USDC unchanged across its own fill | — | `delivered-to-wallet` |
+
 - **The sandbox fixture is a real arc 5 run on 6.0.0**: the deposit router, its swapper and fuel budgets, the
   fee-asset handler and no old router. The smoke passed every flow in 19.5 minutes.
 
@@ -53,9 +67,17 @@ through every arc and redeployed its router on the new generation. The rc.3 rout
    intent's build commit, and `verify` stopped before anything signed (`deploy-relevant files changed since the
    intent was built`), as designed. The validator ran under a fresh router-only intent with no pre-creation
    (`v6-arc5/intent-gates.json`), which refuses any journal step.
-3. **The LI.FI canary is short of source funds.** Its dry run against the 6.0.0 candidate built and verified all
-   five rows through the new router, but the canary holds 16 USDC on Base Sepolia where the three cross-chain rows
-   need 18 (Sepolia: 24.5 USDC, enough). The live run refuses before any spend until it is topped up.
+3. **The LI.FI canary was short of source funds.** Its dry run against the 6.0.0 candidate built and verified all
+   five rows through the new router, but the canary held 16 USDC on Base Sepolia where the three cross-chain rows
+   need 18, and the live run refuses before any spend. The owner topped it up and the live run passed (Facts).
 4. **The archived rc.1 arc 5 intent still named the old dRPC key** in `primaryRpc`. Main's keyless move scrubbed the
    other two archived intents; the close-out scrubbed this one to `<KEY>` the same way. The key stays in the
    branches' history until the owner rotates it.
+
+## Review
+
+Codex (`gpt-6.1-sol`, high) over the reconciliation only: the merge resolutions, arc 5's revert and re-application,
+the promoted manifests, the regenerated fixture and the close-out. The fresh pass: "No actionable reconciliation
+defects found; confidence: moderate." The resumed pass traced a prefilled AZTEC token+gas send from prefill to
+signed amount (the stored target may sit above the stepper's stop, the effective target never does) and checked the
+merged allowlist: "No new material findings (high confidence)."
