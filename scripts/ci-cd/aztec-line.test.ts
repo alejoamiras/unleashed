@@ -7,8 +7,8 @@ import { join } from "node:path"
  * package sits at the `@aztec-labs/aztec.js` pin, and every `@aztec-foundation/*` package at the
  * version that aztec.js itself depends on, read from the lockfile so the next line needs no edit.
  * `@aztec-foundation/aztec-standards` follows the standards repository's own tags and sits at its
- * declared pin. Nothing resolves under the retired `@aztec/*` scope except `@aztec/viem`, which the
- * Aztec packages alias as their own viem. A second version in the tree means two `Fr` classes, which
+ * declared pin. Nothing resolves under the retired `@aztec/*` scope: from 6.0.0 the line depends on
+ * stock viem, not the `@aztec/viem` fork. A second version in the tree means two `Fr` classes, which
  * fail at runtime rather than at install. The TXE server's lockfile is checked too: its oracle must
  * speak the line the contracts compile against.
  */
@@ -83,7 +83,7 @@ test("the foundation version is the exact one the locked aztec.js requires", () 
 test.each(LOCKFILES)("%s resolves a single Aztec line", (lockfile) => {
 	const strays = resolved(lockfile)
 		.filter(({ name, version }) => {
-			if (name.startsWith("@aztec/")) return name !== "@aztec/viem"
+			if (name.startsWith("@aztec/")) return true
 			const expected = expectedVersion(name)
 			return expected !== undefined && version !== expected
 		})

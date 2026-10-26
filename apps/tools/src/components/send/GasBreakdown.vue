@@ -3,7 +3,7 @@
 import { Icon } from "@unleashed/design"
 import { computed } from "vue"
 import { formatCompact, formatDisplayAmount } from "@/lib/format"
-import { type AmountToken, type GasLegPlan, type SendIntent, tokenRemainder } from "@/lib/send-model"
+import { type AmountToken, type GasLegPlan, MAX_TX_TARGET, type SendIntent, tokenRemainder } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { safeSentence } from "@/lib/token-display"
 
@@ -15,6 +15,8 @@ const props = defineProps<{
 	gas: GasLegPlan | null
 	/** How many Aztec transactions the proposed slice is sized for. */
 	txTarget: number
+	/** The last target the slice can grow for; past it the slice is clamped and stops moving. */
+	txMax?: number | null
 	/** What one Aztec transaction costs on this network, for saying what a gas-only send is enough for. */
 	fjPerTx: bigint | null
 	/** Fee Juice the claim sets aside first; "Enough for" counts only what remains, and nothing while
@@ -25,7 +27,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ "update:txTarget": [target: number] }>()
 
-const MAX_TX = 999
+const txLimit = computed(() => Math.min(MAX_TX_TARGET, props.txMax ?? MAX_TX_TARGET))
 
 /** The split the send is signed against, at full precision: a token remainder shown rounded is a
  *  different number from the one leaving the wallet. */
@@ -46,24 +48,42 @@ const enoughFor = computed(() => {
 	return whole >= 1 ? whole : null
 })
 
-const CAPPED_NOTE = {
-	min: "The slice was raised to the smallest amount that buys usable gas.",
-	half: "The slice was capped at half your amount.",
-} as const
+const cappedNote = computed(() => {
+	switch (props.gas?.capped) {
+		case "min":
+			return "The slice was raised to the smallest amount that buys usable gas."
+		case "half":
+			return "The slice was capped at half your amount."
+		case "max":
+			return `The slice was capped to leave some ${props.token.symbol}.`
+		default:
+			return null
+	}
+})
 
-const cappedNote = computed(() => (props.gas?.capped ? CAPPED_NOTE[props.gas.capped] : null))
+/** Fewer is always allowed: with no count fitting at all (a stop of 0), the target can still come down. */
+function allowed(next: number): boolean {
+	return Number.isInteger(next) && next >= 1 && next <= MAX_TX_TARGET && (next < props.txTarget || next <= txLimit.value)
+}
 
 function setTarget(next: number): void {
-	if (Number.isFinite(next) && next >= 1 && next <= MAX_TX && next !== props.txTarget) emit("update:txTarget", next)
+	if (allowed(next) && next !== props.txTarget) emit("update:txTarget", next)
+}
+
+/** A count past the stepper's stop means "as many as fit". A blank, junk or out-of-range field is a
+ *  half-typed edit, not an instruction to size the slice for zero txs: it lands nowhere. */
+function landing(typed: number): number | null {
+	if (!Number.isInteger(typed) || typed < 1 || typed > MAX_TX_TARGET) return null
+	if (allowed(typed)) return typed
+	return txLimit.value >= 1 ? txLimit.value : null
 }
 
 function onTarget(event: Event): void {
 	const field = event.target as HTMLInputElement
-	const next = Number.parseInt(field.value, 10)
-	// A blank or junk field is a half-typed edit, not an instruction to size the slice for zero txs —
-	// and the field snaps back to the target the slice IS sized for, so it never shows another.
-	if (Number.isFinite(next) && next >= 1 && next <= MAX_TX) setTarget(next)
-	else field.value = String(props.txTarget)
+	const next = landing(Number.parseInt(field.value, 10))
+	if (next !== null) setTarget(next)
+	// The field shows the target the slice IS sized for, never a rejected one.
+	field.value = String(next ?? props.txTarget)
 }
 </script>
 
@@ -105,7 +125,7 @@ function onTarget(event: Event): void {
 					type="button"
 					class="nudge ul-notch"
 					aria-label="One transaction more"
-					:disabled="txTarget >= MAX_TX"
+					:disabled="txTarget >= txLimit"
 					:data-testid="TESTIDS.sendGasTxMore"
 					@click="setTarget(txTarget + 1)"
 				>

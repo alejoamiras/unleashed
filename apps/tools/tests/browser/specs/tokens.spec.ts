@@ -1,5 +1,6 @@
 /** Tokens (cells 22, 23, 34, 37): the catalog, the paste lookup, the route verdicts, the L1 mint strip. */
 import { balanceOf, freshToken, mint, mintPrivateGasNote, privateCreditOf, privateFpc } from "@unleashed/bridge-core/sandbox"
+import { getAddress } from "viem"
 import { TESTIDS } from "../../../src/lib/testids"
 import { expect, test } from "../fixtures/test"
 import { connectAztec, tid } from "../pages/connect"
@@ -14,7 +15,7 @@ const L1 = 31337
 const ZERO = `0x${"00".repeat(20)}`
 const NOT_A_CONTRACT = `0x${"33".repeat(20)}`
 
-test("cell 34 — the catalog lists the generation's tokens first, then the community list; the paste lookup reads good and bad addresses", async ({
+test("cell 34 — the catalog lists AZTEC, the generation's tokens, then the community list; the paste lookup reads good and bad addresses", async ({
 	page,
 	sandbox,
 	actor,
@@ -26,9 +27,13 @@ test("cell 34 — the catalog lists the generation's tokens first, then the comm
 	await connectAztec(page, { profile: "plain", account: actor.address })
 	await page.locator(tid(TESTIDS.sendDirectionDeposit)).click()
 
-	const keys = await page.locator(tid(TESTIDS.sendTokenTile)).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.key ?? ""))
+	const tiles = page.locator(tid(TESTIDS.sendTokenTile))
+	const keys = await tiles.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.key ?? ""))
+	const aztec = `${L1}:${sandbox.clients.deployment.feeJuice.toLowerCase()}`
 	const manifestKeys = sandbox.manifest.bridge?.tokens.map((t) => `${L1}:${t.erc20.toLowerCase()}`) ?? []
-	expect(keys.slice(0, manifestKeys.length), "the generation's tokens lead, in manifest order").toEqual(manifestKeys)
+	expect(keys[0], "AZTEC leads").toBe(aztec)
+	await expect(tiles.first()).toContainText("AZTEC")
+	expect(keys.slice(1, 1 + manifestKeys.length), "then the generation's tokens, in manifest order").toEqual(manifestKeys)
 	// The community list is served from the suite's fixture (the egress fence answers its origin).
 	expect(keys, "the fixture list's tokens follow").toEqual(expect.arrayContaining([`${L1}:0x1111111111111111111111111111111111111111`]))
 
@@ -37,6 +42,11 @@ test("cell 34 — the catalog lists the generation's tokens first, then the comm
 	await expect(lookup).toHaveAttribute("data-status", "error")
 	await page.locator(tid(TESTIDS.sendTokenSearch)).fill(NOT_A_CONTRACT)
 	await expect(lookup).toHaveAttribute("data-status", "error", { timeout: 30_000 })
+	// The fee asset's address, checksummed as a block explorer prints it, is the AZTEC row: nothing to read or add.
+	await page.locator(tid(TESTIDS.sendTokenSearch)).fill(getAddress(sandbox.clients.deployment.feeJuice))
+	await expect(lookup).toHaveCount(0)
+	await expect(tiles).toHaveCount(1)
+	await expect(tiles.first()).toHaveAttribute("data-key", aztec)
 
 	const erc20 = await freshToken(sandbox.clients.l1, { name: "Pasted", symbol: "PSTD", decimals: 6 }, [l1.address], 100n * USDC)
 	await pasteToken(page, erc20)

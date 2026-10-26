@@ -3,7 +3,7 @@
  * the user has chosen, and the outcomes the grant and route steps can produce. Every composable
  * and every step component speaks these types; none of them re-declares a token shape of its own.
  */
-import type { FuelRoute, Registration, TokenState } from "@unleashed/bridge-core"
+import type { FuelRoute, GasShareResult, Registration, TokenState } from "@unleashed/bridge-core"
 import type { Address, Hex } from "viem"
 
 export type Direction = "l1-to-l2" | "l2-to-l1"
@@ -79,6 +79,9 @@ export interface TokenBalances {
  */
 export type GrantOutcome = "granted" | "declined" | "stale" | "busy"
 
+/** The most transactions a gas slice can be sized for. */
+export const MAX_TX_TARGET = 999
+
 export interface GasLegPlan {
 	fuelAmount: bigint
 	fuelFj: bigint
@@ -86,7 +89,7 @@ export interface GasLegPlan {
 	quote: bigint
 	minFuelOutput: bigint
 	route: FuelRoute
-	capped: "min" | "half" | null
+	capped: GasShareResult["capped"]
 }
 
 /** The token part of a deposit that arrives on Aztec: the amount less its gas slice, never below zero. */

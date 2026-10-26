@@ -1,20 +1,15 @@
 <script setup lang="ts">
 /** Composables */
-import { type Section, useShell } from "@/composables/useShell"
-
-import { PHONE_QUERY, useMediaQuery } from "@/composables/useMediaQuery"
+import { SECTION_PATHS, type Section, useShell } from "@/composables/useShell"
 
 /** Utils */
 import { Icon, type IconName } from "@unleashed/design"
-import { useTemplateRef } from "vue"
 import { TESTIDS } from "@/lib/testids"
 
-/** The left rail: four sections as one roving tablist (one Tab stop; ↑/↓ and ←/→ move between them). */
+/** The left rail: four sections as links, so each can be opened in a new tab or copied. */
 const props = defineProps<{ activityCount: number }>()
 
 const shell = useShell()
-const rail = useTemplateRef<HTMLElement>("rail")
-const topRow = useMediaQuery(PHONE_QUERY)
 
 const ENTRIES: ReadonlyArray<{ key: Section; label: string; icon: IconName; testid: string }> = [
 	{ key: "send", label: "Bridge", icon: "arrows-horizontal", testid: TESTIDS.tabSend },
@@ -22,41 +17,19 @@ const ENTRIES: ReadonlyArray<{ key: Section; label: string; icon: IconName; test
 	{ key: "activity", label: "Activity", icon: "audio-waveform", testid: TESTIDS.tabActivity },
 	{ key: "addresses", label: "Addresses", icon: "info-box", testid: TESTIDS.tabAddresses },
 ]
-
-function move(from: number, delta: number): void {
-	const next = (from + delta + ENTRIES.length) % ENTRIES.length
-	const entry = ENTRIES[next]
-	if (!entry) return
-	shell.goTo(entry.key)
-	rail.value?.querySelector<HTMLElement>(`[data-index="${next}"]`)?.focus()
-}
 </script>
 
 <template>
-	<nav
-		ref="rail"
-		class="nav"
-		role="tablist"
-		aria-label="Sections"
-		:aria-orientation="topRow ? 'horizontal' : 'vertical'"
-		:data-testid="TESTIDS.tabs"
-	>
-		<button
-			v-for="(entry, index) in ENTRIES"
+	<nav class="nav" aria-label="Sections" :data-testid="TESTIDS.tabs">
+		<a
+			v-for="entry in ENTRIES"
 			:key="entry.key"
-			type="button"
-			role="tab"
+			:href="SECTION_PATHS[entry.key]"
 			class="entry ul-notch"
 			:class="{ on: shell.section.value === entry.key }"
-			:aria-selected="shell.section.value === entry.key"
-			:tabindex="shell.section.value === entry.key ? 0 : -1"
+			:aria-current="shell.section.value === entry.key ? 'page' : undefined"
 			:data-testid="entry.testid"
-			:data-index="index"
-			@click="shell.goTo(entry.key)"
-			@keydown.up.prevent="move(index, -1)"
-			@keydown.down.prevent="move(index, 1)"
-			@keydown.left.prevent="move(index, -1)"
-			@keydown.right.prevent="move(index, 1)"
+			@click="shell.follow($event, entry.key)"
 		>
 			<Icon class="glyph" :name="entry.icon" :size="24" />
 			<span>{{ entry.label }}</span>
@@ -64,7 +37,7 @@ function move(from: number, delta: number): void {
 				<span class="count ul-notch" aria-hidden="true">{{ props.activityCount }}</span>
 				<span class="sr-only">, {{ props.activityCount }} needs you</span>
 			</template>
-		</button>
+		</a>
 	</nav>
 </template>
 

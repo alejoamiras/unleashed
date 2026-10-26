@@ -79,6 +79,8 @@ const ownGasCeilingFor = vi.fn((): bigint | null => 1n)
 /** A gas-only send's standalone private fuel claim: 0.4 FJ, apart from every hub-claim figure. */
 const fuelClaimCeiling = vi.fn((): bigint | null => 4n * 10n ** 17n)
 const proposeFn = vi.fn(() => ({ fuelAmount: 2_000_000n, fuelFj: 5n * 10n ** 18n, capped: null }))
+/** Where the stepper stops; null = nothing bounds it. */
+const maxTxTargetFn = vi.fn((): number | null => null)
 const gasShareDispose = vi.fn()
 
 const records = ref<Record<string, unknown>[]>([])
@@ -176,12 +178,29 @@ vi.mock("@/composables/useGasHeld", () => ({
 vi.mock("@/composables/useAddressLookup", () => ({
 	useAddressLookup: () => ({ state: ref(null), dispose: vi.fn() }),
 }))
+const rowRefresh = vi.fn(async () => {})
 vi.mock("@/composables/useRowBalances", () => ({
 	useRowBalances: (deps: { owner: () => string | undefined }) => {
 		rowOwner = deps.owner
-		return { balances: ref({}), refresh: vi.fn(async () => {}), dispose: vi.fn() }
+		return { balances: ref({}), refresh: rowRefresh, dispose: vi.fn() }
 	},
 }))
+const feeAssetMinted = vi.hoisted(() => ({ value: null as unknown }))
+vi.mock("@/composables/useFeeAssetMint", async () => {
+	const { computed, ref: vueRef, shallowRef } = await import("vue")
+	const minted = shallowRef<unknown>(null)
+	Object.defineProperty(feeAssetMinted, "value", { get: () => minted.value, set: (v) => (minted.value = v) })
+	return {
+		feeAssetMinted: minted,
+		useFeeAssetMint: () => ({
+			available: false,
+			amountText: computed(() => null),
+			minting: vueRef(false),
+			error: vueRef(null),
+			mint: async () => null,
+		}),
+	}
+})
 vi.mock("@/composables/useTokenSelection", () => ({
 	useTokenSelection: (deps: { l1Account: () => string | undefined }) => {
 		selectionOwner = deps.l1Account
@@ -211,6 +230,7 @@ vi.mock("@/composables/useGasShare", () => ({
 	useGasShare: () => ({
 		txTarget,
 		propose: proposeFn,
+		maxTxTarget: maxTxTargetFn,
 		prime: primeFn,
 		invalidate: () => {},
 		pricingError: ref(null),
@@ -484,6 +504,27 @@ describe("SendWizard", () => {
 		expect(gas.route).toEqual({ path: [], zeroForOnes: [] })
 		expect(gas.minFuelOutput).toBe(gas.quote)
 		expect(gas.quote).toBe(gas.fuelAmount)
+	})
+
+	it("the count is held under the stepper's stop without losing the stored one", async () => {
+		const w = await wizard()
+		w.findComponent({ name: "TokenStep" }).vm.$emit("select", candidate())
+		await flushPromises()
+		await flushPromises()
+		w.findComponent({ name: "AmountStep" }).vm.$emit("update:amount", "1")
+		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
+		setRoute({ kind: "identity" })
+		txTarget.value = 100
+		maxTxTargetFn.mockReturnValue(24)
+		w.findComponent({ name: "AmountStep" }).vm.$emit("update:amount", "2")
+		await flushPromises()
+		expect(w.findComponent({ name: "AmountStep" }).props("txTarget")).toBe(24)
+		expect(proposeFn).toHaveBeenLastCalledWith(expect.anything(), 24)
+		maxTxTargetFn.mockReturnValue(999)
+		w.findComponent({ name: "AmountStep" }).vm.$emit("update:amount", "3")
+		await flushPromises()
+		expect(w.findComponent({ name: "AmountStep" }).props("txTarget")).toBe(100)
+		maxTxTargetFn.mockReturnValue(null)
 	})
 
 	it("a gas-only send routes the WHOLE amount through the swap", async () => {
@@ -1573,6 +1614,19 @@ describe("SendWizard", () => {
 		await flushPromises()
 		expect([rowOwner(), selectionOwner()]).toEqual([L1_ADDRESS, L1_ADDRESS])
 		expect(refreshBalances).toHaveBeenCalledOnce()
+	})
+
+	it("an AZTEC mint confirmed while the amount step is shown refreshes the selected and row balances", async () => {
+		const w = await wizard()
+		w.findComponent({ name: "TokenStep" }).vm.$emit("select", candidate())
+		await flushPromises()
+		expect(w.findComponent({ name: "AmountStep" }).exists()).toBe(true)
+		refreshBalances.mockClear()
+		rowRefresh.mockClear()
+		feeAssetMinted.value = { amount: 10n ** 21n, txHash: "0xmint" }
+		await flushPromises()
+		expect(refreshBalances).toHaveBeenCalledOnce()
+		expect(rowRefresh).toHaveBeenCalledOnce()
 	})
 
 	it("switching direction returns to the token step and re-resolves the same token", async () => {
