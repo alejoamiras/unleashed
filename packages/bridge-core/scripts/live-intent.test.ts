@@ -22,18 +22,18 @@ import {
 } from "./live-intent"
 
 const pinned = {
-	rollup: "0xed1eb2eb670b42e2fb5a478c076a264b9604089d",
-	feeJuicePortal: "0x6974bde62c47a0041f5b4a2e61c5506c2b59ce59",
+	rollup: "0x1f435a7f2da358caf887a470faeee7d5d5f4efba",
+	feeJuicePortal: "0xe59acba462a0324b1d619a7a1b219419f156f505",
 	feeJuice: "0x762c132040fda6183066fa3b14d985ee55aa3c18",
 	feeAssetHandler: "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9",
 	registry: "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba",
 }
 const node = (registryAddress: string): NodeIdentity => ({
-	nodeVersion: "6.0.0-rc.3",
+	nodeVersion: "6.0.0",
 	l1ChainId: 11155111,
-	rollupVersion: 3409706519,
+	rollupVersion: 679261766,
 	l1ContractAddresses: {
-		rollupAddress: "0xED1EB2EB670B42E2FB5A478C076A264B9604089D",
+		rollupAddress: "0x1F435A7F2DA358CAF887A470FAEEE7D5D5F4EFBA",
 		feeJuicePortalAddress: pinned.feeJuicePortal,
 		feeJuiceAddress: pinned.feeJuice,
 		feeAssetHandlerAddress: pinned.feeAssetHandler,

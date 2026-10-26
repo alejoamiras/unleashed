@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -8,7 +8,12 @@ import { afterEach, describe, expect, it } from "vitest"
 import { loadLocalRun } from "./local-target-loader"
 
 const MANIFEST = fileURLToPath(new URL("../../../../packages/bridge-core/fixtures/sandbox-manifest.json", import.meta.url))
-const USDC = "0x7cb3dccd91a0723f61145b7a18e588771ca5a54d"
+// Read from the fixture: a regenerated sandbox manifest moves every token address.
+const USDC = (
+	JSON.parse(readFileSync(MANIFEST, "utf8")) as { bridge: { tokens: { erc20: string; displaySymbol: string }[] } }
+).bridge.tokens
+	.find((t) => t.displaySymbol === "USDC")
+	?.erc20.toLowerCase() as string
 const at = (n: number) => `0x${n.toString(16).padStart(40, "0")}`
 
 const crossChain = {
