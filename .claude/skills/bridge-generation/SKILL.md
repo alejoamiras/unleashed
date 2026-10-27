@@ -155,7 +155,9 @@ must be allowlisted too, so a mid-arc source fix voids the intent. Work around a
 and fix it after the final verify. A blocking one stops the arc for the owner: a rebuilt intent
 records the current balance and a fresh `CAPS` allowance, never what the old one spent, so recovery
 keeps the old intent and journal and reconciles the cumulative spend against the original
-authorization before anything resumes. **Commit the intent right after
+authorization before anything resumes. A validation run (a fueled validator, a canary) on a tree that
+moved after promotion builds its own `--router-only` intent with no `--pre-create`, which refuses any
+journal step. **Commit the intent right after
 `build` and again after the digest-recording verify**: the tool refuses a dirty intent only once it
 carries `candidateSha256`, so before that only commit discipline catches an edited cap or signer.
 **`build` refuses a reset by design**: `assertNoResetPins` byte-pins the node's identity and five L1
@@ -519,6 +521,9 @@ Ethereum-origin plain and fueled through `bridgeWithPermit`, and a forced recove
 CANARY_PRIVATE_KEY="$(cat ~/.cache/unleashed-canary/testnet.key)" bun packages/bridge-core/scripts/lifi-canary-testnet.ts \
   --config apps/tools/public/testnet-bridge.json [--dry-run]
 ```
+It is a keyed run on `testnet-rpc.env.example`; the canary key comes from its file, never the template. The dry
+run builds and verifies every row and reports a funding shortfall; the live run refuses before any spend until the
+canary holds the matrix's amounts on both chains.
 - **Testnet fills are the canary's alone.** Sepolia runs Amsterdam, where a node's gas estimate for a fill of the
   router message settles on LI.FI's recovery, and Across's testnet relayer sends 1.15 times that estimate. Its fills
   therefore pay the user's Sepolia wallet instead of depositing. Every testnet send's Across terms name the pinned

@@ -1,14 +1,15 @@
 {
-	"builtAt": "2026-10-26T13:10:28.829Z",
+	"builtAt": "",
+	"primaryRpc": "https://lb.drpc.live/aztec-testnet/<KEY>",
 	"identity": {
-		"nodeVersion": "6.0.0",
+		"nodeVersion": "6.0.0-rc.1",
 		"l1ChainId": 11155111,
-		"rollupVersion": 679261766,
-		"walletChainId": 685146337
+		"rollupVersion": 2914217885,
+		"walletChainId": 2904119610
 	},
 	"l1": {
-		"rollup": "0x1f435a7f2da358caf887a470faeee7d5d5f4efba",
-		"feeJuicePortal": "0xe59acba462a0324b1d619a7a1b219419f156f505",
+		"rollup": "0x8c2fb2a68a3d362ab1de99e06f83f8903160bbd9",
+		"feeJuicePortal": "0x5bb7523a95c1fdf1d2a3dd9fb7d497e7f5142d7f",
 		"feeJuice": "0x762c132040fda6183066fa3b14d985ee55aa3c18",
 		"feeAssetHandler": "0x5602c39a6e9c5ace589f64f754927bcda4f4bfc9",
 		"registry": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba"
@@ -26,20 +27,20 @@
 		"maxTotalEthSpend": "2.0",
 		"maxWethSeed": "1.5"
 	},
-	"startingBalanceEth": 2.9034599121384894,
+	"startingBalanceEth": 2.9498316978502324,
 	"artifacts": {
 		"privateFpc": {
-			"address": "0x0516ebb4f9c7988eb3cf6dd9459a47556f7a92db06b17cfa47ffb37fd35c6915",
+			"address": "0x0b3bc795b5c077b57920d590ecc163af18705554abf7164cb0f8c52850943c08",
 			"salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
-			"sha256": "bc1e27b0cfb48c8c1483071453288a27e302283c5da5fa40869a179a41079bde"
+			"sha256": "68f0c04390d3ffd545ed4064d50ac18375081e12dfc35a70010fc6b04b3b3974"
 		},
 		"noirTargets": {
-			"token_bridge_hub/target/token_bridge_hub_contract-TokenBridgeHub.json": "d7e3be3c0b51718cddb0a28e9a9a7e163d5d88c7f120b3daecc013532bfe328a",
+			"token_bridge_hub/target/token_bridge_hub_contract-TokenBridgeHub.json": "ff7dd7b1f50e72d4af724ac4e120f0693a774ddcf0bb00f756504246623b05ae",
 			"keystone/target/keystone.json": "122b35e084d19cd40b54c1f5d77e603562efe976c593de7a621a099fecfda6ee"
 		}
 	},
 	"source": {
-		"commit": "d9965df0952388bf223a31d722259ab675d3ffd2",
+		"commit": "",
 		"treeClean": true,
 		"operationalAllowlist": [
 			"apps/tools/public/testnet-bridge.candidate.json",
@@ -54,43 +55,41 @@
 			"implementations-plan/archive/any-erc20-bridge/lessons/",
 			"implementations-plan/archive/protocol-labels/lessons/",
 			"implementations-plan/lifi-routing/lessons/",
-			"implementations-plan/archive/aztec-rc3/lessons/",
-			"implementations-plan/archive/aztec-6-stable/lessons/",
 			"apps/tools/public/testnet-bridge.journal.jsonl"
 		]
 	},
 	"routerOnly": {
 		"generation": {
-			"factory": "0x2509411e06a3b9512eca3d9f2668afd7821b7817",
-			"implementation": "0x43462651c21c66c9f473c8c47462667b8cbf9f1e",
+			"factory": "0xd97823e0009c12ff5771a40ece505622c449152c",
+			"implementation": "0x53194aca97d7112b5930962492f7ffd8d2498e6e",
 			"registry": "0xa0bfb1b494fb49041e5c6e8c2c1be09cd171c6ba",
 			"guardian": "0x7f42018f47451417fa4d39edb6ad1e1c14c26a9a",
-			"router": "0xad08e65dda66eaed5ab9447f27b7610a850f4303",
-			"swapTarget": "0xab7a35ac6247328851880c1faa68e051fe8d8a84",
+			"router": "0xb6d603f425519a5009d7d426f31d92177da7cfab",
+			"swapTarget": "0x2247e05babad88a44e837e2ddaf54c6d607860f7",
 			"permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
-			"feeJuicePortal": "0xe59acba462a0324b1d619a7a1b219419f156f505",
-			"hub": "0x1d500beb91a75ccd2e5376d14980b0cabd494fe3397e710faddc371376de7530"
+			"feeJuicePortal": "0x5bb7523a95c1fdf1d2a3dd9fb7d497e7f5142d7f",
+			"hub": "0x1a0a913173a8b010a87b703748767e15a031b6c01a314e9b905de3df85fcb715"
 		},
 		"tokens": [
 			{
 				"erc20": "0x8648424f0eae2368555d080c948b622d992651fc",
-				"portal": "0x8128d00bb1349e1b21d2281167925e9e3187fb74",
-				"l2Token": "0x249038d2cc0a301b8cc7d2d87da06c5861112b983060405dcaa75240d5837f32"
+				"portal": "0x35398a5f2582210dc20a2c2ab1260854fbd4dc5f",
+				"l2Token": "0x0f8df6867e9547fdf90e0f69187ada6fbd7b1f6ad4903ad333200bb032279ecf"
 			},
 			{
 				"erc20": "0x8badb545be5d79f28d516844bf1713cc7a3f238f",
-				"portal": "0xe4b6a28350ad82eb03b3167587d6cb06c096c247",
-				"l2Token": "0x09273f734ea96c47a1eccf4bfc9ee08dab36fe11fad44af6a1b8a1867324c505"
+				"portal": "0xcc2ce87334ec04ca058aa5a35b098e0ffe3f7205",
+				"l2Token": "0x0432a81ca01e5f7a4a738117718595c258bb6f0b1df1e797fc0881e26cdc41ee"
 			},
 			{
 				"erc20": "0xc10bcb5a0519934e68b489a3a89ee28af8624d24",
-				"portal": "0x6535a0f1426524a8ed5bb64692e7645c033d15cc",
-				"l2Token": "0x10b4653676004b7c5dd4d10d7a582b5968f350d71e1d6db1a5e792d5d455649d"
+				"portal": "0x8559100de137077a8c3eed51db265567406cc329",
+				"l2Token": "0x0d8493a9747a706649e6bf85694356e3a8bd0f03a5f28479562d6b50d2ce590d"
 			},
 			{
 				"erc20": "0x177ead2a677858e376941390548fcf01a6ebefca",
-				"portal": "0x717ae3636685489c87cf331af663cfa75723d0d9",
-				"l2Token": "0x28af9cb09c9bd7cc9a01781c00893b5eea2de716cf49ce9c654cb154224ef06a"
+				"portal": "0x43989ce196eca73d7582dd5b6895f5e9a9e36f5c",
+				"l2Token": "0x2d8fb63a7b035198295a451cac292a50a2a58fdf4824e2f5c18356146062ff50"
 			}
 		],
 		"preCreate": [
@@ -113,9 +112,9 @@
 			}
 		},
 		"startingBalancesEth": {
-			"84532": 0.07999496267864382,
-			"11155111": 0.2957523340749349
+			"84532": 0.08,
+			"11155111": 0.3
 		}
 	},
-	"candidateSha256": "18ef10851161a24298f2ecc4b953f04f39b5e51a68933b1fdf3505f2a2bb25c5"
+	"candidateSha256": "203481c844381dd2fb317e8c2375a55bc30d91f694ba9ea70da51c6912c33f93"
 }

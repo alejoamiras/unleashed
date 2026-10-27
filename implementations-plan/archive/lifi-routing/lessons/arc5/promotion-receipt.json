@@ -1,10 +1,10 @@
 {
-	"promotedAt": "2026-10-06T18:27:27.206Z",
-	"intent": "implementations-plan/lifi-routing/lessons/intent-gates.json",
-	"commitAtPromotion": "e1c49a67ae0026b762d7d120b3925e505dd14e21",
+	"promotedAt": "",
+	"intent": "implementations-plan/lifi-routing/lessons/arc5/intent.json",
+	"commitAtPromotion": "",
 	"mode": "bridge-only",
 	"bridge": {
-		"candidateSha256": "1fb9b646a92ceea4e7b7a50cc23a00cf403aff01169ca3003e5feae59934a85d",
+		"candidateSha256": "6d8fa238c0db604db9364db3f93b8aed8ca8f7d972dc599e46398cca0158f748",
 		"live": "apps/tools/public/testnet-bridge.json"
 	},
 	"faucet": {
