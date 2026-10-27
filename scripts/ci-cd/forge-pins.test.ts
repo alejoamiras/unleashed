@@ -4,7 +4,7 @@ import { join } from "node:path"
 
 /** A contributor's `forge install` from the README resolves the same library commits CI builds and caches. */
 const ROOT = join(import.meta.dir, "..", "..")
-const PIN = /\b[\w.-]+\/[\w.-]+@[0-9a-f]{40}\b/g
+const PIN = /\b[\w.-]+\/[\w.-]+@(?:rev=)?[0-9a-f]{40}\b/g
 
 test("the contracts README pins the forge libraries setup-forge installs", () => {
 	// biome-ignore lint/suspicious/noExplicitAny: parsed-YAML shape is dynamic.

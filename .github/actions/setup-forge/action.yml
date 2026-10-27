@@ -8,7 +8,8 @@ description: |
 inputs:
   build:
     description: >
-      "true" restores contracts/bridge/evm's out/ and cache/ and runs an incremental `forge build`.
+      "true" restores contracts/bridge/evm's builds (out/ and cache/, and the `lifi` profile's
+      out-lifi/ and cache-lifi/) and runs an incremental `forge build` of both profiles.
       The forge job leaves it "false" and builds from scratch, so the contract gate never depends
       on a cached build.
     required: false
@@ -42,8 +43,14 @@ runs:
     # forge-std than the one the suites were validated against is a silent divergence — an older
     # one made halmos abort in setUp with "Unsupported cheat code", passing nothing.
     #
-    # v4-core MUST stay v4.0.0: >=1.0.0 moves the SwapParams and ModifyLiquidityParams structs
-    # the fuel contracts use.
+    # LI.FI's destination half (Executor, ERC20Proxy, ReceiverAcrossV4, ReceiverStargateV2;
+    # LGPL-3.0-only) is compiled only by the `lifi` profile; suites and the sandbox load it by
+    # artifact path. A commit on main at least 7 days old, per the dependency policy; its nested
+    # libs (solady, OpenZeppelin) come in at LI.FI's own submodule pins.
+    #
+    # Upstream libs ship agent instruction files and .env templates. Third-party instructions must
+    # never reach an agent session, and env-exec refuses any untracked .env*, so the contributor
+    # install deletes them; this runs the same commands, so the cached lib/ never holds one.
     #
     # --no-git: the same files as a submodule install, without the .git links into a .git/modules
     # that a restored cache would not carry.
@@ -54,8 +61,11 @@ runs:
       run: |
         forge install --no-git \
           foundry-rs/forge-std@bf647bd6046f2f7da30d0c2bf435e5c76a780c1b \
-          OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3 \
-          Uniswap/v4-core@e50237c43811bd9b526eff40f26772152a42daba
+          OpenZeppelin/openzeppelin-contracts@cab19933c33c2ad1d4c7a84864a3601dddfd16f3
+        forge install --no-git lifi-contracts=lifinance/contracts@rev=65bae143b249a5fba3dd27d506e9e1d6d8538899
+        find lib \( -name .claude -o -name .agents -o -name .cursor \) -prune -exec rm -rf {} +
+        find lib \( -name .env -o -name '.env.*' -o -name CLAUDE.md -o -name AGENTS.md -o -name .mcp.json \
+          -o -name '.cursorrules*' -o -path '*/.github/copilot-instructions.md' \) -exec rm -f {} +
 
     # foundry.toml's @aztec/ and @aztec-blob-lib/ remaps assume a hoisted node_modules;
     # this repo uses bun's isolated linker, so the generated remappings.txt is what makes
@@ -68,14 +78,15 @@ runs:
     # partial restore could hand the deploy a contract the tree no longer has and pass where a fresh
     # checkout fails. Every saved build therefore started from an empty out/, and the key is a digest
     # of every build input's path and contents: the pins and Foundry above, the lockfile
-    # (node_modules sources), the remappings generator, the config and the sources. Not hashFiles(),
-    # which digests contents alone, so a rename that kept the sort order would keep the key.
+    # (node_modules sources), the remappings generator, the config and the sources of both profiles.
+    # Not hashFiles(), which digests contents alone, so a rename that kept the sort order would keep
+    # the key.
     - name: Digest the build inputs
       if: inputs.build == 'true'
       id: build-inputs
       shell: bash
       run: |
-        digest=$(find contracts/bridge/evm/src contracts/bridge/evm/test contracts/bridge/evm/script -type f -print0 \
+        digest=$(find contracts/bridge/evm/src contracts/bridge/evm/test contracts/bridge/evm/lifi-build -type f -print0 \
           | LC_ALL=C sort -z \
           | xargs -0 sha256sum -- .github/actions/setup-forge/action.yml bun.lock \
             packages/bridge-core/scripts/gen-remappings.ts contracts/bridge/evm/foundry.toml \
@@ -89,9 +100,15 @@ runs:
         path: |
           contracts/bridge/evm/out
           contracts/bridge/evm/cache
+          contracts/bridge/evm/out-lifi
+          contracts/bridge/evm/cache-lifi
         key: ${{ runner.os }}-forge-build-${{ steps.build-inputs.outputs.digest }}
 
+    # The sandbox deploys LI.FI's Executor, ERC20Proxy and ReceiverAcrossV4 from the `lifi` profile.
     - name: forge build
       if: inputs.build == 'true'
       shell: bash
-      run: forge build --root contracts/bridge/evm
+      working-directory: contracts/bridge/evm
+      run: |
+        forge build
+        FOUNDRY_PROFILE=lifi forge build
