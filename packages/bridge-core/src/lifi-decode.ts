@@ -99,8 +99,8 @@ export interface RouteTx {
 }
 
 export type RailExpectation =
-	/** Our own builder's Across inputs: the relay quote's output and its timing. */
-	| { kind: "acrossV4"; outputAmount: bigint; quoteTimestamp: number; fillDeadline: number }
+	/** Our own builder's Across inputs: the relay quote's output and its timing, and the filler a testnet send names. */
+	| { kind: "acrossV4"; outputAmount: bigint; quoteTimestamp: number; fillDeadline: number; exclusiveRelayer?: Address }
 	/** `maxNativeFee`: `stargateFeeCeiling` of the source pool's own `quoteSend`, read by the caller. */
 	| { kind: "stargateV2"; maxNativeFee: bigint }
 
@@ -565,7 +565,7 @@ interface RailFacts {
  */
 export function acrossDepositFor(x: RouteExpectation): AcrossV4DepositParams {
 	if (x.rail.kind !== "acrossV4") throw new Error("lifi-decode: not an Across expectation")
-	const { outputAmount, quoteTimestamp, fillDeadline } = x.rail
+	const { outputAmount, quoteTimestamp, fillDeadline, exclusiveRelayer } = x.rail
 	return {
 		diamond: lifiBook(x.srcChainId).diamond,
 		transactionId: x.lifiTxId,
@@ -579,6 +579,7 @@ export function acrossDepositFor(x: RouteExpectation): AcrossV4DepositParams {
 		outputAmount,
 		quoteTimestamp,
 		fillDeadline,
+		...(exclusiveRelayer ? { exclusiveRelayer } : {}),
 		steps: [
 			{
 				callTo: x.router,

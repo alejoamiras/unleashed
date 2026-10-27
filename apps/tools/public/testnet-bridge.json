@@ -33,6 +33,15 @@
 				"minFuelFj": "29773418555864000000",
 				"fjPerTx": "1987318817970960000",
 				"fjRegister": "1577053752328560000"
+			},
+			"depositRouter": "0x6e5566894908e945a12245f9810b4055c4a1035b",
+			"fuelSwapper": "0x2b2244a4d36ba117a273b0b5a810daa0b84c86ab",
+			"fuel": {
+				"slippageBps": 300,
+				"crossChainSlippageBps": 300,
+				"minFuelFj": "29773418555864000000",
+				"fjPerTx": "1987318817970960000",
+				"fjRegister": "1577053752328560000"
 			}
 		},
 		"l2": {
@@ -102,8 +111,47 @@
 				"source": "permissionless-mint",
 				"sourceContract": "MintableERC20",
 				"maxWholePerTx": 1000000
+			},
+			{
+				"erc20": "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
+				"portal": "0x5dda1b3182bd0dd4c469461708a846edd395b188",
+				"l2Token": "0x2452d54ee633021f35ede143dd916aed01db96f9987cfffb4fe626ea29bddc98",
+				"nameWord": "0x0055534443000000000000000000000000000000000000000000000000000000",
+				"symbolWord": "0x0055534443000000000000000000000000000000000000000000000000000000",
+				"decimals": 6,
+				"displayName": "USDC",
+				"displaySymbol": "USDC",
+				"source": "canonical"
+			},
+			{
+				"erc20": "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
+				"portal": "0xf5ab7b75495420b4eaaa6400e892e552747f106d",
+				"l2Token": "0x0807b34ec61051997d940107021399e8736da66e55a02c0cdbd1e63a787f9add",
+				"nameWord": "0x0057726170706564204574686572000000000000000000000000000000000000",
+				"symbolWord": "0x0057455448000000000000000000000000000000000000000000000000000000",
+				"decimals": 18,
+				"displayName": "Wrapped Ether",
+				"displaySymbol": "WETH",
+				"source": "canonical"
 			}
-		]
+		],
+		"routing": {
+			"provider": "lifi",
+			"sources": [
+				{
+					"chainId": 84532,
+					"rail": "acrossV4",
+					"tokens": [
+						{
+							"address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+							"symbol": "USDC",
+							"decimals": 6,
+							"destToken": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+						}
+					]
+				}
+			]
+		}
 	},
 	"feeJuice": {
 		"portal": "0xe59acba462a0324b1d619a7a1b219419f156f505",

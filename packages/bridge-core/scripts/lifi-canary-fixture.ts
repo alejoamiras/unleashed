@@ -1,6 +1,6 @@
 /**
- * The canary tests' doubles, network-free: the live testnet manifest with a router, a swapper and an Across
- * route added; chains that answer only the read surface and log every member touched; and an Across that
+ * The canary tests' doubles, network-free: the testnet manifest as it stood before the router-only promotion, with a
+ * router, a swapper and an Across route added; chains that answer only the read surface and log every member touched; and an Across that
  * prices the request it receives.
  */
 import { readFileSync } from "node:fs"
@@ -21,10 +21,13 @@ export const NOW_S = 1_900_000_000
 /** The swapper's fixed rate: one 6-decimal unit buys 1e14 FJ. */
 export const FJ_PER_UNIT = 10n ** 14n
 
+/** The testnet manifest before the router-only promotion: the base every router-only transform starts from. */
+export function preLifiTestnetManifest(): ManifestV2 {
+	return parseManifestV2(JSON.parse(readFileSync(join(import.meta.dirname, "../test/fixtures/testnet-bridge.pre-lifi.json"), "utf8")))
+}
+
 export function routedManifest(): ManifestV2 {
-	const live = parseManifestV2(
-		JSON.parse(readFileSync(join(import.meta.dirname, "../../../apps/tools/public/testnet-bridge.json"), "utf8")),
-	)
+	const live = preLifiTestnetManifest()
 	const bridge = live.bridge!
 	const usdc: ManifestToken = { ...(bridge.tokens[0] as ManifestToken), erc20: SEPOLIA_USDC }
 	const fuel = {

@@ -71,6 +71,7 @@ import {
 	type RowRecord,
 	rowBudgets,
 } from "./lifi-canary-plan"
+import { AllowanceStillLive } from "./sandbox/relayer"
 import {
 	approveExact,
 	boundedGasTerms,
@@ -79,6 +80,7 @@ import {
 	FACTORY_CONSTANTS_ABI,
 	type GasPricing,
 	type GasTermsFor,
+	setAllowance,
 	withGasTerms,
 } from "./script-l1"
 
@@ -297,13 +299,14 @@ async function acrossLimits(ctx: RowCtx, rows: readonly CanaryRow[]): Promise<Ac
 
 async function railTerms(ctx: RowCtx, row: CanaryRow, message: Hex): Promise<RailTerms> {
 	const q = await quoteFor(ctx, row.amount, message)
+	const filler = ctx.cfg.canary
 	if (q.ok) {
 		const { outputAmount, quoteTimestamp, fillDeadline, estimatedFillTimeSec } = q.quote
-		return { quote: "across", outputAmount, quoteTimestamp, fillDeadline, etaSeconds: estimatedFillTimeSec }
+		return { quote: "across", outputAmount, quoteTimestamp, fillDeadline, etaSeconds: estimatedFillTimeSec, exclusiveRelayer: filler }
 	}
 	ctx.deps.log(`${row.kind}: Across quotes nothing (${q.reason}); self-built terms`)
 	const head = await ctx.deps.reads.source.getBlock({ blockTag: "latest" })
-	return selfBuiltTerms(row.amount, Number(head.timestamp))
+	return selfBuiltTerms(row.amount, Number(head.timestamp), filler)
 }
 
 interface CrossChainBuilt extends RouterCall {
@@ -433,10 +436,13 @@ async function settleFill(
 	c: CrossChainBuilt,
 	rec: CrossChainDepositRecord,
 ): Promise<{ d: Settled; sourceTx: Hex; fill: Fill }> {
-	let d = await discoverWithin(ctx, rec, ctx.cfg.windows.organicFillMs)
+	// A deposit the canary holds exclusively has no organic fill to wait for.
+	let d = await discoverWithin(ctx, rec, c.terms.exclusiveRelayer ? 0 : ctx.cfg.windows.organicFillMs)
 	let selfTx: Hex | null = null
 	if (!decided(d)) {
-		ctx.deps.log(`${c.row.kind}: no relayer filled within the window; self-filling`)
+		ctx.deps.log(
+			`${c.row.kind}: ${c.terms.exclusiveRelayer ? "the canary holds the fill" : "no relayer filled within the window"}; self-filling`,
+		)
 		selfTx = (await ctx.live.selfFill(rec.route.srcTxHash as Hex, ctx.fillGas)).fillTxHash
 		d = await discoverWithin(ctx, rec, ctx.cfg.windows.settleMs)
 	}
@@ -451,18 +457,39 @@ async function settleFill(
 	return { d, sourceTx: d.srcTxHash ?? (rec.route.srcTxHash as Hex), fill: { txHash, way } }
 }
 
+/**
+ * Runs `send` under an exact approval. Anything short of `send` resolving, the approval's own read-back included,
+ * revokes the allowance: an upgradeable spender holding one past its send is exposure. The revoke cannot harm a send
+ * already broadcast, which pulls exactly the approved amount: whichever lands first, the other finds nothing to move.
+ *
+ * @throws `send`'s failure once the allowance is revoked, or {@link AllowanceStillLive} when the revoke fails too.
+ */
+export async function underExactApproval<T>(l1: L1Ctx, a: RouteTx["approval"], what: string, send: () => Promise<T>): Promise<T> {
+	try {
+		await approveExact(l1, a.token, a.spender, a.amount)
+		return await send()
+	} catch (e) {
+		await setAllowance(l1, a.token, a.spender, 0n).catch((clearing: unknown) => {
+			throw new AllowanceStillLive(a.spender, a.token, clearing, e, what)
+		})
+		throw e
+	}
+}
+
 async function sendSource(ctx: LiveCtx, c: CrossChainBuilt): Promise<CrossChainDepositRecord> {
 	const { source, ethereum } = ctx.live
-	await approveExact(source, c.tx.approval.token, c.tx.approval.spender, c.tx.approval.amount)
 	verifiedRoute(c.tx, c.x)
-	const srcScanFromBlock = await source.pub.getBlockNumber()
-	const scanFromBlock = await ethereum.pub.getBlockNumber()
-	const tx = { to: c.tx.to, data: c.tx.data, value: c.tx.value, account: source.account, chain: source.wallet.chain }
-	const srcTxHash = await source.wallet.sendTransaction(tx as never)
-	const receipt = await source.pub.waitForTransactionReceipt({ hash: srcTxHash })
-	if (receipt.status !== "success") throw new CanaryRefusal(`${c.row.kind}: the source transaction ${srcTxHash} reverted`)
-	ctx.deps.log(`${c.row.kind}: source transaction ${srcTxHash}`)
-	return discoveryRecord(ctx, c, { srcTxHash, srcScanFromBlock, scanFromBlock })
+	const sent = await underExactApproval(source, c.tx.approval, `${c.row.kind} source deposit`, async () => {
+		const srcScanFromBlock = await source.pub.getBlockNumber()
+		const scanFromBlock = await ethereum.pub.getBlockNumber()
+		const tx = { to: c.tx.to, data: c.tx.data, value: c.tx.value, account: source.account, chain: source.wallet.chain }
+		const srcTxHash = await source.wallet.sendTransaction(tx as never)
+		const receipt = await source.pub.waitForTransactionReceipt({ hash: srcTxHash })
+		if (receipt.status !== "success") throw new CanaryRefusal(`${c.row.kind}: the source transaction ${srcTxHash} reverted`)
+		return { srcTxHash, srcScanFromBlock, scanFromBlock }
+	})
+	ctx.deps.log(`${c.row.kind}: source transaction ${sent.srcTxHash}`)
+	return discoveryRecord(ctx, c, sent)
 }
 
 async function recoveredRecord(ctx: LiveCtx, c: CrossChainBuilt, s: { d: Settled; sourceTx: Hex; fill: Fill }): Promise<RowRecord> {

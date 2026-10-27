@@ -96,6 +96,25 @@ describe("script-l1", () => {
 		await expect(approveExact(l1, ERC20, SWAP_TARGET, 13n)).rejects.toThrow(/REVERTED/)
 	})
 
+	it("approveExact reads the allowance back at the approval's block, which a lagging backend's latest has not reached", async () => {
+		let allowance = 0n
+		const l1 = {
+			account: { address: ROUTER },
+			wallet: {
+				chain: undefined,
+				writeContract: vi.fn(async ({ args }: { args: [string, bigint] }) => {
+					allowance = args[1]
+					return "0xa1"
+				}),
+			},
+			pub: {
+				readContract: vi.fn(async ({ blockNumber }: { blockNumber?: bigint }) => (blockNumber === 9n ? allowance : 0n)),
+				waitForTransactionReceipt: vi.fn(async () => ({ status: "success", blockNumber: 9n })),
+			},
+		} as unknown as L1Ctx
+		expect(await approveExact(l1, ERC20, SWAP_TARGET, 6n)).toEqual(["0xa1"])
+	})
+
 	it("sourceRpcUrl takes the chain's override, else the catalogue's keyless provider, else none", () => {
 		expect(sourceRpcUrl(84532, {})).toBe("https://base-sepolia-rpc.publicnode.com")
 		expect(sourceRpcUrl(84532, { BASE_SEPOLIA_RPC_URL: "http://127.0.0.1:1" })).toBe("http://127.0.0.1:1")
