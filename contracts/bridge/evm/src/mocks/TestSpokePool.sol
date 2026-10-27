@@ -17,8 +17,9 @@ interface IAcrossMessageHandler {
  * `FilledRelay` on the destination. One contract serves both chains.
  * @dev A fill pays the recipient from the caller and then runs a non-empty message on a contract recipient inside
  * the same call, so a reverting handler reverts the whole fill: LI.FI's ReceiverAcrossV4 reserves no recovery gas
- * and relies on exactly that. ERC-20 only. No refunds, slow fills, speed-ups, pausing or quote-time windows:
- * nothing here settles, and the sandbox's source clock is not its destination's.
+ * and relies on exactly that. A deposit refuses a quote older than `depositQuoteTimeBuffer` by this chain's clock, as
+ * Across's does: discovery bounds its source scan by it. ERC-20 only. No refunds, slow fills, speed-ups or pausing:
+ * nothing here settles.
  */
 contract TestSpokePool is ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
@@ -49,6 +50,8 @@ contract TestSpokePool is ReentrancyGuardTransient {
 
     /// @dev Across's boundary between an exclusivity offset and an absolute exclusivity timestamp.
     uint32 public constant MAX_EXCLUSIVITY_PERIOD_SECONDS = 31_536_000;
+    /// @dev The value every deployed SpokePool the app pins reports.
+    uint32 public constant depositQuoteTimeBuffer = 3_600;
     /// @dev `FillStatus.Filled`.
     uint256 internal constant FILLED = 2;
     uint8 internal constant FAST_FILL = 0;
@@ -92,6 +95,7 @@ contract TestSpokePool is ReentrancyGuardTransient {
 
     error InvalidBytes32();
     error InvalidOutputToken();
+    error InvalidQuoteTimestamp();
     error InvalidExclusiveRelayer();
     error NotExclusiveRelayer();
     error ExpiredFillDeadline();
@@ -114,6 +118,9 @@ contract TestSpokePool is ReentrancyGuardTransient {
     ) external nonReentrant {
         _toAddress(depositor);
         if (outputToken == bytes32(0)) revert InvalidOutputToken();
+        if (block.timestamp < quoteTimestamp || block.timestamp - quoteTimestamp > depositQuoteTimeBuffer) {
+            revert InvalidQuoteTimestamp();
+        }
         uint32 exclusivityDeadline = exclusivityParameter;
         if (exclusivityDeadline > 0) {
             if (exclusivityDeadline <= MAX_EXCLUSIVITY_PERIOD_SECONDS) exclusivityDeadline += uint32(block.timestamp);

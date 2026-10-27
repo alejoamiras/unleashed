@@ -172,4 +172,36 @@ contract TestSpokePoolTest is Test {
         _fill(r, relayer);
         assertEq(pool.fillStatuses(pool.getV3RelayHash(r)), 2, "anyone fills once the window has passed");
     }
+
+    function test_deposit_refusesAQuoteOlderThanTheBufferOrAheadOfTheClock() public {
+        vm.warp(10 hours);
+        token.mint(user, 3e6);
+        vm.startPrank(user);
+        token.approve(address(pool), 3e6);
+        uint32 quote = uint32(block.timestamp);
+        vm.warp(block.timestamp + pool.depositQuoteTimeBuffer());
+        _deposit(quote);
+        vm.expectRevert(TestSpokePool.InvalidQuoteTimestamp.selector);
+        _deposit(quote - 1);
+        vm.expectRevert(TestSpokePool.InvalidQuoteTimestamp.selector);
+        _deposit(uint32(block.timestamp + 1));
+        vm.stopPrank();
+    }
+
+    function _deposit(uint32 quoteTimestamp) internal {
+        pool.deposit(
+            _w(user),
+            _w(user),
+            _w(address(token)),
+            _w(address(0xD5)),
+            1e6,
+            1e6,
+            DESTINATION,
+            bytes32(0),
+            quoteTimestamp,
+            quoteTimestamp + 2 hours,
+            0,
+            ""
+        );
+    }
 }

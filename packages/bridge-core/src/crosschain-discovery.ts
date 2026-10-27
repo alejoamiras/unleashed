@@ -38,6 +38,7 @@ import {
 	type BudgetedRead,
 	budgetedReads,
 	type ChainHeadClient,
+	firstBlockAfter,
 	hexEq,
 	openChainScan,
 	ScanIncomplete,
@@ -262,6 +263,7 @@ const DEPOSITED = getAbiItem({ abi: DEPOSIT_ROUTER_ABI, name: "Deposited" }) as 
 const PORTAL_PUBLIC = getAbiItem({ abi: TOKEN_PORTAL_ABI, name: "DepositToAztecPublic" }) as AbiEvent
 const PORTAL_PRIVATE = getAbiItem({ abi: TOKEN_PORTAL_ABI, name: "DepositToAztecPrivate" }) as AbiEvent
 const FILL_STATUSES_ABI = parseAbi(["function fillStatuses(bytes32) view returns (uint256)"])
+const QUOTE_BUFFER_ABI = parseAbi(["function depositQuoteTimeBuffer() view returns (uint32)"])
 const CLAIM_SELECTOR = toFunctionSelector("claim(bytes32,uint256)")
 
 /** `SpokePool.FillStatus`. */
@@ -436,6 +438,14 @@ function scanStart(from: string, latest: bigint): bigint {
 	return BigInt(from)
 }
 
+/** `[from, through the first block stamped after deadline]`, or to the head without a deadline, so a record's
+ *  scan costs the same however old it is. */
+async function windowOf(c: Ctx, client: DiscoveryChainReads, from: string, latest: bigint, deadline?: bigint): Promise<Range> {
+	const start = scanStart(from, latest)
+	const to = deadline === undefined ? latest : await firstBlockAfter(client, c.read, start, latest, deadline)
+	return { from: start, to, chunk: BigInt(c.o.chunkBlocks) }
+}
+
 /** The node has no receipt for `hash` (a replaced or dropped transaction). Matched by name, since a second viem
  *  copy defeats `instanceof`; every other failure stays a failed read. */
 async function receiptOrNull(client: DiscoveryChainReads, hash: Hex): Promise<DiscoveryReceipt | null> {
@@ -513,15 +523,42 @@ async function fromRecordedHash(c: Ctx, client: DiscoveryChainReads, hash: Hex):
 	return transport ? { kind: "sent", srcTxHash: hash, transport } : undefined
 }
 
+/** Across's deploy constant for `depositQuoteTimeBuffer`, unchanged in every revision of its `consts.ts`: the floor
+ *  keeps a deposit accepted before an upgrade that shortened the buffer inside the window. */
+const ACROSS_QUOTE_BUFFER_S = 3_600n
+
+/**
+ * The latest source time an Across deposit of this record can land: the SpokePool reverts a deposit whose quote is
+ * older than its `depositQuoteTimeBuffer`, and the calldata the record was built with quotes before its
+ * `fillDeadline` (`assertDepositShape`). Stale prompts included, so the window it closes is complete.
+ */
+async function lastSourceDeposit(c: Ctx, client: DiscoveryChainReads, latest: bigint): Promise<bigint | undefined> {
+	const { rail } = c.ctx
+	const deadline = c.rec.route.fillDeadline
+	if (rail.kind !== "acrossV4" || deadline === undefined) return undefined
+	const buffer = await c.read(() =>
+		client.readContract({
+			address: rail.sourceSpokePool,
+			abi: QUOTE_BUFFER_ABI,
+			functionName: "depositQuoteTimeBuffer",
+			args: [],
+			blockNumber: latest,
+		}),
+	)
+	if (typeof buffer !== "number" && typeof buffer !== "bigint") throw new ScanIncomplete("unknown deposit quote buffer")
+	const read = BigInt(buffer)
+	return BigInt(deadline) + (read > ACROSS_QUOTE_BUFFER_S ? read : ACROSS_QUOTE_BUFFER_S)
+}
+
 /** A lost source hash: `LiFiTransferStarted` indexes nothing, so the candidates are the indexed
  *  `Transfer(srcSender → Diamond)` of `srcToken`, in chain order, each bound through its receipt. */
 async function fromTransferScan(c: Ctx, client: DiscoveryChainReads, latest: bigint): Promise<SourceFacts> {
 	const { srcToken, srcSender } = c.rec.route
 	const diamond = c.ctx.source.diamond
 	const args = { from: srcSender, to: diamond }
-	const logs = await scanRange(scanStart(c.rec.route.srcScanFromBlock, latest), latest, BigInt(c.o.chunkBlocks), (start, end) =>
-		c.read(() => client.getLogs({ address: srcToken, event: ERC20_TRANSFER, args, fromBlock: start, toBlock: end })),
-	)
+	const until = await lastSourceDeposit(c, client, latest)
+	const range = await windowOf(c, client, c.rec.route.srcScanFromBlock, latest, until)
+	const logs = await logsOf(c, client, range, srcToken, ERC20_TRANSFER, args)
 	const isOurs = (l: DiscoveryLog) => {
 		const t = eventFrom(srcToken, ERC20_TRANSFER, l)
 		return !!t && hexEq(t.from, srcSender) && hexEq(t.to, diamond)
@@ -923,13 +960,20 @@ async function claimableDeposits(c: Ctx, deposits: RouterDeposit[]): Promise<Rou
 	return deposits.filter((_, i) => keep[i])
 }
 
+/**
+ * Every Across fill, a slow fill's included, lands at or before its fill deadline, so the window closes at the first
+ * block past it: the authenticated relay's deadline, or the record's while the source is unknown. That bounds the
+ * extras too: a `Deposited` for the secret hash after it cannot be this send's. A Stargate window runs to the head.
+ */
 async function readEthereum(c: Ctx, client: DiscoveryChainReads, source: SourceFacts): Promise<EthereumFacts> {
 	const scan = await openChainScan(client, c.rec.chainId, c.read, epochOf(client))
 	const head = await c.read(() => client.getBlock({ blockTag: "finalized" }))
 	const finalized = { number: head.number, timestamp: head.timestamp }
-	const range = { from: scanStart(c.rec.route.scanFromBlock, scan.latest), to: scan.latest, chunk: BigInt(c.o.chunkBlocks) }
-	const deposits = await routerDeposits(c, client, range)
 	const transport = source.kind === "sent" ? source.transport : undefined
+	const deadline = transport?.kind === "across" ? transport.relay.fillDeadline : c.rec.route.fillDeadline
+	const until = deadline === undefined ? undefined : BigInt(deadline)
+	const range = await windowOf(c, client, c.rec.route.scanFromBlock, scan.latest, until)
+	const deposits = await routerDeposits(c, client, range)
 	const execution = transport ? await findExecution(c, client, range, transport) : undefined
 	const expired = transport && !execution ? await expiredOnSource(c, client, transport, finalized) : false
 	await scan.close()
@@ -1005,7 +1049,9 @@ function assertContext(rec: CrossChainDepositRecord, ctx: CrossChainDiscoveryCon
 }
 
 /**
- * Where `rec` stands, re-derived from the chains on every run (a stored outcome is never an input).
+ * Where `rec` stands, re-derived from the chains on every run (a stored outcome is never an input). An Across
+ * record's scans end shortly past its fill deadline, so a run costs the same at any age; a Stargate record's run
+ * to the head and grow with it.
  *
  * Verdicts: `pending` (nothing decided yet; a send with no known hash stays here), `incomplete` (an RPC
  * failure, an exhausted budget, a chain switch, a reorg during the run, or chain data contradicting the
