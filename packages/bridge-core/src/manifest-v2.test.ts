@@ -1,4 +1,5 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
+import { getAddress } from "viem"
 import { describe, expect, it } from "vitest"
 import { deriveHubTokenInstance } from "./hub-token"
 import { assertManifestTokensDerive, deriveManifestHub, manifestToken, parseManifestV2, parseManifestV2Strict } from "./manifest-v2"
@@ -179,6 +180,12 @@ describe("manifest v2 DepositRouter fields", () => {
 		const portalless = await routed()
 		portalless.bridge.routing.sources[0].tokens[0].destToken = "0x00000000000000000000000000000000000000e9"
 		expect(() => parseManifestV2(portalless)).toThrow(/destToken must be a manifest token/)
+		const miscased = await routed()
+		const dest = getAddress(miscased.bridge.routing.sources[0].tokens[0].destToken)
+		const at = dest.slice(2).search(/[a-fA-F]/) + 2
+		const flip = dest[at] === dest[at].toUpperCase() ? dest[at].toLowerCase() : dest[at].toUpperCase()
+		miscased.bridge.routing.sources[0].tokens[0].destToken = dest.slice(0, at) + flip + dest.slice(at + 1)
+		expect(() => parseManifestV2(miscased)).toThrow(/EIP-55 checksum/)
 		const loop = await routed()
 		loop.bridge.routing.sources[0].chainId = 31337
 		expect(() => parseManifestV2(loop)).toThrow(/cannot be the destination/)
