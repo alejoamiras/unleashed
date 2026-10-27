@@ -72,7 +72,13 @@ through every arc and redeployed its router on the new generation. The rc.3 rout
    need 18, and the live run refuses before any spend. The owner topped it up and the live run passed (Facts).
 4. **The archived rc.1 arc 5 intent still named the old dRPC key** in `primaryRpc`. Main's keyless move scrubbed the
    other two archived intents; the close-out scrubbed this one to `<KEY>` the same way. The key stays in the
-   branches' history until the owner rotates it.
+   branches' history until the owner rotates it. Arcs 5 and 6 still carried the unarchived copy, which main's
+   node-key scan failed in their PR runs; it is scrubbed there too.
+5. **The routing block's `destToken` was mis-cased.** The hand-written `--routing` input named Sepolia's Circle USDC
+   with one letter in the wrong case. The schema took any 40-hex string, and the canary matches `destToken` to the
+   manifest token and encodes that token's lower-case `erc20`, so only the owner's first Base Sepolia send in the app
+   met viem's EIP-55 check, which refused it before any signature. The manifest now carries the EIP-55 spelling of the same address, and the schema refuses a stored
+   address that is neither lower-case nor EIP-55.
 
 ## Review
 
