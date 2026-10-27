@@ -6,7 +6,7 @@ import {Ownable} from "@oz/access/Ownable.sol";
 import {DepositRouter} from "../src/DepositRouter.sol";
 import {ILiFiSwap} from "../src/interfaces/ILiFiSwap.sol";
 import {DepositRouterFixture} from "./mocks/DepositRouterFixture.sol";
-import {MockFeeJuicePortal} from "./mocks/RouterMocks.sol";
+import {MockFeeJuicePortal} from "./mocks/CounterpartyMocks.sol";
 
 contract DepositRouterTest is DepositRouterFixture {
     uint256 internal constant AMOUNT = 1000e6;

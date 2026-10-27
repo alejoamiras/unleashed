@@ -104,12 +104,11 @@ describe.skipIf(!INTEGRATION)("router-only deploy, rehearsed on the sandbox gene
 		expect(await pendingNonce()).toBe(before)
 	})
 
-	it("the candidate keeps the legacy router, parses strictly and passes verify:l1 --strict", async () => {
+	it("the candidate names the new router, parses strictly and passes verify:l1 --strict", async () => {
 		const candidate = readCandidate(options.candidatePath)
 		if (!candidate?.bridge) throw new Error("the conductor wrote no candidate")
 		await parseManifestV2Strict(candidate)
 		expect(candidate.bridge.l1).toMatchObject({
-			router: options.base.bridge?.l1.router,
 			depositRouter: first.depositRouter.address,
 			fuelSwapper: first.fuelSwapper.address,
 		})

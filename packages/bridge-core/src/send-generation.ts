@@ -22,12 +22,9 @@ export function sendGenerationOf(m: ManifestV2, bridge: BridgeBlock): SendGenera
 	}
 }
 
-/**
- * Routers whose in-flight deposits still recover, newest first: the bridge's previous router while it
- * stays listed as `l1.router`, then `l1.legacyRouters`. No send ever goes through one.
- */
+/** Routers whose in-flight deposits still recover, newest first (`l1.legacyRouters`). No send ever goes through one. */
 export function legacyRoutersOf(bridge: BridgeBlock): Address[] {
 	const current = bridge.l1.depositRouter?.toLowerCase()
-	const all = [bridge.l1.router, ...(bridge.l1.legacyRouters ?? [])].map((a) => a.toLowerCase() as Address)
+	const all = (bridge.l1.legacyRouters ?? []).map((a) => a.toLowerCase() as Address)
 	return [...new Set(all)].filter((a) => a !== current)
 }

@@ -6,7 +6,7 @@ import {IERC20} from "@oz/token/ERC20/IERC20.sol";
 import {DepositRouter} from "../src/DepositRouter.sol";
 import {MintableERC20} from "../src/MintableERC20.sol";
 import {ILiFiSwap} from "../src/interfaces/ILiFiSwap.sol";
-import {MockPermit2, MockTokenPortal, MockFeeJuicePortal, FakePortalFactory} from "./mocks/RouterMocks.sol";
+import {MockPermit2, MockTokenPortal, MockFeeJuicePortal, FakePortalFactory} from "./mocks/CounterpartyMocks.sol";
 import {MockLifiSwap} from "./mocks/DepositRouterMocks.sol";
 import {
     DepositRouterWithoutPause,

@@ -4,7 +4,7 @@ pragma solidity >=0.8.27;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@oz/token/ERC20/IERC20.sol";
 import {DepositRouter} from "../src/DepositRouter.sol";
-import {MockFeeJuicePortal} from "./mocks/RouterMocks.sol";
+import {MockFeeJuicePortal} from "./mocks/CounterpartyMocks.sol";
 
 /// Pins the Permit2 witness the client signs. A drift on either side invalidates every signature, so the type
 /// string, the typehash and one full vector are fixed here and mirrored by the TypeScript witness.

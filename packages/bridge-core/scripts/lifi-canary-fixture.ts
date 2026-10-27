@@ -21,7 +21,8 @@ export const NOW_S = 1_900_000_000
 /** The swapper's fixed rate: one 6-decimal unit buys 1e14 FJ. */
 export const FJ_PER_UNIT = 10n ** 14n
 
-/** The testnet manifest before the router-only promotion: the base every router-only transform starts from. */
+/** The testnet manifest before the router-only promotion, its SwapBridgeRouter listed as legacy: the base every
+ *  router-only transform starts from. */
 export function preLifiTestnetManifest(): ManifestV2 {
 	return parseManifestV2(JSON.parse(readFileSync(join(import.meta.dirname, "../test/fixtures/testnet-bridge.pre-lifi.json"), "utf8")))
 }

@@ -18,6 +18,8 @@ function row(name: string, address: string, link: (a: string) => string): Contra
 	return { name, address, href: link(address) }
 }
 
+const routerRows = (router: string | undefined): ContractRow[] => (router ? [row("Router", router, etherscanAddressUrl)] : [])
+
 /** Every contract this build talks to, so a reader can check them before trusting a send. The bridge's
  *  rows exist only once a generation is promoted; the faucet's always do. */
 const groups = [
@@ -26,8 +28,7 @@ const groups = [
 		rows: GENERATION
 			? [
 					row("Portal factory", GENERATION.l1.factory, etherscanAddressUrl),
-					// The router a send goes through; a generation that predates the deposit router still names its own.
-					row("Router", GENERATION.l1.depositRouter ?? GENERATION.l1.router, etherscanAddressUrl),
+					...routerRows(GENERATION.l1.depositRouter),
 					row("Fee Juice portal", FUEL_PORTAL, etherscanAddressUrl),
 				]
 			: [],

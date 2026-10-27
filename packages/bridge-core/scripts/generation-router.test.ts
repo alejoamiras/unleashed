@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest"
 import type { L1Ctx } from "../src/flows"
 import { type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
 import {
-	DEFAULT_CROSS_CHAIN_SLIPPAGE_BPS,
 	deployRouterOnly,
 	fuelBudgetsOf,
 	inventoryMints,
@@ -17,28 +16,16 @@ const bridge = live.bridge
 if (!bridge) throw new Error("the pre-promotion testnet manifest carries no bridge")
 const ROUTER = `0x${"d1".repeat(20)}` as const
 const SWAPPER = `0x${"f5".repeat(20)}` as const
+const FUEL = { slippageBps: 300, crossChainSlippageBps: 150, minFuelFj: "1", fjPerTx: "2", fjRegister: "3" }
 
 describe("router-only candidate", () => {
-	it("carries the legacy swap block's budgets into the fuel block, and keeps a base's own fuel block", () => {
-		const swap = bridge.l1.swap
-		if (!swap) throw new Error("the live testnet manifest carries no swap block")
-		const fuel = fuelBudgetsOf(live)
-		expect(fuel).toEqual({
-			slippageBps: swap.slippageBps,
-			crossChainSlippageBps: DEFAULT_CROSS_CHAIN_SLIPPAGE_BPS,
-			minFuelFj: swap.minFuelFj,
-			fjPerTx: swap.fjPerTx,
-			fjRegister: swap.fjRegister,
-		})
-		const own = { ...fuel, crossChainSlippageBps: 150 }
-		expect(fuelBudgetsOf({ ...live, bridge: { ...bridge, l1: { ...bridge.l1, fuel: own } } })).toBe(own)
-		expect(() => fuelBudgetsOf({ ...live, bridge: { ...bridge, l1: { ...bridge.l1, swap: undefined } } })).toThrow(
-			/neither fuel budgets/,
-		)
+	it("takes the base's own fuel budgets, and refuses a base that carries none", () => {
+		expect(fuelBudgetsOf({ ...live, bridge: { ...bridge, l1: { ...bridge.l1, fuel: FUEL } } })).toBe(FUEL)
+		expect(() => fuelBudgetsOf(live)).toThrow(/no fuel budgets/)
 	})
 
-	it("adds only the additive fields to the live manifest, keeps the legacy router, and still parses", () => {
-		const candidate = routerOnlyCandidate(live, { depositRouter: ROUTER, fuelSwapper: SWAPPER, fuel: fuelBudgetsOf(live) })
+	it("adds only the router fields to the live manifest, and still parses", () => {
+		const candidate = routerOnlyCandidate(live, { depositRouter: ROUTER, fuelSwapper: SWAPPER, fuel: FUEL })
 		expect(parseManifestV2(candidate)).toEqual(candidate)
 		expect({ ...candidate.bridge?.l1, depositRouter: undefined, fuelSwapper: undefined, fuel: undefined }).toEqual({
 			...bridge.l1,
@@ -46,7 +33,6 @@ describe("router-only candidate", () => {
 			fuelSwapper: undefined,
 			fuel: undefined,
 		})
-		expect(candidate.bridge?.l1.router).toBe(bridge.l1.router)
 		expect({ ...candidate, bridge: null }).toEqual({ ...live, bridge: null })
 	})
 })

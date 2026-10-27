@@ -8,12 +8,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { loadLocalRun } from "./local-target-loader"
 
 const MANIFEST = fileURLToPath(new URL("../../../../packages/bridge-core/fixtures/sandbox-manifest.json", import.meta.url))
-// Read from the fixture: a regenerated sandbox manifest moves every token address.
-const USDC = (
-	JSON.parse(readFileSync(MANIFEST, "utf8")) as { bridge: { tokens: { erc20: string; displaySymbol: string }[] } }
-).bridge.tokens
-	.find((t) => t.displaySymbol === "USDC")
-	?.erc20.toLowerCase() as string
+const USDC = parseManifestV2(JSON.parse(readFileSync(MANIFEST, "utf8"))).bridge?.tokens.find((t) => t.displaySymbol === "USDC")?.erc20
 const at = (n: number) => `0x${n.toString(16).padStart(40, "0")}`
 
 const crossChain = {

@@ -1,10 +1,8 @@
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
 import { inspect } from "node:util"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { TESTNET_FILLER } from "../src/across-self-built"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
-import { type ManifestToken, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import type { DeployStep } from "./deploy-manifest"
 import { preLifiTestnetManifest } from "./lifi-canary-fixture"
 import {
@@ -86,7 +84,7 @@ describe("router-only intent", () => {
 
 	it("refuses a moved factory or legacy router, a dropped or re-derived live token, an unnamed token, or no new router", () => {
 		expect(() => assertRouterOnlyScope(scope, candidate({ factory: routerOnly.depositRouter }))).toThrow(/candidate factory/)
-		expect(() => assertRouterOnlyScope(scope, candidate({ router: routerOnly.depositRouter }))).toThrow(/candidate router/)
+		expect(() => assertRouterOnlyScope(scope, candidate({ legacyRouters: [] }))).toThrow(/drops legacy router/)
 		expect(() => assertRouterOnlyScope(scope, candidate({}, bridge.tokens.slice(1)))).toThrow(/live token .* missing/)
 		const rederived: ManifestToken = { ...(bridge.tokens[0] as ManifestToken), l2Token: `0x${"ab".repeat(32)}` }
 		expect(() => assertRouterOnlyScope(scope, candidate({}, [rederived, ...bridge.tokens.slice(1)]))).toThrow(/derives elsewhere/)

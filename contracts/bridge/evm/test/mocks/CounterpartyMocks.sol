@@ -2,12 +2,10 @@
 pragma solidity >=0.8.27;
 
 import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {IUniswapFuelSwap} from "../../src/SwapBridgeRouter.sol";
 import {ISignatureTransfer} from "../../src/interfaces/ISignatureTransfer.sol";
 import {ITokenPortal} from "../../src/interfaces/ITokenPortal.sol";
 import {IFeeJuicePortal} from "../../src/interfaces/IFeeJuicePortal.sol";
 import {IPortalFactory} from "../../src/interfaces/IPortalFactory.sol";
-import {SwapBridgeRouter} from "../../src/SwapBridgeRouter.sol";
 import {TokenPortalImpl} from "../../src/TokenPortalImpl.sol";
 import {IRegistry} from "@aztec/governance/interfaces/IRegistry.sol";
 
@@ -50,91 +48,6 @@ contract MockPermit2 is ISignatureTransfer {
         override
     {
         revert("unused");
-    }
-}
-
-/// Swap target with a configurable (reported, transferred) pair and an optional re-entrant call.
-contract MockSwap is IUniswapFuelSwap {
-    IERC20 public immutable fj;
-    uint256 public outAmount;
-    uint256 public transferAmount; // 0 => == outAmount
-    address public reenterTarget;
-    bytes public reenterCalldata;
-
-    constructor(IERC20 _fj) {
-        fj = _fj;
-    }
-
-    function setOutput(uint256 out_, uint256 transfer_) external {
-        outAmount = out_;
-        transferAmount = transfer_;
-    }
-
-    function armReenter(address target, bytes calldata call) external {
-        reenterTarget = target;
-        reenterCalldata = call;
-    }
-
-    function swap(address inputToken, uint256 inputAmount, uint256, PoolKey[] calldata, bool[] calldata)
-        external
-        override
-        returns (uint256)
-    {
-        if (reenterTarget != address(0)) {
-            (bool ok, bytes memory ret) = reenterTarget.call(reenterCalldata);
-            if (!ok) assembly { revert(add(ret, 32), mload(ret)) } // bubble the real reason
-        }
-        IERC20(inputToken).transferFrom(msg.sender, address(this), inputAmount);
-        fj.transfer(msg.sender, transferAmount == 0 ? outAmount : transferAmount);
-        return outAmount;
-    }
-}
-
-/// Satisfies the floor from its own FJ reserve WITHOUT pulling the input token — the
-/// residue-theft vector the router's fuel-consumption require must close.
-contract MaliciousPrefundSwap is IUniswapFuelSwap {
-    IERC20 public immutable fj;
-
-    constructor(IERC20 _fj) {
-        fj = _fj;
-    }
-
-    function swap(address, uint256, uint256 minOutput, PoolKey[] calldata, bool[] calldata)
-        external
-        override
-        returns (uint256)
-    {
-        fj.transfer(msg.sender, minOutput);
-        return minOutput;
-    }
-}
-
-/// A swap target whose (consumed, returned, transferred) behavior is set per call, so a fuzzer
-/// can sweep the full lattice around the router's three fuel guards.
-contract ConfigurableSwap is IUniswapFuelSwap {
-    IERC20 public immutable fj;
-    uint256 public consumed;
-    uint256 public returned;
-    uint256 public transferred;
-
-    constructor(IERC20 _fj) {
-        fj = _fj;
-    }
-
-    function set(uint256 c, uint256 r, uint256 t) external {
-        consumed = c;
-        returned = r;
-        transferred = t;
-    }
-
-    function swap(address inputToken, uint256, uint256, PoolKey[] calldata, bool[] calldata)
-        external
-        override
-        returns (uint256)
-    {
-        if (consumed > 0) IERC20(inputToken).transferFrom(msg.sender, address(this), consumed);
-        if (transferred > 0) fj.transfer(msg.sender, transferred);
-        return returned;
     }
 }
 
@@ -189,15 +102,8 @@ contract MockTokenPortal is ITokenPortal {
     }
 }
 
-/// The router with its portal rule deleted — a mutant the proofs' canaries run against, so a
-/// proof that no longer depends on the guard is caught in forge.
-contract RouterWithoutPortalRule is SwapBridgeRouter {
-    constructor(address p2, address fjp, address swap, address factory) SwapBridgeRouter(p2, fjp, swap, factory) {}
-
-    function _requireFactoryPortal(address, address) internal override {}
-}
-
-/// The clone implementation with its pause checks deleted (same purpose).
+/// The clone implementation with its pause checks deleted: a mutant the proofs' canaries run against,
+/// so a proof that no longer depends on the guard is caught in forge.
 contract PortalImplWithoutPause is TokenPortalImpl {
     constructor(IRegistry registry, bytes32 l2Hub) TokenPortalImpl(registry, l2Hub) {}
 

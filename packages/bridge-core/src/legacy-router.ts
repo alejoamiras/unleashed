@@ -4,7 +4,7 @@
  * through the router's frozen ABI.
  */
 import { type Address, type Hex, parseEventLogs } from "viem"
-import { SWAP_BRIDGE_ROUTER_ABI } from "./router-abi"
+import { LEGACY_ROUTER_ABI } from "./legacy-router-abi"
 
 type Logs = Parameters<typeof parseEventLogs>[0]["logs"]
 
@@ -24,7 +24,7 @@ export interface LegacySendLeaves {
  */
 function routerEvent<T>(router: Address, eventName: "Bridge" | "BridgeWithFuel", txHash: Hex, logs: Logs): T {
 	const own = logs.filter((l) => l.address.toLowerCase() === router.toLowerCase())
-	const events = parseEventLogs({ abi: SWAP_BRIDGE_ROUTER_ABI, eventName, logs: own })
+	const events = parseEventLogs({ abi: LEGACY_ROUTER_ABI, eventName, logs: own })
 	if (events.length !== 1) throw new Error(`the router emitted ${events.length} ${eventName} events in ${txHash}, expected exactly one`)
 	return events[0] as T
 }
@@ -42,7 +42,7 @@ export function emittedBy(router: Address, logs: readonly { address: string }[])
  */
 export function readLegacySendLeaves(router: Address, intent: "token" | "token+gas" | "gas", txHash: Hex, logs: Logs): LegacySendLeaves {
 	const own = logs.filter((l) => l.address.toLowerCase() === router.toLowerCase())
-	if (parseEventLogs({ abi: SWAP_BRIDGE_ROUTER_ABI, eventName: "BridgeWithFuel", logs: own }).length === 0) {
+	if (parseEventLogs({ abi: LEGACY_ROUTER_ABI, eventName: "BridgeWithFuel", logs: own }).length === 0) {
 		const ev = routerEvent<{ args: { index: bigint; key: Hex; amount: bigint } }>(router, "Bridge", txHash, logs)
 		if (intent !== "gas") return { tokenLeafIndex: ev.args.index, tokenMessageHashHex: ev.args.key }
 		return { fuelLeafIndex: ev.args.index, fuelMessageHashHex: ev.args.key, fuelReceived: ev.args.amount }

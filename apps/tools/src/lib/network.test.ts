@@ -1,4 +1,4 @@
-import { bridgeWitnessPermitTypedData } from "@unleashed/bridge-core"
+import { depositWitnessPermitTypedData } from "@unleashed/bridge-core"
 import { describe, expect, it, vi } from "vitest"
 import { TESTNET_L1_CHAIN_ID, TESTNET_WALLET_CHAIN_ID } from "./chain-constants"
 import { NETWORK, readChainOf, sourcesOf } from "./network"
@@ -76,8 +76,8 @@ describe("L1_CHAIN_LABEL — the FROM/TO panel chip", () => {
 // half-switched build cannot sign a witness against the wrong chain — which would revert 100% of
 // deposits at `permitWitnessTransferFrom`.
 describe("Permit2 witness domain is bound to NETWORK.l1ChainId", () => {
-	it("bridgeWitnessPermitTypedData(...NETWORK.l1ChainId) → domain.chainId === NETWORK.l1ChainId", () => {
-		const typed = bridgeWitnessPermitTypedData(
+	it("depositWitnessPermitTypedData(...NETWORK.l1ChainId) → domain.chainId === NETWORK.l1ChainId", () => {
+		const typed = depositWitnessPermitTypedData(
 			{
 				permitted: { token: "0x0000000000000000000000000000000000000001", amount: 1n },
 				spender: "0x0000000000000000000000000000000000000002",

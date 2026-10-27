@@ -32,7 +32,6 @@ export function generateRemappings(): string {
 		// path, so it must resolve to the same tree as @aztec/ or the upstream portal
 		// fails to compile under the isolated linker.
 		`@aztec-blob-lib/=${aztecSrc}core/libraries/rollup/`,
-		"@uniswap/v4-core/=lib/v4-core/",
 		"@test/=test/",
 		"forge-std/=lib/forge-std/src/",
 	]

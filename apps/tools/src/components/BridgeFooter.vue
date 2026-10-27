@@ -38,12 +38,13 @@ function sourceGroups(): ContractGroup[] {
 function bridgeGroups(): ContractGroup[] {
 	if (!GENERATION) return []
 	const l1 = NETWORK.l1ChainId
+	const router = GENERATION.l1.depositRouter
 	return [
 		{
 			chain: chainLabel(l1),
 			links: [
 				{ name: "Portal factory", href: chainAddressUrl(l1, GENERATION.l1.factory) },
-				{ name: "Unleashed router", href: chainAddressUrl(l1, GENERATION.l1.depositRouter ?? GENERATION.l1.router) },
+				...(router ? [{ name: "Unleashed router", href: chainAddressUrl(l1, router) }] : []),
 				{ name: "Fee Juice portal", href: chainAddressUrl(l1, FUEL_PORTAL) },
 			],
 		},

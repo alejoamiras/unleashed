@@ -642,13 +642,16 @@ function acrossSpan(logs: readonly RawLog[], c: Ctx, transport: Extract<SourceTr
 
 /** EndpointV2 logs `ComposeDelivered` (guid in its data, nothing indexed) after the composer returns, so
  *  our marker is the last one before our delivery and after the endpoint's previous one. */
+/** EndpointV2's `ComposeDelivered` for our guid, from the pinned pool to LI.FI's receiver. */
+function isOurDelivery(log: RawLog, rail: StargateRailContext, guid: Hex): boolean {
+	const d = eventFrom(rail.endpoint, COMPOSE_DELIVERED, log)
+	return !!d && hexEq(d.from, rail.destinationPool) && hexEq(d.to, rail.receiver) && hexEq(d.guid, guid) && d.index === 0
+}
+
 function stargateSpan(logs: readonly RawLog[], c: Ctx, guid: Hex): Span | undefined {
 	const rail = c.ctx.rail as StargateRailContext
 	const delivery = (l: RawLog) => eventFrom(rail.endpoint, COMPOSE_DELIVERED, l)
-	const ours = logs.findIndex((l) => {
-		const d = delivery(l)
-		return !!d && hexEq(d.from, rail.destinationPool) && hexEq(d.to, rail.receiver) && hexEq(d.guid, guid) && d.index === 0
-	})
+	const ours = logs.findIndex((l) => isOurDelivery(l, rail, guid))
 	if (ours < 0) return undefined
 	let i = ours - 1
 	for (; i >= 0 && !delivery(logs[i]); i--) {
@@ -844,15 +847,15 @@ async function executionIn(receipt: DiscoveryReceipt, c: Ctx, transport: SourceT
 	return { kind: "completed", ...at, deposit: await intendedDeposit(logs, span, marker.index, receipt.transactionHash, c) }
 }
 
-/** Transactions that may carry our execution: Across fills indexed by `(originChainId, depositId)` whose
- *  recomputed relay hash is ours; on Stargate (whose delivery event indexes nothing) the transactions
- *  of the receiver's recoveries for `lifiTxId` and of the Executor-paid deposits for our secret. */
+/** Transactions that may carry our execution, each bound to our transport before any cap applies: Across
+ *  fills whose recomputed relay hash is ours, or the Stargate delivery of our guid. Anyone can pay the
+ *  Executor into the router with our public secret hash, or replay our `lifiTxId` through a transfer of
+ *  their own, so neither may pick a candidate. */
 async function executionCandidates(
 	c: Ctx,
 	client: DiscoveryChainReads,
 	range: Range,
 	t: SourceTransport,
-	deposits: RouterDeposit[],
 ): Promise<{ transactionHash: Hex }[]> {
 	if (t.kind === "across") {
 		const pool = (c.ctx.rail as AcrossRailContext).destinationSpokePool
@@ -863,14 +866,13 @@ async function executionCandidates(
 			return !!f && fillIsOurs(f, t, c.rec.chainId)
 		})
 	}
-	const receiver = c.ctx.rail.receiver
-	const recovered = await logsOf(c, client, range, receiver, LIFI_TRANSFER_RECOVERED, { transactionId: c.rec.route.lifiTxId })
-	const paid = deposits.filter((d) => hexEq(d.args.payer, c.ctx.ethereum.executor)).map((d) => ({ transactionHash: d.txHash }))
-	return [...recovered.filter((l) => !!markerAt(l, c)), ...paid]
+	const rail = c.ctx.rail as StargateRailContext
+	const delivered = await logsOf(c, client, range, rail.endpoint, COMPOSE_DELIVERED, {})
+	return delivered.filter((l) => isOurDelivery(l, rail, t.guid))
 }
 
-async function findExecution(c: Ctx, client: DiscoveryChainReads, range: Range, t: SourceTransport, deposits: RouterDeposit[]) {
-	const candidates = await executionCandidates(c, client, range, t, deposits)
+async function findExecution(c: Ctx, client: DiscoveryChainReads, range: Range, t: SourceTransport) {
+	const candidates = await executionCandidates(c, client, range, t)
 	const hashes = [...new Set(candidates.map((l) => l.transactionHash.toLowerCase() as Hex))]
 	if (hashes.length > c.o.maxCandidates) throw new ScanIncomplete("too many destination candidates")
 	const found: Execution[] = []
@@ -928,7 +930,7 @@ async function readEthereum(c: Ctx, client: DiscoveryChainReads, source: SourceF
 	const range = { from: scanStart(c.rec.route.scanFromBlock, scan.latest), to: scan.latest, chunk: BigInt(c.o.chunkBlocks) }
 	const deposits = await routerDeposits(c, client, range)
 	const transport = source.kind === "sent" ? source.transport : undefined
-	const execution = transport ? await findExecution(c, client, range, transport, deposits) : undefined
+	const execution = transport ? await findExecution(c, client, range, transport) : undefined
 	const expired = transport && !execution ? await expiredOnSource(c, client, transport, finalized) : false
 	await scan.close()
 	return { finalized, claimable: await claimableDeposits(c, deposits), execution, expired }

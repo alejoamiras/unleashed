@@ -1,8 +1,8 @@
 /**
- * The router-only arc: a DepositRouter and its testnet fuel swapper deployed beside the current generation's router
- * on an unchanged network, then a candidate manifest naming them in its additive fields (`router` stays the old
- * one). The generation's identity, factory and hub are inputs, never outputs: promotion locks exactly those, so this
- * arc moves the router and nothing else.
+ * The router-only arc: a DepositRouter and its testnet fuel swapper deployed for the current generation on an
+ * unchanged network, then a candidate manifest naming them. The generation's identity, factory and hub are inputs,
+ * never outputs: promotion locks exactly those, so this arc moves the router and nothing else. A fresh generation's
+ * deploy ends with the same arc.
  *
  * The core takes its L1 context, journal path and network constants from the caller, so the sandbox rehearsal and
  * the live run drive the same steps. Each deploy is journalled and each other write is idempotent, so a crashed run
@@ -86,16 +86,14 @@ export function parseRouting(raw: unknown): Routing {
 	return routingSchema.parse(raw)
 }
 
-/** The base's fuel budgets: its `fuel` block, else the legacy `swap` block's budgets, which measure the same L2 fees. */
+/** The base's fuel budgets, which the candidate carries unchanged. */
 export function fuelBudgetsOf(base: ManifestV2): FuelBudgets {
-	const l1 = base.bridge?.l1
-	if (l1?.fuel) return l1.fuel
-	if (!l1?.swap) throw new Error("the base manifest carries neither fuel budgets nor a swap block to take them from — STOP")
-	const { slippageBps, minFuelFj, fjPerTx, fjRegister } = l1.swap
-	return { slippageBps, crossChainSlippageBps: DEFAULT_CROSS_CHAIN_SLIPPAGE_BPS, minFuelFj, fjPerTx, fjRegister }
+	const fuel = base.bridge?.l1.fuel
+	if (!fuel) throw new Error("the base manifest carries no fuel budgets — STOP")
+	return fuel
 }
 
-/** The base with the arc's additive fields; every other field, `router` included, is the base's own. */
+/** The base with the arc's router fields; every other field is the base's own. */
 export function routerOnlyCandidate(
 	base: ManifestV2,
 	f: { depositRouter: Address; fuelSwapper: Address; fuel: FuelBudgets; routing?: Routing | null },
