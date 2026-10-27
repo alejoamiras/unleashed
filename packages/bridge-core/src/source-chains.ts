@@ -49,14 +49,18 @@ export function sourceChain(chainId: number): SourceChain | undefined {
 
 /**
  * The sources `m` enables, in manifest order; empty when it routes nothing. Throws when a source is missing from
- * `SOURCE_CHAINS` or delivers into another L1 than `m.l1ChainId`: either means the manifest and this build disagree.
+ * `catalogue` or delivers into another L1 than `m.l1ChainId`: either means the manifest and this build disagree.
+ * Only a local build passes a catalogue beyond `SOURCE_CHAINS`, to add its own sandbox chain.
  */
-export function enabledSources(m: {
-	l1ChainId: number
-	bridge: { routing?: { sources: readonly RoutingSource[] } | null } | null
-}): EnabledSource[] {
+export function enabledSources(
+	m: {
+		l1ChainId: number
+		bridge: { routing?: { sources: readonly RoutingSource[] } | null } | null
+	},
+	catalogue: Readonly<Record<number, SourceChain>> = SOURCE_CHAINS,
+): EnabledSource[] {
 	return (m.bridge?.routing?.sources ?? []).map((src) => {
-		const chain = sourceChain(src.chainId)
+		const chain = catalogue[src.chainId]
 		if (chain === undefined) throw new Error(`source-chains: chain ${src.chainId} is not a known source`)
 		if (chain.l1ChainId !== m.l1ChainId) {
 			throw new Error(`source-chains: ${chain.name} delivers into chain ${chain.l1ChainId}, not ${m.l1ChainId}`)

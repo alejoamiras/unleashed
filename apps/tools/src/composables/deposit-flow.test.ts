@@ -27,7 +27,6 @@ import {
 	type SendDepositRecord,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
-	SWAP_BRIDGE_ROUTER_ABI,
 	PUBLIC_HUB_CLAIM_GAS,
 	PUBLIC_HUB_REGISTER_CLAIM_GAS,
 } from "@unleashed/bridge-core"
@@ -55,12 +54,15 @@ const h = vi.hoisted(() => {
 		/** The checkpointed nullifier witness per read, consumed in order (the last answer repeats);
 		 *  undefined = absent, "throw" = the node cannot answer, "hang" = it never answers. */
 		witness: [] as unknown[],
+		/** What the deposit router's receipt reader authenticates, or the refusal it throws. */
+		depositLeaves: {} as Record<string, unknown> | Error,
 	}
 })
 
 vi.mock("@/contracts/bridge-generation", () => ({
 	FUEL_MIN_FJ: 1000n,
-	SWAP: undefined,
+	FUEL: undefined,
+	LEGACY_ROUTERS: [],
 }))
 
 // The Fee Juice balances as the wallet's reads answer them; a throw = unreadable.
@@ -149,6 +151,13 @@ vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
 	selfPaidFeeJuicePayment: (payer: { toString(): string }) => {
 		h.t("selfPaidFeeJuicePayment", { payer: payer.toString() })
 		return { kind: "self-paid-fj" }
+	},
+	// The deposit router's receipt is authenticated in bridge-core; here only what the recovery hands it.
+	readSendInbox: async (_pub: unknown, g: { factory: string }) => ({ fromFactory: g.factory }),
+	readSendReceiptLeaves: async (g: { router: string }, inbox: unknown, expected: unknown) => {
+		h.t("readSendReceiptLeaves", { router: g.router, inbox, expected })
+		if (h.depositLeaves instanceof Error) throw h.depositLeaves
+		return h.depositLeaves
 	},
 }))
 
@@ -482,20 +491,21 @@ describe("private fuel fee — the sealed salt is authoritative", () => {
 })
 
 describe("recoverDepositLeg — send records", () => {
+	/** The retired router; the generation sends through the deposit router. */
 	const ROUTER = "0x1111111111111111111111111111111111111111" as const
+	const DEPOSIT_ROUTER = "0x8888888888888888888888888888888888888888" as const
 	const generation = {
-		router: ROUTER,
-		routerAbi: SWAP_BRIDGE_ROUTER_ABI,
+		router: DEPOSIT_ROUTER,
 		permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
 		factory: "0x3333333333333333333333333333333333333333",
 		implementation: "0x2222222222222222222222222222222222222222",
 		feeJuicePortal: "0x4444444444444444444444444444444444444444",
 		feeAsset: "0x5555555555555555555555555555555555555555",
-		swapTarget: "0x6666666666666666666666666666666666666666",
 		chainId: 31337,
 		hub: `0x${"7".padStart(64, "0")}`,
 		tokenClassId: `0x${"1".padStart(64, "0")}`,
 	} as const
+	const reads = { readContract: async () => 0n }
 	const zero32 = `0x${"0".repeat(64)}` as const
 	const bridgeLog = (emitter: string, index: bigint, logIndex: number) => ({
 		address: emitter,
@@ -519,17 +529,42 @@ describe("recoverDepositLeg — send records", () => {
 		depositTxHash: zero32,
 		chainId: 31337,
 		isPrivate: false,
+		recipient: RECIPIENT,
+		secretHashHex: `0x${"d".repeat(64)}`,
+		token: { erc20: "0x9999999999999999999999999999999999999999" },
 	} as unknown as SendDepositRecord
 
-	test("reads the deposit leaf from the router's own event, not the first Inbox leaf", async () => {
+	test("a deposit-router send's leaves come from its authenticated Deposited, checked against the record's own facts", async () => {
+		const client = { ...reads, getTransactionReceipt: async () => ({ status: "success", logs: [{ address: DEPOSIT_ROUTER }] }) }
+		h.depositLeaves = { tokenLeafIndex: 7n, tokenMessageHashHex: `0x${"e".repeat(64)}` }
+		await expect(recoverDepositLeg(record, client, generation as never, [ROUTER])).resolves.toBe("recovered")
+		expect(h.calls.find(([n]) => n === "readSendReceiptLeaves")?.[1]).toEqual({
+			router: DEPOSIT_ROUTER,
+			inbox: { fromFactory: generation.factory },
+			expected: {
+				l1ChainId: 31337,
+				isPrivate: false,
+				recipient: RECIPIENT,
+				token: { erc20: "0x9999999999999999999999999999999999999999", secretHash: `0x${"d".repeat(64)}` },
+			},
+		})
+		expect(h.calls.at(-1)).toEqual(["updateRecord", { id: "send-1", patch: { leafIndex: "7", messageHash: `0x${"e".repeat(64)}` } }])
+		// A receipt that does not authenticate is never recovered.
+		h.depositLeaves = new Error("no Deposited for this record")
+		await expect(recoverDepositLeg(record, client, generation as never, [ROUTER])).rejects.toThrow(/no Deposited/)
+	})
+
+	test("a retired router's send reads that router's own event, not the first Inbox leaf", async () => {
 		const client = {
+			...reads,
 			getTransactionReceipt: async () => ({
 				status: "success",
 				// A first deposit's receipt: a foreign same-signature log first, then the router's.
 				logs: [bridgeLog("0x00000000000000000000000000000000000e2c20", 999n, 0), bridgeLog(ROUTER, 41n, 1)],
 			}),
 		}
-		await expect(recoverDepositLeg(record, client, generation as never)).resolves.toBe("recovered")
+		await expect(recoverDepositLeg(record, client, generation as never, [ROUTER])).resolves.toBe("recovered")
+		expect(h.calls.some(([n]) => n === "readSendReceiptLeaves")).toBe(false)
 		expect(h.calls.at(-1)).toEqual(["updateRecord", { id: "send-1", patch: { leafIndex: "41", messageHash: `0x${"b".repeat(64)}` } }])
 	})
 
@@ -555,17 +590,17 @@ describe("recoverDepositLeg — send records", () => {
 				[`0x${"b".repeat(64)}`, 41n, 5n, zero32, `0x${"c".repeat(64)}`, 42n, 7n, zero32, false],
 			),
 		}
-		const client = { getTransactionReceipt: async () => ({ status: "success", logs: [fuelLog] }) }
+		const client = { ...reads, getTransactionReceipt: async () => ({ status: "success", logs: [fuelLog] }) }
 		const fueled = { ...record, intent: "token+gas", fuel: mkRec().fuel } as unknown as SendDepositRecord
 		h.persisted = { ...fueled, fuel: { ...mkRec().fuel, secretHashHex: "0xanother-deposit" } }
-		await expect(recoverDepositLeg(fueled, client, generation as never)).rejects.toThrow(/changed while/)
+		await expect(recoverDepositLeg(fueled, client, generation as never, [ROUTER])).rejects.toThrow(/changed while/)
 		expect(h.calls.some(([n]) => n === "updateRecord")).toBe(false)
 		h.persisted = fueled
-		await expect(recoverDepositLeg(fueled, client, generation as never)).resolves.toBe("recovered")
+		await expect(recoverDepositLeg(fueled, client, generation as never, [ROUTER])).resolves.toBe("recovered")
 	})
 
-	test("a send record without a generation cannot recover", async () => {
-		const client = { getTransactionReceipt: async () => ({ status: "success", logs: [] }) }
+	test("a send record without a generation recovers only through a retired router", async () => {
+		const client = { ...reads, getTransactionReceipt: async () => ({ status: "success", logs: [] }) }
 		await expect(recoverDepositLeg(record, client)).rejects.toThrow(/no bridge/)
 	})
 })

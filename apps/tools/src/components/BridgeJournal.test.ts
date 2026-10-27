@@ -131,7 +131,7 @@ describe("BridgeJournal", () => {
 		expect(push).toHaveBeenCalledWith(expect.objectContaining({ kind: "error", text: expect.stringContaining("too large") }))
 	})
 
-	it("orders attention first (a lost record of another account with the lost ones) and counts the records", () => {
+	it("orders the records newest first, whatever they need, under a heading with no count", () => {
 		const dep = (id: string, createdAt: number, over: Partial<BridgeJournalRecord> = {}) =>
 			recOf({ id, createdAt, recipient: "0xaztec", leafIndex: "1", ...over } as Partial<BridgeJournalRecord>)
 		visibleRecords.value = [
@@ -145,8 +145,8 @@ describe("BridgeJournal", () => {
 		runtime.value = { running: { busy: true }, "theirs-lost": { attention: "receipt-mismatch" } }
 		const w = mount(BridgeJournal, { global: { stubs: { BridgeJournalCard: true } } })
 		const ids = w.findAllComponents(BridgeJournalCard).map((c) => (c.props("record") as BridgeJournalRecord).id)
-		expect(ids).toEqual(["blocked", "theirs-lost", "needs", "running", "done", "theirs"])
-		expect(w.get(".count").text()).toBe("6 records")
+		expect(ids).toEqual(["theirs", "done", "running", "blocked", "theirs-lost", "needs"])
+		expect(w.find(".count").exists()).toBe(false)
 		expect(w.findAll("ul[role=list] > li")).toHaveLength(6)
 	})
 

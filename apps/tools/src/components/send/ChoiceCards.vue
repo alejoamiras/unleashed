@@ -2,8 +2,7 @@
 /** Utils */
 import { Icon } from "@unleashed/design"
 import { computed, useTemplateRef } from "vue"
-import { PHONE_QUERY, useMediaQuery } from "@/composables/useMediaQuery"
-import { type ChoiceHint, GAS_BLOCK_REASON, type GasBlock, hintOf, type SendIntent } from "@/lib/send-model"
+import { GAS_BLOCK_REASON, type GasBlock, type SendIntent } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 
 const props = defineProps<{
@@ -16,15 +15,8 @@ const props = defineProps<{
 	gasBlock: GasBlock | null
 	/** Why the token alone cannot be chosen (the account holds no gas to claim it with); null = it can. */
 	tokenReason?: string | null
-	/** Transactions the token + gas slice is sized for, for its phone hint. */
-	txTarget: number
-	/** The gas breakdown's element id: on a phone the selected gas row's hint opens and closes it. */
-	breakdownId?: string
-	breakdownOpen?: boolean
-	/** An error or a cap note holds the breakdown open, so its hint cannot close it. */
-	breakdownHeld?: boolean
 }>()
-const emit = defineEmits<{ "update:intent": [intent: SendIntent]; "toggle-gas": [] }>()
+const emit = defineEmits<{ "update:intent": [intent: SendIntent] }>()
 
 interface Choice {
 	key: SendIntent
@@ -35,8 +27,6 @@ interface Choice {
 
 const ID_SLUG: Record<SendIntent, string> = { token: "token", "token+gas": "token-gas", gas: "gas" }
 const HEADING_ID = "send-choices-heading"
-
-const phone = useMediaQuery(PHONE_QUERY)
 
 /** A card is named by its label alone and described by its caption, or by the reason it is blocked:
  *  a name taken from its whole content would say the reason twice. One choice group exists at a time. */
@@ -65,21 +55,6 @@ const choices = computed<Choice[]>(() => {
 		{ key: "gas", testid: TESTIDS.sendChoiceGas, label: "Gas", desc: `All of it arrives as gas.${oneForOne}` },
 	]
 })
-
-function hint(choice: Choice): ChoiceHint {
-	return hintOf(choice.key, {
-		exit: props.exitOnly,
-		txTarget: props.txTarget,
-		gasBlock: props.gasBlock,
-		tokenBlocked: Boolean(props.tokenReason),
-	})
-}
-
-/** Only the selected gas row has a breakdown to open, and only on a phone does it start closed; a
- *  blocked row has no plan behind it, so it keeps its plain hint. */
-function discloses(choice: Choice): boolean {
-	return phone.value && Boolean(props.breakdownId) && choice.key === props.intent && choice.key !== "token" && enabled(choice)
-}
 
 function enabled(choice: Choice): boolean {
 	return reasonOf(choice) === null
@@ -113,8 +88,7 @@ function move(from: number, delta: number): void {
 		<span :id="HEADING_ID" class="heading">What arrives</span>
 		<!-- aria-disabled, not disabled: a blocked choice that is still the selected one stays the group's tab stop. -->
 		<div ref="cards" class="segment" role="radiogroup" :aria-labelledby="HEADING_ID" :data-testid="TESTIDS.sendChoiceCards" :data-count="choices.length">
-			<!-- The hint button is the radio's sibling, never its child: a radio's content is presentational. -->
-			<div v-for="(choice, index) in choices" :key="choice.key" class="row" role="none" :data-discloses="discloses(choice) || undefined">
+			<template v-for="(choice, index) in choices" :key="choice.key">
 				<button
 					type="button"
 					role="radio"
@@ -140,23 +114,8 @@ function move(from: number, delta: number): void {
 						<span :id="idOf(choice, 'label')" class="label">{{ choice.label }}</span>
 						<span :id="idOf(choice, 'desc')" class="desc">{{ reasonOf(choice) ?? choice.desc }}</span>
 					</span>
-					<span class="hint">{{ hint(choice).lead }}<span v-if="hint(choice).count !== undefined" class="n">{{ hint(choice).count }}</span>{{ hint(choice).tail }}</span>
 				</button>
-				<button
-					v-if="discloses(choice)"
-					type="button"
-					class="disclosure"
-					:aria-expanded="breakdownOpen ? 'true' : 'false'"
-					:aria-disabled="breakdownHeld ? 'true' : undefined"
-					:aria-controls="breakdownId"
-					:data-testid="TESTIDS.sendGasDisclosure"
-					@click="emit('toggle-gas')"
-				>
-					<span>{{ hint(choice).lead }}<span v-if="hint(choice).count !== undefined" class="n">{{ hint(choice).count }}</span>{{ hint(choice).tail }}</span>
-					<Icon name="chevron" :size="12" :rotate="breakdownOpen ? 180 : 0" />
-					<span class="sr-only">, gas breakdown</span>
-				</button>
-			</div>
+			</template>
 		</div>
 	</div>
 </template>
@@ -175,16 +134,9 @@ function move(from: number, delta: number): void {
 	gap: 6px;
 }
 
-/* Two cells: the radio spans both, and the hint button, when there is one, lies over the second. */
-.row {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto;
-}
-
 .cell {
 	--ul-fill: var(--ul-raised);
 	--ul-notch: var(--ul-notch-2);
-	grid-area: 1 / 1 / 2 / 3;
 	display: flex;
 	align-items: flex-start;
 	gap: 12px;
@@ -251,89 +203,28 @@ function move(from: number, delta: number): void {
 	color: var(--ul-ink-2);
 }
 
-.cell[data-selected] .desc,
-.cell[data-selected] .hint,
-.disclosure {
+.cell[data-selected] .desc {
 	color: var(--ul-line);
 }
 
-.cell[aria-disabled="true"] .desc,
-.cell[aria-disabled="true"] .hint {
+.cell[aria-disabled="true"] .desc {
 	color: var(--ul-ink-3);
 }
 
-.hint {
-	display: none;
-}
-
-.n {
-	font-family: var(--ul-font-mono);
-}
-
-.disclosure {
-	grid-area: 1 / 2;
-	z-index: 1;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 0 12px 0 8px;
-	font: 400 12.5px/1.3 var(--ul-font-body);
+.heading {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
 	white-space: nowrap;
-	cursor: pointer;
 }
 
-@media (min-width: 761px) {
-	.heading {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		margin: -1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
-	}
-}
-
+/* The same cards, stacked: the narrow board keeps each card's label and caption. */
 @media (max-width: 760px) {
-	.heading {
-		font: 700 13px/1.3 var(--ul-font-body);
-		color: var(--ul-ink);
-	}
-
 	.segment {
 		grid-auto-flow: row;
-		gap: 4px;
-	}
-
-	.cell {
-		align-items: center;
-		min-height: 40px;
-		padding: 0 12px;
-	}
-
-	.box {
-		width: 16px;
-		height: 16px;
-		margin-top: 0;
-	}
-
-	.text {
-		flex: 1;
-	}
-
-	.desc {
-		display: none;
-	}
-
-	.hint {
-		display: block;
-		flex: none;
-		font: 400 12.5px/1.3 var(--ul-font-body);
-		color: var(--ul-ink-2);
-	}
-
-	.row[data-discloses] .hint {
-		display: none;
 	}
 }
 </style>

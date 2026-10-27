@@ -3,6 +3,7 @@
 import { computed, ref, useTemplateRef } from "vue"
 import type { SelectableToken } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
+import type { RowLook } from "./token-rows"
 
 /** Components */
 import TokenTile from "./TokenTile.vue"
@@ -14,6 +15,8 @@ const props = defineProps<{
 	balances?: Record<string, bigint>
 	loading: boolean
 	empty: boolean
+	/** Per `logoKey`; a row without one reads as a plain Ethereum token. */
+	looks?: Record<string, RowLook>
 }>()
 const emit = defineEmits<{ select: [token: SelectableToken] }>()
 
@@ -56,6 +59,7 @@ function move(from: number, delta: number): void {
 				:token="token"
 				:selected="token.logoKey === selected?.logoKey"
 				:balance="balances?.[token.logoKey]"
+				:look="looks?.[token.logoKey]"
 				:data-index="index"
 				:tabindex="index === rovingIndex ? 0 : -1"
 				@select="emit('select', token)"
@@ -80,9 +84,9 @@ function move(from: number, delta: number): void {
 .list {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	/* Five and a half rows, so a longer list shows that it scrolls. */
-	max-height: 356px;
+	gap: 2px;
+	/* Nine and a half rows, so a longer list shows that it scrolls. */
+	max-height: 550px;
 	overflow-y: auto;
 }
 

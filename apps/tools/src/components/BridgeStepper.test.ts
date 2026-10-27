@@ -20,6 +20,7 @@ vi.mock("@/lib/clock", () => ({
 }))
 
 import { TESTIDS } from "@/lib/testids"
+import { xcRecord } from "@/test/crosschain-record"
 import BridgeStepper from "./BridgeStepper.vue"
 
 const sel = (t: string) => `[data-testid="${t}"]`
@@ -122,10 +123,10 @@ describe("BridgeStepper", () => {
 			caption: ["Seal · phase 1 of 6", "2:40 elapsed"],
 		})
 
-		// Three phases done and two of Crossing's three blocks in: (3 + 2/3) / 6.
+		// Three phases done: the bar stands at Crossing's start whatever its meter reads.
 		runtime.value = { "0xd": { step: "syncing", syncBlock: 102 } }
 		const crossing = mount(BridgeStepper, { props: { record: dep({ depositTxHash: "0xt", leafIndex: "7", depositL2Block: 100 }) } })
-		expect(read(crossing).bar[2]).toBe("61")
+		expect(read(crossing).bar[2]).toBe("50")
 		expect(read(crossing).caption[0]).toBe("Crossing · phase 4 of 6")
 
 		runtime.value = { "0xd": { attention: "error", note: "boom" } }
@@ -166,21 +167,21 @@ describe("BridgeStepper", () => {
 			exitTxHash: "0xw",
 			...DEPLOY,
 		}
-		expect(selected(dep())).toBe("Ethereum → Aztec")
-		expect(selected(exit)).toBe("Aztec → Ethereum")
+		expect(selected(dep())).toBe("Into Aztec")
+		expect(selected(exit)).toBe("Out to Ethereum")
 	})
 
-	it("the session log shows its latest 8 rows as m:ss from the run's start, as text only; the permission prompt has none", () => {
+	it("the session log shows its latest 6 rows as m:ss from the run's start, as text only; the permission prompt has none", () => {
 		const log = Array.from({ length: 10 }, (_, i) => ({ seq: i, at: 40_000 + i * 15_000, text: `row ${i}` }))
 		log[9] = { seq: 9, at: 175_000, text: "approving the <img src=x onerror=alert(1)> spend" }
 		runtime.value = { "0xd": { step: "sealing", log } }
 		const well = mount(BridgeStepper, { props: { record: dep(), startedAt: 40_000 } }).get(sel(TESTIDS.stepperLog))
 		expect(well.attributes("role")).toBe("log")
 		const rows = well.findAll(".row")
-		expect(rows.map((r) => r.get(".at").text())).toEqual(["0:30", "0:45", "1:00", "1:15", "1:30", "1:45", "2:00", "2:15"])
-		expect(rows[0].get(".text").text()).toBe("row 2")
+		expect(rows.map((r) => r.get(".at").text())).toEqual(["1:00", "1:15", "1:30", "1:45", "2:00", "2:15"])
+		expect(rows[0].get(".text").text()).toBe("row 4")
 		expect(well.find("img").exists()).toBe(false)
-		expect(rows[7].get(".text").text()).toBe("approving the <img src=x onerror=alert(1)> spend_")
+		expect(rows[5].get(".text").text()).toBe("approving the <img src=x onerror=alert(1)> spend_")
 		expect(well.findAll(".cursor").map((c) => c.attributes("aria-hidden"))).toEqual(["true"])
 
 		// The permission prompt keeps its full-width list: the split is only for a stepper with a log.
@@ -271,6 +272,23 @@ describe("BridgeStepper", () => {
 		const text = mount(BridgeStepper, { props: { record: gasOnly, runtime: { step: "signing" } } }).text()
 		expect(text).toContain("≥ 2.00 FJ before claim fees · public")
 		expect(text).not.toContain("5.00")
+	})
+
+	it("a cross-chain send: headed by its source and what it sends; a waiting claim needs you and starts from here", async () => {
+		const rec = xcRecord(
+			{ leafIndex: "7" },
+			{ transport: { kind: "across", originChainId: 84532, depositId: "1", relayHash: `0x${"4e".repeat(32)}` } },
+		)
+		runtime.value = { [rec.id]: { claimable: true } }
+		const w = mount(BridgeStepper, { props: { record: rec } })
+		expect(w.get(".headline").text()).toBe("Base Sepolia → Aztec · 5.00 USDC · public")
+		expect(w.get(".caption span").text()).toBe("Claim on Aztec · phase 5 of 6 · needs you")
+		await w.get(sel(TESTIDS.stepperXcClaim)).trigger("click")
+		expect(runDepositClaim).toHaveBeenCalledWith(rec.id)
+
+		const unsent = mount(BridgeStepper, { props: { record: xcRecord({}, { srcTxHash: undefined }) } })
+		await unsent.get(sel(TESTIDS.stepperXcNewSend)).trigger("click")
+		expect(unsent.emitted("new-send")).toHaveLength(1)
 	})
 
 	it("the headline renders a hostile stored symbol and an impossible amount as text it can vouch for", () => {

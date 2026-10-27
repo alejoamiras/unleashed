@@ -62,7 +62,7 @@ export function hashRoute(path: PoolKey[], zeroForOnes: boolean[]): Hex {
 /** Permit2 `PermitWitnessTransferFrom` inputs (the SignatureTransfer half). */
 export interface Permit2Transfer {
 	permitted: { token: Address; amount: bigint }
-	spender: Address // the SwapBridgeRouter
+	spender: Address // the router the signature authorizes
 	nonce: bigint
 	deadline: bigint
 }

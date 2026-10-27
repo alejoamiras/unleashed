@@ -2,6 +2,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, decodeFunctionData, type Hex, pad } from "viem"
 import { describe, expect, it, vi } from "vitest"
+import { selfBuiltTerms } from "../src/across-self-built"
 import { ACROSS_V4_FACET_ABI } from "../src/across-v4"
 import { type AcrossRelayData, FILLED_RELAY_TOPIC } from "../src/crosschain-discovery"
 import type { L1Ctx } from "../src/flows"
@@ -14,7 +15,6 @@ import {
 	fuelLegFor,
 	routerIntent,
 	rowLegs,
-	selfBuiltTerms,
 	verifiedRoute,
 } from "./lifi-canary-build"
 import { ethereumChain, FJ_PER_UNIT, fakeAcross, NOW_S, routedManifest, sourceChain } from "./lifi-canary-fixture"
@@ -107,7 +107,7 @@ describe("the canary's transactions", () => {
 	const b = canaryBindings(routedManifest(), 84532)
 
 	it("refuse to sign a cross-chain transaction verifyRoute does not accept", async () => {
-		const terms = selfBuiltTerms(5_000_000n, NOW_S, CANARY)
+		const terms = selfBuiltTerms(b.l1ChainId, 5_000_000n, NOW_S, CANARY)
 		const legs = await rowLegs(
 			{ kind: "crosschain-public", origin: "crosschain", isPrivate: false, fuel: "none", expect: "deposited" },
 			await AztecAddress.random(),

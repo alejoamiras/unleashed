@@ -181,7 +181,7 @@ const across = xc.route.transport as object
 
 describe("validateCrossChainRecord — schema 4", () => {
 	it("accepts both rails fully populated, unchanged; the Ethereum-origin validator refuses them", () => {
-		for (const rec of [xc, sg]) {
+		for (const rec of [xc, sg, mutateRoute({ terms: "fixed" }), { ...mutateRoute({ depositFinal: true }), leafIndex: "7" }]) {
 			expect(validateCrossChainRecord(rec)).toEqual(rec)
 			expect(validateJournalRecord(rec)).toEqual(rec)
 			expect(() => validateAnyBackupRecord(rec)).toThrow(REJECT)
@@ -213,6 +213,8 @@ describe("validateCrossChainRecord — schema 4", () => {
 		["etaSeconds negative", mutateRoute({ etaSeconds: -1 })],
 		["fillDeadline string", mutateRoute({ fillDeadline: "1" })],
 		["fillDeadline on Stargate", mutateRoute({ fillDeadline: 1 }, sg)],
+		["terms unknown", mutateRoute({ terms: "quoted" })],
+		["fixed terms on Stargate", mutateRoute({ terms: "fixed" }, sg)],
 		["transport kind unknown", mutateRoute({ transport: { ...across, kind: "cctp" } })],
 		["Across relayHash short", mutateRoute({ transport: { ...across, relayHash: "0x4e" } })],
 		["Across depositId hex", mutateRoute({ transport: { ...across, depositId: "0x10" } })],
@@ -220,6 +222,9 @@ describe("validateCrossChainRecord — schema 4", () => {
 		["Across transport on Stargate", mutateRoute({ transport: across }, sg)],
 		["Stargate transport on Across", mutateRoute({ transport: sg.route.transport })],
 		["Stargate pool short", mutateRoute({ transport: { ...(sg.route.transport as object), pool: "0x90" } }, sg)],
+		["depositFinal false", mutateRoute({ depositFinal: false })],
+		["depositFinal without a deposit", mutateRoute({ depositFinal: true })],
+		["depositFinal beside an outcome", mutateRoute({ depositFinal: true, outcome: "not-sent" })],
 		["outcome unknown", mutateRoute({ outcome: "refunded" })],
 		["outcomeTxHash without outcome", mutateRoute({ outcomeTxHash: H("de") })],
 		["outcomeAmount without outcome", mutateRoute({ outcomeAmount: "1" })],

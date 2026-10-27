@@ -36,7 +36,7 @@ const descriptorFor = (network: string) =>
 	) as { aztecVersion: string; artifactSha256: string; expectedAddress: string }
 const sandbox = JSON.parse(readFileSync(FIXTURE, "utf8")) as {
 	bridge: {
-		l1: { factory: string; router: string }
+		l1: { factory: string; router: string; depositRouter: string; fuel: Record<string, unknown>; swap: Record<string, unknown> }
 		l2: { hub: { address: string }; tokenClassId: string }
 		tokens: Array<{ erc20: string; l2Token: string; nameWord: string; symbolWord: string; decimals: number }>
 	}
@@ -57,10 +57,13 @@ afterEach(() => {
 })
 
 describe("the sandbox generation", () => {
-	it("binds every send to the manifest's own router, factory, hub and token class", async () => {
-		const { SEND_GENERATION, HUB, IS_PLACEHOLDER } = await readerFor(sandbox)
+	it("binds every send to the manifest's own deposit router, factory, hub and token class", async () => {
+		const { SEND_GENERATION, HUB, IS_PLACEHOLDER, LEGACY_ROUTERS, FUEL } = await readerFor(sandbox)
 		expect(IS_PLACEHOLDER).toBe(false)
-		expect(SEND_GENERATION?.router).toBe(sandbox.bridge.l1.router)
+		expect(SEND_GENERATION?.router).toBe(sandbox.bridge.l1.depositRouter)
+		// The retired router stays readable for records still in flight, and never sends.
+		expect(LEGACY_ROUTERS).toEqual([sandbox.bridge.l1.router])
+		expect(FUEL).toEqual(sandbox.bridge.l1.fuel)
 		expect(SEND_GENERATION?.factory).toBe(sandbox.bridge.l1.factory)
 		expect(SEND_GENERATION?.hub).toBe(sandbox.bridge.l2.hub.address)
 		expect(SEND_GENERATION?.tokenClassId).toBe(sandbox.bridge.l2.tokenClassId)
@@ -111,6 +114,17 @@ describe("the shipped manifests", () => {
 		// The app deposits private fuel to PRIVATE_FPC_ADDRESS on every network, so only a network whose
 		// descriptor names that address may enable a bridge.
 		if (m.bridge !== null) expect(descriptor.expectedAddress).toBe(PRIVATE_FPC_ADDRESS)
+	})
+})
+
+describe("a generation that predates the deposit router", () => {
+	it("sends nothing, yet still reads its router and floors in-flight claims with the swap block's budgets", async () => {
+		const { depositRouter: _router, fuelSwapper: _swapper, fuel: _fuel, ...l1 } = sandbox.bridge.l1 as Record<string, unknown>
+		const { SEND_GENERATION, LEGACY_ROUTERS, FUEL, IS_PLACEHOLDER } = await readerFor({ ...sandbox, bridge: { ...sandbox.bridge, l1 } })
+		expect(IS_PLACEHOLDER).toBe(false)
+		expect(SEND_GENERATION).toBeUndefined()
+		expect(LEGACY_ROUTERS).toEqual([sandbox.bridge.l1.router])
+		expect(FUEL?.minFuelFj).toBe(sandbox.bridge.l1.swap.minFuelFj)
 	})
 })
 

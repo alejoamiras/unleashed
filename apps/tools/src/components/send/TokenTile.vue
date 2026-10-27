@@ -1,10 +1,12 @@
 <script setup lang="ts">
 /** Utils */
 import { computed } from "vue"
-import { formatBigInt, trimAddress } from "@/lib/format"
+import { chainBadge } from "@/lib/chains"
+import { formatBigInt, formatNativeBalance, trimAddress } from "@/lib/format"
 import type { SelectableToken } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { checksumAddress, safeDisplay } from "@/lib/token-display"
+import type { RowLook } from "./token-rows"
 
 /** Components */
 import TokenMark from "./TokenMark.vue"
@@ -15,27 +17,33 @@ const props = defineProps<{
 	balance?: bigint
 	/** Overrides the token's own decimals when the balance is read in a different unit. */
 	decimals?: number
+	look?: RowLook
 }>()
 const emit = defineEmits<{ select: [] }>()
 
 // Every string on this row can come from a remote list or a pasted contract; none of it reaches the
-// DOM unsanitized, and none of it may grow long enough to push the address out of view.
+// DOM unsanitized, and none of it may grow long enough to push the balance out of view.
 const symbol = computed(() => safeDisplay(props.token.symbol))
-const name = computed(() => safeDisplay(props.token.name))
+const badge = computed(() => chainBadge(props.token.chainId))
 
 const added = computed(() => props.token.source === "pasted")
+const disabled = computed(() => props.look?.disabled === true)
+const withAddress = computed(() => props.look?.withAddress ?? true)
 
-/** Show the address on every row because names and symbols can be copied. */
-const checksummed = computed(() => checksumAddress(props.token.address))
+const checksummed = computed(() => (props.look?.native ? "" : checksumAddress(props.token.address)))
 const address = computed(() => trimAddress(checksummed.value, 8, 6))
 
 // A pasted token carries `decimals: -1` until the selection step reads them; formatting against that
-// sentinel would render a nonsense balance, so the row simply shows none.
+// sentinel would render a nonsense balance, so the row reads as unread until then.
 const balanceText = computed(() => {
 	const decimals = props.decimals ?? props.token.decimals
-	if (props.balance === undefined || decimals < 0) return null
-	return formatBigInt(props.balance, decimals)
+	if (props.balance === undefined || decimals < 0) return "—"
+	return props.look?.native ? formatNativeBalance(props.balance, decimals) : formatBigInt(props.balance, decimals)
 })
+
+function pick(): void {
+	if (!disabled.value) emit("select")
+}
 </script>
 
 <template>
@@ -46,34 +54,43 @@ const balanceText = computed(() => {
 		:data-testid="TESTIDS.sendTokenTile"
 		:data-key="token.logoKey"
 		:data-selected="selected || undefined"
+		:data-disabled="disabled || undefined"
 		:aria-selected="selected"
-		:title="checksummed"
-		@click="emit('select')"
+		:aria-disabled="disabled || undefined"
+		:title="checksummed || undefined"
+		@click="pick"
 	>
-		<TokenMark :token="token" />
+		<TokenMark :token="token" :muted="disabled" />
 		<span class="ident">
 			<span class="line">
 				<span class="symbol" :data-testid="TESTIDS.sendTokenSymbol">{{ symbol }}</span>
-				<span v-if="name && !added" class="name">{{ name }}</span>
+				<span class="chip" :data-testid="TESTIDS.sendTokenChain">{{ badge }}</span>
 			</span>
-			<span class="address" :data-testid="TESTIDS.sendTokenAddress" :data-added="added || undefined">
-				{{ address }}<template v-if="added"> · added by you</template>
+			<span class="sub" :data-testid="TESTIDS.sendTokenSub">
+				<template v-if="look?.sub">{{ look.sub }}<template v-if="withAddress"> · </template></template>
+				<span v-if="withAddress" class="address" :data-testid="TESTIDS.sendTokenAddress" :data-added="added || undefined">
+					{{ address }}<template v-if="added"> · added by you</template>
+				</span>
 			</span>
 		</span>
-		<span v-if="balanceText !== null" class="balance" :data-testid="TESTIDS.sendTokenBalance">{{ balanceText }}</span>
+		<span class="balance" :data-testid="TESTIDS.sendTokenBalance">{{ balanceText }}</span>
 	</button>
 </template>
 
 <style scoped>
+/* Mark, then the symbol line over the sub line, the balance on the symbol line. */
 .tile {
 	--ul-fill: transparent;
 	--ul-notch: var(--ul-notch-2);
-	display: flex;
+	display: grid;
+	flex: none;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-content: center;
 	align-items: center;
-	gap: 12px;
+	gap: 4px 12px;
 	width: 100%;
-	min-height: 60px;
-	padding: 0 16px 0 12px;
+	min-height: 56px;
+	padding: 0 12px;
 	color: var(--ul-ink);
 	text-align: left;
 	cursor: pointer;
@@ -101,35 +118,59 @@ const balanceText = computed(() => {
 	color: var(--ul-bg);
 }
 
+.tile[data-disabled],
+.tile[data-disabled]:hover {
+	--ul-fill: transparent;
+	color: var(--ul-ink-3);
+	cursor: default;
+}
+
+.tile > :first-child {
+	grid-row: 1 / 3;
+}
+
 .ident {
-	display: flex;
-	flex: 1;
-	flex-direction: column;
-	gap: 3px;
-	min-width: 0;
+	display: contents;
 }
 
 .line {
+	grid-column: 2;
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 8px;
 	min-width: 0;
+	font: 700 15px/1.2 var(--ul-font-body);
 }
 
 .symbol {
 	flex: 0 1 auto;
 	min-width: 0;
-	font: 700 15px/1.2 var(--ul-font-body);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-/* A zero basis leaves the name only the room the symbol does not take, so it gives way first. */
-.name {
-	flex: 1 1 0;
-	min-width: 0;
-	font: 400 13px/1.2 var(--ul-font-body);
+.chip {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	height: 18px;
+	padding: 0 5px;
+	clip-path: var(--ul-notch-2);
+	background: var(--ul-line);
+	color: var(--ul-ink);
+	font: 800 10.5px/1 var(--ul-font-body);
+	letter-spacing: 0.06em;
+}
+
+.tile[data-disabled] .chip {
+	background: var(--ul-raised);
+	color: var(--ul-ink-3);
+}
+
+.sub {
+	grid-column: 2;
+	font: 400 12.5px/1.3 var(--ul-font-body);
 	color: var(--ul-ink-2);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -137,22 +178,27 @@ const balanceText = computed(() => {
 }
 
 .address {
-	font: 400 12px/1.2 var(--ul-font-mono);
-	color: var(--ul-ink-3);
+	font-family: var(--ul-font-mono);
 }
 
-.tile[data-selected] .name,
-.tile[data-selected] .address {
+.tile[data-selected] .sub {
 	color: var(--ul-line);
 }
 
 .balance {
-	flex: none;
+	grid-column: 3;
+	grid-row: 1;
 	font: 400 15px/1 var(--ul-font-mono);
 	white-space: nowrap;
 }
 
 .tile[data-selected] .balance {
 	font-weight: 600;
+}
+
+@media (max-width: 760px) {
+	.tile {
+		padding: 6px 10px;
+	}
 }
 </style>

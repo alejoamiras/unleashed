@@ -1,6 +1,8 @@
 import { mount } from "@vue/test-utils"
+import { zeroAddress } from "viem"
 import { describe, expect, it } from "vitest"
 import type { LookupState } from "@/composables/useAddressLookup"
+import { NETWORK } from "@/lib/network"
 import type { Direction, SelectableToken } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import TokenStep from "./TokenStep.vue"
@@ -45,6 +47,9 @@ type Props = {
 	selected: SelectableToken | null
 	selectionError: string | null
 	rowBalances?: Record<string, bigint>
+	sources?: SelectableToken[]
+	natives?: SelectableToken[]
+	contractChains?: number[]
 }
 
 function step(over: Partial<Props> = {}) {
@@ -168,6 +173,89 @@ describe("TokenStep", () => {
 	it("keeps mechanism and first-time vocabulary out of the step", () => {
 		const w = step({ selected: TOKENS[0] })
 		expect(w.text().toLowerCase()).not.toMatch(/portal|register|first time/)
+		w.unmount()
+	})
+})
+
+describe("TokenStep — the chains a deposit can start on", () => {
+	const L1 = NETWORK.l1ChainId
+	const BASE = 84532
+	const ARB = 42161
+	const ETH_USDC = token(USDC, "USDC", { chainId: L1, logoKey: `${L1}:${USDC}` })
+	const LISTED = token(USDT, "USDT", { chainId: L1, source: "list", logoKey: `${L1}:${USDT}` })
+	const SOURCES = [
+		token(LINK, "USDC", { chainId: BASE, logoKey: `${BASE}:${LINK}` }),
+		token(USDT, "WETH", { chainId: ARB, decimals: 18, logoKey: `${ARB}:${USDT}` }),
+	]
+	const NATIVES = [L1, BASE, ARB].map((id) =>
+		token(zeroAddress, "ETH", { chainId: id, decimals: 18, source: "list", logoKey: `native:${id}` }),
+	)
+	const keys = (w: ReturnType<typeof step>) => w.findAll(sel(TESTIDS.sendTokenTile)).map((t) => t.attributes("data-key"))
+	const tile = (w: ReturnType<typeof step>, key: string) => w.get(`${sel(TESTIDS.sendTokenTile)}[data-key="${key}"]`)
+	const crossChain = (over: Partial<Props> = {}) => step({ tokens: [ETH_USDC, LISTED], sources: SOURCES, natives: NATIVES, ...over })
+
+	it("lists the sources first, then Ethereum's catalog, then each chain's native coin, which only pays fees", async () => {
+		const w = crossChain({ rowBalances: { "native:84532": 8_000_000_000_000_000n, [`native:${L1}`]: 400_000_000_000_000_000n } })
+		expect(w.text()).toContain("Send from")
+		expect(w.get(sel(TESTIDS.sendTokenSearch)).attributes("placeholder")).toBe("Search tokens on every network")
+		expect(keys(w)).toEqual([...SOURCES, ETH_USDC, LISTED, ...NATIVES].map((t) => t.logoKey))
+		const sub = (key: string) => tile(w, key).get(sel(TESTIDS.sendTokenSub)).text()
+		expect(sub(`${BASE}:${LINK}`)).toBe("Base Sepolia")
+		expect(sub(ETH_USDC.logoKey)).toBe("Ethereum · Sepolia · no bridge step")
+		expect(sub(LISTED.logoKey)).toBe("Ethereum · Sepolia · 0xdAC17F…831ec7")
+		expect(sub("native:84532")).toBe("pays your Base Sepolia fees")
+		const native = tile(w, "native:84532")
+		expect(native.attributes("aria-disabled")).toBe("true")
+		expect(native.get(sel(TESTIDS.sendTokenBalance)).text()).toBe("0.0080")
+		expect(tile(w, `native:${L1}`).get(sel(TESTIDS.sendTokenBalance)).text()).toBe("0.40")
+		expect(tile(w, `native:${ARB}`).get(sel(TESTIDS.sendTokenBalance)).text()).toBe("—")
+		await native.trigger("click")
+		await tile(w, `${BASE}:${LINK}`).trigger("click")
+		expect(w.emitted("select")).toEqual([[SOURCES[0]]])
+		w.unmount()
+	})
+
+	it("a network chip narrows the list to its chain, and under a source chain names what it routes", async () => {
+		const w = crossChain()
+		const chips = w.get(sel(TESTIDS.sendNetworkChips))
+		const chip = (id: number) => w.get(`${sel(TESTIDS.sendNetworkChip)}[data-chain="${id}"]`)
+		expect(chips.attributes("aria-label")).toBe("Network")
+		expect(chips.findAll("button").map((b) => b.text())).toEqual(["All", "Base Sepolia", "Arbitrum", "Ethereum · Sepolia"])
+		await chip(BASE).trigger("click")
+		expect(chip(BASE).attributes("aria-pressed")).toBe("true")
+		expect(keys(w)).toEqual([`${BASE}:${LINK}`, "native:84532"])
+		expect(w.get(sel(TESTIDS.sendSourceOnly)).text()).toBe("Only USDC can be sent for now.")
+		await chip(L1).trigger("click")
+		expect(keys(w)).toEqual([ETH_USDC.logoKey, LISTED.logoKey, `native:${L1}`])
+		expect(w.find(sel(TESTIDS.sendSourceOnly)).exists()).toBe(false)
+		w.unmount()
+	})
+
+	it("refuses a smart-contract wallet on the chains where it has code, and offers to change wallet", async () => {
+		const w = crossChain({ contractChains: [BASE, ARB] })
+		const alert = w.get(sel(TESTIDS.sendContractWallet))
+		expect(alert.attributes("role")).toBe("alert")
+		expect(alert.text()).toContain("This wallet is a smart contract, so it can’t send from Base Sepolia or Arbitrum.")
+		expect(alert.text()).toContain("Connect a regular wallet account to send from those networks.")
+		expect(keys(w).slice(0, 2)).toEqual([ETH_USDC.logoKey, LISTED.logoKey])
+		const refused = tile(w, `${BASE}:${LINK}`)
+		expect(refused.attributes("aria-disabled")).toBe("true")
+		await refused.trigger("click")
+		expect(w.emitted("select")).toBeUndefined()
+		await w.get(sel(TESTIDS.sendChangeWallet)).trigger("click")
+		expect(w.emitted("change-wallet")).toHaveLength(1)
+		w.unmount()
+		const one = crossChain({ contractChains: [BASE] })
+		expect(one.get(sel(TESTIDS.sendContractWallet)).text()).toContain("to send from that network.")
+		one.unmount()
+	})
+
+	it("an Ethereum-only build shows no chips, no native rows and the search it always had", () => {
+		const w = step({ tokens: [ETH_USDC], natives: NATIVES })
+		expect(w.find(sel(TESTIDS.sendNetworkChips)).exists()).toBe(false)
+		expect(w.text()).not.toContain("Send from")
+		expect(keys(w)).toEqual([ETH_USDC.logoKey])
+		expect(w.get(sel(TESTIDS.sendTokenSearch)).attributes("placeholder")).toBe("Search a token, or paste its Ethereum address")
 		w.unmount()
 	})
 })

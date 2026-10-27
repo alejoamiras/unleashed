@@ -25,12 +25,10 @@ import {
 	type SendResult,
 	type SendStage,
 	PERMIT_DEADLINE_SECONDS,
-	PRIVATE_FPC_ADDRESS,
 	claimSendOpts,
 	claimViaHub,
 	deriveBridgeSecret,
 	deriveTokenClaimSecret,
-	feeJuiceAddress,
 	hubAt,
 	hubTokenFor,
 	isProvisionalRecordId,
@@ -39,17 +37,33 @@ import {
 	readRegistration,
 	runSend,
 } from "@unleashed/bridge-core"
+import type { Hex, PublicClient } from "viem"
 import { type Ref, effectScope, ref, watch } from "vue"
-import { FUEL_PORTAL, HUB, MANIFEST_CHAIN, SEND_GENERATION, TOKEN_CLASS_ID, rebuildHubTokenInstance } from "@/contracts/bridge-generation"
+import {
+	FUEL_PORTAL,
+	HUB,
+	LEGACY_ROUTERS,
+	MANIFEST_CHAIN,
+	SEND_GENERATION,
+	TOKEN_CLASS_ID,
+	rebuildHubTokenInstance,
+} from "@/contracts/bridge-generation"
 import { classifyClaimReceipt } from "@/lib/claim-receipt"
+import { buildSendRecord, fuelBlockOf, previewBlock, type RecordInputs, sealBindingOf, tokenClaimAmount } from "@/lib/send-record"
+
+export { previewBlock }
 import { NETWORK } from "@/lib/network"
 import type { GasLegPlan, GrantOutcome, SendPlan } from "@/lib/send-model"
 import { fuelRecipientFor } from "@/lib/fuel-target"
 import { normalizeError } from "@/lib/errors"
-import { humanizeWalletError } from "@/lib/wallet-errors"
+import { humanizeWalletError, sendFailureCopy } from "@/lib/wallet-errors"
 import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
+import { appWatchDeps } from "./crosschain-deposit-flow"
+import { resumeCrossChainWatches } from "./crosschain-watch"
 import { findDepositTx } from "./deposit-reconcile"
+import { readClientFor } from "./useEthereumReader"
+import { sliceSwapData } from "./useFuelQuote"
 import { reconcileFuelConsumed } from "./fuel-recovery"
 import { hubMessageState } from "@/lib/message-nullifier"
 import { resolveToolsTarget } from "@/lib/network-targets"
@@ -124,89 +138,14 @@ export async function assertL1Chain(l1: { publicClient: { getChainId: () => Prom
 	}
 }
 
-/** The token block the wizard PREDICTS. The receipt's read-back replaces it. */
-/** The token block a send files, from the plan: the wizard also renders it before the record exists. */
-export function previewBlock(plan: SendPlan): JournalTokenBlock {
-	return {
-		erc20: plan.token.address.toLowerCase(),
-		portal: plan.token.portal.toLowerCase(),
-		l2Token: plan.token.l2Token,
-		nameWord: plan.token.words.nameWord,
-		symbolWord: plan.token.words.symbolWord,
-		decimals: plan.token.decimals,
-		displaySymbol: plan.token.symbol,
-		registerKey: plan.token.registration?.registerKey,
-		registerIndex: plan.token.registration?.registerIndex.toString(),
-	}
-}
-
-/** The token leg's claim amount: the total minus whatever the gas slice took. */
-const tokenClaimAmount = (plan: SendPlan): bigint => (plan.intent === "gas" ? plan.amount : plan.amount - (plan.gas?.fuelAmount ?? 0n))
-
-function fuelBlockOf(gas: GasLegPlan, secretHex: string, secretHashHex: string, salt?: Fr) {
-	return {
-		amount: gas.fuelAmount.toString(),
-		secret: secretHex,
-		secretHashHex,
-		minOutput: gas.minFuelOutput.toString(),
-		...(salt ? { bridgeSecretSalt: salt.toString(), fpc: PRIVATE_FPC_ADDRESS } : {}),
-	}
-}
-
-interface RecordInputs {
-	id: string
-	plan: SendPlan
-	recipient: string
-	/** The L1 account signing this send. Required so neither build site (open, rekey) can drop it. */
-	sender: string
-	claimValueHex?: string
-	fuelSecretHex?: string
-	fuelSecretHashHex?: string
-	fuelSalt?: Fr
-}
-
-function buildSendRecord(i: RecordInputs): SendDepositRecord {
-	const { id, plan, recipient } = i
-	const now = Date.now()
-	const gasOnly = plan.intent === "gas"
-	const base = {
-		schema: 3 as const,
-		id,
-		direction: "deposit" as const,
-		isPrivate: plan.isPrivate,
-		amount: tokenClaimAmount(plan).toString(),
-		createdAt: now,
-		updatedAt: now,
-		chainId: NETWORK.l1ChainId,
-		portal: gasOnly ? FUEL_PORTAL.toLowerCase() : plan.token.portal.toLowerCase(),
-		bridge: gasOnly ? feeJuiceAddress.toString() : (HUB as AztecAddress).toString(),
-		recipient,
-		sender: i.sender,
-		secretHashHex: id,
-		// PRIVATE keeps its claim material sealed; the plaintext copy exists only for a public TOKEN
-		// leg, whose message binds the recipient on L1 anyway. A gas-only send has no token leg: its
-		// one secret lives in the fuel block, which is what the claim reads — never copied up here,
-		// where the two could drift.
-		secret: plan.isPrivate ? undefined : i.claimValueHex,
-		...(plan.gas && i.fuelSecretHex && i.fuelSecretHashHex
-			? { fuel: fuelBlockOf(plan.gas, i.fuelSecretHex, i.fuelSecretHashHex, i.fuelSalt) }
-			: {}),
-		// The rail shows REGISTER ahead of time only because the record says so; the hub decides at
-		// claim time regardless.
-		...(!gasOnly && plan.token.state.kind !== "registered" ? { registers: true as const } : {}),
-	}
-	return (gasOnly ? { ...base, intent: "gas" } : { ...base, intent: plan.intent, token: previewBlock(plan) }) as SendDepositRecord
-}
-
 /** The gas leg as bridge-core wants it. Private gas MUST use `deriveBridgeSecret`: the PrivateFPC
  *  re-derives that secret from msg_sender, so a random one would strand the Fee Juice forever. */
-function gasLegOf(gas: GasLegPlan, recipient: string, isPrivate: boolean, salt?: Fr): SendGasLeg {
+function gasLegOf(gas: GasLegPlan, swapData: Hex, recipient: string, isPrivate: boolean, salt?: Fr): SendGasLeg {
 	return {
 		fuelAmount: gas.fuelAmount,
 		fuelRecipient: fuelRecipientFor(isPrivate, recipient),
 		minFuelOutput: gas.minFuelOutput,
-		path: gas.route.path,
-		zeroForOnes: gas.route.zeroForOnes,
+		swapData,
 		...(salt ? { fuelSecret: deriveBridgeSecret(salt, AztecAddress.fromStringUnsafe(recipient)) } : {}),
 	}
 }
@@ -267,6 +206,7 @@ export function ensureSendJournalDeps(): void {
 				? findDepositTx(rec, l1.publicClient as never, {
 						chainId: MANIFEST_CHAIN.l1ChainId,
 						router: SEND_GENERATION.router,
+						legacyRouters: LEGACY_ROUTERS,
 						chainEpoch: () => l1.chainChanges.value,
 					})
 				: Promise.resolve("incomplete" as const),
@@ -285,6 +225,8 @@ export function ensureSendJournalDeps(): void {
 		claimReceiptStatus: (txHash) => claimReceiptStatus(txHash),
 		locks: webJournalLocks(),
 	})
+	// Reads only: a transfer still crossing from another chain is watched without any wallet.
+	resumeCrossChainWatches(appWatchDeps())
 }
 
 function signL1With(l1: ReturnType<typeof useL1Wallet>, message: string): Promise<string> {
@@ -320,16 +262,25 @@ function registrationDiffers(reg: Registration, token: JournalTokenBlock): boole
  * The authoritative resume/import check: the factory's frozen registration must still name the
  * block's words, decimals and register key/index, and the hub's derivation from those words must
  * still land on the block's L2 token. Returns the refusal reason, or null when it all holds.
+ *
+ * Reads through the build's pinned Ethereum RPCs where it pins any: a cross-chain send leaves the
+ * wallet on its source chain, and its claim must not wait on the wallet coming back. The wallet's
+ * transport answers only where no reader is pinned.
  */
-export async function validateTokenBlock(token: JournalTokenBlock, l1 = useL1Wallet()): Promise<string | null> {
+export async function validateTokenBlock(
+	token: JournalTokenBlock,
+	l1 = useL1Wallet(),
+	reader: Pick<PublicClient, "getChainId"> | undefined = readClientFor(NETWORK.l1ChainId),
+): Promise<string | null> {
 	const gen = SEND_GENERATION
 	if (!gen || !HUB || !TOKEN_CLASS_ID) return "This network has no bridge — this record cannot run here."
+	const source = { publicClient: reader ?? l1.publicClient }
 	// A registration read on another chain answers "no portal" for every genuine block, and that
-	// answer would be terminal. The chain is asserted on both sides of the read: a wallet that
+	// answer would be terminal. The chain is asserted on both sides of the read: a transport that
 	// switched mid-read throws (unavailable), it never contradicts.
-	await assertL1Chain(l1)
-	const reg = await readRegistration(l1.publicClient as never, gen.factory as `0x${string}`, token.erc20 as `0x${string}`)
-	await assertL1Chain(l1)
+	await assertL1Chain(source)
+	const reg = await readRegistration(source.publicClient as never, gen.factory as `0x${string}`, token.erc20 as `0x${string}`)
+	await assertL1Chain(source)
 	if (!reg) return "Ethereum has no portal for this token any more — this record cannot be claimed here."
 	const sameWords = reg.nameWord === token.nameWord && reg.symbolWord === token.symbolWord && reg.decimals === token.decimals
 	if (!sameWords || registrationDiffers(reg, token)) {
@@ -495,15 +446,6 @@ interface SendActors {
 	from: `0x${string}`
 	wallet: unknown
 }
-
-/** The key domain a private record's envelope is sealed under: the SAME binding the record carries,
- *  because that is what the unseal re-derives the key from. A gas-only send is bound to the Fee
- *  Juice portal, everything else to ITS token's clone and the hub. */
-const sealBindingOf = (plan: SendPlan) => ({
-	chainId: NETWORK.l1ChainId,
-	portal: plan.intent === "gas" ? FUEL_PORTAL : plan.token.portal,
-	bridge: plan.intent === "gas" ? feeJuiceAddress.toString() : (HUB as AztecAddress).toString(),
-})
 
 /**
  * The pre-signature seal of a private send. `secret` is the credential the claim spends — the token
@@ -737,6 +679,8 @@ async function executeSend(ctx: RunCtx): Promise<string> {
 	// Before the FIRST wallet interaction of the send (the private seal's signature), so a wallet on
 	// the wrong chain costs no prompt and leaves no record behind.
 	await assertL1Chain(actors.l1)
+	// Before anything is sealed or signed: a venue that no longer meets the reviewed floor stops here.
+	const swapData = plan.gas ? await sliceSwapData(actors.l1.publicClient as unknown as PublicClient, plan.token.address, plan.gas) : "0x"
 	const prepared = await prepareSecrets(plan, actors.recipient)
 	let id = prepared.id ?? makeProvisionalDepositId()
 	try {
@@ -747,7 +691,7 @@ async function executeSend(ctx: RunCtx): Promise<string> {
 		const res = await runSend(
 			l1Ctx(actors),
 			gen,
-			await sendParams(plan, actors, prepared),
+			await sendParams(plan, actors, prepared, swapData),
 			(s) => {
 				ctx.stage.value = s
 			},
@@ -788,20 +732,6 @@ function settleFailedSend(id: string, ctx: RunCtx, e: unknown): void {
 	} catch (cleanup) {
 		log("failed-send bookkeeping threw", cleanup instanceof Error ? cleanup.message : String(cleanup))
 	}
-}
-
-/** The wallet's own refusal reads as its one line, and the two structured envelope categories get
- *  their own copy; anything else keeps its message, humanized. */
-function sendFailureCopy(e: unknown): string {
-	const normalized = normalizeError(e)
-	if (
-		normalized.category === "user-rejected" ||
-		normalized.category === "contract-not-registered" ||
-		normalized.category === "chain-desync"
-	) {
-		return normalized.message
-	}
-	return humanizeWalletError(e instanceof Error ? e.message : String(e))
 }
 
 const l1ApprovalCtx = (actors: SendActors) => ({ publicClient: actors.l1.publicClient, wallet: actors.wallet, from: actors.from }) as never
@@ -940,7 +870,7 @@ async function prepareSecrets(plan: SendPlan, recipient: string): Promise<Prepar
 
 /** A wall-clock deadline fails on a drifted chain: the window is measured from the chain's own
  *  latest block, which is the clock the Permit2 check reads. */
-async function sendParams(plan: SendPlan, actors: SendActors, prepared: Prepared): Promise<SendParams> {
+async function sendParams(plan: SendPlan, actors: SendActors, prepared: Prepared, swapData: Hex): Promise<SendParams> {
 	const block = (await actors.l1.publicClient.getBlock()) as { timestamp: bigint }
 	const deadline = block.timestamp + PERMIT_DEADLINE_SECONDS
 	return {
@@ -950,7 +880,7 @@ async function sendParams(plan: SendPlan, actors: SendActors, prepared: Prepared
 		aztecRecipient: actors.recipient as `0x${string}`,
 		isPrivate: plan.isPrivate,
 		claimSalt: prepared.claimSalt,
-		gas: plan.gas ? gasLegOf(plan.gas, actors.recipient, plan.isPrivate, prepared.fuelSalt) : undefined,
+		gas: plan.gas ? gasLegOf(plan.gas, swapData, actors.recipient, plan.isPrivate, prepared.fuelSalt) : undefined,
 		nonce: BigInt(`0x${[...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("")}`),
 		deadline,
 	}

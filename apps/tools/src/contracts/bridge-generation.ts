@@ -6,6 +6,7 @@ import {
 	deriveHubTokenInstance,
 	deriveManifestHub,
 	type HubTokenWords,
+	legacyRoutersOf,
 	type ManifestToken,
 	type ManifestV2,
 	parseManifestV2,
@@ -39,12 +40,19 @@ export const FUEL_ASSET_HANDLER = FEE_JUICE.feeAssetHandler as `0x${string}` | u
 export const FUEL_MIN_FJ = BigInt(FEE_JUICE.minFj)
 export const PRIVATE_FPC = MANIFEST.privateFpc
 
-/** Every send binds to this; undefined on a placeholder network. */
-export const SEND_GENERATION: SendGeneration | undefined = GENERATION ? sendGenerationOf(MANIFEST, GENERATION) : undefined
+/** Every send binds to this; undefined on a placeholder network and on a generation without a deposit router,
+ *  which this app cannot send through. */
+export const SEND_GENERATION: SendGeneration | undefined = GENERATION?.l1.depositRouter ? sendGenerationOf(MANIFEST, GENERATION) : undefined
 export const HUB: AztecAddress | undefined = GENERATION ? AztecAddress.fromStringUnsafe(GENERATION.l2.hub.address) : undefined
 export const TOKEN_CLASS_ID: string | undefined = GENERATION?.l2.tokenClassId
 export const MANIFEST_TOKENS: readonly ManifestToken[] = GENERATION?.tokens ?? []
-export const SWAP = GENERATION?.l1.swap
+type FuelBudgets = Pick<NonNullable<BridgeBlock["l1"]["fuel"]>, "slippageBps" | "minFuelFj" | "fjPerTx" | "fjRegister">
+
+/** The gas-share budgets. A generation that predates the deposit router keeps them in its swap block, and its
+ *  in-flight claims are still floored by them. */
+export const FUEL: FuelBudgets | undefined = GENERATION?.l1.fuel ?? GENERATION?.l1.swap
+/** Routers whose deposits still reconcile; no send uses them. */
+export const LEGACY_ROUTERS: readonly `0x${string}`[] = GENERATION ? legacyRoutersOf(GENERATION) : []
 
 /** The generation's hub instance, re-derived from its record so the registered instance is never a carried value. */
 export async function rebuildHubInstance(): Promise<ContractInstanceWithAddress> {

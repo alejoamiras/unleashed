@@ -10,8 +10,16 @@
  * no `viem`/`@aztec` pull); this module layers the `viem` Chain object + endpoints on top for the
  * app bundle. The Chain object is target-driven (Sepolia for the testnet build, mainnet otherwise).
  */
-import type { Chain } from "viem"
-import { foundry, mainnet, sepolia } from "viem/chains"
+import {
+	type EnabledSource,
+	enabledSources,
+	type ManifestV2,
+	registerSandboxLifi,
+	SOURCE_CHAINS,
+	type SourceChain,
+} from "@unleashed/bridge-core"
+import { type Chain, defineChain } from "viem"
+import { arbitrum, base, baseSepolia, foundry, mainnet, optimism, sepolia } from "viem/chains"
 import { resolveToolsTarget } from "./network-targets"
 
 export interface NetworkConfig {
@@ -63,3 +71,74 @@ export const IS_MAINNET = target.key === "mainnet"
 /** L1 chip for the bridge/fuel FROM/TO panels: plain "Ethereum" on mainnet, the network-qualified
  *  "Ethereum · Sepolia" form on test targets. */
 export const L1_CHAIN_LABEL = IS_MAINNET ? "Ethereum" : `Ethereum · ${viemChain.name}`
+
+// ── source chains ────────────────────────────────────────────────────────────
+
+/** A local build's sandbox source anvils, which no catalogue knows: the chains it reads besides Ethereum. */
+const sandboxSources: SourceChain[] =
+	target.key === "local"
+		? Object.entries(target.readRpcUrls)
+				.filter(([id]) => Number(id) !== target.l1ChainId)
+				.map(([id, rpcUrls]) => ({
+					chainId: Number(id),
+					name: "Sandbox source",
+					nativeSymbol: "ETH",
+					l1ChainId: target.l1ChainId,
+					rpcUrls,
+				}))
+		: []
+
+if (target.key === "local" && target.sandboxLifi) registerSandboxLifi(target.sandboxLifi)
+
+const sandboxChain = (s: SourceChain): Chain =>
+	defineChain({
+		id: s.chainId,
+		name: s.name,
+		nativeCurrency: { name: "Ether", symbol: s.nativeSymbol, decimals: 18 },
+		rpcUrls: { default: { http: [...s.rpcUrls] } },
+	})
+
+/** The viem Chain of every chain a deposit may start on. */
+const SOURCE_VIEM_CHAINS: Readonly<Record<number, Chain>> = {
+	[baseSepolia.id]: baseSepolia,
+	[base.id]: base,
+	[arbitrum.id]: arbitrum,
+	[optimism.id]: optimism,
+	...Object.fromEntries(sandboxSources.map((s) => [s.chainId, sandboxChain(s)])),
+}
+
+const sourceCatalogue = (): Readonly<Record<number, SourceChain>> => ({
+	...SOURCE_CHAINS,
+	...Object.fromEntries(sandboxSources.map((s) => [s.chainId, s])),
+})
+
+/** A chain this build reads: its viem Chain and the keyless RPCs it reads through, empty where the build pins none. */
+export interface ReadChain {
+	chainId: number
+	chain: Chain
+	rpcUrls: readonly string[]
+}
+
+/** Ethereum or a source chain; undefined for any other. */
+export function readChainOf(chainId: number): ReadChain | undefined {
+	const chain = chainId === target.l1ChainId ? viemChain : SOURCE_VIEM_CHAINS[chainId]
+	return chain ? { chainId, chain, rpcUrls: target.readRpcUrls[chainId] ?? [] } : undefined
+}
+
+/** A source the manifest enables, with the chain the app reads and signs it on. */
+export interface AppSource extends EnabledSource {
+	chain: Chain
+}
+
+/**
+ * The source registry: the chains and tokens `m` routes deposits from, in manifest order, each read through this
+ * build's own RPCs (the ones its CSP admits), never the catalogue's. Throws where `m` enables a chain this build has
+ * no Chain for, or one that delivers elsewhere.
+ */
+export function sourcesOf(m: Pick<ManifestV2, "l1ChainId" | "bridge">): AppSource[] {
+	return enabledSources(m, sourceCatalogue()).map((s) => {
+		const read = readChainOf(s.chainId)
+		if (!read) throw new Error(`network.ts: no viem Chain for source chain ${s.chainId}`)
+		return { ...s, chain: read.chain, rpcUrls: read.rpcUrls }
+	})
+}

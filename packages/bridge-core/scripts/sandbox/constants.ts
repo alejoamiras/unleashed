@@ -12,6 +12,8 @@ export const ZERO_L1 = "0x0000000000000000000000000000000000000000" as Address
 export const MOCK_RATE_NUM = 10n ** 12n
 /** 1 FJ — the floor the app refuses to bridge below. */
 export const MIN_FJ = 10n ** 18n
+/** The fuel swapper's rate for every fixture token: one whole Fee Juice per whole token, the old mock venue's rate. */
+export const SWAPPER_FJ_PER_WHOLE_TOKEN = 10n ** 18n
 /** The local sequencer prices L2 gas orders of magnitude above the old default; a lower ceiling
  *  rejects every setup tx with "maxFeesPerGas.feePerL2Gas must be >= gasFees". */
 export const FEE_CEILING = { maxFeesPerGas: new GasFees(10n ** 13n, 10n ** 13n) }

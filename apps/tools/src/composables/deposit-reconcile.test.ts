@@ -1,11 +1,13 @@
-import { PRIVATE_FPC_ADDRESS, type SendDepositRecord, SWAP_BRIDGE_ROUTER_ABI } from "@unleashed/bridge-core"
+import { DEPOSIT_ROUTER_ABI, PRIVATE_FPC_ADDRESS, type SendDepositRecord, SWAP_BRIDGE_ROUTER_ABI } from "@unleashed/bridge-core"
 import { encodeFunctionData } from "viem"
 import { describe, expect, it, vi } from "vitest"
 import { type DepositSearchOptions, findDepositTx, type ReconcileL1Client } from "./deposit-reconcile"
 
 type Hex = `0x${string}`
 
+/** The retired `SwapBridgeRouter` most cases search, beside the deposit router. */
 const ROUTER = "0x1111111111111111111111111111111111111111" as Hex
+const DEPOSIT_ROUTER = "0x5555555555555555555555555555555555555555" as Hex
 const ERC20 = "0x70e0ba845a1a0f2da3359c97e0285013525ffc49" as Hex
 const CLONE = "0x2222222222222222222222222222222222222222" as Hex
 const RECIPIENT = `0x${"2b".repeat(32)}` as Hex
@@ -93,7 +95,9 @@ interface FakeTx {
 	input: Hex
 	status?: "success" | "reverted"
 	/** The event the router emitted for it, with its decoded args. */
-	event: { name: "Bridge" | "BridgeWithFuel"; args: Record<string, unknown> }
+	event: { name: "Bridge" | "BridgeWithFuel" | "Deposited"; args: Record<string, unknown> }
+	/** The router that emitted it; the legacy one unless named. */
+	emitter?: Hex
 }
 
 /** A chain: blocks 0..latest at 12s each from GENESIS_TS, the given router transactions, and the
@@ -123,17 +127,15 @@ function fakeChain(
 		getLogs: async ({ address, event, fromBlock, toBlock }) => {
 			reads.push(`logs:${fromBlock}-${toBlock}`)
 			const name = (event as { name: string }).name
-			// Every fake transaction emits from the router: a foreign `to` is caught by the calldata
-			// check in production, never by this filter.
-			void address
+			// A foreign `to` is caught by the calldata check in production, never by this filter.
 			return txs
-				.filter((t) => t.event.name === name && t.block >= fromBlock && t.block <= toBlock)
+				.filter((t) => (t.emitter ?? ROUTER) === address && t.event.name === name && t.block >= fromBlock && t.block <= toBlock)
 				.map((t) => ({ transactionHash: t.hash, args: t.event.args }))
 		},
 		getTransaction: async ({ hash }) => {
 			reads.push(`tx:${hash}`)
 			const t = txs.find((x) => x.hash === hash)
-			return t ? { to: t.to ?? ROUTER, input: t.input } : null
+			return t ? { to: t.to ?? t.emitter ?? ROUTER, input: t.input } : null
 		},
 		getTransactionReceipt: async ({ hash }) => {
 			reads.push(`receipt:${hash}`)
@@ -152,9 +154,106 @@ const bridgeTx = (hash: Hex, block: bigint, over: Partial<FakeTx> = {}): FakeTx 
 	...over,
 })
 
-const opts = (over: Partial<DepositSearchOptions> = {}): DepositSearchOptions => ({ chainId: CHAIN, router: ROUTER, ...over })
+const opts = (over: Partial<DepositSearchOptions> = {}): DepositSearchOptions => ({
+	chainId: CHAIN,
+	router: DEPOSIT_ROUTER,
+	legacyRouters: [ROUTER],
+	...over,
+})
 
-describe("findDepositTx — the router transaction behind a hash-less deposit", () => {
+type IntentFields = {
+	token: Hex
+	aztecRecipient: Hex
+	tokenSecretHash: Hex
+	isPrivate: boolean
+	fuelSlice: bigint
+	fuelRecipient: Hex
+	fuelSecretHash: Hex
+	minFuelOutput: bigint
+}
+
+const TOKEN_INTENT: IntentFields = {
+	token: ERC20,
+	aztecRecipient: RECIPIENT,
+	tokenSecretHash: SECRET_HASH,
+	isPrivate: false,
+	fuelSlice: 0n,
+	fuelRecipient: ZERO32,
+	fuelSecretHash: ZERO32,
+	minFuelOutput: 0n,
+}
+
+const FUELED_INTENT: IntentFields = {
+	...TOKEN_INTENT,
+	fuelSlice: 10n,
+	fuelRecipient: RECIPIENT,
+	fuelSecretHash: FUEL_SECRET_HASH,
+	minFuelOutput: 9n,
+}
+
+function permitCalldata(intent: IntentFields, amount: bigint): Hex {
+	return encodeFunctionData({ abi: DEPOSIT_ROUTER_ABI, functionName: "bridgeWithPermit", args: [intent, "0x1234", amount, permit] })
+}
+
+/** A deposit-router send: its `Deposited` indexes both secret hashes, the calldata carries the intent. */
+const depositTx = (hash: Hex, block: bigint, intent: IntentFields, amount: bigint): FakeTx => ({
+	hash,
+	block,
+	emitter: DEPOSIT_ROUTER,
+	input: permitCalldata(intent, amount),
+	event: { name: "Deposited", args: { tokenSecretHash: intent.tokenSecretHash, fuelSecretHash: intent.fuelSecretHash } },
+})
+
+describe("findDepositTx — the deposit router", () => {
+	it("finds a token send, and a fueled one by both secret hashes and the summed amount", async () => {
+		await expect(
+			findDepositTx(record(), fakeChain([depositTx("0xa1", 520n, TOKEN_INTENT, 100000000n)]).client, opts()),
+		).resolves.toEqual({
+			txHash: "0xa1",
+		})
+		const rec = record({ intent: "token+gas", fuel: FUEL } as Partial<SendDepositRecord>)
+		await expect(findDepositTx(rec, fakeChain([depositTx("0xa2", 600n, FUELED_INTENT, 100000010n)]).client, opts())).resolves.toEqual({
+			txHash: "0xa2",
+		})
+	})
+
+	it("a private send publishes a zero recipient and binds its fuel to the PrivateFPC", async () => {
+		const rec = record({ isPrivate: true, intent: "token+gas", fuel: FUEL } as Partial<SendDepositRecord>)
+		const intent = { ...FUELED_INTENT, aztecRecipient: ZERO32, fuelRecipient: PRIVATE_FPC_ADDRESS as Hex, isPrivate: true }
+		await expect(findDepositTx(rec, fakeChain([depositTx("0xa3", 610n, intent, 100000010n)]).client, opts())).resolves.toEqual({
+			txHash: "0xa3",
+		})
+	})
+
+	it.each([
+		["another amount", FUELED_INTENT, 100000011n],
+		["another fuel slice", { ...FUELED_INTENT, fuelSlice: 11n }, 100000010n],
+		["another fuel floor", { ...FUELED_INTENT, minFuelOutput: 8n }, 100000010n],
+		["another fuel recipient", { ...FUELED_INTENT, fuelRecipient: ZERO32 }, 100000010n],
+		["another token", { ...FUELED_INTENT, token: CLONE }, 100000010n],
+		["another recipient", { ...FUELED_INTENT, aztecRecipient: ZERO32 }, 100000010n],
+		["the private flag", { ...FUELED_INTENT, isPrivate: true }, 100000010n],
+	] as const)("a fueled record rejects a candidate with %s at the calldata", async (_label, intent, amount) => {
+		const rec = record({ intent: "token+gas", fuel: FUEL } as Partial<SendDepositRecord>)
+		const tx = { ...depositTx("0xa4", 600n, intent, amount), event: depositTx("0xa4", 600n, FUELED_INTENT, 0n).event }
+		await expect(findDepositTx(rec, fakeChain([tx]).client, opts())).resolves.toBe("none")
+	})
+
+	it("a token record never matches a fueled intent carrying its hash", async () => {
+		const tx = { ...depositTx("0xa5", 520n, { ...FUELED_INTENT, fuelSecretHash: ZERO32 }, 100000000n) }
+		await expect(findDepositTx(record(), fakeChain([tx]).client, opts())).resolves.toBe("none")
+	})
+
+	it("one verified send on each router is ambiguous, not a guess", async () => {
+		const both = fakeChain([depositTx("0xa6", 520n, TOKEN_INTENT, 100000000n), bridgeTx("0xa7", 530n)])
+		await expect(findDepositTx(record(), both.client, opts())).resolves.toBe("ambiguous")
+		const legacyOnly = fakeChain([bridgeTx("0xa7", 530n)])
+		await expect(findDepositTx(record(), legacyOnly.client, opts())).resolves.toEqual({ txHash: "0xa7" })
+		await expect(findDepositTx(record(), legacyOnly.client, opts({ legacyRouters: [] }))).resolves.toBe("none")
+	})
+})
+
+describe("findDepositTx — a retired router", () => {
 	it("finds the one `bridge` transaction whose calldata is this record's send, after the window start", async () => {
 		// createdAt is block 500 (12s blocks); the 10-minute slack is 50 blocks, so the window starts near 450.
 		const { client, reads } = fakeChain([bridgeTx("0xaa", 520n), bridgeTx("0xbb", 100n)])

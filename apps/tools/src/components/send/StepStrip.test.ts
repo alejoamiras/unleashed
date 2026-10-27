@@ -36,9 +36,10 @@ describe("StepStrip", () => {
 		expect(first?.get(".caption").text()).toBe("Token")
 		expect(first?.get(".value").text()).toBe("USDC")
 		expect(first?.attributes("aria-label")).toBe("Token: USDC")
-		// The horizontal strip has room for the value alone.
+		// The phone strip names the step; the value stays in its accessible name.
 		const flat = strip({ steps, active: 1, completed: 1 })
-		expect(flat.findAll(sel(TESTIDS.sendStep))[0]?.text()).toBe("USDC")
+		expect(flat.findAll(sel(TESTIDS.sendStep))[0]?.text()).toBe("Token")
+		expect(flat.findAll(sel(TESTIDS.sendStep))[0]?.attributes("aria-label")).toBe("Token: USDC")
 		// The value is only shown once the step is behind the user.
 		const again = strip({ steps, active: 0, completed: 0 })
 		expect(again.findAll(sel(TESTIDS.sendStep))[0]?.text()).toBe("1Token")

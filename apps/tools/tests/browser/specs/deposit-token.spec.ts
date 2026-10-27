@@ -7,7 +7,8 @@ import {
 	mintPrivateGasNote,
 	privateCreditOf,
 	privateFpc,
-	setRoutable,
+	fuelSwapperOf,
+	setFuelRate,
 } from "@unleashed/bridge-core/sandbox"
 import { ownGasTxs } from "@unleashed/bridge-core"
 import { TESTIDS } from "../../../src/lib/testids"
@@ -73,14 +74,16 @@ test("cell 1 — plain, public, registered token: the claim is paid from one pri
 	const permits = l1.permits()
 	expect(permits, "exactly one permit was signed").toHaveLength(1)
 	const permit = permits[0]
-	const router = (sandbox.manifest.bridge?.l1.router ?? "").toLowerCase()
+	const router = (sandbox.manifest.bridge?.l1.depositRouter ?? "").toLowerCase()
 	expect(permit.spender.toLowerCase()).toBe(router)
 	expect(permit.permitted.token.toLowerCase()).toBe(usdc.erc20.toLowerCase())
 	expect(permit.permitted.amount).toBe(10n * USDC)
 	expect(permit.deadline).toBeGreaterThan(BigInt(permit.signedAt))
 	const calldata = await depositCalldata(sandbox.clients.l1.pub, record?.depositTxHash ?? "")
-	expect(calldata.functionName).toBe("bridge")
+	expect(calldata.functionName).toBe("bridgeWithPermit")
 	expect(calldata.to).toBe(router)
+	expect(calldata.fuelSlice).toBe(0n)
+	expect(calldata.swapData).toBe("0x")
 	expect(calldata.nonce).toBe(permit.nonce)
 	expect(calldata.deadline).toBe(permit.deadline)
 	expect(calldata.bridgeToken).toBe(usdc.erc20.toLowerCase())
@@ -119,7 +122,7 @@ test("cell 3 — plain, public, first-time token from credit: register + claim, 
 	run,
 }) => {
 	const erc20 = await freshToken(sandbox.clients.l1, { name: "Fresh Public", symbol: "FRSHP", decimals: 6 }, [l1.address], 1000n * USDC)
-	await setRoutable(sandbox.clients.l1, sandbox.clients.deployment.quoter, erc20)
+	await setFuelRate(sandbox.clients.l1, fuelSwapperOf(sandbox), erc20)
 	const first = await ceilingOf(actor, { isPrivate: false, registers: true })
 	const second = await ceilingOf(actor, { isPrivate: false, registers: false })
 	expect(first).toBeGreaterThan(second)
@@ -169,7 +172,7 @@ test("cell 4 — plain, private, first-time token from credit: a registration of
 	run,
 }) => {
 	const erc20 = await freshToken(sandbox.clients.l1, { name: "Fresh Private", symbol: "FRSHV", decimals: 6 }, [l1.address], 1000n * USDC)
-	await setRoutable(sandbox.clients.l1, sandbox.clients.deployment.quoter, erc20)
+	await setFuelRate(sandbox.clients.l1, fuelSwapperOf(sandbox), erc20)
 	const ceiling = await ceilingOf(actor, { isPrivate: true, registers: true })
 	const creditBefore = await fundCredit(actor, (ceiling * 14n) / 10n)
 

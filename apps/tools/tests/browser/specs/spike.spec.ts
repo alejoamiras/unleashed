@@ -193,7 +193,7 @@ test("tablet: at 1024 px the dock opens only on a tap, over the static scrim, cl
 	expect(receipt.hero, "the 1024 px deposit landed").toContain("USDT")
 })
 
-test("phone: at 390 px there is no dock, even with a persisted open, and the flow connects and deposits", async ({
+test("phone: at 390 px the form has no dock, even with a persisted open; the stepper and the receipt stack it under the page", async ({
 	page,
 	sandbox,
 	actor,
@@ -206,27 +206,26 @@ test("phone: at 390 px there is no dock, even with a persisted open, and the flo
 		await expect(page.locator(tid(TESTIDS.dockStrip))).toHaveCount(0)
 		await expect(page.locator(tid(TESTIDS.dock))).toHaveCount(0)
 	}
+	const stackedDock = async () => {
+		await expect(page.locator(tid(TESTIDS.dockStrip))).toHaveCount(0)
+		const dock = page.locator(tid(TESTIDS.dock))
+		await expect(dock).toBeVisible()
+		const main = await page.locator("main").boundingBox()
+		const box = await dock.boundingBox()
+		expect(main && box && box.y >= main.y + main.height - 0.5, "the dock sits under the page").toBe(true)
+	}
 	await noDock()
 
-	// Back on the amount step, the breakdown folds behind the selected gas row's hint.
+	// Back on the amount step, the breakdown stays open at phone width.
 	await page.locator(`${tid(TESTIDS.sendStep)}[data-step="amount"]`).click()
-	const hint = page.locator(tid(TESTIDS.sendGasDisclosure))
-	const breakdown = page.locator(tid(TESTIDS.sendGasBreakdown))
-	await expect(hint).toBeVisible()
-	const row = await page.locator(tid(TESTIDS.sendChoiceTokenGas)).boundingBox()
-	const box = await hint.boundingBox()
-	expect(row && box && box.x >= row.x && box.x + box.width <= row.x + row.width + 0.5, "the hint sits in the row").toBe(true)
-	expect(row && box && box.y >= row.y && box.y + box.height <= row.y + row.height + 0.5, "the hint sits in the row").toBe(true)
-	await expect(breakdown).toBeHidden()
-	await hint.click()
-	await expect(breakdown).toBeVisible()
+	await expect(page.locator(tid(TESTIDS.sendGasBreakdown))).toBeVisible()
 	await expect(page.locator(tid(TESTIDS.sendChoiceTokenGas))).toHaveAttribute("aria-checked", "true")
 	await goToReview(page)
 
 	await confirmReview(page)
 	await expect(page.locator(tid(TESTIDS.stepper))).toBeVisible({ timeout: 120_000 })
-	await noDock()
+	await stackedDock()
 	const receipt = await waitForReceipt(page)
 	expect(receipt.hero, "the 390 px deposit landed").toContain("USDT")
-	await noDock()
+	await stackedDock()
 })

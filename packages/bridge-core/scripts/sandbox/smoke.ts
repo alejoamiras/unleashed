@@ -27,7 +27,7 @@ import {
 	flowDiscoveredRouteSend,
 	flowGasOnlyPrivate,
 	flowGasOnlySwapped,
-	flowGasOnlyWethSingleHop,
+	flowGasOnlyWeth,
 	flowMinFuelFloorBinds,
 	flowOutboxRoundTrip,
 	flowTokenOnlyHeldPublicFj,
@@ -122,7 +122,7 @@ export async function runSmoke(clients: SandboxClients, manifest: ManifestV2, ac
 	await step("(f1) relayer registers before the depositor claims", () => flowRelayerFirstRegister(s))
 	await step("(f2) two concurrent first-time deposits", () => flowConcurrentFirstClaims(s))
 	await step("(f3) portal-only token registers on its first claim", () => flowPortalOnlyToken(s, pxo))
-	await step("(f4) routeless token refused before signing", () => flowNoRoute(s, nort))
+	await step("(f4) unpriced token refused before signing", () => flowNoRoute(s, nort))
 	await step("(g) rejected registration, sponsored FPC", () => flowRejectedRegistration(s, "sponsored"))
 	await step("(g) rejected registration, fee-juice-with-claim", () => flowRejectedRegistration(s, "fee-juice-claim"))
 	await step("(g) rejected registration, private FPC", () => flowRejectedRegistration(s, "private-fpc"))
@@ -130,7 +130,7 @@ export async function runSmoke(clients: SandboxClients, manifest: ManifestV2, ac
 	await step("(h) factory pause: portals refuse deposits and withdraws first", () => flowL1Pause(s, usdc))
 	// The matrix cells the battery gained with the Quoter facade.
 	await step("(i) token-only claim paid from held public Fee Juice", () => flowTokenOnlyHeldPublicFj(s, usdc, usdcL2))
-	await step("(i) discovered route → send → self-paying claim", () => flowDiscoveredRouteSend(s, usdt, usdtL2))
+	await step("(i) probed slice → quote → send → self-paying claim", () => flowDiscoveredRouteSend(s, usdt, usdtL2))
 	await step("(i) fueled public claim leaves private credit untouched", () => flowTokenPlusGasWithCreditHeld(s, usdt, usdtL2))
 	await step("(i) token+gas private, registered token", () => flowTokenPlusGasPrivate(s, usdt, s.l2TokenOf))
 	await step("(i) token+gas private, first-time token", () => flowTokenPlusGasPrivate(s, undefined, s.l2TokenOf))
@@ -138,8 +138,8 @@ export async function runSmoke(clients: SandboxClients, manifest: ManifestV2, ac
 	await step("(i) gas only, private credit", () => flowGasOnlyPrivate(s))
 	await step("(i) gas only, swapped token", () => flowGasOnlySwapped(s, usdt))
 	await step("(i) gas only, swapped token, private", () => flowGasOnlySwapped(s, usdt, true))
-	await step("(i) gas only, WETH single hop", () => flowGasOnlyWethSingleHop(s))
-	await step("(i) gas only, WETH single hop, private", () => flowGasOnlyWethSingleHop(s, true))
+	await step("(i) gas only, 18-decimal WETH", () => flowGasOnlyWeth(s))
+	await step("(i) gas only, 18-decimal WETH, private", () => flowGasOnlyWeth(s, true))
 	await step("(i) outbox: not consumed at proposal, consumed after finalization", () => flowOutboxRoundTrip(s, usdc, usdcL2))
 	// From the source anvil through Across's stand-ins and LI.FI's compiled receiver and Executor into the router.
 	await withCrossChainRig(clients.handle, async (rig) => {

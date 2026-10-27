@@ -26,7 +26,8 @@ const groups = [
 		rows: GENERATION
 			? [
 					row("Portal factory", GENERATION.l1.factory, etherscanAddressUrl),
-					row("Router", GENERATION.l1.router, etherscanAddressUrl),
+					// The router a send goes through; a generation that predates the deposit router still names its own.
+					row("Router", GENERATION.l1.depositRouter ?? GENERATION.l1.router, etherscanAddressUrl),
 					row("Fee Juice portal", FUEL_PORTAL, etherscanAddressUrl),
 				]
 			: [],

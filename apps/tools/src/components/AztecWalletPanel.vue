@@ -195,6 +195,14 @@ function openInstall() {
 }
 
 @media (max-width: 760px) {
+	.panel {
+		flex: 1 1 140px;
+	}
+
+	.panel[data-status="connected"] {
+		min-width: 0;
+	}
+
 	.cta {
 		width: 100%;
 	}

@@ -1,6 +1,6 @@
-/** Held-gas claims, the private fuel leg, the swap floor binding, every gas-only shape, a send that
- *  consumes a DISCOVERED route, and the Outbox round trip. Same contract as `flows.ts`: pure
- *  functions of a context. */
+/** Held-gas claims, the private fuel leg, the swap floor binding, every gas-only shape, a send sized
+ *  from the swapper's probe the way the app sizes it, and the Outbox round trip. Same contract as
+ *  `flows.ts`: pure functions of a context. */
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
@@ -8,25 +8,27 @@ import { TestERC20Abi } from "@aztec-foundation/l1-artifacts"
 import type { Address, Hex } from "viem"
 import { TOKEN_PORTAL_ABI } from "../../src/factory-abi"
 import { consumeWithdrawal, isOutboxMessageConsumed } from "../../src/flows"
-import { signedMinFuelOutput } from "../../src/gas-share"
+import { proposeGasShare } from "../../src/gas-share"
 import { exitViaHub, type HubExitParams, preflightHubExit } from "../../src/hub-l2"
 import type { JournalTokenBlock } from "../../src/journal"
 import type { ManifestToken } from "../../src/manifest-v2"
 import { deriveBridgeSecret, ownGasTxs, PRIVATE_FPC_ADDRESS, PRIVATE_HUB_CLAIM_GAS } from "../../src/private-fuel"
-import { discoverFuelRoute } from "../../src/route-discovery"
+import { manifestFuelProvider } from "../../src/fuel-quote"
 import { waitForL1ToL2Message } from "../generation"
 import { ensureRouterPermit2 } from "../script-l1"
+import { planFuelLeg } from "../script-send"
 import { flowGasOnly, flowTokenPlusGas, GAS_ONLY_AMOUNT, TOKEN_PLUS_GAS_FUEL_UNITS } from "./flows"
-import { MIN_FJ, MOCK_RATE_NUM, MULTICALL3, PERMIT2, SANDBOX_ETH_FJ, SANDBOX_TIER, ZERO_L1 } from "./constants"
+import { MIN_FJ, PERMIT2, SWAPPER_FJ_PER_WHOLE_TOKEN, ZERO_L1 } from "./constants"
 import {
 	balanceOf,
 	claim,
 	exitCeiling,
 	fpcClaimFee,
 	fuelClaimFee,
+	fuelLeg,
+	fuelSwapperOf,
 	mintPrivateGasNote,
 	mintPrivateGasVia,
-	mockRoute,
 	type PrivateGasLeg,
 	privateCreditFee,
 	privateCreditOf,
@@ -35,7 +37,7 @@ import {
 	settled,
 	type SmokeContext,
 } from "./context"
-import { erc20BalanceOf, freshToken, mint, mintFeeAsset, setRoutable } from "./l1"
+import { erc20BalanceOf, freshToken, mint, mintFeeAsset, setFuelRate } from "./l1"
 import { withBlockHeartbeat } from "./l2"
 
 const toWei = (token: ManifestToken, whole: bigint) => whole * 10n ** BigInt(token.decimals)
@@ -53,7 +55,7 @@ export async function fundPublicFeeJuice(s: SmokeContext, amount: bigint): Promi
 		amount,
 		aztecRecipient: s.l2.from.toString() as Hex,
 		isPrivate: false,
-		gas: { fuelAmount: amount, fuelRecipient: s.l2.from.toString() as Hex, minFuelOutput: amount, path: [], zeroForOnes: [] },
+		gas: { fuelAmount: amount, fuelRecipient: s.l2.from.toString() as Hex, minFuelOutput: amount, swapData: "0x" },
 	})
 	await waitForL1ToL2Message(s.l2.node, res.fuelMessageHashHex as string, { forceBlock: s.l2.forceBlock })
 	const before = await balanceOf(s.feeJuiceL2, s.l2.from, "public")
@@ -103,20 +105,13 @@ export async function flowTokenPlusGasWithCreditHeld(s: SmokeContext, token: Man
 	const total = 100n * unit
 	const fuelAmount = 40n * unit
 	await mint(s.l1, token.erc20 as Address, s.l1.account.address, total)
-	const route = mockRoute(token.erc20 as Address, s.clients.deployment.feeJuice, s.clients.deployment.tokens.weth)
 	const res = await send(s, s.l1, {
 		intent: "token+gas",
 		erc20: token.erc20 as Address,
 		amount: total,
 		aztecRecipient: s.l2.from.toString() as Hex,
 		isPrivate: false,
-		gas: {
-			fuelAmount,
-			fuelRecipient: s.l2.from.toString() as Hex,
-			minFuelOutput: fuelAmount * MOCK_RATE_NUM,
-			path: route.path,
-			zeroForOnes: route.zeroForOnes,
-		},
+		gas: { fuelAmount, fuelRecipient: s.l2.from.toString() as Hex, ...(await fuelLeg(s, token.erc20 as Address, fuelAmount)) },
 	})
 	await waitForL1ToL2Message(s.l2.node, res.fuelMessageHashHex as string, { forceBlock: s.l2.forceBlock })
 	const before = await balanceOf(l2Token, s.l2.from, "public")
@@ -150,8 +145,7 @@ export async function flowTokenPlusGasPrivate(
 		? (base.erc20 as Address)
 		: await freshToken(s.l1, { name: "Private Fuel", symbol: "PFUEL", decimals: 6 }, [s.l1.account.address], total)
 	if (base) await mint(s.l1, erc20, s.l1.account.address, total)
-	else await setRoutable(s.l1, s.clients.deployment.quoter, erc20)
-	const route = mockRoute(erc20, s.clients.deployment.feeJuice, s.clients.deployment.tokens.weth)
+	else await setFuelRate(s.l1, fuelSwapperOf(s), erc20)
 	const res = await send(s, s.l1, {
 		intent: "token+gas",
 		erc20,
@@ -162,9 +156,7 @@ export async function flowTokenPlusGasPrivate(
 		gas: {
 			fuelAmount,
 			fuelRecipient: PRIVATE_FPC_ADDRESS as Hex,
-			minFuelOutput: fuelAmount * MOCK_RATE_NUM,
-			path: route.path,
-			zeroForOnes: route.zeroForOnes,
+			...(await fuelLeg(s, erc20, fuelAmount)),
 			fuelSecret: deriveBridgeSecret(bridgeSalt, s.l2.from),
 		},
 	})
@@ -199,7 +191,7 @@ export async function flowMinFuelFloorBinds(s: SmokeContext, token: ManifestToke
 	const total = 100n * unit
 	const fuelAmount = 40n * unit
 	await mint(s.l1, token.erc20 as Address, s.l1.account.address, total)
-	const route = mockRoute(token.erc20 as Address, s.clients.deployment.feeJuice, s.clients.deployment.tokens.weth)
+	const fuel = await planFuelLeg(s.l1.pub, s.manifest, token.erc20 as Address, fuelAmount)
 	let refused = ""
 	try {
 		await send(s, s.l1, {
@@ -208,21 +200,15 @@ export async function flowMinFuelFloorBinds(s: SmokeContext, token: ManifestToke
 			amount: total,
 			aztecRecipient: s.l2.from.toString() as Hex,
 			isPrivate: false,
-			gas: {
-				fuelAmount,
-				fuelRecipient: s.l2.from.toString() as Hex,
-				minFuelOutput: fuelAmount * MOCK_RATE_NUM + 1n,
-				path: route.path,
-				zeroForOnes: route.zeroForOnes,
-			},
+			// The swap call keeps the quote's own floor, so the venue settles and the router's check is what binds.
+			gas: { fuelAmount, fuelRecipient: s.l2.from.toString() as Hex, minFuelOutput: fuel.quote + 1n, swapData: fuel.swapData },
 		})
 	} catch (e) {
 		refused = e instanceof Error ? e.message : String(e)
 	}
 	if (!refused) throw new Error("a send whose floor exceeds the venue's output settled")
-	// The floor is what reverts — at the venue (`amountOutMinimum`, which the router forwards) or at
-	// the router's own check behind it — not a Permit2 or allowance error on the way there.
-	if (!/insufficient (fuel|output)/i.test(refused))
+	// The router's own floor check is what reverts, not a Permit2 or allowance error on the way there.
+	if (!/insufficient ?(fuel|output)/i.test(refused))
 		throw new Error(`the floor was refused with "${refused.slice(0, 120)}", not an insufficient-output revert`)
 	return `floor one wei above the venue's output → settlement reverted on the floor (${refused.slice(0, 60)}…)`
 }
@@ -255,30 +241,22 @@ async function privateGasOnly(s: SmokeContext, leg: PrivateGasLeg, expected: big
 export async function flowGasOnlySwapped(s: SmokeContext, token: ManifestToken, isPrivate = false): Promise<string> {
 	const amount = toWei(token, GAS_ONLY_SWAPPED_UNITS)
 	await mint(s.l1, token.erc20 as Address, s.l1.account.address, amount)
-	const route = mockRoute(token.erc20 as Address, s.clients.deployment.feeJuice, s.clients.deployment.tokens.weth)
-	if (isPrivate) {
-		const leg = {
-			erc20: token.erc20 as Address,
-			amount,
-			minFuelOutput: amount * MOCK_RATE_NUM,
-			path: route.path,
-			zeroForOnes: route.zeroForOnes,
-		}
-		return privateGasOnly(s, leg, amount * MOCK_RATE_NUM, `${amount} ${token.displaySymbol}-units swapped`)
-	}
+	return gasOnlyAtQuote(s, token.erc20 as Address, amount, isPrivate, `${amount} ${token.displaySymbol}-units swapped`)
+}
+
+/** A gas-only send of `amount` at the swapper's quote, into public Fee Juice or PrivateFPC credit;
+ *  the fixed rate makes what lands exactly the quote. */
+async function gasOnlyAtQuote(s: SmokeContext, erc20: Address, amount: bigint, isPrivate: boolean, what: string): Promise<string> {
+	const fuel = await planFuelLeg(s.l1.pub, s.manifest, erc20, amount)
+	const leg = { swapData: fuel.swapData, minFuelOutput: fuel.minFuelOutput }
+	if (isPrivate) return privateGasOnly(s, { erc20, amount, ...leg }, fuel.quote, what)
 	const res = await send(s, s.l1, {
 		intent: "gas",
-		erc20: token.erc20 as Address,
+		erc20,
 		amount,
 		aztecRecipient: s.l2.from.toString() as Hex,
 		isPrivate: false,
-		gas: {
-			fuelAmount: amount,
-			fuelRecipient: s.l2.from.toString() as Hex,
-			minFuelOutput: amount * MOCK_RATE_NUM,
-			path: route.path,
-			zeroForOnes: route.zeroForOnes,
-		},
+		gas: { fuelAmount: amount, fuelRecipient: s.l2.from.toString() as Hex, ...leg },
 	})
 	await waitForL1ToL2Message(s.l2.node, res.fuelMessageHashHex as string, { forceBlock: s.l2.forceBlock })
 	const before = await balanceOf(s.feeJuiceL2, s.l2.from, "public")
@@ -286,89 +264,45 @@ export async function flowGasOnlySwapped(s: SmokeContext, token: ManifestToken, 
 		.claim(s.l2.from, res.fuelReceived ?? 0n, Fr.fromHexString(res.fuelSecretHex as string), new Fr(res.fuelLeafIndex as bigint))
 		.send(s.l2.sendOpts as never)
 	const gained = (await balanceOf(s.feeJuiceL2, s.l2.from, "public")) - before
-	if (gained !== amount * MOCK_RATE_NUM) throw new Error(`swapped gas credited ${gained}, expected ${amount * MOCK_RATE_NUM}`)
-	return `${amount} ${token.displaySymbol}-units swapped → +${gained} FJ-wei public gas`
+	if (gained !== fuel.quote) throw new Error(`${what}: credited ${gained} FJ-wei of public gas, quoted ${fuel.quote}`)
+	return `${what} → +${gained} FJ-wei public gas`
 }
 
-/** Cell 21: a WETH deposit takes the single-hop route (native → FeeJuice), public or private. */
-export async function flowGasOnlyWethSingleHop(s: SmokeContext, isPrivate = false): Promise<string> {
+/** Cell 21: an 18-decimal token (WETH) gas-only, priced by the rate the swapper holds for it, public or
+ *  private. The rate is set here: no fixture token but the manifest's fuels by default. */
+export async function flowGasOnlyWeth(s: SmokeContext, isPrivate = false): Promise<string> {
 	const weth = s.clients.deployment.tokens.weth
-	// The venue sells one UNIT of anything for MOCK_RATE_NUM FJ-wei, decimals ignored: an 18-decimal
-	// input is sized in units, or the quote outruns the venue's funding.
-	const amount = 2n * 10n ** 6n
+	const amount = 2n * 10n ** 18n
+	await setFuelRate(s.l1, fuelSwapperOf(s), weth)
 	await mint(s.l1, weth, s.l1.account.address, amount)
-	const outcome = await discoverFuelRoute({
-		client: s.l1.pub as never,
-		quoter: s.clients.deployment.quoter,
-		multicall3: MULTICALL3,
-		token: weth,
-		feeAsset: s.clients.deployment.feeJuice,
-		weth,
-		feeJuice: s.clients.deployment.feeJuice,
-		tiers: [SANDBOX_TIER],
-		ethFj: SANDBOX_ETH_FJ,
-		probeAmount: amount,
-	})
-	if (outcome.kind !== "route" || outcome.route.path.length !== 1)
-		throw new Error(`expected a single-hop route for WETH, got ${outcome.kind}`)
-	if (isPrivate) {
-		const leg = {
-			erc20: weth,
-			amount,
-			minFuelOutput: outcome.quoteOut,
-			path: outcome.route.path,
-			zeroForOnes: outcome.route.zeroForOnes,
-		}
-		return privateGasOnly(s, leg, outcome.quoteOut, "single-hop WETH route discovered and settled at exactly its quote")
-	}
-	const res = await send(s, s.l1, {
-		intent: "gas",
-		erc20: weth,
-		amount,
-		aztecRecipient: s.l2.from.toString() as Hex,
-		isPrivate: false,
-		gas: {
-			fuelAmount: amount,
-			fuelRecipient: s.l2.from.toString() as Hex,
-			minFuelOutput: outcome.quoteOut,
-			path: outcome.route.path,
-			zeroForOnes: outcome.route.zeroForOnes,
-		},
-	})
-	await waitForL1ToL2Message(s.l2.node, res.fuelMessageHashHex as string, { forceBlock: s.l2.forceBlock })
-	const before = await balanceOf(s.feeJuiceL2, s.l2.from, "public")
-	await s.feeJuiceL2.methods
-		.claim(s.l2.from, res.fuelReceived ?? 0n, Fr.fromHexString(res.fuelSecretHex as string), new Fr(res.fuelLeafIndex as bigint))
-		.send(s.l2.sendOpts as never)
-	const gained = (await balanceOf(s.feeJuiceL2, s.l2.from, "public")) - before
-	if (gained !== outcome.quoteOut) throw new Error(`WETH gas credited ${gained}, quoted ${outcome.quoteOut}`)
-	return `single-hop WETH route discovered and settled at exactly its quote (+${gained} FJ-wei)`
+	return gasOnlyAtQuote(s, weth, amount, isPrivate, "18-decimal WETH at its own rate")
 }
 
-// ─── The discovered route ────────────────────────────────────────────────────
+// ─── The probed slice ────────────────────────────────────────────────────────
 
-/** Cell 23: the production shape end to end — discover through the facade, size the floor the way
- *  the app does, send, and claim from the fuel the venue delivered. */
+/** Cell 23: the production shape end to end — probe the swapper's rate with one unit, size the slice
+ *  the way the app does, quote at exactly that slice, send, and claim from the fuel the venue delivered. */
 export async function flowDiscoveredRouteSend(s: SmokeContext, token: ManifestToken, l2Token: ContractBase): Promise<string> {
-	const swap = s.bridge.l1.swap
-	if (!swap) throw new Error("the sandbox manifest has no swap block")
+	const budgets = s.bridge.l1.fuel
+	const provider = manifestFuelProvider(s.manifest, s.l1.pub)
+	if (!budgets || !provider) throw new Error("the sandbox manifest has no deposit router with fuel budgets")
 	const unit = 10n ** BigInt(token.decimals)
 	const total = 100n * unit
-	const fuelAmount = 40n * unit
-	const outcome = await discoverFuelRoute({
-		client: s.l1.pub as never,
-		quoter: swap.quoter as Address,
-		multicall3: swap.multicall3 as Address,
-		token: token.erc20 as Address,
-		feeAsset: s.clients.deployment.feeJuice,
-		weth: swap.weth as Address,
-		feeJuice: swap.feeJuice as Address,
-		tiers: swap.tiers,
-		ethFj: swap.ethFj,
-		probeAmount: fuelAmount,
+	const probe = await provider.probe(token.erc20 as Address, unit)
+	if (!probe.ok) throw new Error(`the swapper gave no probe for ${token.displaySymbol}: ${probe.reason}`)
+	const share = proposeGasShare({
+		amount: total,
+		decimals: token.decimals,
+		txTarget: 20,
+		fjPerTx: BigInt(budgets.fjPerTx),
+		minFuelFj: BigInt(budgets.minFuelFj),
+		rate: probe.probe,
+		slippageBps: budgets.slippageBps,
 	})
-	if (outcome.kind !== "route") throw new Error(`discovery returned ${outcome.kind} for ${token.displaySymbol}`)
-	const minFuelOutput = signedMinFuelOutput(outcome.quoteOut, swap.slippageBps, BigInt(swap.minFuelFj))
+	const fuelAmount = share.fuelAmount
+	const quoted = await provider.quote(token.erc20 as Address, fuelAmount)
+	if (!quoted.ok) throw new Error(`the swapper gave no quote at the slice: ${quoted.reason}`)
+	const { swapData, minOut, expectedOut } = quoted.quote
 	await mint(s.l1, token.erc20 as Address, s.l1.account.address, total)
 	const res = await send(s, s.l1, {
 		intent: "token+gas",
@@ -376,16 +310,9 @@ export async function flowDiscoveredRouteSend(s: SmokeContext, token: ManifestTo
 		amount: total,
 		aztecRecipient: s.l2.from.toString() as Hex,
 		isPrivate: false,
-		gas: {
-			fuelAmount,
-			fuelRecipient: s.l2.from.toString() as Hex,
-			minFuelOutput,
-			path: outcome.route.path,
-			zeroForOnes: outcome.route.zeroForOnes,
-		},
+		gas: { fuelAmount, fuelRecipient: s.l2.from.toString() as Hex, minFuelOutput: minOut, swapData },
 	})
-	if ((res.fuelReceived ?? 0n) !== outcome.quoteOut)
-		throw new Error(`the venue delivered ${res.fuelReceived}, the quote said ${outcome.quoteOut}`)
+	if ((res.fuelReceived ?? 0n) !== expectedOut) throw new Error(`the venue delivered ${res.fuelReceived}, the quote said ${expectedOut}`)
 	await waitForL1ToL2Message(s.l2.node, res.fuelMessageHashHex as string, { forceBlock: s.l2.forceBlock })
 	const before = await balanceOf(l2Token, s.l2.from, "public")
 	const claimed = await claim(s, res, {
@@ -397,7 +324,7 @@ export async function flowDiscoveredRouteSend(s: SmokeContext, token: ManifestTo
 	})
 	const gained = (await balanceOf(l2Token, s.l2.from, "public")) - before
 	if (gained < total - fuelAmount) throw new Error(`token leg credited ${gained}, expected ${total - fuelAmount}`)
-	return `discovered ${outcome.route.path.length}-hop route, quote ${outcome.quoteOut} = delivered, floor ${minFuelOutput}; ${claimed.path}`
+	return `probed slice ${fuelAmount}, quote ${expectedOut} = delivered, floor ${minOut}; ${claimed.path}`
 }
 
 // ─── The Outbox ──────────────────────────────────────────────────────────────
@@ -543,7 +470,7 @@ function conserved(label: string, r: { before: bigint; after: bigint }, claimed:
 export async function flowFueledClaimWithPublicFjHeld(s: SmokeContext, token: ManifestToken, l2Token: ContractBase): Promise<string> {
 	const r = await withPublicFjHeld(s, () => flowTokenPlusGas(s, token, l2Token))
 	const fee = s.samples.fees.at(-1)?.transactionFee ?? 0n
-	return `${r.line}; ${conserved("fueled claim", r, TOKEN_PLUS_GAS_FUEL_UNITS * toWei(token, 1n) * MOCK_RATE_NUM, fee)}`
+	return `${r.line}; ${conserved("fueled claim", r, TOKEN_PLUS_GAS_FUEL_UNITS * SWAPPER_FJ_PER_WHOLE_TOKEN, fee)}`
 }
 
 /** Cell 15b: a private fueled deposit never touches the held PUBLIC balance (the private fence). */
@@ -565,5 +492,5 @@ export async function flowGasOnlyWithPublicFjHeld(s: SmokeContext): Promise<stri
 /** Cell 20b: the swapped route adds exactly its quote to what is already held. */
 export async function flowGasOnlySwappedWithPublicFjHeld(s: SmokeContext, token: ManifestToken): Promise<string> {
 	const r = await withPublicFjHeld(s, () => flowGasOnlySwapped(s, token))
-	return `${r.line}; ${conserved("swapped route", r, toWei(token, GAS_ONLY_SWAPPED_UNITS) * MOCK_RATE_NUM, 0n)}`
+	return `${r.line}; ${conserved("swapped route", r, GAS_ONLY_SWAPPED_UNITS * SWAPPER_FJ_PER_WHOLE_TOKEN, 0n)}`
 }

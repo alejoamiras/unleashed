@@ -12,7 +12,7 @@ vi.mock("@/contracts/bridge-generation", () => ({
 }))
 
 const records = ref<unknown[]>([])
-vi.mock("@/composables/useBridgeJournal", () => ({ useBridgeJournal: () => ({ records }) }))
+vi.mock("@/composables/useBridgeJournal", () => ({ useBridgeJournal: () => ({ records, listedRecords: records }) }))
 
 /** The list itself is under test elsewhere; here it only has to expose its `#empty` slot and echo
  *  the props the view is responsible for. */

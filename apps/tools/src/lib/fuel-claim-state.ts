@@ -255,8 +255,8 @@ export type FuelLadder =
 export interface FuelLadderInputs {
 	isPrivate: boolean
 	/** With `intent`, the DURABLE "this deposit bought fuel" marker — see {@link boughtFuel}. */
-	schema: 1 | 2 | 3
-	/** Schema-3 records carry their intent; only a gas-buying one is expected to hold a fuel block. */
+	schema: 1 | 2 | 3 | 4
+	/** Schema-3 and -4 records carry their intent; only a gas-buying one is expected to hold a fuel block. */
 	intent?: "token" | "token+gas" | "gas"
 	fuel?: { received?: string; leafIndex?: string; bridgeSecretSalt?: string }
 }
@@ -269,7 +269,7 @@ export interface FuelLadderInputs {
  */
 export function boughtFuel(i: Pick<FuelLadderInputs, "schema" | "intent">): boolean {
 	if (i.schema === 2) return true
-	if (i.schema === 3) return i.intent !== undefined && i.intent !== "token"
+	if (i.schema === 3 || i.schema === 4) return i.intent !== undefined && i.intent !== "token"
 	return false
 }
 

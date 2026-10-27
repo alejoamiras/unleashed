@@ -8,7 +8,7 @@
  * code hash. `lifi-addresses.test.ts` re-checks the book against the lib's files, and against the chains with
  * `LIFI_LIVE=1`.
  */
-import type { Address, Hex } from "viem"
+import { type Address, type Hex, zeroAddress, zeroHash } from "viem"
 import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR } from "./across-v4"
 import { SWAP_TOKENS_MULTIPLE_V3_SELECTOR, SWAP_TOKENS_SINGLE_V3_SELECTOR } from "./lifi-abi"
 import { START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR, SWAP_AND_START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR } from "./stargate"
@@ -194,9 +194,64 @@ export const LIFI_BOOK: Readonly<Record<number, LifiChainBook>> = Object.freeze(
 	84532: BASE_SEPOLIA,
 })
 
+/** The local sandbox's two anvils (Ethereum, then its source chain): chains no LI.FI deployment can exist on. */
+export const SANDBOX_LIFI_CHAIN_IDS: readonly number[] = Object.freeze([31337, 31338])
+
+/** The sandbox's stand-ins for LI.FI and Across: `SourceAcrossStub` as the source Diamond, LI.FI's compiled
+ *  destination half on Ethereum, a `TestSpokePool` on each side. */
+export interface SandboxLifiContracts {
+	source: { chainId: number; diamond: Address; spokePool: Address }
+	ethereum: { chainId: number; executor: Address; receiverAcrossV4: Address; spokePool: Address }
+}
+
+const NONE: Address = zeroAddress
+const NO_CODE_HASHES: LifiCodeHashes = { executor: zeroHash, receiverAcrossV4: zeroHash, feeForwarder: zeroHash }
+const sandboxBooks = new Map<number, LifiChainBook>()
+
+/** What a sandbox does not deploy is the zero address, which every check that reads it refuses. */
+function sandboxBooksOf(c: SandboxLifiContracts): LifiChainBook[] {
+	const shared = { feeForwarder: NONE, codeHashes: NO_CODE_HASHES }
+	return [
+		{
+			...shared,
+			chainId: c.source.chainId,
+			diamond: c.source.diamond,
+			executor: NONE,
+			receiverAcrossV4: NONE,
+			facets: { [START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR]: c.source.diamond },
+			acrossSpokePool: c.source.spokePool,
+		},
+		{
+			...shared,
+			chainId: c.ethereum.chainId,
+			diamond: NONE,
+			executor: c.ethereum.executor,
+			receiverAcrossV4: c.ethereum.receiverAcrossV4,
+			facets: {},
+			acrossSpokePool: c.ethereum.spokePool,
+		},
+	]
+}
+
+/**
+ * Pins a local sandbox's own contracts as the books of its two anvils, so a local build routes, verifies and
+ * watches a sandbox send through the same code as a live one. `LIFI_BOOK` itself never changes.
+ *
+ * @throws when either chain is outside `SANDBOX_LIFI_CHAIN_IDS`, so no live chain's book can be shadowed.
+ */
+export function registerSandboxLifi(c: SandboxLifiContracts): void {
+	const books = sandboxBooksOf(c)
+	for (const { chainId } of books) {
+		if (!SANDBOX_LIFI_CHAIN_IDS.includes(chainId) || LIFI_BOOK[chainId]) {
+			throw new Error(`lifi-addresses: chain ${chainId} is not a sandbox chain`)
+		}
+	}
+	for (const book of books) sandboxBooks.set(book.chainId, Object.freeze(book))
+}
+
 /** The book for `chainId`; throws for a chain it does not cover, so no route reaches an unpinned chain. */
 export function lifiBook(chainId: number): LifiChainBook {
-	const book = LIFI_BOOK[chainId]
+	const book = LIFI_BOOK[chainId] ?? sandboxBooks.get(chainId)
 	if (!book) throw new Error(`lifi-addresses: no LI.FI book for chain ${chainId}`)
 	return book
 }

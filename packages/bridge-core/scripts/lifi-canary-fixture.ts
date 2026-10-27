@@ -10,7 +10,7 @@ import { depositWitness, hashDepositWitness } from "../src/l1"
 import { lifiBook } from "../src/lifi-addresses"
 import type { RouterIntent } from "../src/lifi-decode"
 import { type ManifestToken, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
-import type { AcrossClient } from "./lifi-canary-across"
+import type { AcrossClient } from "../src/across-api"
 import type { ChainReads } from "./lifi-canary-run"
 
 export const BASE_SEPOLIA_USDC = "0x036cbd53842c5426634e7929541ec2318f3dcf7e"

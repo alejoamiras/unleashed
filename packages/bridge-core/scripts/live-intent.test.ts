@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { inspect } from "node:util"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { TESTNET_FILLER } from "../src/across-self-built"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
 import { type ManifestToken, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
 import type { DeployStep } from "./deploy-manifest"
@@ -119,6 +120,10 @@ describe("router-only intent", () => {
 		const deploySigners = Object.values(PLAN_PINNED_L1_SIGNERS).map((s) => s?.toLowerCase())
 		for (const canary of Object.values(PLAN_PINNED_CANARY_SIGNERS))
 			if (canary) expect(deploySigners).not.toContain(canary.toLowerCase())
+	})
+
+	it("names the pinned testnet canary as the exclusive relayer of every testnet send", () => {
+		expect(TESTNET_FILLER).toBe(PLAN_PINNED_CANARY_SIGNERS.testnet)
 	})
 })
 

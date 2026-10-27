@@ -54,10 +54,38 @@ describe("BridgeReceipt", () => {
 		expect(w.emitted("new-bridge")).toHaveLength(1)
 	})
 
+	it("cross-chain deposit: the source chain in the route and From, a clock, and Send tx before Deposit and Claim", () => {
+		const SEND = `0x${"57".repeat(32)}`
+		const w = render(
+			deposit({
+				source: { chainId: 84532, txHash: SEND },
+				sender: ETH,
+				l1TxHash: L1,
+				l2TxHash: L2,
+				startedAt: 0,
+				completedAt: 468_000,
+			}),
+		)
+		expect(w.find(".head").text()).toContain("Base Sepolia → Aztec · private · 7:48")
+		expect(textOf(w, TESTIDS.sendReceiptFrom)).toBe(`Base Sepolia · ${ETH_SHORT}`)
+		const links = w.findAll(sel(TESTIDS.receiptLink))
+		expect(links.map((l) => l.text())).toEqual(["Send tx", "Deposit tx", "Claim tx"])
+		expect(links[0].attributes("href")).toBe(`https://sepolia.basescan.org/tx/${SEND}`)
+		expect(w.find(".note").text()).toBe("This bridge is finished. Its record stays in Activity.")
+	})
+
 	it("one link (a junk hash renders none) never claims both transactions", () => {
 		const w = render(exit({ l1TxHash: "junk", l2TxHash: L2 }))
 		expect(w.findAll(sel(TESTIDS.receiptLink))).toHaveLength(1)
 		expect(w.find(".note").text()).toBe("This bridge is finished. Its record stays in Activity.")
+	})
+
+	it("a receipt reopened from Activity has no note: its record is already there", () => {
+		expect(
+			render(exit({ reopened: true }))
+				.find(".note")
+				.exists(),
+		).toBe(false)
 	})
 
 	it("withdraw: Aztec → Ethereum, token only, the Ethereum account line checksummed with the whole address in title", () => {

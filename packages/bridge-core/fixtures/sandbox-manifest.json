@@ -33,6 +33,15 @@
 				"minFuelFj": "1000000000000000000",
 				"fjPerTx": "3577823745897251607",
 				"fjRegister": "1967429819850912960"
+			},
+			"depositRouter": "0x0a10b46de02a303c922d2c0cb47bfe79c073dc0f",
+			"fuelSwapper": "0x5e13ad06a772cd0f9f3785bc98c4b36254661171",
+			"fuel": {
+				"slippageBps": 300,
+				"minFuelFj": "1000000000000000000",
+				"fjPerTx": "3577823745897251607",
+				"fjRegister": "1967429819850912960",
+				"crossChainSlippageBps": 100
 			}
 		},
 		"l2": {

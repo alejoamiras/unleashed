@@ -11,7 +11,7 @@
  * JSON-encodes it again, so the dApp sees a JSON string — the second decoding level
  * `parseWalletEnvelope` supports.
  */
-import { freshToken, mintPrivateGasNote, privateCreditOf, privateFpc, setRoutable } from "@unleashed/bridge-core/sandbox"
+import { freshToken, mintPrivateGasNote, privateCreditOf, privateFpc, fuelSwapperOf, setFuelRate } from "@unleashed/bridge-core/sandbox"
 import { TESTIDS } from "../../../src/lib/testids"
 import { type ActorHandle, expect, test } from "../fixtures/test"
 import { connectAztec, tid, walletCalls, walletFrame } from "../pages/connect"
@@ -79,7 +79,7 @@ test("setup-pending: a drip issued while a quiet re-grant is still registering i
 		[l1.address],
 		1000n * 10n ** 6n,
 	)
-	await setRoutable(sandbox.clients.l1, sandbox.clients.deployment.quoter, erc20)
+	await setFuelRate(sandbox.clients.l1, fuelSwapperOf(sandbox), erc20)
 
 	await page.goto("/")
 	await openSend(page)

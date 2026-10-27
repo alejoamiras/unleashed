@@ -44,6 +44,9 @@ export interface UseTokenSelectionHandle {
 	readonly error: Ref<string | null>
 	epoch: () => number
 	select: (token: SelectableToken, direction: Direction) => Promise<void>
+	/** Resolves `token` as `select` does, without selecting it or reading balances, from `pub`: any client
+	 *  that reads the bridge's L1, whatever chain the wallet is on. */
+	resolve: (token: SelectableToken, pub: PublicClient) => Promise<ResolvedToken>
 	refreshBalances: () => Promise<void>
 	dispose: () => void
 }
@@ -198,9 +201,7 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 		balances.value = next
 	}
 
-	async function resolveInto(token: SelectableToken, direction: Direction, mine: number): Promise<void> {
-		const pub = deps.pub()
-		if (!pub) throw new Error("Connect your Ethereum wallet to read this token.")
+	async function resolveOn(pub: PublicClient, token: SelectableToken): Promise<ResolvedToken> {
 		const gen = SEND_GENERATION
 		if (!gen) throw new Error("This network has no bridge.")
 		// Metadata read on another chain is another token's (or nobody's): the decimals would size
@@ -209,6 +210,13 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 		const resolved = await toResolved(token, await readChain(pub, token, gen.factory))
 		// Bracketed like the registration validation: a switch DURING the reads is caught here.
 		await assertL1Chain({ publicClient: pub })
+		return resolved
+	}
+
+	async function resolveInto(token: SelectableToken, direction: Direction, mine: number): Promise<void> {
+		const pub = deps.pub()
+		if (!pub) throw new Error("Connect your Ethereum wallet to read this token.")
+		const resolved = await resolveOn(pub, token)
 		if (stale(mine)) return
 		selected.value = resolved
 		balances.value = {}
@@ -244,5 +252,15 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 		loading.value = false
 	}
 
-	return { selected, balances, loading, error, epoch: () => epochValue, select, refreshBalances, dispose }
+	return {
+		selected,
+		balances,
+		loading,
+		error,
+		epoch: () => epochValue,
+		select,
+		resolve: (token, pub) => resolveOn(pub, token),
+		refreshBalances,
+		dispose,
+	}
 }
