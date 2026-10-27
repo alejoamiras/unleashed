@@ -1,6 +1,6 @@
 {
 	"builtAt": "2026-10-08T13:59:20.119Z",
-	"primaryRpc": "https://lb.drpc.live/aztec-testnet/Ak_eT5HA2kbyqamqGTF702daoH37vEsR8YYxjmVXwXgc",
+	"primaryRpc": "https://lb.drpc.live/aztec-testnet/<KEY>",
 	"identity": {
 		"nodeVersion": "6.0.0-rc.1",
 		"l1ChainId": 11155111,
