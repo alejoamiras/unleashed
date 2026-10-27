@@ -14,13 +14,19 @@ import { getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { PublicKeys } from "@aztec-labs/aztec.js/keys"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
-import type { Hex } from "viem"
+import { type Hex, isAddress } from "viem"
 import z from "zod"
 import { tokenBridgeHubArtifact } from "./artifacts"
 import { deriveHubTokenInstance } from "./hub-token"
 import { predictPortal } from "./portal-address"
 
-export const evmAddressV2 = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected a 20-byte 0x hex address")
+/** Any-case 20-byte hex, for operator inputs that are lower-cased before use. */
+export const evmHexAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/, "expected a 20-byte 0x hex address")
+/** Lower-case or EIP-55: viem's ABI encoder refuses any other spelling, so a stored address is refused first. */
+export const evmAddressV2 = evmHexAddress.refine(
+	(a): boolean => isAddress(a, { strict: true }),
+	"a mixed-case address must match its EIP-55 checksum",
+)
 const aztecAddress = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected a 32-byte 0x hex address")
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected a 32-byte 0x hex word")
 const decimalString = z.string().regex(/^\d+$/, "expected a base-10 integer string")
