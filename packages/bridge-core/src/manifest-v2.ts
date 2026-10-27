@@ -61,6 +61,46 @@ export const manifestTokenSchema = z
 	})
 	.strict()
 
+/** Gas-share budgets for the DepositRouter's fuel leg: the V4 `swap` block's budgets, without its pools. */
+export const fuelBudgetSchema = z
+	.object({
+		slippageBps: z.number().int().min(0).max(9_999),
+		/** `maxPull = T + T·s` on a cross-chain delivery; also the v3 envelope's upper bound. */
+		crossChainSlippageBps: z.number().int().min(0).max(9_999),
+		minFuelFj: decimalString,
+		fjPerTx: decimalString,
+		fjRegister: decimalString,
+	})
+	.strict()
+
+const routingTokenSchema = z
+	.object({
+		address: evmAddressV2,
+		symbol: z.string().min(1),
+		decimals: z.number().int().min(0).max(255),
+		/** The Ethereum token the rail delivers; must be a manifest token, so its portal exists. */
+		destToken: evmAddressV2,
+	})
+	.strict()
+
+/** The source chains and tokens the app offers for LI.FI-routed deposits; null or absent offers none. */
+export const routingSchema = z
+	.object({
+		provider: z.literal("lifi"),
+		sources: z
+			.array(
+				z
+					.object({
+						chainId: z.number().int().positive(),
+						rail: z.enum(["acrossV4", "stargateV2"]),
+						tokens: z.array(routingTokenSchema).min(1),
+					})
+					.strict(),
+			)
+			.min(1),
+	})
+	.strict()
+
 export const bridgeBlockSchema = z
 	.object({
 		l1: z
@@ -89,6 +129,12 @@ export const bridgeBlockSchema = z
 					})
 					.strict()
 					.optional(),
+				depositRouter: evmAddressV2.optional(),
+				/** The router's `SWAP_TARGET` off mainnet; refused when `l1ChainId` is 1. */
+				fuelSwapper: evmAddressV2.optional(),
+				fuel: fuelBudgetSchema.optional(),
+				/** Routers whose in-flight deposits reconcile still reads; never used for new sends. */
+				legacyRouters: z.array(evmAddressV2).optional(),
 			})
 			.strict(),
 		l2: z
@@ -100,6 +146,7 @@ export const bridgeBlockSchema = z
 			})
 			.strict(),
 		tokens: z.array(manifestTokenSchema),
+		routing: routingSchema.nullable().optional(),
 	})
 	.strict()
 
@@ -131,6 +178,7 @@ export const manifestV2Schema = z
 	.strict()
 	.superRefine((m, ctx) => {
 		if (!m.bridge) return
+		refineRouterBlock(m.l1ChainId, m.bridge, ctx)
 		if (m.bridge.l1.feeJuicePortal.toLowerCase() !== m.feeJuice.portal.toLowerCase()) {
 			ctx.addIssue({ code: "custom", path: ["bridge", "l1", "feeJuicePortal"], message: "must equal feeJuice.portal" })
 		}
@@ -180,6 +228,34 @@ export const manifestV2Schema = z
 			}
 		})
 	})
+
+/** The DepositRouter fields' cross-field rules; every manifest without them still parses. */
+function refineRouterBlock(l1ChainId: number, bridge: z.infer<typeof bridgeBlockSchema>, ctx: z.RefinementCtx): void {
+	const { depositRouter, fuelSwapper, fuel, legacyRouters } = bridge.l1
+	const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path: ["bridge", ...path], message })
+	if (l1ChainId === 1 && fuelSwapper) issue(["l1", "fuelSwapper"], "the testnet fuel swapper is refused on Ethereum mainnet")
+	if (l1ChainId !== 1 && Boolean(depositRouter) !== Boolean(fuelSwapper)) {
+		issue(["l1", "fuelSwapper"], "off mainnet, fuelSwapper is present exactly when depositRouter is")
+	}
+	if (depositRouter && !fuel) issue(["l1", "fuel"], "a depositRouter needs the fuel budgets")
+	const legacy = (legacyRouters ?? []).map((a) => a.toLowerCase())
+	if (new Set(legacy).size !== legacy.length) issue(["l1", "legacyRouters"], "duplicate legacy router")
+	if (depositRouter && legacy.includes(depositRouter.toLowerCase())) issue(["l1", "legacyRouters"], "the current router is not legacy")
+	if (!bridge.routing) return
+	if (!depositRouter) issue(["routing"], "routing needs a depositRouter")
+	const portalTokens = new Set(bridge.tokens.map((t) => t.erc20.toLowerCase()))
+	const chains = new Set<number>()
+	bridge.routing.sources.forEach((src, i) => {
+		if (src.chainId === l1ChainId) issue(["routing", "sources", i, "chainId"], "a source chain cannot be the destination")
+		if (chains.has(src.chainId)) issue(["routing", "sources", i, "chainId"], "duplicate source chain")
+		chains.add(src.chainId)
+		src.tokens.forEach((t, j) => {
+			if (!portalTokens.has(t.destToken.toLowerCase())) {
+				issue(["routing", "sources", i, "tokens", j, "destToken"], "destToken must be a manifest token with a pre-created portal")
+			}
+		})
+	})
+}
 
 export type ManifestV2 = z.infer<typeof manifestV2Schema>
 export type ManifestToken = z.infer<typeof manifestTokenSchema>

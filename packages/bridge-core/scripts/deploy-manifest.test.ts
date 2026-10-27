@@ -187,6 +187,45 @@ describe("deploy journal", () => {
 		).toThrow(/predates identity stamping/)
 	})
 
+	it("a journal written before the router-only kinds still parses beside them, and both new kinds carry their adoption keys", () => {
+		const path = join(dir, "old.jsonl")
+		const line = (step: object) => `${JSON.stringify({ ts: "then", step })}\n`
+		const adoptable = (kind: string) => ({
+			kind,
+			address: FACTORY,
+			txHash: TX,
+			creationCodeHash: `0x${"cd".repeat(32)}`,
+			constructorArgs: [IMPL, FEE_PORTAL],
+		})
+		writeFileSync(
+			path,
+			[
+				line({ kind: "swap-target-deployed", address: IMPL, txHash: TX }),
+				line({ kind: "router-deployed", router: FACTORY, txHash: TX }),
+				line({ kind: "pool-seeded", erc20: ERC20, txHash: TX }),
+				line({ kind: "pool-seeded", erc20: IMPL }),
+				line(adoptable("fuel-swapper-deployed")),
+				line(adoptable("deposit-router-deployed")),
+			].join(""),
+		)
+		expect(readDeployJournal(path).map((s) => s.kind)).toEqual([
+			"swap-target-deployed",
+			"router-deployed",
+			"pool-seeded",
+			"pool-seeded",
+			"fuel-swapper-deployed",
+			"deposit-router-deployed",
+		])
+		// The live generation's own journal, as committed, is an old journal too.
+		const committed = readDeployJournal(join(import.meta.dirname, "..", "deploy-journal", "testnet-generation.jsonl"))
+		expect(committed.map((s) => s.kind)).toContain("swap-target-deployed")
+
+		// Without the constructor arguments a re-run could not tell an identical contract from a changed one.
+		const { constructorArgs: _, ...keyless } = adoptable("deposit-router-deployed")
+		writeFileSync(path, line(keyless))
+		expect(() => readDeployJournal(path)).toThrow(/entry 1 is not a valid step/)
+	})
+
 	it("rejects a journal line that is not a valid step", () => {
 		const path = join(dir, "garbage.jsonl")
 		writeFileSync(path, `${JSON.stringify({ ts: "now", step: { kind: "factory-deployed", factory: FACTORY } })}\n`)

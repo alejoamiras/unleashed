@@ -18,12 +18,17 @@ export const FEE_CEILING = { maxFeesPerGas: new GasFees(10n ** 13n, 10n ** 13n) 
 
 /** Anvil's default mnemonic — the local network's too: its block publisher and validator both sign
  *  from index 0, so that index belongs to the node. The harness signs from the LAST funded index,
- *  the actors from the ones between; a key shared with the node's publisher races every L1 write
- *  on one nonce, and the generation deploy binds the deployer's next CREATE address. */
+ *  the relayer and the cross-chain depositor from the two below it, the actors from the ones
+ *  between; a key shared with the node's publisher races every L1 write on one nonce, and the
+ *  generation deploy binds the deployer's next CREATE address. Both anvils fund the same keys. */
 export const ANVIL_MNEMONIC = "test test test test test test test test test test test junk"
 /** How many keys anvil is started with; every index the harness or an actor uses must be below it. */
 export const ANVIL_ACCOUNTS = 16
 export const HARNESS_INDEX = ANVIL_ACCOUNTS - 1
+/** Sends the relay loop's L1 fills, so a fill never races the harness's nonce. */
+export const RELAYER_INDEX = HARNESS_INDEX - 1
+/** Signs the cross-chain sends on the source chain; the same address receives a recovered delivery on L1. */
+export const CROSSCHAIN_USER_INDEX = HARNESS_INDEX - 2
 export function anvilKey(index: number): Hex {
 	const hd = mnemonicToAccount(ANVIL_MNEMONIC, { addressIndex: index }).getHdKey()
 	const key = hd.privateKey
@@ -60,6 +65,17 @@ export const sandboxChain = (rpcUrl: string) =>
 		nativeCurrency: { decimals: 18, name: "Ether", symbol: "ETH" },
 		rpcUrls: { default: { http: [rpcUrl] } },
 		contracts: { multicall3: { address: MULTICALL3 } },
+	})
+
+/** The second anvil a LI.FI-routed deposit starts on. It is never in the production source catalogue. */
+export const SOURCE_CHAIN_ID = 31338
+
+export const sandboxSourceChain = (rpcUrl: string) =>
+	defineChain({
+		id: SOURCE_CHAIN_ID,
+		name: "sandbox-source",
+		nativeCurrency: { decimals: 18, name: "Ether", symbol: "ETH" },
+		rpcUrls: { default: { http: [rpcUrl] } },
 	})
 
 export const lc = (v: string) => v.toLowerCase() as Address

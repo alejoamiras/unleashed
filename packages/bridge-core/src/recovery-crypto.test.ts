@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest"
 import {
+	crossChainAmountWindow,
 	envelopeMatchesRecord,
+	envelopeV3MatchesRecord,
 	normalizeAmount,
 	openDepositEnvelope,
+	openDepositEnvelopeV3,
 	openDepositRecord,
 	openRecordSecret,
 	openSecret,
 	recoveryKeyFromSignature,
 	recoveryKeyMessage,
+	resealExactEnvelope,
+	sealCrossChainDepositRecord,
 	sealDepositEnvelope,
+	sealDepositEnvelopeV3,
 	sealDepositRecord,
 	sealRecordSecret,
 	sealSecret,
@@ -236,5 +242,61 @@ describe("recovery-crypto — recipient-committed backup durability", () => {
 			await sealDepositEnvelope(key, { secret: "0xbb", recipient: RECIP, amount: "1", sealerL1: SEALER }),
 		)
 		expect(noSalt.salt).toBeUndefined()
+	})
+})
+
+describe("v3 cross-chain envelope", () => {
+	const RECIP = `0x${"3".repeat(64)}`
+	// Stargate shape: T = 100, maxPull = T + 1.5 %, a 10-unit fuel slice ⇒ window [90, 101.5].
+	const ROUTE = { minReceived: "100000000", maxPull: "101500000" }
+	const FUELED = { intent: "token+gas" as const, route: ROUTE, fuel: { amount: "10000000" } }
+
+	it("accepts both ends of [minReceived − fuelSlice, maxPull] and refuses one unit outside either", async () => {
+		const window = crossChainAmountWindow(FUELED)
+		expect(window).toEqual({ minAmount: "90000000", maxAmount: "101500000" })
+		expect(crossChainAmountWindow({ intent: "token", route: ROUTE })).toEqual({ minAmount: "100000000", maxAmount: "101500000" })
+		expect(crossChainAmountWindow({ intent: "gas", route: { minReceived: "5", maxPull: "5" }, fuel: { amount: "5" } })).toEqual({
+			minAmount: "0",
+			maxAmount: "5",
+		})
+		expect(() => crossChainAmountWindow({ ...FUELED, fuel: { amount: "100000001" } })).toThrow(/exceeds/)
+		expect(() => crossChainAmountWindow({ ...FUELED, fuel: undefined })).toThrow(/fuel slice/)
+		const key = await recoveryKeyFromSignature(SIG_A)
+		const blob = await sealDepositEnvelopeV3(key, { secret: SECRET, recipient: RECIP, sealerL1: "0xs", ...window })
+		const env = await openDepositEnvelopeV3(key, blob)
+		// 90: the swap consumed the whole slice; 101.5: it consumed almost none and the rest joined the token leg.
+		for (const amount of ["90000000", "101500000"]) {
+			expect(envelopeV3MatchesRecord(env, { recipient: RECIP.toUpperCase(), amount })).toBe(true)
+		}
+		for (const amount of ["89999999", "101500001"]) expect(envelopeV3MatchesRecord(env, { recipient: RECIP, amount })).toBe(false)
+		expect(envelopeV3MatchesRecord(env, { recipient: `0x${"4".repeat(64)}`, amount: "95000000" })).toBe(false)
+	})
+
+	it("neither version opens as the other", async () => {
+		const key = await recoveryKeyFromSignature(SIG_A)
+		const v3 = await sealDepositEnvelopeV3(key, { secret: SECRET, recipient: RECIP, minAmount: "1", maxAmount: "2", sealerL1: "0xs" })
+		const v2 = await sealDepositEnvelope(key, { secret: SECRET, recipient: RECIP, amount: "1", sealerL1: "0xs" })
+		await expect(openDepositEnvelope(key, v3)).rejects.toThrow(/not a v2 envelope/)
+		await expect(openDepositEnvelopeV3(key, v2)).rejects.toThrow(/not a v3 envelope/)
+		const inverted = { v: 3, secret: SECRET, recipient: RECIP, minAmount: "2", maxAmount: "1", sealerL1: "0xs" }
+		await expect(openDepositEnvelopeV3(key, await sealSecret(key, JSON.stringify(inverted)))).rejects.toThrow(/not a v3 envelope/)
+	})
+
+	it("re-seals a matched v3 as an exact v2 under the in-memory key; an unmatched deposit seals nothing", async () => {
+		let signatures = 0
+		const sign = async () => {
+			signatures++
+			return SIG_A
+		}
+		const envelope = { secret: SECRET, recipient: RECIP, sealerL1: "0xs", salt: "0x5a17", ...crossChainAmountWindow(FUELED) }
+		const { blob, key } = await sealCrossChainDepositRecord({ sign, binding: BINDING, envelope, trusted: false })
+		expect(signatures).toBe(2)
+		const v3 = await openDepositEnvelopeV3(key, blob)
+		const exact = await resealExactEnvelope(key, v3, { recipient: RECIP, amount: "101090000", leafIndex: "8" })
+		expect(signatures).toBe(2)
+		const v2 = await openDepositEnvelope(key, exact)
+		expect(v2).toEqual({ v: 2, secret: SECRET, recipient: RECIP, amount: "101090000", sealerL1: "0xs", leafIndex: "8", salt: "0x5a17" })
+		expect(envelopeMatchesRecord(v2, { recipient: RECIP, amount: "101090000", leafIndex: "8" })).toBe(true)
+		await expect(resealExactEnvelope(key, v3, { recipient: RECIP, amount: "101500001" })).rejects.toThrow(/does not match/)
 	})
 })

@@ -931,7 +931,7 @@ inner venue minimum reverts into recovery. Layers: fork (single and dual).
 
 ### Arc 2: core library, operator tooling and sandbox (app unchanged)
 
-#### Phase 3: Encodings, schemas, journal, envelope
+#### Phase 3: Encodings, schemas, journal, envelope ✓
 
 the `DepositWitness` types, hash and typed data in `l1.ts` beside today's `BridgeWitness` builders (`l1.ts:105`,
 `:121`; arc 5 removes the old ones); `manifest-v2.ts` additive
@@ -945,7 +945,7 @@ both ends of `[minReceived − fuelSlice, maxPull]` (near-zero consumption inclu
 `upsertRecord`/`patchRecord` writing `JOURNAL_KEY` beside stored cross-chain records leaves them intact (the old-tab
 sequence); an outcome before finalization stays provisional; a record with an unclaimed extra is never pruned. Layers: unit.
 
-#### Phase 4: LI.FI client, builders, decoder, fuel quotes, discovery
+#### Phase 4: LI.FI client, builders, decoder, fuel quotes, discovery ✓
 
 `capped-fetch.ts` (extracted; `token-list.ts` migrated), `lifi-api.ts` + schemas, `lifi-addresses.ts`,
 `across-v4.ts` (final), `stargate.ts`, `lifi-decode.ts` (`verifyRoute`), `fuel-quote.ts` (LI.FI provider with the
@@ -963,7 +963,7 @@ the `Transfer` scan, a forged Across fill reusing our `(originChainId, depositId
 transaction before and after a real fill that succeeds, and one that recovers; the client fails closed on byte cap, redirect, timeout
 and schema miss. Layers: unit, live-data (opt-in).
 
-#### Phase 5: Operator tooling, sandbox, integration through the claim
+#### Phase 5: Operator tooling, sandbox, integration through the claim ✓
 
 Ops: `deploy-generation.ts --router-only` (journalled `fuel-swapper-deployed`, `deposit-router-deployed` carrying
 the creation-code hash and constructor arguments; it adopts a landed router only when both match exactly, else it
@@ -1310,6 +1310,60 @@ from nordstern to sushiswap, so the inner-minimum fork test no longer hard-codes
 Round 2 found no fund-risk defect and two stale comments, both accepted and fixed. Round 3: "No new material
 findings." Arc 1 converged. The v3 envelope's upper bound and
 the decoder's `maxPull` rule follow the same figure (`fuel.crossChainSlippageBps`).
+
+**D44 Arc 2 Codex loop (`gpt-6.1-sol` at `high`, over the arc 2 diff).** Every finding was verified against the
+code and accepted. Round 3 still raised two material findings, so the loop reached the plan's hard stop and went to
+the owner, who chose "Run round 4" in the same session. Round 4 raised two more, fixed, and went back to the owner:
+*"Keep going, set the limit at 8."* The arc 2 loop's hard stop is therefore round 8, for this loop only.
+- Round 1 (one high, five medium, one low):
+  1. (high) A replaced source bridge facet only warned, although it holds the user's approved input before any
+     check of ours runs. `verify:l1` now fails on bridge-facet drift; D4's warning stays for fuel-swap selectors,
+     which the router's floor bounds.
+  2. A reorged deposit left its leaf, message hash and delivery facts on a non-final record. They are cleared when
+     canonical discovery returns `pending` or an outcome.
+  3. Extra deposits matched only the secret hash, token and amount floor. One is kept only when the leaf
+     recomputed for the record's recipient, privacy and portal equals the key the router logged.
+  4. Adoption trusted the journal's fingerprint. It now proves the creation transaction's input (bytecode plus
+     constructor arguments) and its receipt's contract address on chain.
+  5. Canary gas ceilings were estimates. Every send carries gas and fee bounds within its chain's remaining cap,
+     and reconciliation runs after every row, the last included.
+  6. The fill CLI signed with any `CANARY_PRIVATE_KEY`. It now requires the pinned canary address first.
+  7. (low) Three comments cited plan artifacts; removed.
+- Round 2 (three medium):
+  1. A reverted receipt was bound only to its sender. It must now carry `lifiTxId`, and a transfer that landed
+     under another hash outranks a recorded revert.
+  2. viem throws `TransactionReceiptNotFoundError` rather than returning `null`, so a stale recorded hash read as
+     `incomplete`. It now falls back to the Transfer scan; any other read error stays `incomplete`.
+  3. An approval could spend the budget its revoke needed. A non-zero approve reserves its revoke, and a cleanup
+     that fails anyway throws `AllowanceStillLive` with the original cause, which the lost-race fallback rethrows.
+- Round 3 (two medium):
+  1. A calldata substring did not authenticate a reverted call. A call to the source Diamond must decode under the
+     rail's facet ABI to `BridgeData.transactionId == lifiTxId`; a call to any other target falls back to the scan.
+     I first kept a self-addressed transaction carrying the id as one 32-byte word, for liveness; round 4 rejected
+     that.
+  2. The approval's confirmation sat outside the cleanup guard. Submit and confirm are split; everything after a
+     submitted approval either revokes or raises `AllowanceStillLive`.
+- Round 4 (owner-approved past the hard stop; one medium, one low):
+  1. Addressing the sender's own account does not authenticate the inner call: a self-addressed batch can hand the
+     public id to an unrelated helper and revert. A self-addressed transaction now counts only when it decodes as
+     an ERC-7821 / ERC-7579 batch-mode `execute` or an `executeBatch`, and one of its calls targets the Diamond with
+     the decoded id. Any other encoding stays `pending`. Codex: "A terminal answer without that evidence is the
+     weakness, even when rejecting it sacrifices liveness."
+  2. (low) The relayer's comments and the filler's "nothing sent" output claimed no transaction where an approval
+     and its revoke may have been sent. Reworded.
+- Round 5 (one medium, one low):
+  1. The canary labelled a fill `organic` whenever the filler reported `alreadyFilled`. A fill of its own that mined
+     while its receipt wait failed reads exactly so, which would falsely evidence relayer liveness (and fail the
+     recovery row's balance check). The canary now attributes the fill discovery authenticated by its signer (the
+     canary is an EOA), and a confirmed self-fill must be that transaction. The filler's output no longer claims
+     whose fill it found.
+  2. (low) `FillResult.fillTxHash`'s comment still said "nothing was sent". Reworded.
+- Round 6 (resumed): "No new material findings." Arc 2 converged in six rounds.
+
+Rejected: none. Accepted residue:
+- An OP-stack L1 data fee falls outside `gas × maxFeePerGas`; Codex agreed it "remains separate".
+- A submit that errors after the node already broadcast propagates without a revoke.
+- An unused revocation reserve tightens the current row's budget.
 
 **Settled since approval:** I6 (Phase 1: the pinned lib compiles under the `lifi` profile); I3 (Phase 2: nordstern
 and sushiswap, the venues LI.FI picked without bitget across recordings, survive a warp of 3 × the 125 s ETA; bitget's
