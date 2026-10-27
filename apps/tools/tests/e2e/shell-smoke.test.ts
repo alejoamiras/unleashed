@@ -168,14 +168,14 @@ describe("shell smoke", () => {
 		expect(wrapper.get(sel(TESTIDS.dockBadge)).text()).toBe("1")
 	})
 
-	it("7. the record whose stepper is on screen is a read-only row that never opens the dock or badges; released, it needs you", async () => {
+	it("7. the record whose stepper is on screen counts toward the badge without opening the dock, marked current; released, it needs you", async () => {
 		if (IS_PLACEHOLDER) return
 		wrapper = await mountApp()
 		claimForeground("0xfg")
 		addRecord(claimableDeposit("0xfg"))
 		await flushPromises()
 		expect(wrapper.find(sel(TESTIDS.dock)).exists()).toBe(false)
-		expect(wrapper.find(sel(TESTIDS.dockBadge)).exists()).toBe(false)
+		expect(wrapper.get(sel(TESTIDS.dockBadge)).text()).toBe("1")
 
 		await wrapper.get(sel(TESTIDS.dockOpen)).trigger("click")
 		await flushPromises()
@@ -183,13 +183,17 @@ describe("shell smoke", () => {
 		expect(row.attributes("data-record-id")).toBe("0xfg")
 		expect(row.attributes("aria-current")).toBe("true")
 		expect(row.text()).toContain("this send")
-		expect(row.find(sel(TESTIDS.activityRowAction)).exists()).toBe(false)
+		expect(row.get(sel(TESTIDS.activityRowAction)).text()).toBe("Claim")
 		await wrapper.get(sel(TESTIDS.dockHide)).trigger("click")
 		await flushPromises()
 
+		// Hiding the dock over its Needs-you row was the answer for this record: released, it never re-opens it.
 		releaseForeground("0xfg")
 		await flushPromises()
-		expect(wrapper.find(sel(TESTIDS.dock)).exists()).toBe(true)
+		expect(wrapper.find(sel(TESTIDS.dock)).exists()).toBe(false)
+		expect(wrapper.get(sel(TESTIDS.dockBadge)).text()).toBe("1")
+		await wrapper.get(sel(TESTIDS.dockOpen)).trigger("click")
+		await flushPromises()
 		const released = wrapper.get(sel(TESTIDS.activityRow))
 		expect(released.attributes("data-group")).toBe("needs-you")
 		expect(released.attributes("aria-current")).toBeUndefined()

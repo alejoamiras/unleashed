@@ -10,7 +10,7 @@ it can connect.
 | [`apps/landing`](apps/landing/README.md) | The page at `unleashed.systems`: the lab's name, a pitch, one row per experiment. |
 | [`packages/bridge-core`](packages/bridge-core/README.md) | The bridge logic over `viem` and `aztec.js`, plus the conductor, verifier and canary scripts that deploy and check a generation. |
 | [`packages/design`](packages/design/README.md) | The design system of the app and the landing: tokens, fonts, primitives. |
-| [`contracts/bridge/evm`](contracts/bridge/evm/README.md) | L1 contracts (Foundry): `PortalFactory`, the portal clones, `SwapBridgeRouter`. |
+| [`contracts/bridge/evm`](contracts/bridge/evm/README.md) | L1 contracts (Foundry): `PortalFactory`, the portal clones, `DepositRouter`, `TestnetFuelSwapper`. |
 | [`contracts/bridge/aztec`](contracts/bridge/aztec/README.md) | L2 contracts (Noir): `TokenBridgeHub` and its derivation libraries. |
 | [`implementations-plan`](implementations-plan/index.md) | Plans, their lessons, and the closed plans under `archive/`. |
 | [`audit`](audit/security) | Security review reports. |

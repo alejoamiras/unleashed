@@ -4,28 +4,28 @@ import { join } from "node:path"
 import type { BridgeBlock, ManifestToken, ManifestV2 } from "../../src/manifest-v2"
 import { walletChainIdOf } from "../../src/wallet-chain-id"
 import type { GenerationRecord } from "../generation"
-import { CHAIN_ID, MIN_FJ, MULTICALL3, SANDBOX_ETH_FJ, SANDBOX_TIER } from "./constants"
+import { CHAIN_ID, MIN_FJ } from "./constants"
 import type { L1Deployment } from "./l1"
 
-export type SwapBlock = NonNullable<BridgeBlock["l1"]["swap"]>
+export type FuelBlock = NonNullable<BridgeBlock["l1"]["fuel"]>
 
-/** The `bridge.l1.swap` block the sandbox ships. `poolManager` is never read off-chain, so it names
- *  the facade too; the fuel budgets are the smoke's calibration for this network (the mock rate
- *  makes a claim cost ~3.6 FJ of the 40 whole units a fueled send buys, so they never bind). */
-export function sandboxSwapBlock(d: L1Deployment): SwapBlock {
+/** The router's `bridge.l1.fuel` block, the smoke's calibration for this network: the swapper's fixed
+ *  rate makes a claim cost ~3.6 FJ of the 40 whole units a fueled send buys, so the budgets never bind. */
+export function sandboxFuelBlock(): FuelBlock {
 	return {
-		poolManager: d.quoter,
-		quoter: d.quoter,
-		multicall3: MULTICALL3,
-		weth: d.tokens.weth,
-		feeJuice: d.feeJuice,
-		tiers: [SANDBOX_TIER],
-		ethFj: SANDBOX_ETH_FJ,
 		slippageBps: 300,
+		crossChainSlippageBps: 100,
 		minFuelFj: MIN_FJ.toString(),
 		fjPerTx: "3577823745897251607",
 		fjRegister: "1967429819850912960",
 	}
+}
+
+/** The `DepositRouter` fields of `bridge.l1`. */
+export interface RouterBlock {
+	depositRouter: string
+	fuelSwapper: string
+	fuel: FuelBlock
 }
 
 export function buildManifest(
@@ -33,14 +33,14 @@ export function buildManifest(
 	deployment: L1Deployment,
 	tokens: ManifestToken[],
 	rollupVersion: number,
-	swap: SwapBlock | undefined,
+	router: RouterBlock,
 ): ManifestV2 {
 	return {
 		schema: 2,
 		network: "sandbox",
 		l1ChainId: CHAIN_ID,
 		walletChainId: walletChainIdOf(CHAIN_ID, rollupVersion),
-		bridge: { l1: { ...gen.l1, swap }, l2: gen.l2, tokens } as BridgeBlock,
+		bridge: { l1: { ...gen.l1, ...router }, l2: gen.l2, tokens } as BridgeBlock,
 		feeJuice: {
 			portal: deployment.feeJuicePortal,
 			asset: deployment.feeJuice,
@@ -57,7 +57,13 @@ export interface RunArtifacts {
 	deployments?: unknown
 }
 
-export const ARTIFACT_FILES = { manifest: "manifest.json", handle: "handle.json", deployments: "deployments.json" } as const
+export const ARTIFACT_FILES = {
+	manifest: "manifest.json",
+	handle: "handle.json",
+	deployments: "deployments.json",
+	/** `{ url }` of the loopback Across API a held sandbox serves; written by `up` only. */
+	relayApi: "relay-api.json",
+} as const
 
 /** Everything a consumer needs is JSON on disk: a browser build reads the manifest at config time,
  *  a test process reconstructs its clients from the handle. */

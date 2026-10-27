@@ -1,8 +1,9 @@
 /**
- * One bridge GENERATION: the L1 PortalFactory + SwapBridgeRouter and the L2 TokenBridgeHub that is
- * salted with the factory's own address, plus the per-token portal pre-creation that fills the
- * manifest's `tokens[]`. Network-agnostic — the sandbox and the testnet conductor differ only in the
- * clients, the fee methods and the swap target they hand in.
+ * One bridge GENERATION: the L1 PortalFactory and the L2 TokenBridgeHub that is salted with the
+ * factory's own address, plus the per-token portal pre-creation that fills the manifest's `tokens[]`.
+ * Network-agnostic — the sandbox and the testnet conductor differ only in the clients and the fee
+ * methods they hand in. The DepositRouter binds the factory, so it deploys after it
+ * (`deployDepositRouter`).
  *
  * The ordering is forced by a circular binding: the hub's address derives from the factory address
  * (its salt) and the factory's constructor takes the hub. So the factory address is PREDICTED from
@@ -24,8 +25,17 @@ import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { getContractClassFromArtifact } from "@aztec-labs/stdlib/contract"
 import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
-import { type Address, getContractAddress, type Hex } from "viem"
+import {
+	type Address,
+	encodeDeployData,
+	getContractAddress,
+	type Hex,
+	keccak256,
+	TransactionNotFoundError,
+	TransactionReceiptNotFoundError,
+} from "viem"
 import { tokenBridgeHubArtifact } from "../src/artifacts"
+import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import { type Registration, readRegistration } from "../src/factory-registry"
 import type { L1Ctx } from "../src/flows"
@@ -35,10 +45,10 @@ import { l1ToL2MessageReadiness } from "../src/l1-to-l2-readiness"
 import type { SendOpts } from "../src/hub-l2"
 import type { ManifestToken } from "../src/manifest-v2"
 import { fromWord } from "../src/register-hash"
-import { SWAP_BRIDGE_ROUTER_ABI } from "../src/router-abi"
+import { sendGasLimit } from "../src/send-flow"
 import type { DeployJournal, DeployStep, DeployStepKind } from "./deploy-manifest"
 import { evmArtifact } from "./script-artifacts"
-import { ROUTER_CONSTANTS_ABI } from "./script-l1"
+import { FUEL_SWAPPER_ABI, ROUTER_CONSTANTS_ABI } from "./script-l1"
 import { deriveInstance, registerHub, registerHubToken } from "./script-l2"
 
 export type AztecNode = ReturnType<typeof createAztecNodeClient>
@@ -60,21 +70,16 @@ export interface GenerationInputs {
 	registry: Address
 	permit2: Address
 	feeJuicePortal: Address
-	feeJuice: Address
 	guardianL1: Address
 	/** The L2 guardian, as an Aztec address hex. */
 	guardianL2: string
-	/** Already deployed: the sandbox passes its mock, the testnet passes UniswapFuelSwap. */
-	swapTarget: Address
 }
 
 export interface GenerationRecord {
 	l1: {
 		factory: Address
 		implementation: Address
-		router: Address
 		permit2: Address
-		swapTarget: Address
 		feeJuicePortal: Address
 		registry: Address
 		guardian: Address
@@ -151,7 +156,7 @@ function tokenArtifactSha256(): string {
 	return createHash("sha256").update(readFileSync(path)).digest("hex")
 }
 
-// ─── L1 factory + router ─────────────────────────────────────────────────────
+// ─── L1 factory ──────────────────────────────────────────────────────────────
 
 /** PENDING, not latest: a transaction of this key's already in the mempool owns the latest nonce, so
  *  a prediction made from it names an address the factory can never land at. */
@@ -247,14 +252,6 @@ async function deployFactory(
 	return { factory: address, implementation }
 }
 
-async function deployRouter(l1: L1Ctx, inputs: GenerationInputs, factory: Address, journal: DeployJournal): Promise<Address> {
-	const done = findStep(journal, "router-deployed")
-	if (done) return lc(done.router)
-	const { address, txHash } = await deployEvm(l1, "SwapBridgeRouter", [inputs.permit2, inputs.feeJuicePortal, inputs.swapTarget, factory])
-	journal.append({ kind: "router-deployed", router: address, txHash })
-	return address
-}
-
 // ─── L2 hub ──────────────────────────────────────────────────────────────────
 
 type HubArgs = [string, Address, string]
@@ -322,28 +319,6 @@ async function deployHub(
 
 // ─── Read-backs ──────────────────────────────────────────────────────────────
 
-type RouterBindings = Pick<GenerationRecord["l1"], "permit2" | "swapTarget" | "feeJuicePortal">
-
-/**
- * The router's immutables, read back rather than copied from the inputs: a resumed generation keeps
- * the router it deployed, and that router's swap target is the one every witness is bound to — a
- * candidate naming a fresher input would sign sends the router rejects.
- */
-async function readRouterBindings(l1: L1Ctx, inputs: GenerationInputs, router: Address, factory: Address): Promise<RouterBindings> {
-	const read = (functionName: "FACTORY" | "FEE_ASSET" | "permit2" | "feeJuicePortal" | "swapTarget") =>
-		l1.pub.readContract({ address: router, abi: [...SWAP_BRIDGE_ROUTER_ABI, ...ROUTER_CONSTANTS_ABI], functionName, args: [] })
-	assertSame(String(await read("FACTORY")), factory, "router.FACTORY")
-	assertSame(String(await read("FEE_ASSET")), inputs.feeJuice, "router.FEE_ASSET")
-	const permit2 = lc(String(await read("permit2")))
-	const feeJuicePortal = lc(String(await read("feeJuicePortal")))
-	const swapTarget = lc(String(await read("swapTarget")))
-	assertSame(permit2, inputs.permit2, "router.permit2")
-	assertSame(feeJuicePortal, inputs.feeJuicePortal, "router.feeJuicePortal")
-	if (swapTarget !== lc(inputs.swapTarget))
-		console.log(`  router keeps its swap target ${swapTarget} (input ${inputs.swapTarget} ignored)`)
-	return { permit2, feeJuicePortal, swapTarget }
-}
-
 async function assertGeneration(l1: L1Ctx, l2: L2Ctx, record: GenerationRecord): Promise<void> {
 	assertSame(
 		String(await l1.pub.readContract({ address: record.l1.factory, abi: PORTAL_FACTORY_ABI, functionName: "L2_HUB", args: [] })),
@@ -354,7 +329,7 @@ async function assertGeneration(l1: L1Ctx, l2: L2Ctx, record: GenerationRecord):
 	if ((await hubTokenFor(hub, "0x0000000000000000000000000000000000000000", l2.from.toString())) !== undefined) {
 		throw new Error("hub token_for(0x0) answered a non-zero token — the hub is not the freshly-constructed one")
 	}
-	console.log("  ✓ factory.L2_HUB, router.FACTORY/FEE_ASSET/permit2/feeJuicePortal/swapTarget, hub.token_for")
+	console.log("  ✓ factory.L2_HUB, hub.token_for")
 }
 
 export async function deployGeneration(l1: L1Ctx, l2: L2Ctx, inputs: GenerationInputs, journal: DeployJournal): Promise<GenerationRecord> {
@@ -363,16 +338,14 @@ export async function deployGeneration(l1: L1Ctx, l2: L2Ctx, inputs: GenerationI
 	const args = hubConstructorArgs(tokenClassId, predicted.factory, inputs.guardianL2)
 	const hubInstance = await deriveHub(tokenClassId, predicted.factory, inputs.guardianL2)
 	const { factory, implementation } = await deployFactory(l1, inputs, predicted, hubInstance.address.toString(), journal)
-	const router = await deployRouter(l1, inputs, factory, journal)
 	await deployHub(l2, hubInstance, args, factory, journal)
-	const bindings = await readRouterBindings(l1, inputs, router, factory)
 
 	const record: GenerationRecord = {
 		l1: {
 			factory,
 			implementation,
-			router,
-			...bindings,
+			permit2: lc(inputs.permit2),
+			feeJuicePortal: lc(inputs.feeJuicePortal),
 			registry: lc(inputs.registry),
 			guardian: lc(inputs.guardianL1),
 		},
@@ -433,15 +406,13 @@ export interface PreCreateTokenOptions {
 async function ensurePortal(l1: L1Ctx, factory: Address, erc20: Address): Promise<{ reg: Registration; txHash?: Hex }> {
 	const existing = await readRegistration(l1.pub as never, factory, erc20)
 	if (existing) return { reg: existing }
-	const txHash = await l1.wallet.writeContract({
-		address: factory,
-		abi: PORTAL_FACTORY_ABI,
-		functionName: "createPortal",
-		args: [erc20],
-		account: l1.account,
-		chain: l1.wallet.chain,
-	} as never)
-	await l1.pub.waitForTransactionReceipt({ hash: txHash })
+	// createPortal sends the factory's register message through the Inbox, so it takes a bridge send's
+	// gas headroom; a bare estimate has run out of gas on it.
+	const call = { address: factory, abi: PORTAL_FACTORY_ABI, functionName: "createPortal", args: [erc20], account: l1.account }
+	const estimate = await l1.pub.estimateContractGas(call as never)
+	const txHash = await l1.wallet.writeContract({ ...call, chain: l1.wallet.chain, gas: sendGasLimit(estimate) } as never)
+	const receipt = await l1.pub.waitForTransactionReceipt({ hash: txHash })
+	if (receipt.status !== "success") throw new Error(`createPortal(${erc20}) REVERTED (${txHash}) — no portal was created; inspect the tx`)
 	const reg = await readRegistration(l1.pub as never, factory, erc20)
 	if (!reg) throw new Error(`createPortal(${erc20}) landed but the factory has no registration — STOP`)
 	return { reg, txHash }
@@ -491,8 +462,9 @@ async function manifestTokenOf(
 		decimals: reg.decimals,
 		displayName: fromWord(reg.nameWord) || displaySymbol,
 		displaySymbol,
-		source: opts.source ?? "permissionless-mint",
-		sourceContract: opts.sourceContract ?? "MintableERC20",
+		...(opts.source === "canonical"
+			? { source: "canonical" as const }
+			: { source: "permissionless-mint" as const, sourceContract: opts.sourceContract ?? "MintableERC20" }),
 		...(opts.maxWholePerTx === undefined ? {} : { maxWholePerTx: opts.maxWholePerTx }),
 	}
 }
@@ -521,4 +493,178 @@ export async function preCreateToken(
 	}
 	console.log(`  ${token.displaySymbol} ${erc20} → portal ${token.portal}${registerTxHash ? " (registered)" : ""}`)
 	return token
+}
+
+// ─── DepositRouter + TestnetFuelSwapper ──────────────────────────────────────
+
+const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000"
+
+export type AdoptableKind = "fuel-swapper-deployed" | "deposit-router-deployed"
+type AdoptableStep = Extract<DeployStep, { kind: AdoptableKind }>
+
+const ADOPTABLE_CONTRACT: Readonly<Record<AdoptableKind, string>> = {
+	"fuel-swapper-deployed": "TestnetFuelSwapper",
+	"deposit-router-deployed": "DepositRouter",
+}
+
+/** A contract the router-only arc deployed or adopted. */
+export interface AdoptableDeploy {
+	address: Address
+	/** No transaction was sent: an identical journalled contract with code on chain was reused. */
+	adopted: boolean
+}
+
+/** What a journalled step must equal to be adopted, as this run would deploy it. */
+export interface AdoptionKey {
+	creationCodeHash: Hex
+	constructorArgs: Address[]
+}
+
+interface Adoption {
+	key: AdoptionKey
+	/** The creation transaction's input this run would send: the creation code, then the ABI-encoded arguments. */
+	deployData: Hex
+}
+
+function adoptionOf(kind: AdoptableKind, args: readonly string[]): Adoption {
+	const { abi, bytecode } = evmArtifact(ADOPTABLE_CONTRACT[kind])
+	const constructorArgs = args.map(lc)
+	return {
+		key: { creationCodeHash: keccak256(bytecode), constructorArgs },
+		deployData: encodeDeployData({ abi, bytecode, args: constructorArgs }),
+	}
+}
+
+const sameKey = (step: AdoptableStep, key: AdoptionKey): boolean =>
+	step.creationCodeHash.toLowerCase() === key.creationCodeHash &&
+	step.constructorArgs.length === key.constructorArgs.length &&
+	step.constructorArgs.every((a, i) => a.toLowerCase() === key.constructorArgs[i])
+
+/** Why the step's own transaction does not prove it created this contract at its address, or `undefined` when it does. */
+async function creationMismatch(l1: L1Ctx, step: AdoptableStep, deployData: Hex): Promise<string | undefined> {
+	const hash = step.txHash as Hex
+	const found = await Promise.all([l1.pub.getTransaction({ hash }), l1.pub.getTransactionReceipt({ hash })]).catch((e: unknown) => {
+		if (e instanceof TransactionNotFoundError || e instanceof TransactionReceiptNotFoundError) return undefined
+		throw e
+	})
+	if (!found) return `its transaction ${hash} is not on this chain`
+	const [tx, receipt] = found
+	if (receipt.status !== "success") return `its transaction ${hash} reverted`
+	if (tx.to !== null) return `its transaction ${hash} called ${tx.to} instead of creating a contract`
+	if (lc(receipt.contractAddress ?? "") !== lc(step.address)) return `its transaction ${hash} created ${receipt.contractAddress}`
+	if (tx.input.toLowerCase() !== deployData.toLowerCase()) return `its transaction ${hash} sent other creation code or arguments`
+	return undefined
+}
+
+/**
+ * The newest journalled `kind` that this run would deploy identically and that the chain proves: its address carries
+ * code, and its journalled transaction is a successful creation of exactly that address from exactly this creation
+ * code and these arguments. The journal alone is only a claim, and an adopted contract is configured and funded before
+ * strict verification runs. `undefined` means the run must deploy. Read-only, so a dry run can report it.
+ */
+export async function findAdoptable(
+	l1: L1Ctx,
+	journal: Pick<DeployJournal, "steps">,
+	kind: AdoptableKind,
+	args: readonly string[],
+): Promise<Address | undefined> {
+	const { key, deployData } = adoptionOf(kind, args)
+	const matches = journal.steps.filter((s): s is AdoptableStep => s.kind === kind && sameKey(s, key)).reverse()
+	for (const step of matches) {
+		const code = await l1.pub.getCode({ address: step.address as Address })
+		const mismatch = !code || code === "0x" ? "it has no code on this chain" : await creationMismatch(l1, step, deployData)
+		if (!mismatch) return lc(step.address)
+		console.log(`  ${kind} ${step.address} matches the journal but ${mismatch} — not adopted`)
+	}
+	return undefined
+}
+
+/**
+ * Adopts an identical journalled contract, or deploys at a pinned nonce and appends a new step. Only an exact
+ * match is adopted: a contract whose code or arguments changed is a new contract, and the step that named its
+ * predecessor stays as written. The step is appended after the receipt, so a crash between landing and the
+ * append leaves an orphan that the re-run replaces with a fresh deploy.
+ */
+async function deployOrAdopt(l1: L1Ctx, journal: DeployJournal, kind: AdoptableKind, args: Address[]): Promise<AdoptableDeploy> {
+	const contract = ADOPTABLE_CONTRACT[kind]
+	const adopted = await findAdoptable(l1, journal, kind, args)
+	if (adopted) {
+		console.log(`  ${contract}: ${adopted} (adopted — identical code and constructor arguments)`)
+		return { address: adopted, adopted: true }
+	}
+	const { key } = adoptionOf(kind, args)
+	const nonce = await nonceOf(l1)
+	const predicted = lc(getContractAddress({ from: l1.account.address, nonce }))
+	const { address, txHash } = await deployEvm(l1, contract, key.constructorArgs, nonce)
+	assertSame(address, predicted, `${contract} address`)
+	journal.append({ kind, address, txHash, ...key })
+	return { address, adopted: false }
+}
+
+export interface FuelSwapperArgs {
+	feeAsset: Address
+	/** The permissionless testnet faucet the swapper tops itself up from; absent means inventory only. */
+	feeAssetHandler?: Address
+	owner: Address
+}
+
+export function fuelSwapperArgs(a: FuelSwapperArgs): Address[] {
+	return [a.feeAsset, a.feeAssetHandler ?? ZERO_ADDRESS, a.owner]
+}
+
+/** `TestnetFuelSwapper`: the DepositRouter's swap target off mainnet, where its constructor refuses chain 1. */
+export function deployFuelSwapper(l1: L1Ctx, journal: DeployJournal, a: FuelSwapperArgs): Promise<AdoptableDeploy> {
+	return deployOrAdopt(l1, journal, "fuel-swapper-deployed", fuelSwapperArgs(a))
+}
+
+export interface DepositRouterArgs {
+	permit2: Address
+	feeJuicePortal: Address
+	factory: Address
+	swapTarget: Address
+	owner: Address
+}
+
+/** The constructor's own order; its fee asset is not an argument but the portal's `UNDERLYING()`. */
+export function depositRouterArgs(a: DepositRouterArgs): Address[] {
+	return [a.permit2, a.feeJuicePortal, a.factory, a.swapTarget, a.owner]
+}
+
+export function deployDepositRouter(l1: L1Ctx, journal: DeployJournal, a: DepositRouterArgs): Promise<AdoptableDeploy> {
+	return deployOrAdopt(l1, journal, "deposit-router-deployed", depositRouterArgs(a))
+}
+
+export interface RouterBindings extends DepositRouterArgs {
+	feeAsset: Address
+}
+
+/**
+ * The DepositRouter's immutables and owner as the chain holds them. A router is bound to these for its whole life,
+ * so the candidate names a router only after its readback equals what the generation expects.
+ */
+export async function readRouterBindings(l1: L1Ctx, router: Address): Promise<RouterBindings> {
+	const read = async (functionName: "PERMIT2" | "FEE_JUICE_PORTAL" | "FACTORY" | "FEE_ASSET" | "SWAP_TARGET") =>
+		lc(String(await l1.pub.readContract({ address: router, abi: DEPOSIT_ROUTER_ABI, functionName, args: [] })))
+	const owner = await l1.pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "owner", args: [] })
+	return {
+		permit2: await read("PERMIT2"),
+		feeJuicePortal: await read("FEE_JUICE_PORTAL"),
+		factory: await read("FACTORY"),
+		feeAsset: await read("FEE_ASSET"),
+		swapTarget: await read("SWAP_TARGET"),
+		owner: lc(String(owner)),
+	}
+}
+
+/** Every field of `expected` against the chain's readback, naming the first that differs. */
+export function assertBindings(label: string, actual: object, expected: object): void {
+	const got = actual as Record<string, unknown>
+	for (const [field, want] of Object.entries(expected)) assertSame(String(got[field]), String(want), `${label}.${field}`)
+}
+
+/** The swapper's constructor bindings as the chain holds them. */
+export async function readFuelSwapperBindings(l1: L1Ctx, swapper: Address): Promise<Required<FuelSwapperArgs>> {
+	const read = async (functionName: "FEE_ASSET" | "FEE_ASSET_HANDLER" | "owner") =>
+		lc(String(await l1.pub.readContract({ address: swapper, abi: FUEL_SWAPPER_ABI, functionName, args: [] })))
+	return { feeAsset: await read("FEE_ASSET"), feeAssetHandler: await read("FEE_ASSET_HANDLER"), owner: await read("owner") }
 }

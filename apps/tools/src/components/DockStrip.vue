@@ -15,33 +15,40 @@ defineExpose({ focus: () => openEl.value?.focus() })
 
 <template>
 	<aside class="strip" aria-label="Activity" :data-testid="TESTIDS.dockStrip">
-		<button
-			ref="openEl"
-			type="button"
-			class="open"
-			:aria-expanded="!!open"
-			:aria-controls="open ? controls : undefined"
-			:data-testid="TESTIDS.dockOpen"
-			:aria-label="open ? 'Hide activity' : count > 0 ? `Show activity, ${count} need you` : 'Show activity'"
-			@click="emit('open')"
-		>
-			<Icon name="chevron-down" :size="24" :rotate="open ? -90 : 90" />
-			<span v-if="count > 0 && !open" class="badge" aria-hidden="true" :data-testid="TESTIDS.dockBadge">{{ count }}</span>
-		</button>
-		<span class="lbl" aria-hidden="true">Activity</span>
+		<div class="inner">
+			<button
+				ref="openEl"
+				type="button"
+				class="open"
+				:aria-expanded="!!open"
+				:aria-controls="open ? controls : undefined"
+				:data-testid="TESTIDS.dockOpen"
+				:aria-label="open ? 'Hide activity' : count > 0 ? `Show activity, ${count} need you` : 'Show activity'"
+				@click="emit('open')"
+			>
+				<Icon name="chevron-down" :size="24" :rotate="open ? -90 : 90" />
+				<span v-if="count > 0 && !open" class="badge" aria-hidden="true" :data-testid="TESTIDS.dockBadge">{{ count }}</span>
+			</button>
+			<span class="lbl" aria-hidden="true">Activity</span>
+		</div>
 	</aside>
 </template>
 
 <style scoped>
+/* The fill runs the page's full height; the control inside it stays in view. */
 .strip {
+	align-self: stretch;
+	width: 44px;
+	background: var(--ul-well);
+}
+
+.inner {
 	position: sticky;
 	top: 0;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	width: 44px;
 	max-height: 100vh;
-	background: var(--ul-well);
 }
 
 .open {

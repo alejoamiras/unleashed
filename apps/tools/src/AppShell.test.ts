@@ -72,6 +72,7 @@ describe("AppShell", () => {
 		expect(w.get(sel(TESTIDS.app)).attributes("data-section")).toBe("send")
 		const header = w.get(sel(TESTIDS.sectionHeader))
 		expect(header.text()).toContain("Bridge")
+		expect(header.text()).toContain("public or private · arrive with gas")
 		expect(header.find(sel("l1-panel")).exists()).toBe(true)
 		expect(header.get(sel("aztec-panel")).attributes("data-variant")).toBe("bridge")
 		expect(w.find(sel(TESTIDS.sendView)).isVisible()).toBe(true)
@@ -80,24 +81,26 @@ describe("AppShell", () => {
 		expect(w.find(sel(TESTIDS.activityView)).exists()).toBe(false)
 	})
 
-	it("the bridge footer shows only on Send while the wizard is on a form step", async () => {
+	it("the bridge footer lists the contracts on Activity and a receipt reopened from it, only its warning on the form, and is gone beside the stepper", async () => {
 		const w = shell()
-		const footer = () => w.find(sel("footer-bridge")).exists()
-		expect(footer()).toBe(false)
+		const footer = () => {
+			const f = w.find(sel("footer-bridge"))
+			return f.exists() ? f.attributes("contracts") : null
+		}
+		expect(footer()).toBeNull()
 		useShell().bridgeForm.value = true
 		await nextTick()
-		expect(footer()).toBe(true)
-		for (const other of ["activity", "drip"] as const) {
-			useShell().goTo(other)
-			await nextTick()
-			expect(footer()).toBe(false)
-		}
-		useShell().goTo("send")
-		await nextTick()
-		expect(footer()).toBe(true)
+		expect(footer()).toBe("false")
 		useShell().bridgeForm.value = false
+		useShell().receiptFromActivity.value = "rec-1"
 		await nextTick()
-		expect(footer()).toBe(false)
+		expect(footer()).toBe("true")
+		useShell().goTo("activity")
+		await nextTick()
+		expect(footer()).toBe("true")
+		useShell().goTo("drip")
+		await nextTick()
+		expect(footer()).toBeNull()
 	})
 
 	it("the faucet has the Aztec chip alone and no shell footer (its view mounts its own); Activity keeps the bridge chips", async () => {
@@ -151,7 +154,7 @@ describe("AppShell", () => {
 		expect(w.get(sel(TESTIDS.tabActivity)).text()).toContain("3")
 	})
 
-	it("a phone has no dock on any section, and the rail still carries the count", async () => {
+	it("a phone stacks the dock under a send in progress or done, has none beside a form or elsewhere, and keeps the count", async () => {
 		vi.stubGlobal("matchMedia", (query: string) => ({
 			matches: query === "(max-width: 760px)",
 			media: query,
@@ -161,6 +164,11 @@ describe("AppShell", () => {
 		try {
 			feedCount.value = 2
 			const w = shell()
+			expect(w.get(sel(TESTIDS.dock)).attributes("stacked")).toBe("true")
+			// The header keeps only where a send can start from.
+			expect(w.get(sel(TESTIDS.sectionHeader)).text()).not.toContain("public or private")
+			useShell().bridgeForm.value = true
+			await nextTick()
 			expect(w.find(sel(TESTIDS.dock)).exists()).toBe(false)
 			useShell().goTo("drip")
 			await nextTick()

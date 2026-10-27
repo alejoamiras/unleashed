@@ -3,6 +3,7 @@
  * `fjRegister` the extra a token's first claim pays for registering it. Both are worst cases over
  * the measured matrix plus a margin, so a quote sized from them survives a fee bump.
  */
+import type { ManifestV2 } from "../src/manifest-v2"
 
 export type CalibrationShape = "claim_public" | "claim_private" | "transfer" | "register_and_claim_public" | "register_token"
 
@@ -45,4 +46,15 @@ export function calibrateFuelBudgets(samples: readonly CalibrationSample[], marg
 		fjPerTx: withMargin(perTx, marginBps),
 		fjRegister: withMargin(registerExtra > 0n ? registerExtra : 0n, marginBps),
 	}
+}
+
+/**
+ * `m` with `budgets` in the DepositRouter's `fuel` block. Throws when `m` has none, since a manifest with no fuel
+ * route has nothing to calibrate.
+ */
+export function applyFuelBudgets(m: ManifestV2, budgets: FuelBudgets): ManifestV2 {
+	const fuel = m.bridge?.l1.fuel
+	if (!m.bridge || !fuel) throw new Error(`manifest for ${m.network} carries no fuel budgets to calibrate — STOP`)
+	const measured = { fjPerTx: budgets.fjPerTx.toString(), fjRegister: budgets.fjRegister.toString() }
+	return { ...m, bridge: { ...m.bridge, l1: { ...m.bridge.l1, fuel: { ...fuel, ...measured } } } }
 }

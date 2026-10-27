@@ -1,10 +1,11 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
+import { getAddress } from "viem"
 import { describe, expect, it } from "vitest"
 import { deriveHubTokenInstance } from "./hub-token"
 import { assertManifestTokensDerive, deriveManifestHub, manifestToken, parseManifestV2, parseManifestV2Strict } from "./manifest-v2"
 import { predictPortal } from "./portal-address"
 
-const TOKEN_CLASS_ID = "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a"
+const TOKEN_CLASS_ID = "0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f"
 const FACTORY = "0x3333333333333333333333333333333333333333"
 const IMPL = "0x1111111111111111111111111111111111111111"
 const ERC20 = "0x00000000000000000000000000000000000e2c20"
@@ -39,9 +40,7 @@ async function fixture() {
 				factory: FACTORY,
 				implementation: IMPL,
 				guardian: "0x0000000000000000000000000000000000000002",
-				router: "0x0000000000000000000000000000000000000003",
 				permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
-				swapTarget: "0x0000000000000000000000000000000000000004",
 				feeJuicePortal: FEE_PORTAL,
 			},
 			l2: {
@@ -112,12 +111,13 @@ describe("manifest v2 (strict, self-deriving)", () => {
 		expect(() => parseManifestV2(raw)).toThrow(/hub constructorArgs must be \[tokenClassId, factory, guardian\]/)
 	})
 
-	it("rejects hooked pools, a feeJuicePortal mismatch, duplicate tokens and unknown keys", async () => {
-		const hooked = await fixture()
-		;(hooked.bridge.tokens[0] as { pools?: unknown }).pools = {
-			weth: { fee: 3000, tickSpacing: 60, hooks: "0x0000000000000000000000000000000000000001" },
-		}
-		expect(() => parseManifestV2(hooked)).toThrow(/hooked pools are not routable/)
+	it("rejects the retired router's fields, a feeJuicePortal mismatch, duplicate tokens and unknown keys", async () => {
+		const pooled = await fixture()
+		;(pooled.bridge.tokens[0] as { pools?: unknown }).pools = { weth: { fee: 3000, tickSpacing: 60 } }
+		expect(() => parseManifestV2(pooled)).toThrow(/Unrecognized key/)
+		const routed = await fixture()
+		;(routed.bridge.l1 as { router?: string }).router = "0x00000000000000000000000000000000000000d9"
+		expect(() => parseManifestV2(routed)).toThrow(/Unrecognized key/)
 
 		const mismatch = await fixture()
 		mismatch.bridge.l1.feeJuicePortal = "0x0000000000000000000000000000000000000009"
@@ -130,5 +130,73 @@ describe("manifest v2 (strict, self-deriving)", () => {
 		const unknown = await fixture()
 		;(unknown as { extra?: unknown }).extra = 1
 		expect(() => parseManifestV2(unknown)).toThrow(/Unrecognized key/)
+	})
+})
+
+const ROUTER = "0x00000000000000000000000000000000000000d1"
+const SWAPPER = "0x00000000000000000000000000000000000000d2"
+const RETIRED = "0x0000000000000000000000000000000000000003"
+const FUEL = { slippageBps: 100, crossChainSlippageBps: 150, minFuelFj: "1", fjPerTx: "2", fjRegister: "3" }
+const SOURCE_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+
+/** The fixture with a DepositRouter, its swapper and one LI.FI source delivering the manifest token. */
+async function routed() {
+	const raw = await fixture()
+	const l1 = raw.bridge.l1 as Record<string, unknown>
+	Object.assign(l1, { depositRouter: ROUTER, fuelSwapper: SWAPPER, fuel: FUEL, legacyRouters: [RETIRED] })
+	;(raw.bridge as Record<string, unknown>).routing = {
+		provider: "lifi",
+		sources: [{ chainId: 84532, rail: "acrossV4", tokens: [{ address: SOURCE_USDC, symbol: "USDC", decimals: 6, destToken: ERC20 }] }],
+	}
+	return raw as typeof raw & {
+		bridge: { l1: Record<string, unknown>; routing: { sources: { chainId: number; tokens: { destToken: string }[] }[] } }
+	}
+}
+
+describe("manifest v2 DepositRouter fields", () => {
+	it("accepts the router, swapper, budgets, legacy routers and routing; a manifest without them still parses", async () => {
+		const m = parseManifestV2(await routed())
+		expect(m.bridge?.l1.depositRouter).toBe(ROUTER)
+		expect(m.bridge?.routing?.sources[0].rail).toBe("acrossV4")
+		expect(parseManifestV2({ ...(await fixture()) }).bridge?.l1.depositRouter).toBeUndefined()
+	})
+
+	it("refuses the testnet swapper on mainnet and a router without its swapper or budgets elsewhere", async () => {
+		const mainnet = await routed()
+		Object.assign(mainnet, { l1ChainId: 1, walletChainId: 1 })
+		expect(() => parseManifestV2(mainnet)).toThrow(/fuel swapper is refused on Ethereum mainnet/)
+		mainnet.bridge.l1.fuelSwapper = undefined
+		expect(parseManifestV2(mainnet).bridge?.l1.fuelSwapper).toBeUndefined()
+
+		const noSwapper = await routed()
+		noSwapper.bridge.l1.fuelSwapper = undefined
+		expect(() => parseManifestV2(noSwapper)).toThrow(/fuelSwapper is present exactly when depositRouter is/)
+		const noBudgets = await routed()
+		noBudgets.bridge.l1.fuel = undefined
+		expect(() => parseManifestV2(noBudgets)).toThrow(/needs the fuel budgets/)
+	})
+
+	it("refuses routing to a token without a portal, a destination-chain source, duplicates and a routerless route", async () => {
+		const portalless = await routed()
+		portalless.bridge.routing.sources[0].tokens[0].destToken = "0x00000000000000000000000000000000000000e9"
+		expect(() => parseManifestV2(portalless)).toThrow(/destToken must be a manifest token/)
+		const miscased = await routed()
+		const dest = getAddress(miscased.bridge.routing.sources[0].tokens[0].destToken)
+		const at = dest.slice(2).search(/[a-fA-F]/) + 2
+		const flip = dest[at] === dest[at].toUpperCase() ? dest[at].toLowerCase() : dest[at].toUpperCase()
+		miscased.bridge.routing.sources[0].tokens[0].destToken = dest.slice(0, at) + flip + dest.slice(at + 1)
+		expect(() => parseManifestV2(miscased)).toThrow(/EIP-55 checksum/)
+		const loop = await routed()
+		loop.bridge.routing.sources[0].chainId = 31337
+		expect(() => parseManifestV2(loop)).toThrow(/cannot be the destination/)
+		const dupChain = await routed()
+		dupChain.bridge.routing.sources.push({ ...dupChain.bridge.routing.sources[0] })
+		expect(() => parseManifestV2(dupChain)).toThrow(/duplicate source chain/)
+		const legacy = await routed()
+		legacy.bridge.l1.legacyRouters = [ROUTER]
+		expect(() => parseManifestV2(legacy)).toThrow(/the current router is not legacy/)
+		const routerless = await routed()
+		for (const k of ["depositRouter", "fuelSwapper", "fuel"]) delete routerless.bridge.l1[k]
+		expect(() => parseManifestV2(routerless)).toThrow(/routing needs a depositRouter/)
 	})
 })

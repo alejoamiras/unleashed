@@ -31,9 +31,11 @@ test("cell 34 — the catalog lists AZTEC, the generation's tokens, then the com
 	const keys = await tiles.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.key ?? ""))
 	const aztec = `${L1}:${sandbox.clients.deployment.feeJuice.toLowerCase()}`
 	const manifestKeys = sandbox.manifest.bridge?.tokens.map((t) => `${L1}:${t.erc20.toLowerCase()}`) ?? []
-	expect(keys[0], "AZTEC leads").toBe(aztec)
-	await expect(tiles.first()).toContainText("AZTEC")
-	expect(keys.slice(1, 1 + manifestKeys.length), "then the generation's tokens, in manifest order").toEqual(manifestKeys)
+	// The source chain's routed rows and each chain's native coin sit apart from Ethereum's catalog.
+	const ethereumKeys = keys.filter((k) => k.startsWith(`${L1}:`))
+	expect(ethereumKeys[0], "AZTEC leads Ethereum's rows").toBe(aztec)
+	await expect(tiles.nth(keys.indexOf(aztec))).toContainText("AZTEC")
+	expect(ethereumKeys.slice(1, 1 + manifestKeys.length), "then the generation's tokens, in manifest order").toEqual(manifestKeys)
 	// The community list is served from the suite's fixture (the egress fence answers its origin).
 	expect(keys, "the fixture list's tokens follow").toEqual(expect.arrayContaining([`${L1}:0x1111111111111111111111111111111111111111`]))
 

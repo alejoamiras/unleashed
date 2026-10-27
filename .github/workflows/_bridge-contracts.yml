@@ -36,6 +36,15 @@ jobs:
         working-directory: contracts/bridge/evm
         run: forge build
 
+      # A profile foundry.toml lacks silently builds the default one, so the artifacts are asserted.
+      - name: forge build (lifi profile)
+        working-directory: contracts/bridge/evm
+        run: |
+          FOUNDRY_PROFILE=lifi forge build
+          for c in Executor ERC20Proxy ReceiverAcrossV4 ReceiverStargateV2; do
+            test -f "out-lifi/${c}.sol/${c}.json"
+          done
+
       - name: forge test (hermetic)
         working-directory: contracts/bridge/evm
         run: forge test --no-match-contract Fork
@@ -71,30 +80,37 @@ jobs:
               fail=1
             }
           done <<'EXPECTED'
-          8 FormalRouterTest
           2 FormalFactoryTest
           2 FormalCloneTest
+          11 FormalDepositRouterTest
           EXPECTED
 
-          while read -r proof; do
-            grep -qE "^\[PASS\] ${proof}\(" halmos.clean || {
-              echo "::error::symbolic proof ${proof} did not pass (missing, renamed, or failed)"
-              fail=1
-            }
-          done <<'PROOFS'
-          check_bridge_conservesUserFunds
-          check_bridge_rejectsForeignPortal
-          check_bridgeWithFuel_conservesUserFunds
-          check_bridgeWithFuel_fuelOnly_conservesUserFunds
-          check_bridgeWithFuel_identity_conservesUserFunds
-          check_bridgeWithFuel_partialRejectsFeeJuicePortal
+          # A name listed twice is proved by two contracts, so it must pass twice: one passing
+          # line cannot cover the other contract's renamed proof.
+          cat > proofs.want <<'PROOFS'
           check_deposit_revertsWhenPaused
+          check_fromCaller_boundedPull
+          check_fromCaller_conservesReceived
+          check_fromCaller_pullsOnlyFromCaller
+          check_fuelOnly_noTokenLeg
+          check_noStandingApproval
+          check_partialFeeAssetNeverIntoFeeJuicePortal
+          check_permit_conservesUserFunds
           check_predictPortal_isCreate2OfInitcode
+          check_revertsWhenPaused
           check_setPaused_revertsForNonOwner
-          check_setSwapTarget_revertsForNonOwner
+          check_swap_rejectsUnpinnedSelectorOrReceiver
           check_sweep_revertsForNonOwner
+          check_tokenLegIntoDerivedPortal
           check_withdraw_revertsWhenPaused
           PROOFS
+          while read -r want proof; do
+            got=$(grep -cE "^\[PASS\] ${proof}\(" halmos.clean || true)
+            if [ "$got" -lt "$want" ]; then
+              echo "::error::symbolic proof ${proof} passed ${got} of ${want} times (missing, renamed, or failed)"
+              fail=1
+            fi
+          done < <(sort proofs.want | uniq -c)
 
           summaries=$(grep -c '^Symbolic test result: ' halmos.clean || true)
           if [ "$summaries" -ne 3 ]; then
@@ -114,9 +130,9 @@ jobs:
         run: |
           # The pin suites skip when the artifacts are absent; here that would be a silent pass.
           test -f contracts/bridge/evm/out/PortalFactory.sol/PortalFactory.json
-          test -f contracts/bridge/evm/out/SwapBridgeRouter.sol/SwapBridgeRouter.json
           test -f contracts/bridge/evm/out/TokenPortalImpl.sol/TokenPortalImpl.json
-          bun run --cwd packages/bridge-core test -- factory-abi router-abi quoter-abi
+          test -f contracts/bridge/evm/out/DepositRouter.sol/DepositRouter.json
+          bun run --cwd packages/bridge-core test -- factory-abi deposit-router-abi
 
   noir:
     name: nargo test (keystone)

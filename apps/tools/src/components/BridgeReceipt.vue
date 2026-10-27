@@ -5,9 +5,10 @@ import { computed, useId } from "vue"
 
 /** Utils */
 import { type AssetBlock, type AssetKind, GROSS_QUALIFIER, assetDecimals, assetSymbol } from "@/lib/asset-label"
+import { chainLabel, chainTxUrl } from "@/lib/chains"
 import { etherscanTxUrl, explorerTxUrl } from "@/lib/explorer"
 import { formatCompact, formatDisplayAmount, isStoredAmount, trimAddress } from "@/lib/format"
-import { formatElapsed, formatStamp } from "@/lib/phase-clock"
+import { formatClock, formatElapsed, formatStamp } from "@/lib/phase-clock"
 import { TESTIDS } from "@/lib/testids"
 import { checksumAddress, safeAddressText, safeDisplay } from "@/lib/token-display"
 
@@ -49,6 +50,11 @@ export interface ReceiptSnapshot {
 	txCovered?: number
 	/** The L2 token a wallet can be asked to watch. Absent ⇒ no add-token CTA. */
 	addTokenLabel?: string
+	/** A cross-chain deposit's source leg: the chain it was sent from and, once known, its transaction.
+	 *  `sender` is then the account on that chain. */
+	source?: { chainId: number; txHash?: string }
+	/** Opened again from Activity, where the record already is: no note says it stays there. */
+	reopened?: boolean
 }
 
 const props = withDefaults(defineProps<{ snapshot: ReceiptSnapshot; ctaLabel?: string; addTokenBusy?: boolean }>(), {
@@ -62,7 +68,14 @@ const titleId = useId()
 const isDeposit = computed(() => props.snapshot.direction === "deposit")
 /** A direct Fuel bridge: the amount itself is Fee Juice (no token leg, no bought/used split). */
 const isFuel = computed(() => props.snapshot.assetKind === "fee-juice")
-const route = computed(() => (isDeposit.value ? "Ethereum → Aztec" : "Aztec → Ethereum"))
+const sourceChain = computed(() => {
+	const source = props.snapshot.source
+	return isDeposit.value && source ? chainLabel(source.chainId) : null
+})
+const route = computed(() => {
+	if (sourceChain.value) return `${sourceChain.value} → Aztec`
+	return isDeposit.value ? "Ethereum → Aztec" : "Aztec → Ethereum"
+})
 const privacyWord = computed(() => (props.snapshot.isPrivate ? "private" : "public"))
 /** Gas naming by surface: private → "Private FJ", public → "FJ". ($AZTEC is the L1-side name.) */
 const gasLabel = computed(() => (props.snapshot.isPrivate ? "Private FJ" : "FJ"))
@@ -125,7 +138,7 @@ const from = computed(() => {
 	const sender = props.snapshot.sender
 	const shape = isDeposit.value ? EVM_ADDRESS : AZTEC_ADDRESS
 	if (typeof sender !== "string" || !shape.test(sender)) return null
-	return { chain: isDeposit.value ? "Ethereum" : "Aztec", ...addressView(sender, isDeposit.value) }
+	return { chain: sourceChain.value ?? (isDeposit.value ? "Ethereum" : "Aztec"), ...addressView(sender, isDeposit.value) }
 })
 
 /** An exit's release on Ethereum is public either way; `isPrivate` only says which balance it burned. */
@@ -135,10 +148,11 @@ const visibility = computed(() => {
 	return priv ? "Sent from your private Aztec balance · arrives publicly on Ethereum" : "Public — visible on Aztec and Ethereum"
 })
 
+/** A cross-chain send's total reads as the clock its stepper ran ("7:48"). */
 const totalElapsed = computed(() => {
 	const { startedAt, completedAt } = props.snapshot
 	if (startedAt === undefined || completedAt === undefined || completedAt <= startedAt) return null
-	return formatElapsed(completedAt - startedAt)
+	return (sourceChain.value ? formatClock : formatElapsed)(completedAt - startedAt)
 })
 
 /** A finite number can still lie outside the range a Date holds, so the Date itself is checked. */
@@ -149,6 +163,8 @@ const stamp = computed(() => {
 
 const links = computed(() => {
 	const out: { label: string; href: string }[] = []
+	const source = props.snapshot.source
+	if (isDeposit.value && source?.txHash) out.push({ label: "Send tx", href: chainTxUrl(source.chainId, source.txHash) })
 	if (props.snapshot.l1TxHash) {
 		out.push({
 			label: isDeposit.value ? "Deposit tx" : "Finish tx",
@@ -164,12 +180,14 @@ const links = computed(() => {
 	return out.filter((l) => l.href !== "")
 })
 
-/** "Both transactions" only when both links render: a leg another account finished has only one. */
-const note = computed(() =>
-	links.value.length === 2
+/** "Both transactions" only for an Ethereum-origin send whose two links render: a leg another account
+ *  finished has only one, and a cross-chain send has three legs. */
+const note = computed(() => {
+	if (props.snapshot.reopened) return null
+	return links.value.length === 2 && !props.snapshot.source
 		? "This bridge is finished. Its record stays in Activity with both transactions."
-		: "This bridge is finished. Its record stays in Activity.",
-)
+		: "This bridge is finished. Its record stays in Activity."
+})
 </script>
 
 <template>
@@ -238,7 +256,7 @@ const note = computed(() =>
 				</Button>
 			</div>
 		</section>
-		<p class="note ul-notch"><Icon class="note-icon" name="info-box" :size="24" /><span>{{ note }}</span></p>
+		<p v-if="note" class="note ul-notch"><Icon class="note-icon" name="info-box" :size="24" /><span>{{ note }}</span></p>
 	</div>
 </template>
 
@@ -465,10 +483,6 @@ const note = computed(() =>
 }
 
 @media (max-width: 760px) {
-	.receipt {
-		--pad: 20px;
-	}
-
 	.fact {
 		grid-template-columns: minmax(0, 1fr);
 	}

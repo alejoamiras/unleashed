@@ -7,7 +7,8 @@ import { TESTIDS } from "@/lib/testids"
 export interface Step {
 	key: string
 	label: string
-	/** What the user chose on this step; a done step shows it under (vertical) or in place of (horizontal) the label. */
+	/** What the user chose on this step; the vertical rail shows it under a done step's label, the phone strip only
+	 *  names it to assistive tech. */
 	value?: string
 	/** One line under the label; the vertical rail shows it, the horizontal strip has no room. */
 	hint?: string
@@ -102,8 +103,8 @@ function move(from: number, delta: number): void {
 					<Icon v-if="stateOf(index) === 'done'" name="check" :size="12" />
 					<template v-else>{{ index + 1 }}</template>
 				</span>
-				<template v-if="doneValue(step, index)">
-					<span v-if="orientation === 'vertical'" class="caption">{{ step.label }}</span>
+				<template v-if="orientation === 'vertical' && doneValue(step, index)">
+					<span class="caption">{{ step.label }}</span>
 					<span class="value">{{ doneValue(step, index) }}</span>
 				</template>
 				<span v-else class="label">{{ step.label }}</span>
@@ -209,11 +210,16 @@ function move(from: number, delta: number): void {
 	text-overflow: ellipsis;
 }
 
-/* The phone strip: three equal cells, left-aligned; a long value ellipsizes (the tab's aria-label
-   keeps the full name). */
+/* The phone strip: three equal cells, left-aligned, each named by its label; the tab's aria-label carries the
+   chosen value. */
 .horizontal .step {
 	justify-content: flex-start;
 	min-width: 0;
+}
+
+.horizontal .step[data-state="done"] {
+	--ul-fill: transparent;
+	color: var(--ul-ink-2);
 }
 
 .horizontal .marker {
@@ -259,6 +265,12 @@ function move(from: number, delta: number): void {
 	font-size: 15px;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+/* A done value names the source chain too ("USDC on Base Sepolia"), which the rail's width cannot hold on one line. */
+.vertical .value {
+	white-space: normal;
+	overflow-wrap: anywhere;
 }
 
 .caption,

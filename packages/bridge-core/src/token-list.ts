@@ -9,6 +9,7 @@
  */
 import type { Address } from "viem"
 import z from "zod"
+import { cappedFetchBytes } from "./capped-fetch"
 import type { KV } from "./journal"
 
 /**
@@ -118,32 +119,6 @@ function persist(kv: KV, key: string, cache: TokenListCache): void {
 	}
 }
 
-async function readCapped(res: Response, byteCap: number, controller: AbortController): Promise<Uint8Array<ArrayBuffer>> {
-	if (res.body === null) throw new Error("token list response had no body")
-	const reader = res.body.getReader()
-	const chunks: Uint8Array[] = []
-	let seen = 0
-	let chunk = await reader.read()
-	while (chunk.done !== true) {
-		seen += chunk.value.byteLength
-		// The cap is enforced on the RUNNING total: a hostile origin never gets to hand us the
-		// whole body and have us decide afterwards.
-		if (seen > byteCap) {
-			controller.abort()
-			throw new Error("token list exceeded its byte cap")
-		}
-		chunks.push(chunk.value)
-		chunk = await reader.read()
-	}
-	const bytes = new Uint8Array(seen)
-	let offset = 0
-	for (const part of chunks) {
-		bytes.set(part, offset)
-		offset += part.byteLength
-	}
-	return bytes
-}
-
 async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 	const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))
 	return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")
@@ -174,20 +149,17 @@ function narrow(entries: readonly unknown[], chainId: number, cap: number): Cata
 }
 
 async function fetchCatalog(o: LoadTokenListOptions): Promise<CatalogToken[]> {
-	const controller = new AbortController()
-	const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? DEFAULT_TIMEOUT_MS)
-	try {
-		// `redirect: "error"` — a list that redirects is no longer the origin whose content we vetted.
-		const pin = o.list ?? { url: TOKEN_LIST_URL, sha256: [TOKEN_LIST_SHA256] }
-		const res = await o.fetch(pin.url, { redirect: "error", signal: controller.signal })
-		if (!res.ok) throw new Error(`token list responded ${res.status}`)
-		const bytes = await readCapped(res, o.byteCap ?? DEFAULT_BYTE_CAP, controller)
-		if (!pin.sha256.includes(await sha256Hex(bytes))) throw new Error("token list does not match its pinned digest")
-		const list = tokenListSchema.parse(JSON.parse(new TextDecoder().decode(bytes)))
-		return narrow(list.tokens, o.chainId, o.tokenCap ?? DEFAULT_TOKEN_CAP)
-	} finally {
-		clearTimeout(timer)
-	}
+	const pin = o.list ?? { url: TOKEN_LIST_URL, sha256: [TOKEN_LIST_SHA256] }
+	const res = await cappedFetchBytes(pin.url, {
+		fetch: o.fetch,
+		byteCap: o.byteCap ?? DEFAULT_BYTE_CAP,
+		timeoutMs: o.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+	})
+	if (!res.ok) throw new Error(`token list refused: ${res.reason}`)
+	if (res.status < 200 || res.status >= 300) throw new Error(`token list responded ${res.status}`)
+	if (!pin.sha256.includes(await sha256Hex(res.bytes))) throw new Error("token list does not match its pinned digest")
+	const list = tokenListSchema.parse(JSON.parse(new TextDecoder().decode(res.bytes)))
+	return narrow(list.tokens, o.chainId, o.tokenCap ?? DEFAULT_TOKEN_CAP)
 }
 
 /**

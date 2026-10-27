@@ -32,8 +32,8 @@ describe("WizardShell", () => {
 	it("renders both directions as a tablist", () => {
 		const w = shell()
 		expect(w.find(sel(TESTIDS.sendDirection)).attributes("role")).toBe("tablist")
-		expect(w.find(sel(TESTIDS.sendDirectionDeposit)).text()).toBe("Ethereum → Aztec")
-		expect(w.find(sel(TESTIDS.sendDirectionExit)).text()).toBe("Aztec → Ethereum")
+		expect(w.find(sel(TESTIDS.sendDirectionDeposit)).text()).toBe("Into Aztec")
+		expect(w.find(sel(TESTIDS.sendDirectionExit)).text()).toBe("Out to Ethereum")
 	})
 
 	it("is ONE Tab stop: only the selected direction is tabbable", () => {
@@ -160,7 +160,7 @@ describe("WizardShell", () => {
 		const w = shell()
 		const live = w.find(sel(TESTIDS.sendStepAnnounce))
 		expect(live.attributes("aria-live")).toBe("polite")
-		expect(live.text()).toBe("Step 1 of 3, Token: what are you sending?")
+		expect(live.text()).toBe("Step 1 of 3, Token: which network, which token?")
 		await w.setProps({ step: 2 })
 		expect(w.find(sel(TESTIDS.sendStepAnnounce)).text()).toBe("Step 3 of 3, Review: check it, then sign.")
 	})

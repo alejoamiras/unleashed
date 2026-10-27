@@ -21,7 +21,7 @@ const IMPL = "0x1111111111111111111111111111111111111111"
 const ERC20 = "0x00000000000000000000000000000000000e2c20"
 const HUB = "0x1234000000000000000000000000000000000000000000000000000000000abc"
 const GUARDIAN = `0x${"0".repeat(61)}ab1`
-const TOKEN_CLASS_ID = "0x163b2b247391083157f9fc30405e81810e6c08c58501fa2dd10de27d42be1d8a"
+const TOKEN_CLASS_ID = "0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f"
 const NAME_WORD = "0x005465737420546f6b656e000000000000000000000000000000000000000000"
 const SYMBOL_WORD = "0x0054535400000000000000000000000000000000000000000000000000000000"
 const FEE_PORTAL = "0xb4a9f8eadc8ca944729d61e59a9f491faff237a3"
@@ -56,9 +56,7 @@ async function withBridge(): Promise<ManifestV2> {
 				factory: FACTORY,
 				implementation: IMPL,
 				guardian: "0x0000000000000000000000000000000000000002",
-				router: "0x0000000000000000000000000000000000000003",
 				permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
-				swapTarget: "0x0000000000000000000000000000000000000004",
 				feeJuicePortal: FEE_PORTAL,
 			},
 			l2: {
@@ -185,6 +183,45 @@ describe("deploy journal", () => {
 				feeJuicePortal: FEE_PORTAL,
 			}),
 		).toThrow(/predates identity stamping/)
+	})
+
+	it("a journal written before the router-only kinds still parses beside them, and both new kinds carry their adoption keys", () => {
+		const path = join(dir, "old.jsonl")
+		const line = (step: object) => `${JSON.stringify({ ts: "then", step })}\n`
+		const adoptable = (kind: string) => ({
+			kind,
+			address: FACTORY,
+			txHash: TX,
+			creationCodeHash: `0x${"cd".repeat(32)}`,
+			constructorArgs: [IMPL, FEE_PORTAL],
+		})
+		writeFileSync(
+			path,
+			[
+				line({ kind: "swap-target-deployed", address: IMPL, txHash: TX }),
+				line({ kind: "router-deployed", router: FACTORY, txHash: TX }),
+				line({ kind: "pool-seeded", erc20: ERC20, txHash: TX }),
+				line({ kind: "pool-seeded", erc20: IMPL }),
+				line(adoptable("fuel-swapper-deployed")),
+				line(adoptable("deposit-router-deployed")),
+			].join(""),
+		)
+		expect(readDeployJournal(path).map((s) => s.kind)).toEqual([
+			"swap-target-deployed",
+			"router-deployed",
+			"pool-seeded",
+			"pool-seeded",
+			"fuel-swapper-deployed",
+			"deposit-router-deployed",
+		])
+		// The live generation's own journal, as committed, is an old journal too.
+		const committed = readDeployJournal(join(import.meta.dirname, "..", "deploy-journal", "testnet-generation.jsonl"))
+		expect(committed.map((s) => s.kind)).toContain("swap-target-deployed")
+
+		// Without the constructor arguments a re-run could not tell an identical contract from a changed one.
+		const { constructorArgs: _, ...keyless } = adoptable("deposit-router-deployed")
+		writeFileSync(path, line(keyless))
+		expect(() => readDeployJournal(path)).toThrow(/entry 1 is not a valid step/)
 	})
 
 	it("rejects a journal line that is not a valid step", () => {

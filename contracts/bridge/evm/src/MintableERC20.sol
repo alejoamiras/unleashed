@@ -9,8 +9,7 @@ import {ERC20} from "@oz/token/ERC20/ERC20.sol";
  *         Permit2 pre-approval (so bridging needs no separate approve tx).
  *
  * @dev No allowlist, no owner — infinite-mint BY DESIGN for a testnet faucet,
- *      bounded per call (`maxMintPerTx`) to deter cheap manipulation of our thin
- *      seeded V4 pools. The Permit2 pre-approval is an `allowance()` override
+ *      bounded per call (`maxMintPerTx`). The Permit2 pre-approval is an `allowance()` override
  *      (NOT a constructor approve, which would only cover the deployer): every
  *      holder is treated as having granted Permit2 infinite allowance.
  */

@@ -114,14 +114,14 @@ describe("BridgeJournalCard", () => {
 		expect(card.attributes("data-direction")).toBe("deposit")
 		expect(card.attributes("data-stage")).toBe("claimable")
 		expect(card.attributes("data-privacy")).toBe("private")
-		expect(w.text()).toContain("ETH → Aztec")
+		expect(w.text()).toContain("Ethereum · Sepolia → Aztec")
 		expect(w.text()).toContain(`100.00 ${BRIDGE_TOKEN_SYMBOL}`)
 		expect(w.text()).toContain("Private")
 	})
 
-	it("withdraw header reads Aztec → ETH", () => {
+	it("withdraw header reads Aztec → Ethereum · Sepolia", () => {
 		const w = mountCard(withdraw())
-		expect(w.text()).toContain("Aztec → ETH")
+		expect(w.text()).toContain("Aztec → Ethereum · Sepolia")
 	})
 
 	it("renders the compact phase rail with the live narration (one mapper, both surfaces)", () => {
@@ -134,7 +134,7 @@ describe("BridgeJournalCard", () => {
 		expect(w.find(sel(TESTIDS.journalStep)).text()).toContain("check 12")
 	})
 
-	it("a done card says Arrived: the chip, and the time it took beside its links; no stamp", () => {
+	it("a done card says Arrived: the chip, its finished rail, and the time it took beside its links; no stamp", () => {
 		const created = 1_000_000
 		const w = mountCard(
 			deposit({ leafIndex: "7", claimTxHash: `0x${"ab".repeat(32)}`, createdAt: created, completedAt: created + 221_000 }),
@@ -144,14 +144,14 @@ describe("BridgeJournalCard", () => {
 		expect(card.get("[data-status-chip]").text()).toBe("Arrived")
 		expect(w.text()).toContain("Arrived in 3m 41s")
 		expect(w.text()).not.toContain("Bridged")
-		expect(w.find(sel(TESTIDS.journalRail)).exists()).toBe(false)
+		expect(w.find(sel(TESTIDS.journalRail)).exists()).toBe(true)
 		// The receipt's guard: a completion stamped at or before its start has no duration to show.
 		const instant = mountCard(deposit({ leafIndex: "7", createdAt: created, completedAt: created }))
 		expect(instant.text()).toContain("Arrived")
 		expect(instant.text()).not.toContain("Arrived in")
 	})
 
-	it("data-status drives the edge: needs-you and lost, a completed + blocked card included", () => {
+	it("data-status names needs-you and lost, a completed + blocked card included, whose rail is hidden", () => {
 		expect(
 			mountCard(deposit({ leafIndex: "7" }))
 				.get(sel(TESTIDS.journalCard))
@@ -170,6 +170,7 @@ describe("BridgeJournalCard", () => {
 		expect(blocked.text()).toContain("Previously recorded as arrived")
 		expect(blocked.text()).not.toContain("Arrived in")
 		expect(blocked.get(sel(TESTIDS.journalAttention)).text()).toContain("stopped")
+		expect(blocked.find(sel(TESTIDS.journalRail)).exists()).toBe(false)
 	})
 
 	it("a blocked, completed record keeps its gas recovery but never says the tokens arrived", () => {
@@ -215,18 +216,18 @@ describe("BridgeJournalCard", () => {
 		} as unknown as BridgeJournalRecord
 		const w = mountCard(gasOnly)
 		expect(w.get(".amt").text()).toBe("3.00 FJ")
-		expect(w.get(".dir").text()).toBe("before claim fees · ETH → Aztec")
+		expect(w.get(".dir").text()).toBe("before claim fees · Ethereum · Sepolia → Aztec")
 		expect(w.get("[data-status-chip]").text()).toBe("Arrived")
 		const token = mountCard(deposit({ leafIndex: "7" }))
-		expect(token.get(".dir").text()).toBe("ETH → Aztec")
+		expect(token.get(".dir").text()).toBe("Ethereum · Sepolia → Aztec")
 	})
 
-	it("a token send's gas chip says its Fee Juice is before claim fees once the amount is known", () => {
-		const fuel = { amount: "1", secret: "0x1", secretHashHex: "0x2", minOutput: "1" }
-		const fueled = (received?: string) =>
-			({ ...deposit({ leafIndex: "7" }), schema: 2, fuel: { ...fuel, received } }) as unknown as BridgeJournalRecord
-		expect(mountCard(fueled((3n * UNIT).toString())).text()).toContain("+ 3.00 FJ before claim fees")
-		expect(mountCard(fueled()).text()).toContain("+ FJ gas")
+	it("an arrived token send's gas chip says its Fee Juice is before claim fees; a send still running has none", () => {
+		const fuel = { amount: "1", secret: "0x1", secretHashHex: "0x2", minOutput: "1", received: (230n * UNIT).toString() }
+		const fueled = (over: { claimTxHash?: string; completedAt?: number }) =>
+			({ ...deposit({ leafIndex: "7", ...over }), schema: 2, fuel }) as unknown as BridgeJournalRecord
+		expect(mountCard(fueled({ claimTxHash: `0x${"c".repeat(64)}`, completedAt: 2 })).text()).toContain("+ ≈ 230 FJ before claim fees")
+		expect(mountCard(fueled({})).text()).not.toContain("FJ before claim fees")
 	})
 
 	it("a running withdraw in proving says the page can be left, under a Proving chip", () => {

@@ -481,25 +481,23 @@ onBeforeUnmount(() => {
 		display: flex;
 	}
 
-	/* One 44px row: the label pushes the address right. Without `min-width: 0` a long wallet-sent
-	   alias sizes the chip past the viewport and the label never ellipsizes. */
+	/* Half the header row, label over address. Without `min-width: 0` a long wallet-sent alias sizes
+	   the chip past its half and the label never ellipsizes. */
 	.chip {
 		flex: 1;
 		min-width: 0;
 		min-height: 44px;
+		gap: 10px;
+		padding: 0 12px;
 	}
 
 	.identity {
 		flex: 1;
-		flex-direction: row;
-		align-items: center;
-		gap: 12px;
+		gap: 3px;
 	}
 
 	.net {
-		flex: 1;
-		max-width: none;
-		font-size: 13px;
+		max-width: 100%;
 		text-align: left;
 	}
 }

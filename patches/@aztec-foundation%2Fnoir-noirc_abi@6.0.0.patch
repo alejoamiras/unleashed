@@ -1,0 +1,18 @@
+diff --git a/package.json b/package.json
+index 07713c7ea03778b83f64f771c4a1d841a454610c..578c094e8b76d65b656370fdbc64d4e4b6385dac 100644
+--- a/package.json
++++ b/package.json
+@@ -24,7 +24,12 @@
+   },
+   "main": "./nodejs/noirc_abi_wasm.js",
+   "types": "./web/noirc_abi_wasm.d.ts",
+-  "module": "./web/noirc_abi_wasm.js",
++  "exports": {
++    ".": {
++      "node": "./nodejs/noirc_abi_wasm.js",
++      "default": "./web/noirc_abi_wasm.js"
++    }
++  },
+   "sideEffects": false,
+   "scripts": {
+     "build": "bash ./build.sh",

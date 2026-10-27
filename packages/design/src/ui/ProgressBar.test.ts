@@ -20,9 +20,9 @@ describe("ProgressBar", () => {
 		expect(w.attributes("style")).toContain("height: 18px")
 	})
 
-	test("at zero it draws no fill, not even the fill's edge", () => {
+	test("at zero it draws only the fill's ink edge, where the run starts", () => {
 		const w = mount(ProgressBar, { props: { label: "Bridge progress", value: 0 } })
 		expect(w.attributes("aria-valuenow")).toBe("0")
-		expect(w.find("span").exists()).toBe(false)
+		expect(w.get("span").attributes("style")).toContain("width: 0%")
 	})
 })

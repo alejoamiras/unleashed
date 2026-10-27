@@ -1,0 +1,15 @@
+{
+	"promotedAt": "",
+	"intent": "implementations-plan/lifi-routing/lessons/v6/intent.json",
+	"commitAtPromotion": "",
+	"mode": "bridge-only",
+	"bridge": {
+		"candidateSha256": "18ef10851161a24298f2ecc4b953f04f39b5e51a68933b1fdf3505f2a2bb25c5",
+		"live": "apps/tools/public/testnet-bridge.json"
+	},
+	"faucet": {
+		"unchangedSha256": "964fe4493cb8c276a1dce6ab1700d7b32901d58dbc6bf7db7b0af8a2cd5d242a",
+		"live": "apps/tools/src/contracts/deployments.json"
+	},
+	"generation": "existing live manifest: the generation interlock passed"
+}

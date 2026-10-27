@@ -1,3 +1,5 @@
+import { normalizeError } from "./errors"
+
 /**
  * Explicit user-rejection classification. The cleanup matrix may DISCARD a pre-tx
  * record only when the user demonstrably said no - never on ambiguous failures (RPC outages,
@@ -27,4 +29,18 @@ export function humanizeWalletError(message: string): string {
 		return "The wallet's confirmation window timed out before you could sign. Reopen your wallet and retry."
 	}
 	return message
+}
+
+/** The wallet's own refusal reads as its one line, and the two structured envelope categories get
+ *  their own copy; anything else keeps its message, humanized. */
+export function sendFailureCopy(e: unknown): string {
+	const normalized = normalizeError(e)
+	if (
+		normalized.category === "user-rejected" ||
+		normalized.category === "contract-not-registered" ||
+		normalized.category === "chain-desync"
+	) {
+		return normalized.message
+	}
+	return humanizeWalletError(e instanceof Error ? e.message : String(e))
 }

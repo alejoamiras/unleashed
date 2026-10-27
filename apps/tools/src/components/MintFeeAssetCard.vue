@@ -95,10 +95,10 @@ async function mint(): Promise<void> {
 	}
 }
 
-function onClick(): Promise<void> {
-	if (action.value === "connect") return l1.connect()
-	if (action.value === "switch") return l1.switchL1Network()
-	return mint()
+async function onClick(): Promise<void> {
+	if (action.value === "connect") await l1.connect()
+	else if (action.value === "switch") await l1.switchL1Network()
+	else await mint()
 }
 </script>
 

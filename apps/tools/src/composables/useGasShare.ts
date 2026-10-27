@@ -1,6 +1,6 @@
 /**
  * The slice of a `token+gas` deposit that goes to Fee Juice, and the output floor that slice is
- * signed against. Pure integer math over the generation's swap parameters — no chain reads, so a
+ * signed against. Pure integer math over the generation's fuel budgets — no chain reads, so a
  * slider can call it on every frame. The one exception is a PRIVATE send: its claim is paid
  * through the PrivateFPC, which keeps each transaction's committed fee ceiling rather than its
  * charge, so the slice is sized from the network's predicted fees, priced once and refreshed in
@@ -24,9 +24,9 @@ import {
 } from "@unleashed/bridge-core"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { ref, type Ref } from "vue"
-import { SWAP } from "@/contracts/bridge-generation"
+import { FUEL } from "@/contracts/bridge-generation"
 import { NETWORK } from "@/lib/network"
-import { MAX_TX_TARGET } from "@/lib/send-model"
+import { MAX_TX_TARGET, NO_GAS_ROUTE } from "@/lib/send-model"
 import { clampGas, walletMaxFees } from "@/lib/wallet-fee-budget"
 
 /** Enough for a first session on L2 without over-diverting the deposit. */
@@ -51,7 +51,7 @@ export interface GasShareProposal {
 	identity?: boolean
 }
 
-/** `null` = this network has no swap venue; "pricing" = a private slice awaits the network's fees. */
+/** `null` = this network has no fuel venue; "pricing" = a private slice awaits the network's fees. */
 export type GasShareOutcome = GasShareResult | null | "pricing"
 
 export interface UseGasShareHandle {
@@ -93,32 +93,32 @@ export interface GasShareDeps {
 	account?: () => string | undefined
 }
 
-type Swap = NonNullable<typeof SWAP>
+type Fuel = NonNullable<typeof FUEL>
 
-function shareInputOf(input: GasShareProposal, swap: Swap, ceilings: bigint | undefined): Omit<GasShareInput, "txTarget"> {
+function shareInputOf(input: GasShareProposal, fuel: Fuel, ceilings: bigint | undefined): Omit<GasShareInput, "txTarget"> {
 	return {
 		amount: input.amount,
 		decimals: input.decimals,
-		fjPerTx: BigInt(swap.fjPerTx),
+		fjPerTx: BigInt(fuel.fjPerTx),
 		// The first claim of an unregistered token also registers it, and that costs more than a transfer.
-		fjRegister: input.state.kind === "registered" ? undefined : BigInt(swap.fjRegister),
+		fjRegister: input.state.kind === "registered" ? undefined : BigInt(fuel.fjRegister),
 		fjCeilings: ceilings,
-		minFuelFj: BigInt(swap.minFuelFj),
+		minFuelFj: BigInt(fuel.minFuelFj),
 		rate: input.rate,
-		slippageBps: input.identity ? 0 : swap.slippageBps,
+		slippageBps: input.identity ? 0 : fuel.slippageBps,
 		maxFuelAmount: input.identity ? input.amount - 1n : undefined,
 	}
 }
 
 function floorFor(quote: bigint): bigint {
-	const swap = SWAP
+	const fuel = FUEL
 	// Refusing beats returning a zero floor: a floor of zero lets the swap land Fee Juice too
 	// small to claim, stranding it on L1.
-	if (!swap) throw new Error("This network has no swap venue, so a deposit cannot buy gas.")
-	return signedMinFuelOutput(quote, swap.slippageBps, BigInt(swap.minFuelFj))
+	if (!fuel) throw new Error(NO_GAS_ROUTE)
+	return signedMinFuelOutput(quote, fuel.slippageBps, BigInt(fuel.minFuelFj))
 }
 
-/** `null` from `propose` (and a throw from `floorFor`) means this network has no swap venue. */
+/** `null` from `propose` (and a throw from `floorFor`) means this network has no fuel venue. */
 export function useGasShare(deps: GasShareDeps = {}): UseGasShareHandle {
 	const txTarget = ref(DEFAULT_TX_TARGET)
 	const fees = ref<{ maxFees: MaxFees; at: number } | null>(null)
@@ -199,9 +199,9 @@ export function useGasShare(deps: GasShareDeps = {}): UseGasShareHandle {
 
 	/** Everything but the target; null and "pricing" as `propose` reports them. */
 	function shareInput(input: GasShareProposal): Omit<GasShareInput, "txTarget"> | null | "pricing" {
-		if (!SWAP) return null
+		if (!FUEL) return null
 		const ceilings = input.isPrivate ? privateCeilings(input.state) : undefined
-		return ceilings === "pricing" ? "pricing" : shareInputOf(input, SWAP, ceilings)
+		return ceilings === "pricing" ? "pricing" : shareInputOf(input, FUEL, ceilings)
 	}
 
 	function propose(input: GasShareProposal, target = txTarget.value): GasShareOutcome {

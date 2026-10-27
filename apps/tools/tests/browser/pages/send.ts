@@ -57,7 +57,8 @@ export async function setVisibility(page: Page, isPrivate: boolean): Promise<voi
 }
 
 /** Token → amount → choice → visibility → review. Leaves the wizard on the review step. */
-export async function reviewDeposit(page: Page, plan: DepositPlan): Promise<void> {
+/** `review` is the step the wizard lands on: a send that starts on another chain has its own. */
+export async function reviewDeposit(page: Page, plan: DepositPlan, review: string = TESTIDS.sendStepReview): Promise<void> {
 	await startDeposit(page, plan)
 	const choice = { token: TESTIDS.sendChoiceToken, "token+gas": TESTIDS.sendChoiceTokenGas, gas: TESTIDS.sendChoiceGas }[plan.intent]
 	const card = page.locator(tid(choice))
@@ -65,7 +66,7 @@ export async function reviewDeposit(page: Page, plan: DepositPlan): Promise<void
 	await card.click()
 	await expect(card).toHaveAttribute("aria-checked", "true")
 	await setVisibility(page, plan.isPrivate)
-	await goToReview(page)
+	await goToReview(page, review)
 	await expect(page.locator(tid(TESTIDS.sendReviewVisibility))).toHaveAttribute("data-visibility", plan.isPrivate ? "private" : "public")
 }
 
@@ -76,12 +77,12 @@ export async function reviewDeposit(page: Page, plan: DepositPlan): Promise<void
  * for the quote, so "not loading" before that point is not "quoted". Every deposit stand-down asks
  * for the quote again, so a re-entered review waits the same way; an exit never quotes.
  */
-export async function goToReview(page: Page): Promise<void> {
+export async function goToReview(page: Page, review: string = TESTIDS.sendStepReview): Promise<void> {
 	const next = page.locator(tid(TESTIDS.sendAmountNext))
 	await expect(next).toBeEnabled({ timeout: 60_000 })
 	await expect(page.locator(tid(TESTIDS.sendStepAmount))).not.toHaveAttribute("data-route-loading", "true", { timeout: 60_000 })
 	await next.click()
-	await expect(page.locator(tid(TESTIDS.sendStepReview))).toBeVisible()
+	await expect(page.locator(tid(review))).toBeVisible()
 }
 
 type Pressed = "left" | "stale" | "refused" | "pending"

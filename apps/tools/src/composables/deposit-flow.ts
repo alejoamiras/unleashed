@@ -17,12 +17,15 @@ import {
 	type SendDepositRecord,
 	type SendGeneration,
 	type SendOpts,
+	type SendResult,
 	ERC20_ABI,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	awaitL1Receipt,
+	depositExpectationOf,
 	deriveBridgeSecret,
+	emittedBy,
 	ensurePermit2Allowance,
 	isSealTrusted,
 	isSendRecord,
@@ -32,13 +35,15 @@ import {
 	privateFpcFeeLimit,
 	privateMintAndPayFee,
 	publicFeeJuicePayment,
+	readLegacySendLeaves,
+	readSendInbox,
 	readSendReceiptLeaves,
 	selfPaidFeeJuicePayment,
 	sealDepositRecord,
 } from "@unleashed/bridge-core"
 import type { Log } from "viem"
 import { NETWORK } from "@/lib/network"
-import { FUEL_MIN_FJ, SWAP } from "@/contracts/bridge-generation"
+import { FUEL, FUEL_MIN_FJ, LEGACY_ROUTERS } from "@/contracts/bridge-generation"
 import {
 	FUEL_FEE_MARGIN,
 	PRIVATE_ATTEMPT_STALE_MS,
@@ -308,15 +313,32 @@ export async function readFeeJuiceOrNull(label: string, read: () => Promise<bigi
 
 // ── deposit-leg recovery ─────────────────────────────────────────────────────
 
-/** A viem public client with the two receipt reads the recovery needs. */
+/** The reads the recovery needs: the receipt, and the factory's frozen Inbox the leaves are checked against. */
 export interface RecoveryL1Client {
 	getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<{ status: string; logs: unknown[] } | null>
+	readContract: (args: never) => Promise<unknown>
 }
 
-/** A send's leaves come from the router's own event: a first deposit's receipt also carries the
- *  factory's register leaf, so the Inbox events alone would name the wrong one. */
-function recoverSendLeg(rec: SendDepositRecord, generation: SendGeneration, logs: Log[]): "recovered" {
-	const leaves = readSendReceiptLeaves(generation, rec.intent, rec.depositTxHash as `0x${string}`, logs as never)
+/** The leaves a landed send produced. A deposit through a retired router reads that router's own
+ *  events; any other must be the deposit router's one `Deposited` for this record, authenticated
+ *  leg by leg. A first deposit's receipt also carries the factory's register leaf, so the Inbox
+ *  events alone would name the wrong one. */
+async function sendLeavesOf(
+	rec: SendDepositRecord,
+	logs: Log[],
+	pub: RecoveryL1Client,
+	generation: SendGeneration | undefined,
+	legacyRouters: readonly `0x${string}`[],
+): Promise<Partial<SendResult>> {
+	const hash = rec.depositTxHash as `0x${string}`
+	const legacy = legacyRouters.find((router) => emittedBy(router, logs))
+	if (legacy && !(generation && emittedBy(generation.router, logs))) return readLegacySendLeaves(legacy, rec.intent, hash, logs)
+	if (!generation) throw new Error("This network has no bridge.")
+	const inbox = await readSendInbox(pub as never, generation)
+	return readSendReceiptLeaves(generation, inbox, depositExpectationOf(rec), hash, logs as never)
+}
+
+function recoverSendLeg(rec: SendDepositRecord, leaves: Partial<SendResult>): "recovered" {
 	const patch: Partial<SendDepositRecord> = {}
 	if (leaves.tokenLeafIndex !== undefined) {
 		patch.leafIndex = leaves.tokenLeafIndex.toString()
@@ -353,18 +375,18 @@ export async function recoverDepositLeg(
 	rec: DepositJournalRecord | SendDepositRecord,
 	publicClient: RecoveryL1Client,
 	generation?: SendGeneration,
+	legacyRouters: readonly `0x${string}`[] = LEGACY_ROUTERS,
 ): Promise<"pending" | "recovered"> {
 	if (!isSendRecord(rec)) {
 		throw new Error("This record predates the current bridge — its Ethereum leg cannot be recovered here.")
 	}
-	if (!generation) throw new Error("This network has no bridge.")
 	const hash = rec.depositTxHash as `0x${string}`
 	const receipt = await publicClient.getTransactionReceipt({ hash }).catch(() => null)
 	if (!receipt) return "pending"
 	if (receipt.status !== "success") {
 		throw new Error("The Ethereum deposit transaction reverted — there is nothing to claim. You can discard this record.")
 	}
-	return recoverSendLeg(rec, generation, receipt.logs as Log[])
+	return recoverSendLeg(rec, await sendLeavesOf(rec, receipt.logs as Log[], publicClient, generation, legacyRouters))
 }
 
 // ── claim builders (the journal engine's claim dep, decomposed) ──────────────
@@ -662,7 +684,7 @@ function privateFuelSafetyReason(fb: FuelBlock, fuelReceived: bigint): string | 
 	if (fb.fpc && fb.fpc !== PRIVATE_FPC_ADDRESS) {
 		return "Private fuel FPC address mismatch (version drift), refusing to claim. Reselect a mode."
 	}
-	if (SWAP && fuelReceived < BigInt(SWAP.minFuelFj)) {
+	if (FUEL && fuelReceived < BigInt(FUEL.minFuelFj)) {
 		return "The bridged gas is below the safe claim floor; the private fuel claim can't self-pay."
 	}
 	return null
@@ -777,7 +799,7 @@ export async function resolvePublicClaimFee(
 		fuelReceived: BigInt(fuel.received),
 		// The calibrated floor (config) is the fee reference; a live min-fee query is a refinement,
 		// not a correctness need - the floor is 2x a real observed fee.
-		currentMinFee: SWAP ? BigInt(SWAP.minFuelFj) / FUEL_FEE_MARGIN : undefined,
+		currentMinFee: FUEL ? BigInt(FUEL.minFuelFj) / FUEL_FEE_MARGIN : undefined,
 		persistentFailureCount: 0,
 		userOverride,
 	})

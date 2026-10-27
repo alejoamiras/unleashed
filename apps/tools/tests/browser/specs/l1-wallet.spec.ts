@@ -19,7 +19,7 @@ test("cell 26d — the wallet sends the deposit but the page never hears back: t
 }) => {
 	const { usdt } = sandbox.tokens
 	await mint(sandbox.clients.l1, usdt.erc20 as `0x${string}`, l1.address, 200n * USDC)
-	const router = (sandbox.manifest.bridge?.l1.router ?? "") as `0x${string}`
+	const router = (sandbox.manifest.bridge?.l1.depositRouter ?? "") as `0x${string}`
 	expect(router).not.toBe("")
 	await page.goto("/")
 	await openSend(page)
@@ -66,7 +66,7 @@ test("cell 26e — the Ethereum wallet never answers the deposit: the reloaded r
 }) => {
 	const { usdt } = sandbox.tokens
 	await mint(sandbox.clients.l1, usdt.erc20 as `0x${string}`, l1.address, 200n * USDC)
-	const router = (sandbox.manifest.bridge?.l1.router ?? "") as `0x${string}`
+	const router = (sandbox.manifest.bridge?.l1.depositRouter ?? "") as `0x${string}`
 	expect(router).not.toBe("")
 	await page.goto("/")
 	await openSend(page)

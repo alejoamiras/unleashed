@@ -147,6 +147,11 @@ URL or writes it to a file, and no dRPC key is ever committed (`scripts/ci-cd/no
 a leak, disable the key in dRPC, mint a new one and replace the 1Password field. Security reports go
 through GitHub's private advisories ([`SECURITY.md`](SECURITY.md)).
 
+LI.FI's contracts and API are a routing dependency, never a trusted party: `verifyRoute`
+([`packages/bridge-core/src/lifi-decode.ts`](packages/bridge-core/src/lifi-decode.ts)) is the trust
+boundary, and no cross-chain transaction reaches a signature, ours included, until it accepts the
+exact bytes.
+
 ## Code comments
 
 Say what the code cannot: invariants, constraints, non-obvious reasons, external quirks. Never

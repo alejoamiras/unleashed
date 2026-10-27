@@ -1,4 +1,4 @@
-// Vendored unchanged from aztec-labs-eng/aztec-node tag v6.0.0-rc.3 (commit b37a5869760fb55faa8d4697d3ccbecc6f913fce),
+// Vendored unchanged from aztec-labs-eng/aztec-node tag v6.0.0 (commit d2e67c1d938f06a6476dd7d4bd01e73771923dd1),
 // noir-projects/noir-contracts/contracts/libs/token_portal_content_hash_lib/src/lib.nr, Apache-2.0.
 // Upstream bytes follow this header verbatim: sha256 5e20eaf63cc010699f5430b0e5f4c7879fe0c0fa8a58e846194df1e9a70fd991.
 // Vendored because the upstream crate resolves `aztec` by an in-repo path, which Nargo builds as a second

@@ -1,8 +1,8 @@
 /**
- * LIVE-testnet fueled-send validation: drives the router's fueled entrypoint against the live pools,
- * then proves the headline claim on Aztec — a fresh account's hub claim PAYS FOR ITSELF out of the
- * Fee Juice the same send bridged, for both the public and the private-FPC fuel lanes. The fees it
- * observes are the manifest's `bridge.l1.swap.minFuelFj` and `fjPerTx` calibration.
+ * LIVE-testnet fueled-send validation: drives the deposit router's `bridgeWithPermit` with the fuel
+ * swapper's quote, then proves the headline claim on Aztec — a fresh account's hub claim PAYS FOR ITSELF
+ * out of the Fee Juice the same send bridged, for both the public and the private-FPC fuel lanes. The
+ * fees it observes are the manifest's `bridge.l1.fuel.minFuelFj` and `fjPerTx` calibration.
  *
  * Nothing is deployed: the portal is the factory's clone for the token, the L2 side is the
  * manifest's hub and the token that hub derives, and only the throwaway L2 account is created
@@ -21,9 +21,9 @@ import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas, type GasFees } from "@aztec-labs/stdlib/gas"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { predictedWorstMinFees, publicFeeJuicePayment } from "../src/fee-juice"
+import { predictedWorstMinFees } from "../src/fee-juice"
 import type { L1Ctx } from "../src/flows"
-import { claimViaHub, type HubClaimOutcome, hubTokenFor } from "../src/hub-l2"
+import type { HubClaimOutcome } from "../src/hub-l2"
 import {
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_HUB_CLAIM_GAS,
@@ -31,17 +31,17 @@ import {
 	deriveBridgeSecret,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
-	privateMintAndPayFee,
 } from "../src/private-fuel"
 import type { SendResult } from "../src/send-flow"
 import { runSend } from "../src/send-flow"
 import { runFpcGate } from "./check-fpc-version"
+import { type FueledClaimResult, settleFueledClaim } from "./fuel-claim-l2"
 import { requirePinnedSigner } from "./live-intent"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
 import { feeJuiceFor } from "./fee-juice-l2"
 import { deployAccountIfAbsent, freshSchnorrAccount, registerHub, registerHubToken, registerPrivateFpc, sponsoredFpcFee } from "./script-l2"
-import { claimTokenBlock, planFuelLeg, requireSwap, selectToken, sendGenerationOf } from "./script-send"
+import { claimTokenBlock, planFuelLeg, requireFuel, selectToken, sendGenerationOf } from "./script-send"
 import {
 	createL1Clients,
 	createL2Wallet,
@@ -63,7 +63,7 @@ const CONFIG = loadManifestV2FromConfigArg(process.argv, {
 	fallbackPath: join(here, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json"),
 })
 const BRIDGE = requireBridge(CONFIG)
-const SWAP = requireSwap(BRIDGE)
+requireFuel(BRIDGE)
 const TOKEN = selectToken(BRIDGE, process.argv)
 const GENERATION = sendGenerationOf(CONFIG, BRIDGE)
 
@@ -117,104 +117,29 @@ async function landedTx(ctx: VariantCtx, txHash: string): Promise<{ fee: bigint;
 
 const gasNote = (tx: { l2GasApprox?: bigint }): string => (tx.l2GasApprox === undefined ? "" : ` (≈${tx.l2GasApprox} L2 gas)`)
 
-/** PUBLIC fuel pays the ACTUAL fee, so its payment is static. PRIVATE-FPC fuel asserts
- *  `amount >= getFeeLimit` against the COMMITTED maxFeesPerGas, and the protocol rejects a tx whose
- *  committed cap fell below the live base fee by inclusion time — a claim proves for minutes, so the
- *  cap is re-priced on every attempt rather than reused. */
-async function buildVariantClaimFee(
-	ctx: VariantCtx,
-	result: SendResult,
-	viaFpc: boolean,
-	bridgeSalt: Fr | undefined,
-	registers: boolean,
-): Promise<{ fee: unknown; registerFee?: unknown; registeredClaimFee?: unknown; maxFees?: GasFees }> {
-	const fuelReceived = result.fuelReceived ?? 0n
-	if (!viaFpc) {
-		return {
-			fee: {
-				paymentMethod: publicFeeJuicePayment(ctx.from, {
-					claimAmount: fuelReceived,
-					claimSecret: Fr.fromHexString(result.fuelSecretHex as string),
-					messageLeafIndex: result.fuelLeafIndex as bigint,
-				}),
-			},
-		}
-	}
-	const maxFees = (await predictedWorstMinFees(ctx.node)).mul(RELIABILITY_PAD)
-	const fpc = AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS)
-	const fuelPayment = privateMintAndPayFee(
-		fpc,
-		fuelReceived,
-		deriveBridgeSecret(bridgeSalt as Fr, ctx.from),
-		bridgeSalt as Fr,
-		new Fr(result.fuelLeafIndex as bigint),
-	)
-	const gasSettings = (gas: { daGas: number; l2Gas: number }) => ({
-		gasLimits: Gas.from(gas),
-		teardownGasLimits: Gas.from({ daGas: 0, l2Gas: 0 }),
-		maxFeesPerGas: maxFees,
-	})
-	// The fuel message is spent by whichever transaction goes first — a first-time token's own
-	// registration, sized for one, else the claim — and a claim after such a registration draws on
-	// the credit the FPC kept, exactly as the app's ladder does it.
-	return {
-		fee: { paymentMethod: fuelPayment, gasSettings: gasSettings(PRIVATE_HUB_CLAIM_GAS) },
-		...(registers
-			? {
-					registerFee: { paymentMethod: fuelPayment, gasSettings: gasSettings(PRIVATE_HUB_REGISTER_GAS) },
-					registeredClaimFee: { paymentMethod: privateFeeJuicePayment(fpc), gasSettings: gasSettings(PRIVATE_HUB_CLAIM_GAS) },
-				}
-			: {}),
-		maxFees,
-	}
-}
-
-/** An FPC budget assert means the bridged FJ is below the committed getFeeLimit — a real failure,
- *  never a sync/fee-drift wait to retry through. */
-function throwIfFpcBudgetAssert(label: string, fuelReceived: bigint, msg: string): void {
-	if (/Amount too low to cover gas cost|max_gas_cost/.test(msg)) {
-		throw new Error(`${label}: FPC budget assert — bridged FJ ${fuelReceived} < committed getFeeLimit. ${msg}`)
-	}
-}
-
-/** The self-paying claim, retried on the message-sync cadence. It cannot use the shared fixed-options
- *  claim loop: the FPC fee has to be rebuilt per attempt (see buildVariantClaimFee). */
-async function settleVariantClaim(
+/** The send's self-paying claim, through the shared fueled-claim loop. */
+function settleVariantClaim(
 	ctx: VariantCtx,
 	p: { label: string; isPrivate: boolean; result: SendResult; viaFpc: boolean; bridgeSalt?: Fr },
-): Promise<{ outcome: HubClaimOutcome; committedMaxFees?: GasFees; registered: boolean }> {
-	const claim = {
+): Promise<FueledClaimResult> {
+	const received = p.result.fuelReceived ?? 0n
+	const leafIndex = p.result.fuelLeafIndex as bigint
+	return settleFueledClaim({
+		label: p.label,
+		hub: ctx.hub,
+		node: ctx.node,
+		from: ctx.from,
 		token: claimTokenBlock(TOKEN, p.result.token as NonNullable<SendResult["token"]>),
-		recipient: ctx.from.toString(),
 		amount: BRIDGED,
 		claimValue: Fr.fromHexString(p.result.tokenClaimValueHex as string),
 		leafIndex: p.result.tokenLeafIndex as bigint,
 		isPrivate: p.isPrivate,
-		from: ctx.from.toString(),
-	}
-	for (let i = 0; i < 300; i++) {
-		try {
-			// Whether this claim registers the token is a live fact, re-read per attempt like the app does.
-			const registers = p.viaFpc && (await hubTokenFor(ctx.hub, TOKEN.erc20, ctx.from.toString())) === undefined
-			const built = await buildVariantClaimFee(ctx, p.result, p.viaFpc, p.bridgeSalt, registers)
-			const sendOpts = {
-				from: ctx.from,
-				fee: built.fee,
-				...(built.registerFee ? { registerFee: built.registerFee, registeredClaimFee: built.registeredClaimFee } : {}),
-				onRegistered: (hash: string) =>
-					console.log(
-						`${p.label}: register_token ${hash} landed — waiting for the claim to pass in this wallet's view (${ctx.mins()})`,
-					),
-				wait: { waitForStatus: TxStatus.PROPOSED },
-			}
-			return { outcome: await claimViaHub(ctx.hub, claim, sendOpts), committedMaxFees: built.maxFees, registered: registers }
-		} catch (e) {
-			throwIfFpcBudgetAssert(p.label, p.result.fuelReceived ?? 0n, e instanceof Error ? e.message : String(e))
-			if (i % 10 === 0) console.log(`${p.label}: claim not ready / re-pricing… (${ctx.mins()})`)
-			await sleep(6000)
-		}
-	}
-	throw new Error(`${p.label}: self-paying claim never SETTLED within budget`)
+		fuel: p.viaFpc
+			? { via: "private-fpc", received, leafIndex, bridgeSalt: p.bridgeSalt as Fr }
+			: { via: "public", received, leafIndex, secret: Fr.fromHexString(p.result.fuelSecretHex as string) },
+		reliabilityPad: RELIABILITY_PAD,
+		mins: ctx.mins,
+	})
 }
 
 /** The FPC ceiling (`getFeeLimit`) the claim committed to: the explicit limits × the committed
@@ -226,7 +151,7 @@ const feeCeiling = (committedMaxFees?: GasFees, registered = false): bigint | un
 		: undefined
 
 async function sendVariant(ctx: VariantCtx, isPrivate: boolean, viaFpc: boolean, bridgeSalt?: Fr): Promise<SendResult> {
-	const fuel = await planFuelLeg(ctx.l1.pub, SWAP, GENERATION.feeAsset, TOKEN.erc20 as Address, FUEL_SLICE)
+	const fuel = await planFuelLeg(ctx.l1.pub, CONFIG, TOKEN.erc20 as Address, FUEL_SLICE)
 	console.log(`quote: ${FUEL_SLICE} ${TOKEN.displaySymbol}-units → ${fuel.quote} FJ-wei (floor ${fuel.minFuelOutput}) (${ctx.mins()})`)
 	return runSend(
 		ctx.l1,
@@ -242,8 +167,7 @@ async function sendVariant(ctx: VariantCtx, isPrivate: boolean, viaFpc: boolean,
 				fuelAmount: FUEL_SLICE,
 				fuelRecipient: (viaFpc ? PRIVATE_FPC_ADDRESS : ctx.from.toString()) as `0x${string}`,
 				minFuelOutput: fuel.minFuelOutput,
-				path: fuel.path,
-				zeroForOnes: fuel.zeroForOnes,
+				swapData: fuel.swapData,
 				fuelSecret: bridgeSalt ? deriveBridgeSecret(bridgeSalt, ctx.from) : undefined,
 			},
 			nonce: rndNonce(),
@@ -308,7 +232,7 @@ function printCalibration(runs: VariantRun[], mins: () => string): void {
 	const plain = worstOf(runs.filter((r) => r.path === "claim").map((r) => r.actualFee))
 	const registering = worstOf(runs.filter((r) => r.path !== "claim").map((r) => r.actualFee))
 	const fjPerTx = plain ?? worstActual
-	console.log(`fjPerTx calibration  : ${fjPerTx} — set bridge.l1.swap.fjPerTx${plain === undefined ? " (no plain claim ran)" : ""}`)
+	console.log(`fjPerTx calibration  : ${fjPerTx} — set bridge.l1.fuel.fjPerTx${plain === undefined ? " (no plain claim ran)" : ""}`)
 	if (plain !== undefined && registering !== undefined && registering > plain) {
 		console.log(`fjRegister hint      : ${registering - plain} (the first claim's registration surcharge)`)
 	}

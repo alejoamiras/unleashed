@@ -1,12 +1,26 @@
 /**
- * The router transaction behind a hash-less deposit record, from Ethereum alone. Identity: the
- * router's events are only a sieve (they carry no token or portal); a candidate counts only when its
- * own calldata is the call this record's send would have made and its receipt is a success on the
- * canonical chain. Uniqueness: one verified transaction is the answer, two is `"ambiguous"`, and any
- * search that could not cover the window — cap, failed or slow read, chain switch, reorg — is
- * `"incomplete"`, never `"none"`.
+ * The router transaction behind a hash-less deposit record, from Ethereum alone: the deposit router
+ * first, then every retired router a record still in flight may have gone through. Identity: a
+ * router's events are only a sieve; a candidate counts only when its own calldata is the call this
+ * record's send would have made and its receipt is a success on the canonical chain. Uniqueness: one
+ * verified transaction across every router is the answer, two is `"ambiguous"`, and any search that
+ * could not cover the window — cap, failed or slow read, chain switch, reorg — is `"incomplete"`,
+ * never `"none"`.
  */
-import { PRIVATE_FPC_ADDRESS, type SendDepositRecord, SWAP_BRIDGE_ROUTER_ABI } from "@unleashed/bridge-core"
+import {
+	assertCanonical,
+	type BudgetedRead,
+	budgetedReads,
+	DEPOSIT_ROUTER_ABI,
+	firstBlockAfter,
+	hexEq,
+	openChainScan,
+	PRIVATE_FPC_ADDRESS,
+	ScanIncomplete,
+	type SendDepositRecord,
+	LEGACY_ROUTER_ABI,
+	scanRange,
+} from "@unleashed/bridge-core"
 import { decodeFunctionData, getAbiItem } from "viem"
 
 type Hex = `0x${string}`
@@ -32,7 +46,10 @@ export type DepositSearch = { txHash: Hex } | "none" | "ambiguous" | "incomplete
 export interface DepositSearchOptions {
 	/** The chain the record and the generation live on; a client answering from another is `"incomplete"`. */
 	chainId: number
+	/** The deposit router. */
 	router: Hex
+	/** Retired `SwapBridgeRouter`s, read through their frozen ABI. */
+	legacyRouters?: readonly Hex[]
 	/** How far before the record's `createdAt` the window starts (clock skew, a slow wallet). */
 	slackSeconds?: number
 	/** The largest range searched; a window that would start earlier is `"incomplete"`. */
@@ -41,6 +58,7 @@ export interface DepositSearchOptions {
 	chunkBlocks?: number
 	deadlineMs?: number
 	maxReads?: number
+	/** Per router. */
 	maxCandidates?: number
 	now?: () => number
 	/** How many chain changes the provider has reported so far: a change during the scan — even
@@ -58,34 +76,19 @@ const DEFAULTS = {
 }
 
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex
-const BRIDGE_EVENT = getAbiItem({ abi: SWAP_BRIDGE_ROUTER_ABI, name: "Bridge" })
-const BRIDGE_WITH_FUEL_EVENT = getAbiItem({ abi: SWAP_BRIDGE_ROUTER_ABI, name: "BridgeWithFuel" })
 
-class Incomplete extends Error {}
+type LogArgs = Record<string, unknown> | undefined
 
-const hexEq = (a: unknown, b: unknown): boolean => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase()
+/** How one router's deposits are recognised: the event that sieves a record's candidates, and the call its send made. */
+interface RouterShape {
+	eventFor(rec: SendDepositRecord): unknown
+	logMatches(rec: SendDepositRecord, args: LogArgs): boolean
+	calldataMatches(rec: SendDepositRecord, input: Hex): boolean
+}
 
-/** Every read goes through one budget: a count cap, a wall-clock deadline (the L1 client has no
- *  transport timeout of its own) and the transport's own failures — all three read as `"incomplete"`. */
-function budgetedReads(o: Required<Pick<DepositSearchOptions, "deadlineMs" | "maxReads" | "now">>) {
-	const started = o.now()
-	let reads = 0
-	return async <T>(fn: () => Promise<T>): Promise<T> => {
-		if (++reads > o.maxReads) throw new Incomplete("read budget")
-		const left = o.deadlineMs - (o.now() - started)
-		if (left <= 0) throw new Incomplete("deadline")
-		let timer: ReturnType<typeof setTimeout> | undefined
-		const deadline = new Promise<never>((_, reject) => {
-			timer = setTimeout(() => reject(new Incomplete("deadline")), left)
-		})
-		try {
-			return await Promise.race([fn(), deadline])
-		} catch (e) {
-			throw e instanceof Incomplete ? e : new Incomplete(e instanceof Error ? e.message : String(e))
-		} finally {
-			clearTimeout(timer)
-		}
-	}
+interface SearchedRouter {
+	address: Hex
+	shape: RouterShape
 }
 
 export async function findDepositTx(rec: SendDepositRecord, l1: ReconcileL1Client, options: DepositSearchOptions): Promise<DepositSearch> {
@@ -93,93 +96,165 @@ export async function findDepositTx(rec: SendDepositRecord, l1: ReconcileL1Clien
 	if (rec.intent === "gas" || !rec.token) return "none"
 	if (rec.chainId !== o.chainId) return "incomplete"
 	const read = budgetedReads(o)
-	const epoch = o.chainEpoch?.()
+	const routers: SearchedRouter[] = [
+		{ address: o.router, shape: DEPOSIT_ROUTER_SHAPE },
+		...(o.legacyRouters ?? []).map((address) => ({ address, shape: LEGACY_ROUTER_SHAPE })),
+	]
 	try {
-		await assertChain(l1, o.chainId, read)
-		const latest = await read(() => l1.getBlockNumber())
-		const tip = (await read(() => l1.getBlock({ blockNumber: latest }))).hash
-		const from = await windowStart(l1, latest, BigInt(Math.floor(rec.createdAt / 1000) - o.slackSeconds), BigInt(o.maxBlocks), read)
-		const hashes = await candidateHashes(rec, l1, o.router, from, latest, BigInt(o.chunkBlocks), read)
-		if (hashes.length > o.maxCandidates) return "incomplete"
-		const verified: Hex[] = []
-		for (const hash of hashes) if (await verifyCandidate(rec, l1, o.router, hash, read)) verified.push(hash)
 		// The scan is only as good as the chain it read: a wallet switched away and back, or a reorg
 		// past the tip that was scanned, may have answered some reads from a chain that is not this one.
-		// The epoch is compared LAST, after the final awaited read, so a switch during that read counts.
-		if (!hexEq((await read(() => l1.getBlock({ blockNumber: latest }))).hash, tip)) throw new Incomplete("reorg")
-		await assertChain(l1, o.chainId, read)
-		if (o.chainEpoch?.() !== epoch) throw new Incomplete("chain changed")
+		const scan = await openChainScan(l1, o.chainId, read, o.chainEpoch)
+		const from = await windowStart(
+			l1,
+			scan.latest,
+			BigInt(Math.floor(rec.createdAt / 1000) - o.slackSeconds),
+			BigInt(o.maxBlocks),
+			read,
+		)
+		const verified: Hex[] = []
+		for (const router of routers) {
+			const hashes = await candidateHashes(rec, l1, router, from, scan.latest, BigInt(o.chunkBlocks), read)
+			if (hashes.length > o.maxCandidates) return "incomplete"
+			verified.push(...(await verifiedOf(rec, l1, router, hashes, read)))
+		}
+		await scan.close()
 		if (verified.length === 0) return "none"
 		if (verified.length > 1) return "ambiguous"
 		return { txHash: verified[0] }
 	} catch (e) {
-		if (e instanceof Incomplete) return "incomplete"
+		if (e instanceof ScanIncomplete) return "incomplete"
 		throw e
 	}
 }
 
-type Read = ReturnType<typeof budgetedReads>
-
-async function assertChain(l1: ReconcileL1Client, chainId: number, read: Read): Promise<void> {
-	if ((await read(() => l1.getChainId())) !== chainId) throw new Incomplete("chain")
+async function verifiedOf(
+	rec: SendDepositRecord,
+	l1: ReconcileL1Client,
+	router: SearchedRouter,
+	hashes: readonly Hex[],
+	read: BudgetedRead,
+): Promise<Hex[]> {
+	const verified: Hex[] = []
+	for (const hash of hashes) if (await verifyCandidate(rec, l1, router, hash, read)) verified.push(hash)
+	return verified
 }
 
 /** The first block at or after `targetTs`, by binary search over block timestamps inside the capped
  *  range. A range whose oldest block is still at or after the target may not reach back far enough. */
-async function windowStart(l1: ReconcileL1Client, latest: bigint, targetTs: bigint, maxBlocks: bigint, read: Read): Promise<bigint> {
+async function windowStart(
+	l1: ReconcileL1Client,
+	latest: bigint,
+	targetTs: bigint,
+	maxBlocks: bigint,
+	read: BudgetedRead,
+): Promise<bigint> {
 	const floor = latest > maxBlocks ? latest - maxBlocks : 0n
 	const tsOf = async (n: bigint) => (await read(() => l1.getBlock({ blockNumber: n }))).timestamp
-	if ((await tsOf(floor)) >= targetTs && floor > 0n) throw new Incomplete("window capped")
+	if ((await tsOf(floor)) >= targetTs && floor > 0n) throw new ScanIncomplete("window capped")
 	// A chain whose tip predates the window cannot answer for it (a stale node, or a clock ahead of
 	// the chain by more than the slack): its latest block is not the window.
-	if ((await tsOf(latest)) < targetTs) throw new Incomplete("chain behind the window")
-	let lo = floor
-	let hi = latest
-	while (lo < hi) {
-		const mid = (lo + hi) / 2n
-		if ((await tsOf(mid)) >= targetTs) hi = mid
-		else lo = mid + 1n
-	}
-	return lo
+	if ((await tsOf(latest)) < targetTs) throw new ScanIncomplete("chain behind the window")
+	return firstBlockAfter(l1, read, floor, latest, targetTs - 1n)
 }
 
-/** The router's own events over the window, one shape per intent, kept only when the decoded
- *  secret hash(es) are this record's. No recipient filter: a private deposit publishes a zero one. */
+/** The router's own events over the window, kept only when the decoded secret hash(es) are this
+ *  record's. No recipient filter: a private deposit publishes a zero one. */
 async function candidateHashes(
 	rec: SendDepositRecord,
 	l1: ReconcileL1Client,
-	router: Hex,
+	router: SearchedRouter,
 	from: bigint,
 	to: bigint,
 	chunk: bigint,
-	read: Read,
+	read: BudgetedRead,
 ): Promise<Hex[]> {
-	const fueled = rec.intent === "token+gas"
-	const event = fueled ? BRIDGE_WITH_FUEL_EVENT : BRIDGE_EVENT
-	const matches = (args: Record<string, unknown> | undefined): boolean =>
-		fueled
-			? hexEq(args?.tokenSecretHash, rec.secretHashHex) && hexEq(args?.fuelSecretHash, rec.fuel?.secretHashHex)
-			: hexEq(args?.secretHash, rec.secretHashHex)
-	const out = new Set<Hex>()
-	for (let start = from; start <= to; start += chunk) {
-		const end = start + chunk - 1n < to ? start + chunk - 1n : to
-		const logs = await read(() => l1.getLogs({ address: router, event, fromBlock: start, toBlock: end }))
-		for (const log of logs) if (matches(log.args)) out.add(log.transactionHash)
-	}
-	return [...out]
+	const event = router.shape.eventFor(rec)
+	const logs = await scanRange(from, to, chunk, (start, end) =>
+		read(() => l1.getLogs({ address: router.address, event, fromBlock: start, toBlock: end })),
+	)
+	return [...new Set(logs.filter((log) => router.shape.logMatches(rec, log.args)).map((log) => log.transactionHash))]
 }
 
 /** A candidate counts only when its calldata is the call this record's send would have made and its
  *  receipt is a success on the canonical chain. */
-async function verifyCandidate(rec: SendDepositRecord, l1: ReconcileL1Client, router: Hex, hash: Hex, read: Read): Promise<boolean> {
+async function verifyCandidate(
+	rec: SendDepositRecord,
+	l1: ReconcileL1Client,
+	router: SearchedRouter,
+	hash: Hex,
+	read: BudgetedRead,
+): Promise<boolean> {
 	const tx = await read(() => l1.getTransaction({ hash }))
-	if (!tx || !hexEq(tx.to, router) || !calldataMatches(rec, tx.input)) return false
+	if (!tx || !hexEq(tx.to, router.address) || !router.shape.calldataMatches(rec, tx.input)) return false
 	const receipt = await read(() => l1.getTransactionReceipt({ hash }))
 	if (receipt?.status !== "success") return false
-	const block = await read(() => l1.getBlock({ blockNumber: receipt.blockNumber }))
-	if (!hexEq(block.hash, receipt.blockHash)) throw new Incomplete("reorg")
+	await assertCanonical(l1, read, receipt)
 	return true
 }
+
+/** The fuel recipient a record's send names: the account itself, or the fee contract that mints private gas. */
+const fuelRecipientOf = (rec: SendDepositRecord): string => (rec.isPrivate ? (rec.fuel?.fpc ?? PRIVATE_FPC_ADDRESS) : rec.recipient)
+
+/** A private recipient is committed through the secret hash and never published. */
+const publishedRecipientOf = (rec: SendDepositRecord): string => (rec.isPrivate ? ZERO_BYTES32 : rec.recipient)
+
+// ── the deposit router ───────────────────────────────────────────────────────
+
+type DepositIntentArgs = {
+	token: Hex
+	aztecRecipient: Hex
+	tokenSecretHash: Hex
+	isPrivate: boolean
+	fuelSlice: bigint
+	fuelRecipient: Hex
+	fuelSecretHash: Hex
+	minFuelOutput: bigint
+}
+
+/** The intent a token or token+gas send signs; a token-only one carries no fuel fields at all. */
+function depositIntentMatches(rec: SendDepositRecord, i: DepositIntentArgs, amount: bigint): boolean {
+	const common =
+		hexEq(i.token, rec.token?.erc20) &&
+		hexEq(i.aztecRecipient, publishedRecipientOf(rec)) &&
+		hexEq(i.tokenSecretHash, rec.secretHashHex) &&
+		i.isPrivate === rec.isPrivate
+	if (!common) return false
+	if (rec.intent === "token") return amount === BigInt(rec.amount) && i.fuelSlice === 0n && hexEq(i.fuelSecretHash, ZERO_BYTES32)
+	const fuel = rec.fuel
+	if (!fuel) return false
+	return (
+		amount === BigInt(rec.amount) + BigInt(fuel.amount) &&
+		i.fuelSlice === BigInt(fuel.amount) &&
+		i.minFuelOutput === BigInt(fuel.minOutput) &&
+		hexEq(i.fuelSecretHash, fuel.secretHashHex) &&
+		hexEq(i.fuelRecipient, fuelRecipientOf(rec))
+	)
+}
+
+const DEPOSITED_EVENT = getAbiItem({ abi: DEPOSIT_ROUTER_ABI, name: "Deposited" })
+
+const DEPOSIT_ROUTER_SHAPE: RouterShape = {
+	eventFor: () => DEPOSITED_EVENT,
+	logMatches: (rec, args) =>
+		hexEq(args?.tokenSecretHash, rec.secretHashHex) &&
+		hexEq(args?.fuelSecretHash, rec.intent === "token+gas" ? rec.fuel?.secretHashHex : ZERO_BYTES32),
+	calldataMatches(rec, input) {
+		let decoded: ReturnType<typeof decodeFunctionData<typeof DEPOSIT_ROUTER_ABI>>
+		try {
+			decoded = decodeFunctionData({ abi: DEPOSIT_ROUTER_ABI, data: input })
+		} catch {
+			return false
+		}
+		if (decoded.functionName !== "bridgeWithPermit") return false
+		const [intent, , amount] = decoded.args
+		return depositIntentMatches(rec, intent as DepositIntentArgs, amount)
+	},
+}
+
+// ── the retired SwapBridgeRouter ─────────────────────────────────────────────
+
+const BRIDGE_EVENT = getAbiItem({ abi: LEGACY_ROUTER_ABI, name: "Bridge" })
+const BRIDGE_WITH_FUEL_EVENT = getAbiItem({ abi: LEGACY_ROUTER_ABI, name: "BridgeWithFuel" })
 
 type BridgeArgs = { tokenPortal: Hex; bridgeToken: Hex; amount: bigint; aztecRecipient: Hex; secretHash: Hex; isPrivate: boolean }
 type BridgeWithFuelArgs = {
@@ -195,21 +270,19 @@ type BridgeWithFuelArgs = {
 	isPrivate: boolean
 }
 
-function calldataMatches(rec: SendDepositRecord, input: Hex): boolean {
+function legacyCalldataMatches(rec: SendDepositRecord, input: Hex): boolean {
 	let decoded: { functionName: string; args?: readonly unknown[] }
 	try {
-		decoded = decodeFunctionData({ abi: SWAP_BRIDGE_ROUTER_ABI, data: input })
+		decoded = decodeFunctionData({ abi: LEGACY_ROUTER_ABI, data: input })
 	} catch {
 		return false
 	}
 	const p = decoded.args?.[0] as Record<string, unknown> | undefined
 	if (!p || !rec.token) return false
-	// A private recipient is committed through the secret hash and never published.
-	const recipient = rec.isPrivate ? ZERO_BYTES32 : rec.recipient
 	const common =
 		hexEq(p.tokenPortal, rec.portal) &&
 		hexEq(p.bridgeToken, rec.token.erc20) &&
-		hexEq(p.aztecRecipient, recipient) &&
+		hexEq(p.aztecRecipient, publishedRecipientOf(rec)) &&
 		p.isPrivate === rec.isPrivate
 	if (!common) return false
 	if (rec.intent === "token") {
@@ -225,6 +298,15 @@ function calldataMatches(rec: SendDepositRecord, input: Hex): boolean {
 		f.minFuelOutput === BigInt(rec.fuel.minOutput) &&
 		hexEq(f.tokenSecretHash, rec.secretHashHex) &&
 		hexEq(f.fuelSecretHash, rec.fuel.secretHashHex) &&
-		hexEq(f.fuelRecipient, rec.isPrivate ? (rec.fuel.fpc ?? PRIVATE_FPC_ADDRESS) : rec.recipient)
+		hexEq(f.fuelRecipient, fuelRecipientOf(rec))
 	)
+}
+
+const LEGACY_ROUTER_SHAPE: RouterShape = {
+	eventFor: (rec) => (rec.intent === "token+gas" ? BRIDGE_WITH_FUEL_EVENT : BRIDGE_EVENT),
+	logMatches: (rec, args) =>
+		rec.intent === "token+gas"
+			? hexEq(args?.tokenSecretHash, rec.secretHashHex) && hexEq(args?.fuelSecretHash, rec.fuel?.secretHashHex)
+			: hexEq(args?.secretHash, rec.secretHashHex),
+	calldataMatches: legacyCalldataMatches,
 }

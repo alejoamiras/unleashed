@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils"
 import { describe, expect, it } from "vitest"
 import type { SelectableToken } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
+import type { RowLook } from "./token-rows"
 import TokenTile from "./TokenTile.vue"
 
 const sel = (t: string) => `[data-testid="${t}"]`
@@ -21,7 +22,7 @@ function token(over: Partial<SelectableToken> = {}): SelectableToken {
 	} as SelectableToken
 }
 
-function tile(props: Partial<{ token: SelectableToken; selected: boolean; balance: bigint; decimals: number }> = {}) {
+function tile(props: Partial<{ token: SelectableToken; selected: boolean; balance: bigint; decimals: number; look: RowLook }> = {}) {
 	return mount(TokenTile, { props: { token: token(), selected: false, ...props } })
 }
 
@@ -75,14 +76,31 @@ describe("TokenTile", () => {
 		w.unmount()
 	})
 
-	it("a listed token shows its name AND its trimmed address on the row — the one line a look-alike cannot fake", () => {
-		const w = tile({ token: token({ source: "list" }) })
+	it("a listed token shows its chain and its trimmed address, never the name a look-alike can copy", () => {
+		const w = tile({ token: token({ source: "list" }), look: { sub: "Ethereum · Sepolia" } })
 		const row = w.find(sel(TESTIDS.sendTokenAddress))
 		expect(row.text()).toBe("0xA0b869…06eB48")
 		expect(row.attributes("data-added")).toBeUndefined()
-		expect(w.find(sel(TESTIDS.sendTokenTile)).text()).toContain("USD Coin")
+		expect(w.find(sel(TESTIDS.sendTokenSub)).text()).toBe("Ethereum · Sepolia · 0xA0b869…06eB48")
+		expect(w.find(sel(TESTIDS.sendTokenTile)).text()).not.toContain("USD Coin")
 		// EIP-55 casing in full on the row's title, so the trimmed form is never the only copy.
 		expect(w.find(sel(TESTIDS.sendTokenTile)).attributes("title")).toBe("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")
+		w.unmount()
+	})
+
+	it("carries its chain's badge, and a row the look disables is shown muted and never picked", async () => {
+		const w = tile({
+			token: token({ chainId: 84532, logoKey: `84532:${USDC}` }),
+			look: { sub: "Base Sepolia", withAddress: false, disabled: true },
+		})
+		const root = w.find(sel(TESTIDS.sendTokenTile))
+		expect(w.find(sel(TESTIDS.sendTokenChain)).text()).toBe("BASE")
+		expect(w.find(sel(TESTIDS.sendTokenSub)).text()).toBe("Base Sepolia")
+		expect(w.find(sel(TESTIDS.sendTokenAddress)).exists()).toBe(false)
+		expect(root.attributes("aria-disabled")).toBe("true")
+		expect(w.find(sel(TESTIDS.sendTokenLogo)).attributes("style")).toBeUndefined()
+		await root.trigger("click")
+		expect(w.emitted("select")).toBeUndefined()
 		w.unmount()
 	})
 
@@ -93,13 +111,12 @@ describe("TokenTile", () => {
 		w.unmount()
 	})
 
-	it("strips and caps a listed symbol and name before they reach the DOM", () => {
+	it("strips and caps a listed symbol before it reaches the DOM", () => {
 		const bidi = `USD${String.fromCodePoint(0x202e)}C`
-		const w = tile({ token: token({ source: "list", symbol: bidi, name: "N".repeat(80) }) })
-		const text = w.find(sel(TESTIDS.sendTokenTile)).text()
+		const w = tile({ token: token({ source: "list", symbol: `${bidi}${"N".repeat(80)}` }) })
+		const text = w.find(sel(TESTIDS.sendTokenSymbol)).text()
 		expect(text).not.toContain(String.fromCodePoint(0x202e))
-		expect(text).toContain("USDC")
-		expect(text).toContain(`${"N".repeat(32)}…`)
+		expect(text).toMatch(/^USDCN+…$/)
 		expect(text).not.toContain("N".repeat(33))
 		w.unmount()
 	})

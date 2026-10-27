@@ -30,6 +30,7 @@ import { feeJuiceFor } from "./fee-juice-l2"
 import { deployAccountIfAbsent, freshSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { createL1Clients, createL2Wallet, createNode, loadManifestV2FromConfigArg, sepoliaChain, stopwatch } from "./script-bootstrap"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { walletChainIdOf } from "../src/wallet-chain-id"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -60,6 +61,19 @@ interface CanaryL1 {
 	handler: `0x${string}`
 	minFj: bigint
 	mins: () => string
+}
+
+/** A reset keeps the fee asset and its handler, so only the portal and the chain id tell a retired
+ *  generation's manifest from the network the node serves; depositing on a stale one funds a dead rollup. */
+async function assertManifestIsLive(d: CanaryL1, node: ReturnType<typeof createNode>): Promise<void> {
+	const info = await node.getNodeInfo()
+	const livePortal = info.l1ContractAddresses.feeJuicePortalAddress.toString().toLowerCase()
+	const liveChainId = walletChainIdOf(info.l1ChainId, info.rollupVersion)
+	if (d.portal.toLowerCase() !== livePortal || CONFIG.walletChainId !== liveChainId) {
+		throw new Error(
+			`${CONFIG_PATH} names portal ${d.portal} on chain ${CONFIG.walletChainId}; the node serves ${livePortal} on ${liveChainId} — STOP`,
+		)
+	}
 }
 
 /** The wallet's fail-closed coherence checks (useL1FeeAsset.verifyPortalAsset/verifyHandlerAsset). */
@@ -116,7 +130,7 @@ async function depositDirectFj(d: CanaryL1, plan: Awaited<ReturnType<typeof plan
 	})
 	const depositReceipt = await d.pub.waitForTransactionReceipt({ hash: depositTx })
 	if (depositReceipt.status !== "success") throw new Error("depositToAztecPublic reverted on-chain")
-	const deposit = parseFeeJuiceDeposit(depositReceipt.logs as never)
+	const deposit = parseFeeJuiceDeposit(depositReceipt.logs as never, d.portal)
 	console.log(`deposited: ${deposit.amount} FJ-wei, leaf ${deposit.leafIndex} (${d.mins()})`)
 	if (deposit.amount !== d.minFj) throw new Error(`deposit event amount ${deposit.amount} != minFj ${d.minFj}`)
 	return deposit
@@ -194,11 +208,12 @@ async function main() {
 	}
 	console.log(`direct-FJ lane: asset ${l1.asset} | portal ${l1.portal} | handler ${l1.handler} | minFj ${l1.minFj}`)
 
+	const node = createNode(nodeUrl)
+	await assertManifestIsLive(l1, node)
 	await assertLaneCoherence(l1)
 	await ensureFeeAssetFunded(l1)
 
 	// L2 fresh account first (the deposit binds to its address), sponsored-FPC deploy.
-	const node = createNode(nodeUrl)
 	const ewallet = await createL2Wallet({ nodeUrl, proverEnabled: true })
 	// Bound and checked against the node before depositing: the claim secret lives only in this run.
 	const feeJuice = await feeJuiceFor(ewallet as never, node)

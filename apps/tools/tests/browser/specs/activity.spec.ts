@@ -1,6 +1,6 @@
 /** Activity (cell 39): a bridge's recovery file round-trips, and a backgrounded send reports back. */
 import { isProvisionalRecordId } from "@unleashed/bridge-core"
-import { freshToken, mint, setRoutable } from "@unleashed/bridge-core/sandbox"
+import { freshToken, mint, fuelSwapperOf, setFuelRate } from "@unleashed/bridge-core/sandbox"
 import type { Page } from "@playwright/test"
 import { TESTIDS } from "../../../src/lib/testids"
 import { expect, test } from "../fixtures/test"
@@ -124,7 +124,7 @@ test("cell 40 — two tabs, two sends racing: each stepper adopts only its own r
 	// Tab 2 sends a token its wallet has not granted, so its send opens with the grant prompt — the
 	// one wallet call that comes before its record exists.
 	const fresh = await freshToken(sandbox.clients.l1, { name: "Fresh Raced", symbol: "FRSHR", decimals: 6 }, [l1.address], 1000n * USDC)
-	await setRoutable(sandbox.clients.l1, sandbox.clients.deployment.quoter, fresh)
+	await setFuelRate(sandbox.clients.l1, fuelSwapperOf(sandbox), fresh)
 
 	// Tab 1 as A, tab 2 as B: the same origin, so the journal is one localStorage both tabs read —
 	// and so is the remembered wallet, which tab 2 forgets so it connects on its own. Tab 2 takes

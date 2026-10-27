@@ -36,7 +36,7 @@ const descriptorFor = (network: string) =>
 	) as { aztecVersion: string; artifactSha256: string; expectedAddress: string }
 const sandbox = JSON.parse(readFileSync(FIXTURE, "utf8")) as {
 	bridge: {
-		l1: { factory: string; router: string }
+		l1: { factory: string; depositRouter: string; fuel: Record<string, unknown> }
 		l2: { hub: { address: string }; tokenClassId: string }
 		tokens: Array<{ erc20: string; l2Token: string; nameWord: string; symbolWord: string; decimals: number }>
 	}
@@ -57,10 +57,12 @@ afterEach(() => {
 })
 
 describe("the sandbox generation", () => {
-	it("binds every send to the manifest's own router, factory, hub and token class", async () => {
-		const { SEND_GENERATION, HUB, IS_PLACEHOLDER } = await readerFor(sandbox)
+	it("binds every send to the manifest's own deposit router, factory, hub and token class", async () => {
+		const { SEND_GENERATION, HUB, IS_PLACEHOLDER, LEGACY_ROUTERS, FUEL } = await readerFor(sandbox)
 		expect(IS_PLACEHOLDER).toBe(false)
-		expect(SEND_GENERATION?.router).toBe(sandbox.bridge.l1.router)
+		expect(SEND_GENERATION?.router).toBe(sandbox.bridge.l1.depositRouter)
+		expect(LEGACY_ROUTERS).toEqual([])
+		expect(FUEL).toEqual(sandbox.bridge.l1.fuel)
 		expect(SEND_GENERATION?.factory).toBe(sandbox.bridge.l1.factory)
 		expect(SEND_GENERATION?.hub).toBe(sandbox.bridge.l2.hub.address)
 		expect(SEND_GENERATION?.tokenClassId).toBe(sandbox.bridge.l2.tokenClassId)
@@ -93,7 +95,7 @@ describe("the sandbox generation", () => {
 
 describe("the shipped manifests", () => {
 	it.each([
-		["testnet-bridge.json", "testnet", 11155111, 3415328944],
+		["testnet-bridge.json", "testnet", 11155111, 685146337],
 		["mainnet-bridge.json", "mainnet", 1, 4248422646],
 	])("%s is a valid v2 manifest for its own chain", (file, network, l1ChainId, walletChainId) => {
 		const m = parseManifestV2(JSON.parse(readFileSync(join(PUBLIC_DIR, file as string), "utf8")))
@@ -111,6 +113,26 @@ describe("the shipped manifests", () => {
 		// The app deposits private fuel to PRIVATE_FPC_ADDRESS on every network, so only a network whose
 		// descriptor names that address may enable a bridge.
 		if (m.bridge !== null) expect(descriptor.expectedAddress).toBe(PRIVATE_FPC_ADDRESS)
+	})
+})
+
+describe("a retired router", () => {
+	it("stays reconcilable from legacyRouters and never sends", async () => {
+		const retired = `0x${"ab".repeat(20)}`
+		const l1 = { ...sandbox.bridge.l1, legacyRouters: [retired] }
+		const { SEND_GENERATION, LEGACY_ROUTERS } = await readerFor({ ...sandbox, bridge: { ...sandbox.bridge, l1 } })
+		expect(LEGACY_ROUTERS).toEqual([retired])
+		expect(SEND_GENERATION?.router).toBe(sandbox.bridge.l1.depositRouter)
+	})
+})
+
+describe("a generation without a deposit router", () => {
+	it("sends nothing and has no fuel budgets", async () => {
+		const { depositRouter: _router, fuelSwapper: _swapper, fuel: _fuel, ...l1 } = sandbox.bridge.l1 as Record<string, unknown>
+		const { SEND_GENERATION, FUEL, IS_PLACEHOLDER } = await readerFor({ ...sandbox, bridge: { ...sandbox.bridge, l1 } })
+		expect(IS_PLACEHOLDER).toBe(false)
+		expect(SEND_GENERATION).toBeUndefined()
+		expect(FUEL).toBeUndefined()
 	})
 })
 

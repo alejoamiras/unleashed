@@ -10,7 +10,7 @@ import {PortalFactory} from "../src/PortalFactory.sol";
 import {TokenPortalImpl} from "../src/TokenPortalImpl.sol";
 import {CapturingInbox, CapturingOutbox, FakeRegistry, FakeRollup} from "./mocks/AztecFakes.sol";
 import {PlainERC20} from "./mocks/MetadataERC20s.sol";
-import {PortalImplWithoutPause} from "./mocks/RouterMocks.sol";
+import {PortalImplWithoutPause} from "./mocks/CounterpartyMocks.sol";
 
 /// SYMBOLIC checks for a portal clone (halmos). The clone is created concretely in setUp through
 /// `Clones` directly, NOT through `createPortal`: the factory hashes the register preimage with

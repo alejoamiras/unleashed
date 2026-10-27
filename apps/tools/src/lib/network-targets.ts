@@ -13,6 +13,7 @@
  * identity is read from the run's artifacts by `local-target-loader.ts` (Node) and `define`d into
  * the bundle as `__LOCAL_TARGET__`, so a testnet or mainnet build never carries it.
  */
+import type { SandboxLifiContracts } from "@unleashed/bridge-core"
 import {
 	MAINNET_L1_CHAIN_ID,
 	MAINNET_ROLLUP_VERSION,
@@ -49,11 +50,18 @@ export interface ToolsTarget {
 	l1ExplorerBaseUrl: string
 	/** CSP `connect-src` for this target — the node host MUST be listed or the app can't reach it. */
 	cspConnectSrc: string
+	/** Keyless read RPCs per chain id, preferred first, each serving `eth_getLogs` without silently truncating it:
+	 *  what watches a cross-chain deposit without a wallet. A chain absent here has no wallet-independent reads. */
+	readRpcUrls: Readonly<Record<number, readonly string[]>>
+	/** The Across API base the testnet rail asks for its relay fee; absent where no route is quoted through it. */
+	acrossApiUrl?: string
 	/** Web (iframe) wallets discovery probes besides browser extensions. Only the local target lists any. */
 	webWalletUrls?: readonly string[]
 	/** Token-list digests accepted in place of bridge-core's pin. Only the local target sets any: its
 	 *  browser suite answers the list from fixtures. */
 	tokenListSha256?: readonly string[]
+	/** The sandbox's LI.FI and Across stand-ins, booked for its two anvils. Only the local target sets them. */
+	sandboxLifi?: SandboxLifiContracts
 }
 
 export const LOCAL_L1_CHAIN_ID = 31337
@@ -70,6 +78,16 @@ const TOKEN_LIST_SOURCE = "https://cdn.jsdelivr.net/npm/@uniswap/default-token-l
  */
 const TESTNET_NODE_SOURCE = "https://aztec-testnet.drpc.org"
 
+/** PublicNode answered consistent supersets over 1k–50k-block `Transfer` scans; the gateways that truncated were refused. */
+const SEPOLIA_READ_RPCS = ["https://ethereum-sepolia-rpc.publicnode.com"] as const
+/** bridge-core's `SOURCE_CHAINS[84532].rpcUrls`, spelled out to stay Node-safe; the test pins the two equal. */
+const BASE_SEPOLIA_READ_RPCS = ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"] as const
+/** The CSP sources for a target's read RPCs and Across API: each origin once. */
+function readOrigins(readRpcUrls: Readonly<Record<number, readonly string[]>>, acrossApiUrl?: string): string[] {
+	const urls = [...Object.values(readRpcUrls).flat(), ...(acrossApiUrl ? [acrossApiUrl] : [])]
+	return [...new Set(urls.map((u) => new URL(u).origin))]
+}
+
 /** Everything the local target needs that only a booted sandbox knows. */
 export interface LocalTargetConfig {
 	nodeUrl: string
@@ -80,6 +98,14 @@ export interface LocalTargetConfig {
 	webWalletUrls: readonly string[]
 	/** SHA-256 of each fixture the browser suite answers the token list with. */
 	tokenListSha256?: readonly string[]
+	/** The sandbox's L1 anvil. */
+	l1RpcUrl?: string
+	/** The sandbox's source-chain anvil, where its cross-chain half runs. */
+	source?: { chainId: number; rpcUrl: string }
+	/** The sandbox's loopback Across API. */
+	acrossApiUrl?: string
+	/** The sandbox's LI.FI and Across stand-ins. */
+	sandboxLifi?: SandboxLifiContracts
 }
 
 const loopback = (protocol: string) => `${protocol}://127.0.0.1:* ${protocol}://localhost:*`
@@ -87,6 +113,10 @@ const loopback = (protocol: string) => `${protocol}://127.0.0.1:* ${protocol}://
 /** Pure: the local target for one sandbox run. */
 export function localTarget(cfg: LocalTargetConfig): ToolsTarget {
 	const walletOrigins = cfg.webWalletUrls.map((u) => new URL(u).origin)
+	// Loopback only, so the CSP below already admits every one of them.
+	const readRpcUrls: Record<number, readonly string[]> = {}
+	if (cfg.l1RpcUrl) readRpcUrls[LOCAL_L1_CHAIN_ID] = [cfg.l1RpcUrl]
+	if (cfg.source) readRpcUrls[cfg.source.chainId] = [cfg.source.rpcUrl]
 	return {
 		key: "local",
 		l1ChainId: LOCAL_L1_CHAIN_ID,
@@ -101,7 +131,15 @@ export function localTarget(cfg: LocalTargetConfig): ToolsTarget {
 		cspConnectSrc: `'self' data: blob: ${loopback("http")} ${loopback("ws")} ${walletOrigins.join(" ")} ${TOKEN_LIST_SOURCE}`,
 		webWalletUrls: cfg.webWalletUrls,
 		...(cfg.tokenListSha256 ? { tokenListSha256: cfg.tokenListSha256 } : {}),
+		readRpcUrls,
+		...(cfg.acrossApiUrl ? { acrossApiUrl: cfg.acrossApiUrl } : {}),
+		...(cfg.sandboxLifi ? { sandboxLifi: cfg.sandboxLifi } : {}),
 	}
+}
+
+const TESTNET_READ_RPCS: Readonly<Record<number, readonly string[]>> = {
+	[TESTNET_L1_CHAIN_ID]: SEPOLIA_READ_RPCS,
+	84532: BASE_SEPOLIA_READ_RPCS,
 }
 
 export const TESTNET_TARGET: ToolsTarget = {
@@ -115,9 +153,11 @@ export const TESTNET_TARGET: ToolsTarget = {
 	acceptsPreviewHosts: true,
 	nodeUrl: TESTNET_NODE_SOURCE,
 	l1ExplorerBaseUrl: "https://sepolia.etherscan.io",
-	// Exactly the node, plus the community token list the send wizard's catalog fetches — omitted, the
-	// list load fails and the catalog degrades to manifest-only.
-	cspConnectSrc: `'self' data: blob: ${TESTNET_NODE_SOURCE} ${TOKEN_LIST_SOURCE}`,
+	// dRPC's keyless node (the bundle holds no key), the community token list the send wizard's catalog
+	// fetches (omitted, the catalog degrades to manifest-only), and the read RPCs a
+	// cross-chain send is built and watched through. Testnet sends ride fixed terms, so Across's API is never asked.
+	cspConnectSrc: ["'self' data: blob:", TESTNET_NODE_SOURCE, TOKEN_LIST_SOURCE, ...readOrigins(TESTNET_READ_RPCS)].join(" "),
+	readRpcUrls: TESTNET_READ_RPCS,
 }
 
 export const MAINNET_TARGET: ToolsTarget = {
@@ -135,6 +175,7 @@ export const MAINNET_TARGET: ToolsTarget = {
 	// list. Every remote origin is therefore removed — the narrowest CSP a build can ship, and the one
 	// that makes a stray network call from this target fail loudly instead of reaching a live chain.
 	cspConnectSrc: "'self' data: blob:",
+	readRpcUrls: {},
 }
 
 /** The bundle-time local config, present only in a `vite.local.config.mts` build. */

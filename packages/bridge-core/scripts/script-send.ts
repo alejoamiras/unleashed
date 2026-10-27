@@ -1,17 +1,13 @@
 /**
  * The manifest→send bindings the operator scripts share: which token a run targets, the generation
- * record every router call is built from, the fuel leg's route + signed floor, and the token block
+ * record every router call is built from, the fuel leg's quote + signed floor, and the token block
  * a hub claim consumes.
  */
-import type { Address, PublicClient } from "viem"
-import { signedMinFuelOutput } from "../src/gas-share"
+import type { Address, Hex } from "viem"
+import { type FuelQuoteReads, manifestFuelProvider } from "../src/fuel-quote"
 import type { JournalTokenBlock } from "../src/journal"
-import type { PoolKey } from "../src/l1"
-import type { BridgeBlock, ManifestToken } from "../src/manifest-v2"
-import { discoverFuelRoute } from "../src/route-discovery"
+import type { BridgeBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
 export { sendGenerationOf } from "../src/send-generation"
-
-export type SwapBlock = NonNullable<BridgeBlock["l1"]["swap"]>
 
 /** `--token <erc20>`, or the manifest's first token when the flag is absent. */
 export function selectToken(bridge: BridgeBlock, argv: readonly string[]): ManifestToken {
@@ -26,52 +22,36 @@ export function selectToken(bridge: BridgeBlock, argv: readonly string[]): Manif
 	)
 }
 
-/** The swap block, or a refusal — a fueled run has no route to quote without one. */
-export function requireSwap(bridge: BridgeBlock): SwapBlock {
-	if (!bridge.l1.swap) throw new Error("the manifest carries no bridge.l1.swap — a fueled send has nothing to quote")
-	return bridge.l1.swap
+/** The fuel budgets, or a refusal — a fueled run has nothing to size or floor its slice with without them. */
+export function requireFuel(bridge: BridgeBlock): NonNullable<BridgeBlock["l1"]["fuel"]> {
+	if (!bridge.l1.depositRouter || !bridge.l1.fuel) {
+		throw new Error("the manifest carries no bridge.l1.depositRouter with its fuel budgets — a fueled send has nothing to quote")
+	}
+	return bridge.l1.fuel
 }
 
 export interface FuelLegPlan {
-	path: PoolKey[]
-	zeroForOnes: boolean[]
-	/** What the probe says `fuelAmount` buys right now — display + floor input, never the claim amount. */
+	/** The router's swap call for exactly the slice, its `_minAmountOut` set to `minFuelOutput`. */
+	swapData: Hex
+	/** What the provider says the slice buys right now — display + floor input, never the claim amount. */
 	quote: bigint
 	minFuelOutput: bigint
 }
 
 /**
- * The gas slice's route, probed at the slice itself so the returned quote IS this send's expectation.
- * The fee asset is refused rather than silently routed: its gas leg is an identity swap, which
- * belongs to the direct fee-juice lane.
+ * The gas slice's quote at the slice itself, so the returned quote IS this send's expectation. The
+ * fee asset is refused rather than quoted: its gas leg needs no swap, which belongs to the direct
+ * fee-juice lane.
  */
-export async function planFuelLeg(
-	pub: PublicClient,
-	swap: SwapBlock,
-	feeAsset: Address,
-	erc20: Address,
-	fuelAmount: bigint,
-): Promise<FuelLegPlan> {
-	const outcome = await discoverFuelRoute({
-		client: pub,
-		quoter: swap.quoter as Address,
-		multicall3: swap.multicall3 as Address,
-		token: erc20,
-		feeAsset,
-		weth: swap.weth as Address,
-		feeJuice: swap.feeJuice as Address,
-		tiers: swap.tiers,
-		ethFj: swap.ethFj,
-		probeAmount: fuelAmount,
-	})
-	if (outcome.kind === "identity") throw new Error(`${erc20} IS the fee asset — its gas leg needs no swap; use the direct fee-juice lane`)
-	if (outcome.kind !== "route") throw new Error(`no fuel route for ${erc20} (${outcome.kind}) — seed a pool or pick another token; STOP`)
-	return {
-		path: outcome.route.path,
-		zeroForOnes: outcome.route.zeroForOnes,
-		quote: outcome.quoteOut,
-		minFuelOutput: signedMinFuelOutput(outcome.quoteOut, swap.slippageBps, BigInt(swap.minFuelFj)),
+export async function planFuelLeg(pub: FuelQuoteReads, m: ManifestV2, erc20: Address, fuelAmount: bigint): Promise<FuelLegPlan> {
+	if (erc20.toLowerCase() === m.feeJuice.asset.toLowerCase()) {
+		throw new Error(`${erc20} IS the fee asset — its gas leg needs no swap; use the direct fee-juice lane`)
 	}
+	const provider = manifestFuelProvider(m, pub)
+	if (!provider) throw new Error("the manifest names no fuel swapper this script can quote — STOP")
+	const r = await provider.quote(erc20, fuelAmount)
+	if (!r.ok) throw new Error(`no fuel quote for ${erc20} (${r.reason}) — give the swapper a rate or pick another token; STOP`)
+	return { swapData: r.quote.swapData, quote: r.quote.expectedOut, minFuelOutput: r.quote.minOut }
 }
 
 /** The read-back block a claim consumes; its derived L2 token must be the manifest's. */

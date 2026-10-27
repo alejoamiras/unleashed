@@ -4,6 +4,7 @@
  * on one surface never disagrees with the other. Pure: no watcher, timer or clock lives here.
  */
 import {
+	type AnyJournalRecord,
 	type BridgeJournalRecord,
 	type DepositJournalRecord,
 	type WithdrawJournalRecord,
@@ -13,6 +14,7 @@ import {
 } from "@unleashed/bridge-core"
 import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import { isTerminalAttention } from "@/lib/bridge-steps"
+import { type CrossChainPhase, crossChainPhase, sendView } from "@/lib/crosschain-activity"
 import { decideStandaloneFuelRecovery, type StandaloneFuelRecovery } from "@/lib/fuel-claim-state"
 
 export type RecordStage = ReturnType<typeof deriveDepositStage> | ReturnType<typeof deriveWithdrawStage>
@@ -57,9 +59,11 @@ export interface RecordState {
 	/** The token was claimed by another submitter. CLAIM, where still shown, verifies that on-chain
 	 *  and finishes the record (or restores the ordinary claim if the marker was wrong). */
 	claimedByOther: boolean
+	/** A cross-chain record before its Ethereum deposit, or ended by an outcome: nothing to claim. */
+	crossChain: CrossChainPhase | null
 }
 
-export function accountOf(rec: BridgeJournalRecord, wallet: WalletView): RecordAccount | null {
+export function accountOf(rec: AnyJournalRecord, wallet: WalletView): RecordAccount | null {
 	if (rec.direction !== "deposit") return null
 	const addr = (rec as DepositJournalRecord).recipient
 	// The journal is persisted state — a tampered record can carry a non-string recipient.
@@ -106,7 +110,11 @@ function exitAttachableOf(rec: BridgeJournalRecord, stage: RecordStage): boolean
 	return "token" in rec && !!rec.token && !(rec as { exitTxHash?: string }).exitTxHash
 }
 
-export function recordState(rec: BridgeJournalRecord, rt: RecordRuntime, wallet: WalletView): RecordState {
+/** A cross-chain record is read as the schema-3 deposit it extends; before its deposit lands, or once
+ *  an outcome ends it, there is no deposit leg to recover and so nothing to claim. */
+export function recordState(record: AnyJournalRecord, rt: RecordRuntime, wallet: WalletView): RecordState {
+	const crossChain = crossChainPhase(record)
+	const rec = sendView(record)
 	const stage = stageOf(rec, rt)
 	const attention = rt.attention
 	const blocked = rec.blocked
@@ -116,7 +124,7 @@ export function recordState(rec: BridgeJournalRecord, rt: RecordRuntime, wallet:
 	const actionable = !blocked && !isTerminalAttention(attention)
 	const isFuel = assetKindOf(rec) === "fee-juice"
 	const fuel = rec.direction === "deposit" ? (rec as DepositJournalRecord).fuel : undefined
-	const depositLegRecoverable = depositLegRecoverableOf(rec, stage)
+	const depositLegRecoverable = crossChain === null && depositLegRecoverableOf(rec, stage)
 	const { claimedByOther, verifiable: claimedByOtherVerifiable } = claimedByOtherFacts(rec)
 	const idle = actionable && !busy
 	const showClaim =
@@ -158,5 +166,6 @@ export function recordState(rec: BridgeJournalRecord, rt: RecordRuntime, wallet:
 		fuelRecoverable: fuelRecovery === "offer",
 		showClaimWithoutFuel: fuel !== undefined && !isFuel && rec.completedAt === undefined && retry && actionable,
 		claimedByOther,
+		crossChain,
 	}
 }

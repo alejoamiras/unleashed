@@ -127,7 +127,7 @@ async function main() {
 	})
 	const depReceipt = await pub.waitForTransactionReceipt({ hash: depHash })
 	if (depReceipt.status !== "success") throw new Error("depositToAztecPublic reverted")
-	const dep = parseFeeJuiceDeposit(depReceipt.logs as never)
+	const dep = parseFeeJuiceDeposit(depReceipt.logs as never, portal)
 	console.log(`deposited ${dep.amount} FJ-wei to the FPC lane, leaf ${dep.leafIndex} (${mins()})`)
 
 	// 3. The carrier-less claim, fees re-priced per attempt (the stranded-static-cap lesson).
@@ -173,7 +173,7 @@ async function main() {
 	const gained = after - before
 	if (gained <= 0n || gained >= dust) throw new Error(`FPC private balance delta ${gained} out of (0, ${dust}) — canary FAILED`)
 	console.log(`\n✅ FPC DUST CANARY PASSED — private balance +${gained} FJ-wei (fee ${dust - gained}) in ${mins()}.`)
-	console.log(`   Calibrated minFuelFj (2× live ceiling): ${dust} — set bridge.l1.swap.minFuelFj in the candidate.`)
+	console.log(`   Calibrated minFuelFj (2× live ceiling): ${dust} — set bridge.l1.fuel.minFuelFj in the candidate.`)
 }
 
 main().catch((e) => {

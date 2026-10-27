@@ -19,10 +19,11 @@ defineProps<{ title: string; subline: string }>()
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex-wrap: wrap;
 	gap: 16px;
 	position: relative;
 	min-height: 72px;
-	padding: 0 36px;
+	padding: 12px 36px;
 }
 
 /* Drawn over the header's last 2px, so the perforation never moves the layout between themes. */
@@ -34,7 +35,9 @@ defineProps<{ title: string; subline: string }>()
 	pointer-events: none;
 }
 
+/* Chips that leave the title under 300px wrap below it rather than squeeze it. */
 .titles {
+	flex: 1 1 300px;
 	min-width: 0;
 }
 
@@ -48,9 +51,6 @@ h1 {
 	margin: 6px 0 0;
 	font: 400 13px/1.4 var(--ul-font-body);
 	color: var(--ul-ink-2);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
 }
 
 .wallets {
@@ -69,6 +69,7 @@ h1 {
 	}
 
 	.titles {
+		flex: none;
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
@@ -84,8 +85,9 @@ h1 {
 		white-space: normal;
 	}
 
+	/* Two chips share the row; a connect button too wide for half of it wraps to its own line. */
 	.wallets {
-		flex-direction: column;
+		flex-wrap: wrap;
 		align-items: stretch;
 		gap: 6px;
 	}
