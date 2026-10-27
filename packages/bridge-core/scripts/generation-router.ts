@@ -13,7 +13,7 @@ import type { Address } from "viem"
 import z from "zod"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
 import type { L1Ctx } from "../src/flows"
-import { type BridgeBlock, evmAddressV2, type ManifestV2, routingSchema } from "../src/manifest-v2"
+import { type BridgeBlock, evmHexAddress, type ManifestV2, routingSchema } from "../src/manifest-v2"
 import {
 	type AdoptableDeploy,
 	assertBindings,
@@ -75,7 +75,7 @@ const eq = (a: string | undefined, b: string | undefined) => (a ?? "").toLowerCa
 
 /** The rates file: `{ "<erc20>": "<fee-asset base units per whole token>" }`, every rate positive. */
 export function parseRates(raw: unknown): Record<string, bigint> {
-	const parsed = z.record(evmAddressV2, z.string().regex(/^[1-9]\d*$/, "expected a positive base-10 integer string")).safeParse(raw)
+	const parsed = z.record(evmHexAddress, z.string().regex(/^[1-9]\d*$/, "expected a positive base-10 integer string")).safeParse(raw)
 	if (!parsed.success) {
 		throw new Error(`rates: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`)
 	}
