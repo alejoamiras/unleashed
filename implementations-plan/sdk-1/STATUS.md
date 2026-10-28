@@ -1,0 +1,14 @@
+- 2026-10-28 phase 0.75: adopted worktree sdk-1 (branch worktree-sdk-1, base fb90e366); recon started (3 Sonnet Explore agents)
+- 2026-10-28 recon done: recon.md written (3 Sonnet explorers + spot checks)
+- 2026-10-28 deep step 1: drafts started (Codex sol high, Opus Plan, main)
+- 2026-10-28 Codex draft done (session 01a183a4, sol high)
+- 2026-10-28 Opus draft done; consolidated plan.md + OWNER-ASKS.md + ledger D1-D16
+- 2026-10-28 deep step 3: contradiction check sent (Codex resumed, Opus resumed)
+- 2026-10-28 ORCHY-STEER: relayer-1 adds bridge-core seam (./fill-testnet export; canaryAccountFromEnv, connectFillRoute, fillSourceDeposit {relayHash}, boundedGasTerms re-export; reserveSandboxPorts in ./sandbox) used by new packages/testnet-relayer; merge order relayer-1 then sdk-1. Plan keeps the seam in bridge-core and adds the relayer workspace to a2's gate.
+- 2026-10-28 ORCHY-STEER: relayer moves to a Cloudflare Worker; it adds a Worker-safe fill core in bridge-core src (no Node-only imports). Plan keeps it Worker-runnable.
+- 2026-10-28 contradiction check: Codex reject→8 fixes applied; Opus holds-after-fixes→10 fixes applied (D17-D21)
+- 2026-10-28 deep step 4: double audit started (Codex resumed, fresh Opus)
+- 2026-10-28 double audit: Codex reject (H: manifest trust roots, publish OIDC exposure; M: undeclared @aztec-labs/ethereum, fee-budget global cache, placeholder parse, capabilitiesFor tokens); Opus conditional (H1 anchors, M1 publish, M2 step order, M3 FPC constant sweep, M4 cache, L1-L5). All accepted; applying.
+- 2026-10-28 double audit fixes applied (D11 trust roots, D22-D24); plan trimmed to 618 lines; final fresh Codex pass started (new session, sol high)
+- 2026-10-28 final fresh Codex pass: reject (H hostile registry→Outbox, M capabilitiesFor inputs, L paired builds); all accepted (D11, D25, 3.2); verification round: approve
+- 2026-10-28 plan complete; committed on worktree-sdk-1; awaiting the orchestrator's approval and the owner's answers (OWNER-ASKS §1-§6)

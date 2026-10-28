@@ -1,0 +1,149 @@
+# sdk-1: owner asks
+
+Every arc after a1 waits for §1 and §2. a1 (the mainnet fuel route: a pause gate contract, the manifest block, the
+deploy and verify tooling, the runbook) needs none of these answers and ships first. Nothing here changes a screen.
+
+## §1 The SDK's public interface (ask5)
+
+**What ships now.** Nothing of the interface. a1 ships; a2–a5 wait for this answer.
+
+**Recommendation.** The SDK takes the caller's wallets (an Aztec wallet from `@aztec-labs/wallet-sdk`, a viem wallet
+client for Ethereum), uses plain promises, awaits the caller's storage before every irreversible step, and reports
+typed, ordered events. Two entry points: **fuel** (the fee asset or any priced token, into the Fee Juice portal as
+public or private Fee Juice) and **bridge** (a token, or a token plus gas, through the hub).
+
+```ts
+// "@unleashed/sdk" (name: §2)
+export function parseNetwork(manifest: unknown, r: Reads): Promise<Network>
+  // strict; re-derives addresses; refuses a non-canonical Permit2, a Fee Juice portal or registry the Aztec node does
+  // not report, a router or factory whose code is not the pinned build, token portals bound to another rollup's
+  // Inbox or Outbox, a slippage above 3 %, a line the SDK does not run
+export interface Network { readonly l1ChainId: number; readonly walletChainId: number
+  readonly fuel: FuelRoute; readonly bridge?: TokenRoute }           // bridge absent on a fuel-only network
+export interface Reads { l1: PublicClient; aztecNode: AztecNode; fetch?: typeof fetch } // li.quest is keyless
+export type Privacy = "public" | "private"
+
+export interface RunOptions {
+  /** Awaited before the first wallet prompt, then before each event that names a new fact. A rejection before the
+   *  signature aborts with nothing signed. Store `secrets` sealed; they are never in a record or an event. */
+  persist(record: DepositRecord, secrets?: { claimSalt?: Fr; fuelSalt?: Fr }): Promise<void>
+  onEvent?(e: TransferEvent): void          // display only; a throw here never changes the run
+  signal?: AbortSignal                      // stops waiting; never cancels a sent transaction
+}
+
+// "@unleashed/sdk/fuel": does not load the 3 MB hub artifact
+export function probeFuel(net: Network, r: Reads, token: Address, probeIn: bigint): Promise<FuelRate> // sizing, no floor
+export function quoteFuel(net: Network, r: Reads,
+  q: { token: Address; amount: bigint; recipient: AztecAddress; privacy: Privacy }): Promise<FuelQuote>
+export function depositFuel(net: Network, r: Reads, l1: WalletClient, quote: FuelQuote, run: RunOptions): Promise<DepositRecord>
+export function claimFuel(net: Network, r: Reads, aztec: { wallet: Wallet; account: AztecAddress },
+  rec: DepositRecord, run: RunOptions & { secrets?: { fuelSalt?: Fr } }): Promise<ClaimOutcome>
+
+// "@unleashed/sdk/bridge"
+export function resolveToken(net: Network, r: Reads, erc20: Address): Promise<BridgeToken>
+  // portal, name/symbol words, decimals, derived L2 address; any ERC-20, listed or not
+export function quoteBridge(net: Network, r: Reads, q: { token: BridgeToken; amount: bigint; recipient: AztecAddress;
+  privacy: Privacy; gas?: { txTarget: number } }): Promise<BridgeQuote>
+export function depositToken(net: Network, r: Reads, l1: WalletClient, quote: BridgeQuote, run: RunOptions): Promise<DepositRecord>
+export function claimToken(net: Network, r: Reads, aztec: { wallet: Wallet; account: AztecAddress },
+  rec: DepositRecord, run: RunOptions & { secrets?: { claimSalt?: Fr; fuelSalt?: Fr } }): Promise<ClaimOutcome>
+export function capabilitiesFor(net: Network, need: { fuel?: true; tokens?: BridgeToken[] }): AppCapabilities
+  // exact addresses only (a chosen token's L2 address included); merge into your wallet request
+
+export type TransferEvent = { id: Hex; seq: number } & (      // seq strictly increases within one call
+  | { type: "prepared" }                                       // record and secrets stored
+  | { type: "approval"; status: "sent" | "confirmed"; txHash: Hex }   // only when the Permit2 allowance is short
+  | { type: "signature-requested" }
+  | { type: "deposit-sent"; txHash: Hex }
+  | { type: "deposit-confirmed"; leaves: Leaves }
+  | { type: "arrival"; stage: "counting" | "unfolded" | "wallet-sync"; blocksLeft?: number; checkpointsLeft?: number }
+  | { type: "claimable" }
+  | { type: "registration-sent"; txHash: string }             // a private first claim of a token
+  | { type: "claim-sent"; txHash: string; payer: "fuel" | "fpc-credit" | "own-gas" }
+  | { type: "claim-proposed"; txHash: string }                // display only, not settlement
+  | { type: "settled"; via: "claim" | "claimed-elsewhere"; txHash?: string })
+
+export class BridgeError extends Error {
+  readonly code: "wrong-chain" | "wrong-aztec-network" | "unsupported-line" | "user-rejected" | "persist-failed"
+    | "no-fuel-route" | "quote-moved" | "below-floor" | "paused" | "deposit-reverted" | "receipt-mismatch"
+    | "message-timeout" | "message-invalid" | "fee-stop" | "registration-dropped" | "registration-reverted"
+    | "claim-not-visible" | "claim-reverted" | "receipt-timeout"
+  readonly submission: "none" | "submitted" | "unknown"     // did anything reach a chain for this transfer?
+  readonly retry: "safe" | "after-wait" | "never"
+}
+```
+
+```ts
+// A gas-only deposit, end to end
+const net = await parseNetwork(manifestJson, reads)
+const quote = await quoteFuel(net, reads, { token: USDC, amount: 25_000_000n, recipient, privacy: "private" })
+const rec = await depositFuel(net, reads, walletClient, quote, { persist: store.save, onEvent: render })
+const done = await claimFuel(net, reads, { wallet, account: recipient }, rec,
+  { persist: store.save, onEvent: render, secrets: await store.secretsOf(rec.id) })
+```
+
+**The options the panel weighed, and why this one.**
+
+| Question | Option A (recommended) | Option B | Why A |
+|---|---|---|---|
+| Inputs | The SDK takes the wallets | It returns unsigned transactions for you to submit | A claim is not one transaction: whether it registers is decided at claim time, a private first claim is two transactions with a wait between them, and the fee choice reads the wallet. Unsigned data would hand every integrator the steps that strand funds when done wrong. A Safe or smart account still works through an EIP-1193 adapter; the low-level builders stay available in `@unleashed/sdk/protocol`. |
+| Style | Plain promises | Effect 4 | Integrators and the Vue app use promises; Effect would add a second surface. Aztec proving cannot be interrupted. Effect 4 is a new major release. |
+| Shape | Free functions per entry point | One `createBridge()` object | A gas-only app loads no hub artifact; nothing holds a signer longer than one call. |
+| Failures | Throw `BridgeError` with `submission` and `retry` | Return `Result` values | Same information, less unwrapping. |
+
+**Bundled networks (yes or no).** `@unleashed/sdk/networks` could ship the promoted testnet and mainnet manifests, so an
+integrator needs no file from our hosts. This is also a security choice: the checks above read the chain through the
+integrator's RPC, so a manifest from a bundled, reviewed release is the strongest root an integrator can have. Cost: a
+testnet reset then needs an SDK release (an Aztec line bump already does). Recommendation: yes.
+
+**What we need from you.** Approve, or name the changes.
+
+## §2 The npm package name
+
+**What ships now.** The workspace is `packages/sdk`, named `@unleashed/sdk` inside the repository until you pick.
+
+Candidates: `@unleashed/sdk` (needs the `@unleashed` npm organization; its owner is unverified, and no package exists
+under it), `@unleashed-systems/sdk`, `@alejoamiras/unleashed`. A name outside `@unleashed/` also changes the root
+workspace filter (`--filter '@unleashed/*'`) and `scripts/ci-cd/workspaces.test.ts`. Recommendation: `@unleashed/sdk`
+if you own or can create the organization.
+
+## §3 Mainnet runs another Aztec line
+
+**What ships now.** a1's fuel route is built, with its mainnet fork test written; the owner's keyed run executes that
+test before any promotion, and nothing is deployed. The SDK refuses every mainnet deposit and claim with
+`unsupported-line` until the mainnet node runs the SDK's line.
+
+Mainnet runs Alpha 5.0.1; this repository and the SDK are on 6.0.0 (`MAINNET_ROLLUP_VERSION`, the mainnet PrivateFPC
+descriptor at 5.0.1). The Ethereum half of a fuel deposit works on either line; the Aztec claim from a 6.0.0 client
+against a 5.0.1 node is unproven. Options:
+
+- **A (recommended):** wait for Alpha to reach the SDK's line; the SDK refuses mainnet deposits and claims until
+  then, before any wallet prompt; the route's deploy and promotion wait too.
+- **B:** let the SDK make public mainnet fuel deposits now, leaving the claim to the user's own wallet. Funds stay
+  claimable by the recipient, but our flow would stop halfway.
+- **C:** fund support for the older line in the SDK (a second set of artifacts and payment methods).
+
+## §4 SDK v1 scope
+
+**What ships now.** v1 has ask5's flows: fuel (identity and swap, public and private) and bridge (token, token plus
+gas). Exits, the cross-chain source leg (sends from Base and other chains), Drip and the AZTEC mint stay on private
+code; the app keeps them unchanged. Cross-chain claims already run on the SDK. Recommendation: keep v1 to ask5's
+flows; add exits and cross-chain sends in a later version if integrators ask.
+
+## §5 Who owns the mainnet pause gate
+
+**What ships now.** The gate takes its owner as a constructor argument; nothing is deployed.
+
+The gate is the switch that pauses every mainnet fuel deposit. Options: the pinned mainnet signer that `live-intent`
+already names (`0xE75e…059c`), or a multisig. Recommendation: a multisig, since the switch guards live funds.
+
+## §6 The first npm publish
+
+**What ships now.** a5 ships the publish workflow (two jobs; the publish job alone holds the OIDC token) and runs
+nothing.
+
+npm's trusted publishing is configured on a package that already exists, so the first version needs another
+credential. Options: **A (recommended)** you publish the first version from your own machine with npm's two-factor
+prompt (no stored token), then name the workflow and its `npm-publish` environment as the trusted publisher; **B** a
+short-lived granular token, used once and deleted. Either way, every later version goes through the workflow with
+provenance.
