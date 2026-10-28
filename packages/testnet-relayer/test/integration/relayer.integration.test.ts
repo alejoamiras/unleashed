@@ -48,13 +48,12 @@ const RECEIVER = lifiBook(11155111).receiverAcrossV4
 const USDC = 1_000_000n
 const route = testnetRoute(manifest, FILLER)
 
-/** `url` answering Sepolia's 2 wei priority fee where anvil hard-codes 1 gwei; `before` runs ahead of each request. */
-function sepoliaTransport(url: string, before?: (method: string) => Promise<void>): Transport {
+/** `url` answering Sepolia's 2 wei priority fee where anvil hard-codes 1 gwei. */
+function sepoliaTransport(url: string): Transport {
 	const base = http(url)({})
 	return custom({
 		async request({ method, params }) {
 			if (method === "eth_maxPriorityFeePerGas") return "0x2"
-			await before?.(method)
 			return base.request({ method, params })
 		},
 	})
@@ -79,8 +78,7 @@ function side(url: string, chainId: number) {
 	return {
 		pub: createPublicClient({ chain, transport: sepoliaTransport(url) }),
 		test: createTestClient({ chain, mode: "anvil", transport: http(url) }),
-		wallet: (key: Hex, transport = sepoliaTransport(url)) =>
-			createWalletClient({ account: privateKeyToAccount(key), chain, transport }),
+		wallet: (key: Hex) => createWalletClient({ account: privateKeyToAccount(key), chain, transport: sepoliaTransport(url) }),
 	}
 }
 type Side = ReturnType<typeof side>
@@ -240,7 +238,7 @@ describe.skipIf(!INTEGRATION)("the relayer on two anvils", () => {
 		expect(await status(ours.relayHash)).toBe(2n)
 	})
 
-	it("loses no token when another run's approval, fill and revoke land between a run's approval and its fill", async () => {
+	it("loses no token when another run's approval and fill land between a run's approval and its fill", async () => {
 		await mint(dst, SEPOLIA_USDC, FILLER, 20n * USDC)
 		const older = await app(3n * USDC)
 		const newer = await app(4n * USDC)
@@ -253,16 +251,18 @@ describe.skipIf(!INTEGRATION)("the relayer on two anvils", () => {
 		const resumed = new Promise<void>((r) => {
 			resume = r
 		})
-		// The second nonce read is the fill's: the first run's approval has landed and its fill was simulated.
-		let nonceReads = 0
-		const held = dst.wallet(
-			KEYS.filler,
-			sepoliaTransport(pair.destinationUrl, async (method) => {
-				if (method !== "eth_getTransactionCount" || ++nonceReads !== 2) return
-				reached()
-				await resumed
-			}),
-		)
+		// Held before its fill is signed: the first run's approval has landed and its fill was simulated.
+		const wallet = dst.wallet(KEYS.filler)
+		const held = {
+			...wallet,
+			writeContract: async (w: Parameters<typeof wallet.writeContract>[0]) => {
+				if (w.functionName === "fillRelay") {
+					reached()
+					await resumed
+				}
+				return wallet.writeContract(w)
+			},
+		} as WalletClient
 		const lines: RelayLine[] = []
 		const first = run(lines, { wallet: held })
 		await Promise.race([

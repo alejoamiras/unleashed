@@ -18,8 +18,9 @@
 ## Fix loop, round 1
 
 - Two overlapping runs held at their first broadcast sign the same approval at the same nonce: anvil sees one
-  transaction, so such a barrier proves nothing about interleaving. A run held at its fill's nonce read (the wallet
-  transport's second `eth_getTransactionCount`) lets another run approve, fill and revoke in between; the held fill
-  then reverts on chain against the revoked allowance, which is the overlap the security section describes.
+  transaction, so such a barrier proves nothing about interleaving. A run held at its wallet's `fillRelay` write lets
+  another run approve and fill in between (an exact fill uses the allowance up); the held fill then reverts on chain,
+  which is the overlap the security section describes. Hold at a write by `functionName`, never by counting RPC
+  calls: viem can read a nonce through `eth_fillTransaction`, with `eth_getTransactionCount` as its fallback.
 - A source node lagging behind a deposit is one transport answering `eth_blockNumber` with a pinned head.
 - `new Map` buckets built with `[...old, x]` per log are quadratic in attacker-chosen keys; append in place.
