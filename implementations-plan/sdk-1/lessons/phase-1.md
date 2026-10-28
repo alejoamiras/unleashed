@@ -25,3 +25,6 @@
   so a build that dropped real spans fails unless their deployed values are zero.
 - **Review round 3.** Codex on the verifier fix: no new material finding; it corrected the fix's comment, which
   claimed dropped spans always fail. Loop closed at its three-round cap.
+- **CI's unit job has no forge build.** A plan test hashed `FuelOnlyGate.json` through `findAdoptable` and passed locally
+  only because `contracts/bridge/evm/out` existed; it now mocks `script-artifacts` like `generation.test.ts`. Check a
+  new script test with `out/` moved aside.

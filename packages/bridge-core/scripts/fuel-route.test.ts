@@ -8,6 +8,14 @@ import { MAINNET_REGISTRY, PLAN_PINNED_L1_SIGNERS } from "./live-intent"
 import { preLifiTestnetManifest } from "./lifi-canary-fixture"
 import { CANONICAL_PERMIT2 } from "./script-l1"
 
+// The unit job has no forge build; a plan only hashes the gate's creation code to look it up in the journal.
+vi.mock("./script-artifacts", () => ({
+	evmArtifact: () => ({
+		abi: [{ type: "constructor", stateMutability: "nonpayable", inputs: [{ type: "address" }] }],
+		bytecode: "0x00",
+	}),
+}))
+
 const mainnet = mainnetPlaceholderManifest()
 const PINNED = PLAN_PINNED_L1_SIGNERS.mainnet as `0x${string}`
 const STRANGER = `0x${"5a".repeat(20)}` as const
