@@ -1,0 +1,21 @@
+# relayer-1 status
+
+- 2026-10-28 phase 0: briefs read; worktree adopted and registered; Phase 0 answers from the common brief.
+- 2026-10-28 phase 0.4: recon done (3 Sonnet agents); Across testnet repays and refunds nothing (docs, checked by the parent).
+- 2026-10-28 phase 1: plan drafted (architecture A, Bun process under a keyed run); competing outline B (Workers-first) written.
+- 2026-10-28 phase 2: dual audit started (Codex gpt-6.1-sol high; Opus Plan agent).
+- 2026-10-28 phase 2: round 1 Codex reject (7 findings), Opus conditional approve (9); plan revised, all dispositions recorded.
+- 2026-10-28 phase 3: final fresh Codex pass conditional approve → plan revised → resumed: approve. Plan gate passed.
+- 2026-10-28 arc a1: auto-continue gate passed (no OWNER-ASKS entry on a surface arc a1 touches); implementation started.
+- 2026-10-28 lane brief changed on disk: ask13 (always-on Cloudflare Worker, key as Worker secret, dedicated relayer key unless the panel keeps the canary key). Implementation paused after Phase 1; plan revision and re-audit for ask13.
+- 2026-10-28 ORCHY-STEER: commit arc a1 to a clean point; revise plan.md to a hosted Worker (defaults: 1-min cron, stateless bounded window scan, Worker-safe fill core in bridge-core src keeping the promised exports, testnet-only wrangler config, dedicated relayer key as the new exclusive filler, canary kept for canaries and manual fills, two-anvil test drives the scheduled handler); one Codex pass; continue on approve; stop on state beyond a cursor or a credential in Actions.
+- 2026-10-28 plan revised for ask13 (stateless one-minute cron Worker, dedicated key, Worker-safe fill core); OWNER-ASKS #3 (Workers Paid, billing, no UI surface).
+- 2026-10-28 Codex on the revision: reject (6 findings, all adopted) → resumed: reject (fill dedup by depositId; fixed by full-identity match) → resumed: approve. No new owner question on a surface arc a1 touches; implementation continues with Phase 2.
+- 2026-10-28 arc a1 phase 2 green (e3fb51c): Worker-safe fill core; next phase 3 (workspace, config, pure core).
+- 2026-10-28 arc a1 phase 3 green: workspace, wrangler config, route and classify; next phase 4 (run and Worker).
+- 2026-10-28 arc a1 phase 4 green: relayOnce, key, Worker, owner script, bundle test; next phase 5 (two-anvil integration).
+- 2026-10-28 arc a1 phase 5 green: two-anvil suite S1–S6 in about 5 s, in the forge job; next phase 6 (runbook and docs).
+- 2026-10-28 arc a1 phase 6 green: relayer README and runbook, AGENTS/README/skill/bridge-core pointers; next the Codex fix loop on a1's diff.
+- 2026-10-28 fix loop round 1 (Codex reject, 4 findings adopted, faac3c8). Owner answered OWNER-ASKS #2 (both: manual plus a Circle faucet-API restock, a new arc after a1) and #3 (Workers Paid); #1 open.
+- 2026-10-28 fix loop converged: round 2 Codex approve (two non-blocking items adopted, a02ac14); all a1 gates green on 1606d00 (lint, typecheck:all, test:all, test:ci-gating, lint:actions, audit:tools, doc-links, integration 3.6 s). Arc a3 (Circle restock) planned; its Codex pass running.
+- 2026-10-28 arc a3 (Circle faucet restock) planned: Codex reject (4 adopted) then approve. No new owner question on a surface a1 touches; a1 goes to its PR.

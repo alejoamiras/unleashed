@@ -9,6 +9,7 @@ it can connect.
 | [`apps/tools`](apps/tools/README.md) | The tools app: Bridge (send and exit any ERC-20), Faucet (testnet tokens), Activity. |
 | [`apps/landing`](apps/landing/README.md) | The page at `unleashed.systems`: the lab's name, a pitch, one row per experiment. |
 | [`packages/bridge-core`](packages/bridge-core/README.md) | The bridge logic over `viem` and `aztec.js`, plus the conductor, verifier and canary scripts that deploy and check a generation. |
+| [`packages/testnet-relayer`](packages/testnet-relayer/README.md) | The cron Worker that fills the testnet app's Base Sepolia → Sepolia Across sends. |
 | [`packages/design`](packages/design/README.md) | The design system of the app and the landing: tokens, fonts, primitives. |
 | [`contracts/bridge/evm`](contracts/bridge/evm/README.md) | L1 contracts (Foundry): `PortalFactory`, the portal clones, `DepositRouter`, `TestnetFuelSwapper`. |
 | [`contracts/bridge/aztec`](contracts/bridge/aztec/README.md) | L2 contracts (Noir): `TokenBridgeHub` and its derivation libraries. |
