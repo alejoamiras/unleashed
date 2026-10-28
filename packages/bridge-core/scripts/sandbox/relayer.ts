@@ -1,308 +1,41 @@
 /**
- * The Across relay leg: a source `FundsDeposited` turned into the destination `fillRelay` call (`fill-testnet.ts`
- * sends the same call to the live pools), the sandbox's relay loop over its two anvils, and a loopback
- * `/suggested-fees` that answers in the Across API's shape. Nothing here holds a key: callers hand in a connected
- * wallet client.
+ * The sandbox's relay loop over its two anvils, and a loopback `/suggested-fees` that answers in the Across API's
+ * shape. The relay leg it drives is `src/across-fill.ts`, re-exported here. Nothing here holds a key: callers hand in
+ * a connected wallet client.
  */
 import { randomUUID } from "node:crypto"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import {
-	type Account,
-	type Address,
-	type Chain,
-	decodeEventLog,
-	encodeFunctionData,
-	erc20Abi,
-	getAbiItem,
-	getAddress,
-	type Hex,
-	isAddressEqual,
-	pad,
-	type PublicClient,
-	slice,
-	type Transport,
-	type WalletClient,
-} from "viem"
+import { type Address, erc20Abi, getAddress, type Hex, isAddressEqual, type PublicClient } from "viem"
 import z from "zod"
-import { type AcrossRelayData, acrossRelayHash, FILLED_RELAY_TOPIC } from "../../src/crosschain-discovery"
-import { retried } from "../retried"
+import {
+	type Destination,
+	depositsIn,
+	FUNDS_DEPOSITED,
+	relayHashOf,
+	type SourceDeposit,
+	sendFill,
+	wordAddress,
+} from "../../src/across-fill"
 
-/** `V3SpokePoolInterface.V3RelayData`, field for field. */
-const RELAY_DATA = {
-	name: "relayData",
-	type: "tuple",
-	components: [
-		{ name: "depositor", type: "bytes32" },
-		{ name: "recipient", type: "bytes32" },
-		{ name: "exclusiveRelayer", type: "bytes32" },
-		{ name: "inputToken", type: "bytes32" },
-		{ name: "outputToken", type: "bytes32" },
-		{ name: "inputAmount", type: "uint256" },
-		{ name: "outputAmount", type: "uint256" },
-		{ name: "originChainId", type: "uint256" },
-		{ name: "depositId", type: "uint256" },
-		{ name: "fillDeadline", type: "uint32" },
-		{ name: "exclusivityDeadline", type: "uint32" },
-		{ name: "message", type: "bytes" },
-	],
-} as const
-
-/** The deployed SpokePool surface a filler uses: Across's own shapes, which `TestSpokePool` reproduces. */
-export const SPOKE_POOL_ABI = [
-	{
-		type: "event",
-		name: "FundsDeposited",
-		anonymous: false,
-		inputs: [
-			{ name: "inputToken", type: "bytes32", indexed: false },
-			{ name: "outputToken", type: "bytes32", indexed: false },
-			{ name: "inputAmount", type: "uint256", indexed: false },
-			{ name: "outputAmount", type: "uint256", indexed: false },
-			{ name: "destinationChainId", type: "uint256", indexed: true },
-			{ name: "depositId", type: "uint256", indexed: true },
-			{ name: "quoteTimestamp", type: "uint32", indexed: false },
-			{ name: "fillDeadline", type: "uint32", indexed: false },
-			{ name: "exclusivityDeadline", type: "uint32", indexed: false },
-			{ name: "depositor", type: "bytes32", indexed: true },
-			{ name: "recipient", type: "bytes32", indexed: false },
-			{ name: "exclusiveRelayer", type: "bytes32", indexed: false },
-			{ name: "message", type: "bytes", indexed: false },
-		],
-	},
-	{
-		type: "function",
-		name: "fillRelay",
-		stateMutability: "nonpayable",
-		inputs: [RELAY_DATA, { name: "repaymentChainId", type: "uint256" }, { name: "repaymentAddress", type: "bytes32" }],
-		outputs: [],
-	},
-	{
-		type: "function",
-		name: "getV3RelayHash",
-		stateMutability: "view",
-		inputs: [RELAY_DATA],
-		outputs: [{ name: "", type: "bytes32" }],
-	},
-	{
-		type: "function",
-		name: "fillStatuses",
-		stateMutability: "view",
-		inputs: [{ name: "", type: "bytes32" }],
-		outputs: [{ name: "", type: "uint256" }],
-	},
-] as const
-
-const FUNDS_DEPOSITED = getAbiItem({ abi: SPOKE_POOL_ABI, name: "FundsDeposited" })
-
-/** `SpokePool.FillStatus`. */
-export const FILL_STATUS = { unfilled: 0n, requestedSlowFill: 1n, filled: 2n } as const
-
-/** A deposit as its filler must reproduce it on the destination chain. */
-export interface SourceDeposit {
-	relay: AcrossRelayData
-	destinationChainId: bigint
-	quoteTimestamp: number
-}
-
-export interface RawLog {
-	address: Address
-	topics: readonly Hex[]
-	data: Hex
-}
-
-/** The address a relay word names; dirty upper bytes are no address at all. */
-export function wordAddress(word: Hex): Address {
-	if (BigInt(word) >> 160n !== 0n) throw new Error(`relay word ${word} is not an address`)
-	return getAddress(slice(word, 12))
-}
-
-/**
- * Every `FundsDeposited` that `spokePool` itself logged in `logs`, read from the chain `originChainId`: a look-alike
- * from any other emitter, or a log that does not decode strictly, is skipped.
- */
-export function depositsIn(logs: readonly RawLog[], spokePool: Address, originChainId: bigint): SourceDeposit[] {
-	return logs.flatMap((log) => {
-		if (!isAddressEqual(log.address, spokePool)) return []
-		let a: ReturnType<typeof decodeDeposit>
-		try {
-			a = decodeDeposit(log)
-		} catch {
-			return []
-		}
-		const relay: AcrossRelayData = {
-			depositor: a.depositor,
-			recipient: a.recipient,
-			exclusiveRelayer: a.exclusiveRelayer,
-			inputToken: a.inputToken,
-			outputToken: a.outputToken,
-			inputAmount: a.inputAmount,
-			outputAmount: a.outputAmount,
-			originChainId,
-			depositId: a.depositId,
-			fillDeadline: a.fillDeadline,
-			exclusivityDeadline: a.exclusivityDeadline,
-			message: a.message,
-		}
-		return [{ relay, destinationChainId: a.destinationChainId, quoteTimestamp: a.quoteTimestamp }]
-	})
-}
-
-function decodeDeposit(log: RawLog) {
-	return decodeEventLog({ abi: [FUNDS_DEPOSITED], data: log.data, topics: log.topics as [Hex, ...Hex[]], strict: true }).args
-}
-
-/** The relay hash the destination pool `getV3RelayHash` returns on `destinationChainId`. */
-export const relayHashOf = (d: SourceDeposit): Hex => acrossRelayHash(d.relay, Number(d.destinationChainId))
-
-export type FillWallet = WalletClient<Transport, Chain, Account>
-
-export interface Destination {
-	public: PublicClient
-	wallet: FillWallet
-}
-
-export interface FillCall {
-	/** Where Across would repay the relayer; the fork suites and the canary name the origin chain. */
-	repaymentChainId: bigint
-	/** Explicit gas, which skips {@link fillGas} and its simulation: a fill that cannot run its message lands as a
-	 *  revert, or as a recovery under Amsterdam's schedule. */
-	gas?: bigint
-}
-
-interface Approval {
-	token: Address
-	spender: Address
-	amount: bigint
-}
-
-const submitApproval = (dest: Destination, a: Approval): Promise<Hex> =>
-	dest.wallet.writeContract({
-		address: a.token,
-		abi: erc20Abi,
-		functionName: "approve",
-		args: [a.spender, a.amount],
-		account: dest.wallet.account,
-		chain: dest.wallet.chain,
-	})
-
-/** The approval's block. */
-async function confirmApproval(dest: Destination, a: Approval, hash: Hex): Promise<bigint> {
-	const receipt = await dest.public.waitForTransactionReceipt({ hash })
-	if (receipt.status !== "success") throw new Error(`approve(${a.spender}, ${a.amount}) on ${a.token} reverted`)
-	return receipt.blockNumber
-}
+export {
+	AllowanceStillLive,
+	type Destination,
+	depositsIn,
+	FILL_STATUS,
+	type FillCall,
+	type FillWallet,
+	fillGas,
+	type RawLog,
+	relayHashOf,
+	SPOKE_POOL_ABI,
+	type SourceDeposit,
+	sendFill,
+	TX_GAS_CAP,
+	wordAddress,
+} from "../../src/across-fill"
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
-const firstLine = (e: unknown) => errorText(e).split("\n")[0]
-
-/** An approval a failed send could not clear: the spender still holds it. `cause` is the send's own failure. */
-export class AllowanceStillLive extends Error {
-	constructor(spender: Address, token: Address, clearing: unknown, failed: unknown, what = "fill") {
-		super(
-			`the ${what} failed (${firstLine(failed)}) and clearing its approval failed (${firstLine(clearing)}): ${spender} still holds a live allowance over ${token}`,
-			{ cause: failed },
-		)
-		this.name = "AllowanceStillLive"
-	}
-}
-
-/** Clears the approval of a fill that did not land. @throws AllowanceStillLive when the clear fails too. */
-async function clearApproval(dest: Destination, a: Approval, fill: unknown): Promise<void> {
-	const revoke = { ...a, amount: 0n }
-	try {
-		await confirmApproval(dest, revoke, await submitApproval(dest, revoke))
-	} catch (e) {
-		throw new AllowanceStillLive(a.spender, a.token, e, fill)
-	}
-}
-
-/** EIP-7825's per-transaction gas cap: no fill can be given more. */
-export const TX_GAS_CAP = 16_777_216n
-
-/**
- * The gas a fill is sent with. A node's estimate is not enough: under Amsterdam's schedule LI.FI's receiver catches an
- * underfunded message and recovers the delivery to the user, so the estimate settles on that recovery. On the state of
- * one block, never before `notBefore` (the approval the fill spends), the fill gets the smallest of 2×, 4×, … the
- * estimate whose simulated outcome (status, then every log's emitter, topics and data) equals the one at the cap,
- * where nothing is underfunded. It is a simulation check: the block the fill lands in can still differ.
- *
- * @throws when the fill does not log the pool's `FilledRelay` in simulation even at the cap, a node's omitted logs
- *   included.
- */
-export async function fillGas(dest: Destination, spokePool: Address, data: Hex, notBefore: bigint): Promise<bigint> {
-	const account = dest.wallet.account
-	// viem serves the head from a cache as old as its polling interval, which can predate the approval.
-	const head = await dest.public.getBlockNumber({ cacheTime: 0 })
-	const blockNumber = head > notBefore ? head : notBefore
-	// Each probe names `blockNumber`, which a load-balanced RPC's lagging backend refuses until it catches up.
-	const outcome = async (gas: bigint) => {
-		const blocks = [{ calls: [{ account, to: spokePool, data, gas }] }]
-		const [block] = await retried(() => dest.public.simulateBlocks({ blockNumber, blocks }))
-		const { status, logs = [], ...call } = block.calls[0]
-		return {
-			reason: "error" in call && call.error ? `: ${firstLine(call.error)}` : "",
-			fills: status === "success" && logs.some((l) => isAddressEqual(l.address, spokePool) && l.topics[0] === FILLED_RELAY_TOPIC),
-			key: `${status}:${logs.map((l) => `${l.address.toLowerCase()}/${l.topics.join("/")}/${l.data}`).join(",")}`,
-		}
-	}
-	const atCap = await outcome(TX_GAS_CAP)
-	if (!atCap.fills)
-		throw new Error(`fillRelay on ${spokePool} logs no FilledRelay in simulation even at the ${TX_GAS_CAP} gas cap${atCap.reason}`)
-	const estimate = await retried(() => dest.public.estimateGas({ account, to: spokePool, data, blockNumber }))
-	for (let gas = estimate * 2n; gas < TX_GAS_CAP; gas *= 2n) if ((await outcome(gas)).key === atCap.key) return gas
-	return TX_GAS_CAP
-}
-
-async function fillOnce(dest: Destination, spokePool: Address, relay: AcrossRelayData, call: FillCall, approvedAt: bigint) {
-	const account = dest.wallet.account
-	// viem's inference collapses this tuple argument to `never`; `AcrossRelayData` is `RELAY_DATA` field for field.
-	const args = [relay as never, call.repaymentChainId, pad(account.address, { size: 32 })] as const
-	// fillGas's cap simulation is the pre-send check; a `latest` simulation here could run before the approval.
-	const gas =
-		call.gas ??
-		(await fillGas(dest, spokePool, encodeFunctionData({ abi: SPOKE_POOL_ABI, functionName: "fillRelay", args }), approvedAt))
-	const hash = await dest.wallet.writeContract({
-		address: spokePool,
-		abi: SPOKE_POOL_ABI,
-		functionName: "fillRelay",
-		args,
-		account,
-		chain: dest.wallet.chain,
-		gas,
-	})
-	const { status } = await dest.public.waitForTransactionReceipt({ hash })
-	return { hash, status }
-}
-
-/**
- * Approves `spokePool` for exactly `relay.outputAmount` of its output token and sends `fillRelay` from the wallet's
- * account, which is also the logged relayer. Without explicit gas the fill is sent with {@link fillGas}, whose
- * simulation on a block no earlier than the approval refuses a fill that would not fill, before any fill transaction.
- * Once the approval is submitted, any failure short of a landed fill, its own confirmation included, clears the
- * approval again.
- *
- * @throws the approval's submit error as is; otherwise the first failure once the approval is cleared, or
- * {@link AllowanceStillLive} when the clear fails too.
- */
-export async function sendFill(
-	dest: Destination,
-	spokePool: Address,
-	relay: AcrossRelayData,
-	call: FillCall,
-): Promise<{ hash: Hex; status: "success" | "reverted" }> {
-	const approval: Approval = { token: wordAddress(relay.outputToken), spender: spokePool, amount: relay.outputAmount }
-	const approved = await submitApproval(dest, approval)
-	let sent: Awaited<ReturnType<typeof fillOnce>>
-	try {
-		sent = await fillOnce(dest, spokePool, relay, call, await confirmApproval(dest, approval, approved))
-	} catch (e) {
-		await clearApproval(dest, approval, e)
-		throw e
-	}
-	if (sent.status !== "success") await clearApproval(dest, approval, new Error(`the fill ${sent.hash} reverted`))
-	return sent
-}
 
 // ─── The sandbox relay loop ──────────────────────────────────────────────────
 

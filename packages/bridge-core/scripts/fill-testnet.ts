@@ -10,194 +10,38 @@
  *
  * `BASE_SEPOLIA_RPC_URL` and `SEPOLIA_RPC_URL` override the PublicNode endpoints. Non-interactive; never prints the key.
  */
-import { type Address, erc20Abi, getAddress, type Hex, isAddressEqual, type PublicClient } from "viem"
+import { type Hex, getAddress, type PublicClient } from "viem"
 import { type PrivateKeyAccount, privateKeyToAccount } from "viem/accounts"
+import {
+	BASE_SEPOLIA_RPC_DEFAULT,
+	FILL_ROUTE,
+	type FillDeps,
+	FillRefused,
+	type FillWallet,
+	fillSourceDeposit,
+	SEPOLIA_RPC_DEFAULT,
+} from "../src/across-fill"
 import { lifiBook } from "../src/lifi-addresses"
 import { PLAN_PINNED_CANARY_SIGNERS } from "./live-intent"
-import {
-	AllowanceStillLive,
-	type Destination,
-	depositsIn,
-	FILL_STATUS,
-	type FillWallet,
-	type RawLog,
-	relayHashOf,
-	SPOKE_POOL_ABI,
-	type SourceDeposit,
-	sendFill,
-	wordAddress,
-} from "./sandbox/relayer"
 import { createL1Clients, createL1PublicClient } from "./script-bootstrap"
-import { type GasTermsFor, manifestL1Chain, withGasTerms } from "./script-l1"
+import { manifestL1Chain } from "./script-l1"
 
+export {
+	BASE_SEPOLIA_RPC_DEFAULT,
+	FILL_ROUTE,
+	type FillDeps,
+	type FillOptions,
+	type FillRefusalReason,
+	FillRefused,
+	type FillResult,
+	fillSourceDeposit,
+	SEPOLIA_RPC_DEFAULT,
+} from "../src/across-fill"
 /** The bound a caller passes as {@link FillDeps.gasTerms}: refuse a send before it exists when its worst fee is too high. */
-export { boundedGasTerms } from "./script-l1"
-
-/** The one route this filler serves. */
-export const FILL_ROUTE = { source: 84532, destination: 11155111 } as const
-export const BASE_SEPOLIA_RPC_DEFAULT = "https://base-sepolia-rpc.publicnode.com"
-export const SEPOLIA_RPC_DEFAULT = "https://ethereum-sepolia-rpc.publicnode.com"
-
-/** Head-room the fill deadline must still leave on the destination, so the fill cannot land past it. */
-const DEFAULT_DEADLINE_MARGIN_S = 120
-
-export interface FillDeps {
-	/** Reads the origin chain. */
-	source: PublicClient
-	/** Reads and signs on the destination; the wallet's account pays the output and is the logged relayer. */
-	destination: Destination
-	/** The pinned pools: a `FundsDeposited` from any other emitter is no deposit at all. */
-	sourceSpokePool: Address
-	destinationSpokePool: Address
-	/** Seconds the fill deadline must stay ahead of the destination's head; 120 by default. */
-	deadlineMarginS?: number
-	/** Explicit gas terms for the approve and the fill, refused before sending when they do not fit; without them the
-	 *  wallet prices both itself. */
-	gasTerms?: GasTermsFor
-}
-
-export interface FillResult {
-	/** `null` when this call confirmed no fill of its own: the relay was filled by another relayer, or by ours whose
-	 *  receipt wait failed. An approval and its revoke may still have been sent. */
-	fillTxHash: Hex | null
-	relayHash: Hex
-	alreadyFilled: boolean
-}
-
-export interface FillOptions {
-	/** The relay hash the caller vetted from its own read of the deposit: a receipt whose deposit hashes otherwise is
-	 *  refused before any write, so what is filled is what was vetted. */
-	relayHash?: Hex
-}
-
-export type FillRefusalReason =
-	| "not-a-hash"
-	| "no-receipt"
-	| "reverted"
-	| "no-deposit"
-	| "ambiguous"
-	| "relay-hash"
-	| "deadline"
-	| "exclusive"
-	| "balance"
-	| "fill-reverted"
-
-/** A fill this module would not, or could not, send; `reason` names the check. */
-export class FillRefused extends Error {
-	constructor(
-		readonly reason: FillRefusalReason,
-		message: string,
-	) {
-		super(message)
-		this.name = "FillRefused"
-	}
-}
+export { boundedGasTerms } from "../src/gas-terms"
 
 const isTxHash = (v: string): v is Hex => /^0x[0-9a-fA-F]{64}$/.test(v)
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
-
-/** The one deposit bound for the destination that the pinned source pool logged in a successful `hash`. */
-async function soleDeposit(deps: FillDeps, hash: Hex): Promise<SourceDeposit> {
-	const [origin, destination] = await Promise.all([deps.source.getChainId(), deps.destination.public.getChainId()])
-	let receipt: Awaited<ReturnType<PublicClient["getTransactionReceipt"]>>
-	try {
-		receipt = await deps.source.getTransactionReceipt({ hash })
-	} catch (e) {
-		throw new FillRefused("no-receipt", `no receipt for ${hash} on chain ${origin}: ${errorText(e).split("\n")[0]}`)
-	}
-	if (receipt.status !== "success") throw new FillRefused("reverted", `the source transaction ${hash} reverted`)
-	const deposits = depositsIn(receipt.logs as RawLog[], deps.sourceSpokePool, BigInt(origin)).filter(
-		(d) => d.destinationChainId === BigInt(destination),
-	)
-	if (deposits.length === 0) {
-		throw new FillRefused("no-deposit", `${hash} holds no FundsDeposited from ${deps.sourceSpokePool} bound for chain ${destination}`)
-	}
-	if (deposits.length > 1)
-		throw new FillRefused("ambiguous", `${hash} holds ${deposits.length} deposits for chain ${destination}; name one`)
-	return deposits[0] as SourceDeposit
-}
-
-async function isFilled(deps: FillDeps, relayHash: Hex): Promise<boolean> {
-	const status = await deps.destination.public.readContract({
-		address: deps.destinationSpokePool,
-		abi: SPOKE_POOL_ABI,
-		functionName: "fillStatuses",
-		args: [relayHash],
-	})
-	return status === FILL_STATUS.filled
-}
-
-/** The pool's own hash of the relay must be ours: a pool that hashes otherwise is not the deposit's destination. */
-async function assertRelayHash(deps: FillDeps, d: SourceDeposit, relayHash: Hex): Promise<void> {
-	const onChain = await deps.destination.public.readContract({
-		address: deps.destinationSpokePool,
-		abi: SPOKE_POOL_ABI,
-		functionName: "getV3RelayHash",
-		// viem's inference collapses this tuple argument to `never`; `AcrossRelayData` is the ABI's struct field for field.
-		args: [d.relay as never],
-	})
-	if (onChain.toLowerCase() !== relayHash.toLowerCase()) {
-		throw new FillRefused("relay-hash", `${deps.destinationSpokePool} hashes this relay to ${onChain}, not ${relayHash}`)
-	}
-}
-
-/** Refuses a fill the pool would refuse at the head's time, or one this account cannot pay. */
-async function assertFillable(deps: FillDeps, d: SourceDeposit): Promise<void> {
-	const { public: client, wallet } = deps.destination
-	const head = await client.getBlock()
-	const margin = BigInt(deps.deadlineMarginS ?? DEFAULT_DEADLINE_MARGIN_S)
-	if (BigInt(d.relay.fillDeadline) < head.timestamp + margin) {
-		throw new FillRefused("deadline", `the fill deadline ${d.relay.fillDeadline} is within ${margin} s of the head's ${head.timestamp}`)
-	}
-	const filler = wallet.account.address
-	const exclusive = wordAddress(d.relay.exclusiveRelayer)
-	if (BigInt(d.relay.exclusivityDeadline) >= head.timestamp && !isAddressEqual(exclusive, filler)) {
-		throw new FillRefused("exclusive", `${exclusive} holds this relay exclusively until ${d.relay.exclusivityDeadline}`)
-	}
-	const token = wordAddress(d.relay.outputToken)
-	const balance = await client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [filler] })
-	if (balance < d.relay.outputAmount) {
-		throw new FillRefused("balance", `${filler} holds ${balance} of ${token}; the relay pays out ${d.relay.outputAmount}`)
-	}
-}
-
-/**
- * Fills the relay `srcTxHash` started, from the destination wallet's account, repaid (nominally) on the origin chain.
- *
- * Refuses with {@link FillRefused} before sending when: the hash is malformed; the source transaction has no receipt,
- * reverted, or holds no single `FundsDeposited` from `sourceSpokePool` bound for the destination chain; the
- * destination pool hashes the relay differently, or the relay is not `opts.relayHash`; the fill deadline is within
- * `deadlineMarginS` of the destination's head; another relayer's exclusivity window is open; or the account cannot
- * pay `outputAmount`. Approves the pool for
- * exactly `outputAmount` (cleared again if the fill does not land; a failed clear throws {@link AllowanceStillLive}).
- * A relay found filled before or during the call is otherwise success without a fill hash, whoever filled it; one
- * filled during the call may still have cost our approval and its revoke.
- */
-export async function fillSourceDeposit(deps: FillDeps, srcTxHash: Hex, opts: FillOptions = {}): Promise<FillResult> {
-	if (!isTxHash(srcTxHash)) throw new FillRefused("not-a-hash", `${String(srcTxHash).slice(0, 80)} is not a 32-byte transaction hash`)
-	const d = await soleDeposit(deps, srcTxHash)
-	const relayHash = relayHashOf(d)
-	if (opts.relayHash && opts.relayHash.toLowerCase() !== relayHash.toLowerCase()) {
-		throw new FillRefused("relay-hash", `${srcTxHash} now holds the relay ${relayHash}, not the vetted ${opts.relayHash}`)
-	}
-	await assertRelayHash(deps, d, relayHash)
-	const filled: FillResult = { fillTxHash: null, relayHash, alreadyFilled: true }
-	if (await isFilled(deps, relayHash)) return filled
-	await assertFillable(deps, d)
-	const destination = deps.gasTerms
-		? { ...deps.destination, wallet: withGasTerms(deps.destination.wallet, deps.gasTerms) }
-		: deps.destination
-	try {
-		const r = await sendFill(destination, deps.destinationSpokePool, d.relay, { repaymentChainId: d.relay.originChainId })
-		if (r.status !== "success") throw new FillRefused("fill-reverted", `the fill ${r.hash} reverted`)
-		return { fillTxHash: r.hash, relayHash, alreadyFilled: false }
-	} catch (e) {
-		// Another relayer may have filled between the status read and our send: the deposit is filled all the same,
-		// unless our own approval is still live.
-		if (!(e instanceof AllowanceStillLive) && (await isFilled(deps, relayHash))) return filled
-		throw e
-	}
-}
 
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 

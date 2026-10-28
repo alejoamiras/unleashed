@@ -5,6 +5,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./across-fill": "./src/across-fill.ts",
 		"./artifacts": "./src/artifacts.ts",
 		"./fee-juice": "./src/fee-juice.ts",
 		"./fill-testnet": "./scripts/fill-testnet.ts",

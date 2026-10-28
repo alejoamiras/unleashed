@@ -104,7 +104,8 @@ describe("fillSourceDeposit", () => {
 	const rail = fixture("testnet-rail.json")
 	const receipt = { status: "success", logs: fixture("testnet-rail.router.receipts.json").source.logs }
 	const RELAYER = `0x${"4e".repeat(20)}` as Address
-	const fillWith = async (o: { revokeConfirms: boolean; ourFillLands: boolean; relayHash?: Hex }) => {
+	const POOL = `0x${"5b".repeat(20)}` as Address
+	const fillWith = async (o: { revokeConfirms: boolean; ourFillLands: boolean; relayHash?: Hex; fillLogs?: boolean }) => {
 		const approvals = new Map<Hex, bigint>()
 		const fills: Hex[] = []
 		const confirms = (hash: Hex) => (o.ourFillLands ? approvals.has(hash) : approvals.get(hash) === 0n && o.revokeConfirms)
@@ -121,8 +122,14 @@ describe("fillSourceDeposit", () => {
 			simulateContract: async () => ({}),
 			estimateGas: async () => 100_000n,
 			getBlockNumber: async () => 1n,
+			// The pool logs `FilledRelay` for a simulated fill unless `fillLogs` is false; an approval logs nothing.
 			simulateBlocks: async ({ blocks }: { blocks: { calls: { to: Address }[] }[] }) => [
-				{ calls: [{ status: "success", logs: [{ address: blocks[0].calls[0].to, topics: [FILLED_RELAY_TOPIC], data: "0x" }] }] },
+				{
+					calls: blocks[0].calls.map(({ to }) => ({
+						status: "success",
+						logs: to === POOL && o.fillLogs !== false ? [{ address: to, topics: [FILLED_RELAY_TOPIC], data: "0x" }] : [],
+					})),
+				},
 			],
 			waitForTransactionReceipt: async ({ hash }: { hash: Hex }) => {
 				if (confirms(hash)) return { status: "success", blockNumber: 1n }
@@ -143,7 +150,7 @@ describe("fillSourceDeposit", () => {
 			} as unknown as PublicClient,
 			destination: { public: pub, wallet: { account: { address: PINNED }, writeContract } } as unknown as Destination,
 			sourceSpokePool: rail.source.spokePool as Address,
-			destinationSpokePool: `0x${"5b".repeat(20)}` as Address,
+			destinationSpokePool: POOL,
 		}
 		const result = await fillSourceDeposit(deps, HASH as Hex, { relayHash: o.relayHash }).catch((e: unknown) => e)
 		return { result, approvals: [...approvals.values()], fills, pub }
@@ -181,5 +188,12 @@ describe("fillSourceDeposit", () => {
 		const first = (await fillWith({ revokeConfirms: true, ourFillLands: true })).result as { relayHash: Hex }
 		const same = await fillWith({ revokeConfirms: true, ourFillLands: true, relayHash: first.relayHash })
 		expect(same.fills).toHaveLength(1)
+	})
+
+	it("refuses a fill that would log no FilledRelay after its approval before any write", async () => {
+		const stuck = await fillWith({ revokeConfirms: true, ourFillLands: true, fillLogs: false })
+		expect(stuck.result).toBeInstanceOf(FillRefused)
+		expect(stuck.result).toMatchObject({ reason: "unfillable" })
+		expect([stuck.approvals, stuck.fills]).toEqual([[], []])
 	})
 })
