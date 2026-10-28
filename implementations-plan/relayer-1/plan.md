@@ -14,6 +14,39 @@ budget: "recon: 3 Sonnet agents; code-review: off; foreign reviewer gpt-6.1-sol 
 size: "over the 350-line mid target: the revision for ask13 keeps the superseded design's audit evidence in one table"
 ---
 
+## Outcome
+
+- **Status: closed, shipped** in three PRs. Phases 1–6 and arcs a2 and a3 are ✓.
+- **Shipped.**
+  - #29 (a1): the `packages/testnet-relayer` Worker. It is a one-minute cron that fills the app's exclusive Base
+    Sepolia → Sepolia Across sends through bridge-core's Worker-safe fill core (`@unleashed/bridge-core/across-fill`).
+    The PR also adds its unit tests, the two-anvil integration test in `_bridge-contracts.yml` and the owner's runbook.
+  - #32 (a3): the optional Circle faucet-API drip. With `CIRCLE_API_KEY` set, it runs once a day, in the cron minute
+    that opens a UTC day, while the float is under 20 USDC.
+  - The close-out PR (a2): `TESTNET_FILLER` is pinned to the owner's dedicated relayer key,
+    `0x6bF61c9C868fe8d1b3B3d977fBf80498DBD7Cf1F`. The tests, the runbook and the `bridge-generation` skill follow it,
+    and the sandbox e2e fills as that address.
+  - The owner created the key, deployed the Worker from Workers Builds, set its secret and funded it on Sepolia
+    (0.5 ETH, 40 USDC): runbook steps 1–3.
+- **Reviews.** The audit verdicts below: plan audits, then fix loops on a1 (2 rounds), a3 (2 rounds) and a2.
+- **Dispositions.**
+  - Option A, a Bun process under a keyed run: superseded by the Worker (ask13). Phase 1's seam stays.
+  - The canary key as the filler: replaced by the dedicated key. `fill-testnet.ts` now fills only the canary's own
+    deposits.
+  - A lock against overlapping runs: rejected (D8), recorded as known limit 4.
+  - Restock through Across repayment: impossible, because Across testnet repays no fill (F4).
+- **Assumptions.**
+  - A1 held: the owner chose Workers Paid.
+  - A3 grew into "both": manual top-ups plus a3's drip.
+  - A4 stays open as #40.
+- **Known limits:** #39, #34, #35, #36, #37, #38.
+- **Open items.**
+  - #40 (`owner-decision`): the testnet send copy still promises a manual fill and a refund (`OWNER-ASKS.md` #1).
+  - Runbook step 4, the owner's live check of a Base Sepolia send, follows this PR's testnet deploy. The testnet app
+    names the canary until then.
+  - Step 6, the Circle key, is optional and the owner's.
+- **Retired:** the `/goal` and `/loop` seeds below. This plan is a record, never a task list.
+
 # relayer-1: a testnet relayer for Base Sepolia sends
 
 A Cloudflare Worker fills the testnet's cross-chain sends by itself. Every minute it reads the recent Across

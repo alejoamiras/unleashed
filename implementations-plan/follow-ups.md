@@ -30,8 +30,6 @@ Open work lifted out of closed plans, one entry each; delete an entry when it re
 - **A "deposit requested" marker.** After a reload with a wallet prompt open, a cross-chain card stays "not found yet" with no revoke and no Dismiss, and the exact approval stays open until revoked elsewhere. A journaled marker, with cross-tab care, would let a send never asked for its deposit end safely.
 - **Restored outcomes are trusted.** A backup that decrypts can carry a false outcome or completion; forging one needs the user's backup key.
 - **Stepper phase times are session-only**; keep them across reloads.
-- **Testnet fills are manual.** An operator alert or an auto-filler for exclusive testnet deposits. A fixed-terms send is capped at 8 whole tokens so the filler can always cover it.
-- **Observe an expired testnet deposit's refund** before relying on exclusivity's lock bound; none has been seen.
 - **LI.FI's Executor leaves an unlimited approval to the router.** An accepted exposure, not proven harmless: the router pulls only its caller's funds, bounded by `maxPull`, and the Executor holds nothing between transactions.
 - **Discovery windows.** Stargate scans still run to the head (library only; Codex's `composeQueue` state certificate is the recorded idea). An Arbitrum lost-hash window wider than one run's 2,000-block chunks stays `incomplete`. `deposit-reconcile`'s 50,000-block cap leaves a hash-less Ethereum-origin record older than about 7 days `incomplete`.
 - **`fuel.crossChainSlippageBps` has no reader.** The schema requires it and the deploy writes it; nothing consumes it. Use it or drop it at the next schema change.
