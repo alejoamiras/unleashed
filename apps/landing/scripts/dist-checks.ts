@@ -14,11 +14,21 @@ const MAX_JS_BYTES = 40_000
 const MAX_NON_FONT_BYTES = 200_000
 const FONT_FILES = ["AtkinsonHyperlegibleNext", "AtkinsonHyperlegibleMono", "SixtyfourConvergence-subset"]
 const PAGES = ["index.html", ...LEGAL_PAGES.map((page) => page.file)]
-// A provider's policy URL is https: the package's own test holds it to that.
-const POLICY_URLS = LEGAL_PAGES.flatMap((page) => page.doc.sections.flatMap((s) => s.blocks))
-	.flatMap((block) => (block.kind === "providers" ? block.rows : []))
-	.map((row) => row.policyUrl)
-const ALLOWED_URLS = new Set<string>([...Object.values(LINKS), CANONICAL, ...LEGAL_PAGES.map((page) => page.url), ...POLICY_URLS])
+const LANDING_URLS = [...Object.values(LINKS), CANONICAL]
+/**
+ * What each page may link to by URL: the landing's destinations, plus, on a legal page, its own canonical
+ * URL and its providers' policies (https only, by the package's own test). Compared raw, so a policy URL
+ * the renderer would escape fails closed.
+ */
+const ALLOWED_URLS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+	["index.html", new Set(LANDING_URLS)],
+	...LEGAL_PAGES.map((page) => {
+		const policies = page.doc.sections
+			.flatMap((s) => s.blocks)
+			.flatMap((block) => (block.kind === "providers" ? block.rows.map((row) => row.policyUrl) : []))
+		return [page.file, new Set([...LANDING_URLS, page.url, ...policies])] as const
+	}),
+])
 /*
  * The link rules catch a link nobody meant to ship. They are no defence against build tooling, which
  * is trusted: it could navigate from the script bundle, where no HTML check looks. Tampering shows as
@@ -71,9 +81,10 @@ function checkHtml(page: string, html: string): string[] {
 	if (/\sstyle=/.test(html)) errors.push(`${page} has a style= attribute`)
 	if (HTTP_EQUIV.test(html)) errors.push(`${page} has an http-equiv meta`)
 	if (FOREIGN_ENTITY.test(html)) errors.push(`${page} has a character reference the renderer never emits`)
+	const allowed = ALLOWED_URLS.get(page) ?? new Set()
 	for (const [, name, ...quoted] of html.matchAll(DESTINATION)) {
 		const value = quoted.find((v) => v !== undefined) ?? ""
-		if (ALLOWED_URLS.has(value)) continue
+		if (allowed.has(value)) continue
 		if (name.toLowerCase() === "content" ? URL_LIKE.test(value) : !LOCAL_PATH.test(value))
 			errors.push(`${page} links outside LINKS: ${name}=${value}`)
 	}

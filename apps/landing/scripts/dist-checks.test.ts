@@ -5,8 +5,9 @@ import { checkDist, type Dist, distDigest } from "./dist-checks.ts"
 const bytes = (value: string) => new TextEncoder().encode(value)
 const BUILD = "0.1.0+0123abcd"
 const HTML = `<!doctype html><head><script src="/theme-boot.js"></script><script type="module" crossorigin src="/assets/index-x.js"></script><meta name="unleashed-build" content="${BUILD}"></head><body><a href="https://github.com/alejoamiras/unleashed">x</a></body>`
-const LEGAL = (canonical: string) =>
-	`<!doctype html><head><script src="/theme-boot.js"></script><link rel="canonical" href="${canonical}"><meta name="unleashed-build" content="${BUILD}"></head><body><a href="/">x</a><a href="https://www.cloudflare.com/privacypolicy/">y</a></body>`
+const POLICY = '<a href="https://www.cloudflare.com/privacypolicy/">y</a>'
+const LEGAL = (canonical: string, body = "") =>
+	`<!doctype html><head><script src="/theme-boot.js"></script><link rel="canonical" href="${canonical}"><meta name="unleashed-build" content="${BUILD}"></head><body><a href="/">x</a>${body}</body>`
 const FONTS = ["AtkinsonHyperlegibleNext-a", "AtkinsonHyperlegibleMono-b", "SixtyfourConvergence-subset-c"]
 
 /** A minimal production dist/ that every rule accepts; each case breaks exactly one thing. */
@@ -14,7 +15,7 @@ function dist(overrides: Record<string, string | undefined> = {}): Map<string, U
 	const files: Record<string, string | undefined> = {
 		"index.html": HTML,
 		"terms.html": LEGAL("https://unleashed.systems/terms"),
-		"privacy.html": LEGAL("https://unleashed.systems/privacy"),
+		"privacy.html": LEGAL("https://unleashed.systems/privacy", POLICY),
 		_headers: renderHeadersFile("production", []),
 		"build.json": JSON.stringify({ buildId: BUILD, channel: "production" }),
 		"assets/index-x.css": `@font-face{src:url(/assets/${FONTS[0]}.woff2)}`,
@@ -56,6 +57,16 @@ describe("build guard", () => {
 			"outside LINKS",
 		],
 		["a missing legal page", { "terms.html": undefined }, "missing terms.html"],
+		[
+			"a policy link on a page whose document names no provider",
+			{ "terms.html": LEGAL("https://unleashed.systems/terms", POLICY) },
+			"terms.html links outside LINKS",
+		],
+		[
+			"the landing linking a legal page by URL",
+			{ "index.html": HTML.replace("<body>", '<body><a href="https://unleashed.systems/terms">x</a>') },
+			"index.html links outside LINKS",
+		],
 		[
 			"a legal page linking outside LINKS",
 			{ "privacy.html": LEGAL("https://evil.example/privacy") },

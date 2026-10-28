@@ -13,3 +13,4 @@
 - 2026-10-28 a1 C8 panel (Codex, Opus): D11 G, a data-only `packages/legal` with the public URLs; the landing serves `/terms` and `/privacy`; the mainnet placeholder links there. Recorded in plan.md with the a1 file map and the lawyer residuals.
 - 2026-10-28 a1 P2 gate (D11 shape): lint pass, typecheck:all pass, test:all pass, tools testnet and mainnet builds + verify:build-target pass, landing build + guard pass, landing browser smoke pass, test:ci-gating pass, lint:actions pass.
 - 2026-10-28 a1 P3/P4 gate: drafting rounds closed (Terms 10 → 1 → 0 material, Privacy 5 → 1 → 0); package tests and biome pass.
+- 2026-10-28 a1 P5: Codex code round 1 no material (3 minor, 2 fixed, 1 rejected); audit:tools pass; landing build + guard pass; 16 screenshots taken; e2e:tools not run locally (worktree has no forge libs; installing them needs a .env search the lane forbids), CI tools-e2e-status is the gate.

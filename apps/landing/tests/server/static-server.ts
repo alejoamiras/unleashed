@@ -1,7 +1,7 @@
 /**
  * Serves a built dist/ the way the assets-only Worker does, for the browser smoke: the emitted
- * `_headers` rules for the request path, `/x` from `x.html` (the default `html_handling`), and
- * index.html with a 200 for any unmatched request. With no
+ * `_headers` rules for the request path, `/x` from `x.html` (the default `html_handling`; its 307s
+ * from `/x.html` and `/x/` are not emulated), and index.html with a 200 for any unmatched request. With no
  * Worker script, single-page-application mode falls back for every request, not only navigations.
  * Binds port 0 on loopback and is closed by the process that opened it, so parallel runs never share
  * a port or leave a server behind.

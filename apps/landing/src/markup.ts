@@ -30,7 +30,7 @@ export function mark(): string {
 	return `<svg class="mark" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path d="${MARK_INK}" fill="currentColor"/><path class="sig" d="${MARK_SIGNAL}"/></svg>`
 }
 
-export const lockup = (cls = "lockup") => `<span class="${cls}">${mark()}<span class="wordmark">${esc(COPY.brand)}</span></span>`
+const lockup = (cls = "lockup") => `<span class="${cls}">${mark()}<span class="wordmark">${esc(COPY.brand)}</span></span>`
 
 export const link = (cls: string, href: string, body: string) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(href)}">${body}</a>`
 

@@ -391,7 +391,9 @@ built in P1 and removed once C8 moved the pages to the landing. The a1 file map 
 | `apps/tools/scripts/legal-dist.ts` | the rule becomes: a mainnet dist carries both document URLs; a testnet or local dist carries neither, no document id, and no `MainnetPlaceholderView` chunk |
 | CI filters | `packages/legal/src/**` and `packages/legal/package.json` join the pr-quick `tools` and `landing` filters and the pr-tools-e2e filter |
 
-One Privacy Policy covers the landing and the mainnet app, and says it does not cover testnet. "The
+The placeholder's new testid joins its two existing keys in the global `TESTIDS` (it carries no legal
+text, so D10's leak does not apply). CI runs `verify:build-target` for testnet and mainnet only; the
+local dist relies on the same literal fold. One Privacy Policy covers the landing and the mainnet app, and says it does not cover testnet. "The
 landing stores nothing in your browser" becomes a standing promise: a script on the landing that stores
 anything is a policy change. The `[[OWNER` refusal (P6 step 3) lands in the landing's dist check with
 the A11 date fill, in the same commit: before it, the draft status is what keeps the blank off the

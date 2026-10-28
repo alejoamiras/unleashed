@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest"
 import { MAINNET_TARGET, type ToolsTarget } from "./network-targets"
 
 /**
- * Every origin a target's build may reach: the CSP's `https:`/`wss:` sources and the endpoints the code
- * calls. A wildcard source stays as written. Wallet-routed calls and request contents are invisible here.
+ * Every origin a target's build may reach: the CSP's sources other than keywords, `data:` and `blob:`, and
+ * the endpoints the code calls. A wildcard source stays as written; a host-only or scheme-only source
+ * throws, so one this cannot name fails the test. Wallet-routed calls and request contents are invisible.
  */
 function reachedOrigins(target: ToolsTarget): Set<string> {
-	const csp = target.cspConnectSrc.split(/\s+/).filter((source) => /^(https|wss):\/\//.test(source))
+	const csp = target.cspConnectSrc
+		.split(/\s+/)
+		.filter((source) => source && !/^'.*'$/.test(source) && source !== "data:" && source !== "blob:")
 	const endpoints = [
 		target.nodeUrl,
 		...Object.values(target.readRpcUrls).flat(),
@@ -32,5 +35,6 @@ describe("the Privacy Policy's providers", () => {
 		expect(reachedOrigins({ ...MAINNET_TARGET, cspConnectSrc: "'self' data: blob:" })).toEqual(new Set())
 		const widened = { ...MAINNET_TARGET, cspConnectSrc: "'self' data: blob: https://rpc.example/v1" }
 		expect(reachedOrigins(widened)).toEqual(new Set(["https://rpc.example"]))
+		expect(() => reachedOrigins({ ...MAINNET_TARGET, cspConnectSrc: "'self' rpc.example" })).toThrow()
 	})
 })
