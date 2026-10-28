@@ -15,8 +15,11 @@ import {
 	type Hex,
 	http,
 	maxUint256,
+	type PublicClient,
 	pad,
 	type Transport,
+	toHex,
+	type WalletClient,
 	zeroHash,
 } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
@@ -45,17 +48,26 @@ const RECEIVER = lifiBook(11155111).receiverAcrossV4
 const USDC = 1_000_000n
 const route = testnetRoute(manifest, FILLER)
 
-/** `url` answering Sepolia's 2 wei priority fee where anvil hard-codes 1 gwei; `beforeSend` runs ahead of a broadcast. */
-function sepoliaTransport(url: string, beforeSend?: () => Promise<void>): Transport {
+/** `url` answering Sepolia's 2 wei priority fee where anvil hard-codes 1 gwei; `before` runs ahead of each request. */
+function sepoliaTransport(url: string, before?: (method: string) => Promise<void>): Transport {
 	const base = http(url)({})
 	return custom({
 		async request({ method, params }) {
 			if (method === "eth_maxPriorityFeePerGas") return "0x2"
-			if (method === "eth_sendRawTransaction") await beforeSend?.()
+			await before?.(method)
 			return base.request({ method, params })
 		},
 	})
 }
+
+/** `url` with its head pinned at `head`: a node lagging behind the chain. */
+const laggingTransport = (url: string, head: bigint): Transport =>
+	custom({
+		async request({ method, params }) {
+			if (method === "eth_blockNumber") return toHex(head)
+			return http(url)({}).request({ method, params })
+		},
+	})
 
 function side(url: string, chainId: number) {
 	const chain = defineChain({
@@ -103,11 +115,11 @@ describe.skipIf(!INTEGRATION)("the relayer on two anvils", () => {
 		dst.pub.readContract({ address: DEST_POOL, abi: SPOKE_POOL_ABI, functionName: "fillStatuses", args: [relayHash] })
 	const nonce = () => dst.pub.getTransactionCount({ address: FILLER })
 
-	/** A run of the relayer, its log lines collected; `wallet` stands in for the filler's signing client. */
-	const run = (lines: RelayLine[] = [], wallet = dst.wallet(KEYS.filler)) => {
+	/** A run of the relayer, its log lines collected; `o` stands in for its source client or its signing client. */
+	const run = (lines: RelayLine[] = [], o: { source?: PublicClient; wallet?: WalletClient } = {}) => {
 		const c: RelayConfig = {
-			source: src.pub,
-			destination: { public: dst.pub, wallet: wallet as FillWallet },
+			source: o.source ?? src.pub,
+			destination: { public: dst.pub, wallet: (o.wallet ?? dst.wallet(KEYS.filler)) as FillWallet },
 			route,
 			log: (l) => lines.push(l),
 		}
@@ -115,7 +127,9 @@ describe.skipIf(!INTEGRATION)("the relayer on two anvils", () => {
 	}
 
 	/** Sends `d`, built from the source head's time, from the depositor and confirms it past the relayer's lag. */
-	async function send(build: (head: number) => SourceDeposit): Promise<{ txHash: Hex; deposit: SourceDeposit; relayHash: Hex }> {
+	async function send(
+		build: (head: number) => SourceDeposit,
+	): Promise<{ txHash: Hex; block: bigint; deposit: SourceDeposit; relayHash: Hex }> {
 		await src.test.mine({ blocks: 1 })
 		const d = build(Number((await src.pub.getBlock()).timestamp))
 		const r = d.relay
@@ -130,7 +144,7 @@ describe.skipIf(!INTEGRATION)("the relayer on two anvils", () => {
 		await src.test.mine({ blocks: 2 })
 		const [deposit] = depositsIn(receipt.logs, SOURCE_POOL, 84532n)
 		if (!deposit) throw new Error("the deposit logged no FundsDeposited")
-		return { txHash: receipt.transactionHash, deposit, relayHash: relayHashOf(deposit) }
+		return { txHash: receipt.transactionHash, block: receipt.blockNumber, deposit, relayHash: relayHashOf(deposit) }
 	}
 	const app = (input: bigint, o: { filler?: Address; router?: Address; ago?: number } = {}) =>
 		send((head) => appDeposit({ input, filler: o.filler ?? FILLER, router: o.router, head: head - (o.ago ?? 0) }))
@@ -226,31 +240,49 @@ describe.skipIf(!INTEGRATION)("the relayer on two anvils", () => {
 		expect(await status(ours.relayHash)).toBe(2n)
 	})
 
-	it("loses no token when two runs overlap past the busy check", async () => {
+	it("loses no token when another run's approval, fill and revoke land between a run's approval and its fill", async () => {
 		await mint(dst, SEPOLIA_USDC, FILLER, 20n * USDC)
-		const deposits = [await app(4n * USDC), await app(3n * USDC)]
+		const older = await app(3n * USDC)
+		const newer = await app(4n * USDC)
 		const float = await usdc(FILLER)
-		let arrived = 0
-		let release = () => {}
-		const together = new Promise<void>((resolve) => {
-			release = resolve
+		let reached = () => {}
+		let resume = () => {}
+		const atFill = new Promise<void>((r) => {
+			reached = r
 		})
-		const barrier = () => {
-			let first = true
-			return async () => {
-				if (!first) return
-				first = false
-				if (++arrived === 2) release()
-				await Promise.race([together, new Promise((r) => setTimeout(r, 10_000))])
-			}
-		}
-		const held = () => dst.wallet(KEYS.filler, sepoliaTransport(pair.destinationUrl, barrier()))
-		await Promise.all([run([], held()), run([], held())])
-		expect(arrived).toBe(2)
-		for (let i = 0; i < 2 && (await status(deposits[1]?.relayHash ?? zeroHash)) !== 2n; i++) await run()
-		expect(await Promise.all(deposits.map((d) => status(d.relayHash)))).toEqual([2n, 2n])
-		const outputs = deposits.reduce((sum, d) => sum + d.deposit.relay.outputAmount, 0n)
-		expect(float - (await usdc(FILLER))).toBe(outputs)
+		const resumed = new Promise<void>((r) => {
+			resume = r
+		})
+		// The second nonce read is the fill's: the first run's approval has landed and its fill was simulated.
+		let nonceReads = 0
+		const held = dst.wallet(
+			KEYS.filler,
+			sepoliaTransport(pair.destinationUrl, async (method) => {
+				if (method !== "eth_getTransactionCount" || ++nonceReads !== 2) return
+				reached()
+				await resumed
+			}),
+		)
+		const lines: RelayLine[] = []
+		const first = run(lines, { wallet: held })
+		await Promise.race([
+			atFill,
+			new Promise((_, no) => setTimeout(() => no(new Error("the first run never reached its fill")), 30_000)),
+		])
+		const lagging = createPublicClient({ chain: src.pub.chain, transport: laggingTransport(pair.sourceUrl, older.block + 2n) })
+		expect(await run([], { source: lagging })).toMatchObject({ outcome: "filled" })
+		expect(await status(older.relayHash)).toBe(2n)
+		resume()
+		expect(await first).toEqual({ outcome: "failed" })
+		expect(lines).toContainEqual(
+			expect.objectContaining({ event: "failed", reason: expect.stringMatching(/reverted/), relayHash: newer.relayHash }),
+		)
+		expect(await run()).toMatchObject({ outcome: "filled" })
+		expect(await status(newer.relayHash)).toBe(2n)
+		expect(float - (await usdc(FILLER))).toBe(older.deposit.relay.outputAmount + newer.deposit.relay.outputAmount)
+		expect(
+			await dst.pub.readContract({ address: SEPOLIA_USDC, abi: erc20Abi, functionName: "allowance", args: [FILLER, DEST_POOL] }),
+		).toBe(0n)
 	})
 
 	it("skips a deposit inside the deadline margin by the destination's clock, sending nothing", async () => {

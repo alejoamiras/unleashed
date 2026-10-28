@@ -127,13 +127,14 @@ describe("relayOnce", () => {
 		const { relay } = filled
 		const { message, ...fields } = relay
 		const fillOf = { ...fields, messageHash: keccak256(message) }
-		const { c, lines } = config({
+		const { c, lines, calls } = config({
 			deposits: [filled, late, costly].map((d, i) => depositLog(d, i + 1)),
 			fills: [fillOf],
 			token: 5_000_000n,
 		})
 		expect(await relayOnce(c)).toEqual({ outcome: "idle" })
 		expect(fill).not.toHaveBeenCalled()
+		expect(calls.filter((m) => m === "readContract")).toEqual(["readContract"])
 		expect(lines.filter((l) => l.event === "skipped").map((l) => l.reason)).toEqual(["deadline", "balance"])
 	})
 

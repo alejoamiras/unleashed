@@ -47,13 +47,14 @@ One JSON line per event ([`src/log.ts`](src/log.ts)), in Workers Logs. No line c
 | `low-gas` / `low-inventory` | the filler holds under 0.01 ETH / under 6 USDC on Sepolia |
 | `busy` | the filler has a pending transaction: the run sends nothing |
 | `gas-price` | a fill at the gas cap could cost over 0.005 ETH: the run sends nothing |
-| `refused` | the chain, the key or the manifest is not the testnet relayer's: nothing was read or signed |
+| `refused` | the chain, the key or the manifest is not the testnet relayer's: nothing signed, nothing read beyond the two chain ids |
 
 ## Known limits
 
 1. Every fill spends the float, which Across testnet never repays: legitimate sends en masse can empty it, and
    later sends stay in the source pool.
-2. A deposit missed while the Worker is down past its deadline stays in the source pool.
+2. A deposit missed past its deadline, while the Worker is down or its reads keep failing (a provider's outage or
+   limits), stays in the source pool.
 3. A fill that fails after its approval is retried each minute until its deadline, at an approval and a revoke
    each, and as the largest candidate holds smaller ones back meanwhile.
 4. Overlapping runs (one stalled past a minute) can waste gas on replaced or reverted transactions. They cannot

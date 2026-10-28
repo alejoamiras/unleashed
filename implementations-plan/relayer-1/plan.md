@@ -228,8 +228,8 @@ minute until its deadline (known limit 3).
   run stalled past a minute. The canary key signs canaries and its manual fills, so neither shares a nonce with the
   relayer. A lock (a Durable Object) would be a coordination protocol for a gas-only loss; not built.
 - **Known limits** (closed `known-limit` issues at close-out): (1) inventory exhaustion: every fill spends the float
-  (F4), so legitimate sends en masse can empty it and later sends stay in the source pool; (2) a deposit missed while
-  the Worker is down past its deadline stays in the source pool; (3) a fill that fails after its approval is retried
+  (F4), so legitimate sends en masse can empty it and later sends stay in the source pool; (2) a deposit missed past its
+  deadline, while the Worker is down or its reads keep failing (a provider's outage or limits), stays in the source pool; (3) a fill that fails after its approval is retried
   each minute until its deadline, at an approve and a revoke each, and, as the largest candidate, holds smaller ones
   back meanwhile; (4) overlapping runs can waste gas as above.
 - **A lying source RPC** can invent a deposit, since the receipt re-read asks the same provider: one output each;
@@ -303,7 +303,7 @@ as `filler`; own `vitest.integration.config.ts`, gated on `RELAYER_INTEGRATION=1
 | S2 | deposits naming another relayer, a foreign router, or an output over the terms are ignored at no transaction | the never-happens control beside S1 on real logs |
 | S3 | a deposit above the float and a smaller one: the same run skips the first on `balance` and fills the second; after a `mint` the next run fills the first | the poisoned-first-candidate path and real balance reads across runs |
 | S4 | a deposit inside the deadline margin by the destination clock is skipped with no fill | needs two chain clocks |
-| S5 | two runs over two deposits whose wallets hold their first broadcast at a barrier until both arrive, so both are past the `busy` check and both write: each deposit is filled once, the filler's USDC falls by exactly the outputs filled, and a later run completes what they left | token safety under a forced overlap, which stubs cannot interleave |
+| S5 | a run held at its fill's nonce read, its approval landed; meanwhile a second run, on a source node lagging behind that deposit, approves, fills and revokes an older one; the first run's fill then reverts on the revoked allowance (`failed`), and a later run fills it: each deposit filled once, the filler's USDC down by exactly the two outputs, no allowance left | token safety when one run's approval and revoke land inside another's, which stubs cannot interleave |
 | S6 | a stranger fills a relay reusing an app deposit's origin and id (another recipient, no message, no exclusivity) before the run: the app deposit is still filled | the full-identity match on real `FilledRelay` logs |
 
 CI: run `bun run --cwd packages/testnet-relayer test:integration` in the forge job of `_bridge-contracts.yml` after
@@ -394,6 +394,14 @@ corrected; S5 forces its overlap with a broadcast barrier, so `relayOnce` takes 
 
 Second resume: **approve**, no new material finding.
 
+**Fix loop on a1's diff.** Round 1: Codex **reject**, four findings, all verified and adopted: (1) the fill-log
+bucket by deposit id was rebuilt on each log, quadratic in a stranger's fills of one id (demonstrated): it appends;
+(2) S5's two runs signed identical transactions, so it proved no interleaving: it now holds a run at its fill's nonce
+read while a second run on a lagging source approves, fills and revokes another deposit, and the held fill reverts on
+the revoked allowance; (3) the "no per-deposit read" unit test now counts `readContract`; (4) two comments overstated
+(the recovery goes to the message's fallback receiver; the message cap bounds calldata, not gas) and three restated
+their line. Known limit 2 also names a provider's outage or limits.
+
 ## Post-implementation
 
 While implementing: comments state invariants and whys only. Log attempts in `lessons/phase-N.md`. After each gate:
@@ -420,7 +428,7 @@ arc (`ARC_FAILED`).
    index and `lessons.md`): the `## Outcome` block after the front matter (date, status, PRs, `Known limits:`, `Open
    items:`, a line retiring the seeds); promote "Across's testnet settles no fill and refunds no deposit: a missed
    testnet deposit stays in the source pool" to `lessons.md`; delete `follow-ups.md`'s "Testnet fills are manual" and
-   "Observe an expired testnet deposit's refund"; file the three known limits as closed `known-limit` issues; `git mv`
+   "Observe an expired testnet deposit's refund"; file the four known limits as closed `known-limit` issues; `git mv`
    the folder to `implementations-plan/archive/relayer-1` in its own commit, one line in `archive/index.md`, delete
    `STATUS.md`. No row in `index.md`. Open work's homes:
 

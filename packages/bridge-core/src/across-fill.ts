@@ -163,7 +163,6 @@ const submitApproval = (dest: Destination, a: Approval): Promise<Hex> =>
 		chain: dest.wallet.chain,
 	})
 
-/** The approval's block. */
 async function confirmApproval(dest: Destination, a: Approval, hash: Hex): Promise<bigint> {
 	const receipt = await dest.public.waitForTransactionReceipt({ hash })
 	if (receipt.status !== "success") throw new Error(`approve(${a.spender}, ${a.amount}) on ${a.token} reverted`)

@@ -130,7 +130,6 @@ async function readFloat(c: RelayConfig): Promise<bigint> {
 	return token
 }
 
-/** `[from, to]` in `CHUNK_BLOCKS` slices. */
 function chunks(from: bigint, to: bigint): [bigint, bigint][] {
 	const out: [bigint, bigint][] = []
 	for (let start = from; start <= to; start += CHUNK_BLOCKS)
@@ -194,7 +193,12 @@ async function recentFills(c: RelayConfig, destinationHead: bigint) {
 				strict: true,
 			}),
 		)
-		for (const { args } of logs) byId.set(args.depositId, [...(byId.get(args.depositId) ?? []), args])
+		// Anyone can log fills under one deposit id, so a bucket can be long: append, never copy.
+		for (const { args } of logs) {
+			const bucket = byId.get(args.depositId)
+			if (bucket) bucket.push(args)
+			else byId.set(args.depositId, [args])
+		}
 	}
 	return byId
 }

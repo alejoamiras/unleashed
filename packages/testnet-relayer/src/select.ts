@@ -1,7 +1,7 @@
 /**
  * Which deposits the relayer fills. Anyone can name our filler, so a deposit is admitted only inside the envelope of
  * what the app builds off mainnet: self-built terms, LI.FI's receiver, and a one-step message into our router that
- * pulls exactly the output. The router checks the intent itself; one it refuses recovers the output to the depositor.
+ * pulls exactly the output. The router checks the intent itself; one it refuses recovers the output to the message's fallback receiver.
  */
 import {
 	type AcrossRelayData,
@@ -13,7 +13,7 @@ import {
 import { type Address, type Hex, isAddressEqual, pad, size, zeroAddress } from "viem"
 import type { RelayerRoute } from "./route"
 
-/** Far above the app's 1,408-byte message: a bound on the gas any admitted message can make us spend. */
+/** Far above the app's 1,408-byte message: caps the calldata a stranger's message adds to our fill (`TX_GAS_CAP` caps its gas). */
 export const MAX_MESSAGE_BYTES = 2_048
 
 export type IgnoreReason =
@@ -30,7 +30,6 @@ export type IgnoreReason =
 
 const isWord = (word: Hex, a: Address) => word.toLowerCase() === pad(a, { size: 32 }).toLowerCase()
 
-/** The relay's identity fields against the route: chain, exclusivity, tokens, recipient. */
 function identityReason(r: AcrossRelayData, destinationChainId: bigint, route: RelayerRoute): IgnoreReason | null {
 	if (destinationChainId !== BigInt(route.destination.chainId)) return "destination"
 	if (!isWord(r.exclusiveRelayer, route.filler) || r.exclusivityDeadline !== r.fillDeadline) return "relayer"
