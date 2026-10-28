@@ -5,7 +5,16 @@ import { type Address, type Hex, type PublicClient, pad, toHex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { describe, expect, it, vi } from "vitest"
 import { type AcrossRelayData, acrossRelayHash, FILLED_RELAY_TOPIC } from "../src/crosschain-discovery"
-import { BASE_SEPOLIA_RPC_DEFAULT, FILL_ROUTE, fillCli, fillConfigFromEnv, fillSourceDeposit, SEPOLIA_RPC_DEFAULT } from "./fill-testnet"
+import {
+	BASE_SEPOLIA_RPC_DEFAULT,
+	connectFillRoute,
+	FILL_ROUTE,
+	FillRefused,
+	fillCli,
+	fillConfigFromEnv,
+	fillSourceDeposit,
+	SEPOLIA_RPC_DEFAULT,
+} from "./fill-testnet"
 import { fillWay } from "./lifi-canary-run"
 import { AllowanceStillLive, type Destination, FILL_STATUS } from "./sandbox/relayer"
 import { createL1Clients, createL1PublicClient } from "./script-bootstrap"
@@ -67,6 +76,24 @@ describe("fill-testnet's configuration", () => {
 		// The pinned key passes the gate and reaches the clients.
 		await expect(fillCli(env, argv(HASH), PINNED.toLowerCase())).rejects.toThrow(/built a client/)
 	})
+
+	it("refuses an endpoint on another chain before any other read", async () => {
+		const reads: string[] = []
+		const client = (chainId: number) =>
+			new Proxy({} as Record<string, unknown>, {
+				get: (_, name: string) => async () => {
+					reads.push(name)
+					return chainId
+				},
+			})
+		vi.mocked(createL1PublicClient).mockReturnValueOnce(client(1) as never)
+		vi.mocked(createL1Clients).mockReturnValueOnce({ pub: client(FILL_ROUTE.destination), wallet: {} } as never)
+		const account = privateKeyToAccount(KEY)
+		await expect(connectFillRoute(account, { sourceRpcUrl: "http://b", destinationRpcUrl: "http://s" })).rejects.toThrow(
+			/BASE_SEPOLIA_RPC_URL answers chain 1, not 84532/,
+		)
+		expect(reads).toEqual(["getChainId", "getChainId"])
+	})
 })
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "contracts", "bridge", "evm", "test", "fixtures", "lifi")
@@ -77,7 +104,7 @@ describe("fillSourceDeposit", () => {
 	const rail = fixture("testnet-rail.json")
 	const receipt = { status: "success", logs: fixture("testnet-rail.router.receipts.json").source.logs }
 	const RELAYER = `0x${"4e".repeat(20)}` as Address
-	const fillWith = async (o: { revokeConfirms: boolean; ourFillLands: boolean }) => {
+	const fillWith = async (o: { revokeConfirms: boolean; ourFillLands: boolean; relayHash?: Hex }) => {
 		const approvals = new Map<Hex, bigint>()
 		const fills: Hex[] = []
 		const confirms = (hash: Hex) => (o.ourFillLands ? approvals.has(hash) : approvals.get(hash) === 0n && o.revokeConfirms)
@@ -118,7 +145,7 @@ describe("fillSourceDeposit", () => {
 			sourceSpokePool: rail.source.spokePool as Address,
 			destinationSpokePool: `0x${"5b".repeat(20)}` as Address,
 		}
-		const result = await fillSourceDeposit(deps, HASH as Hex).catch((e: unknown) => e)
+		const result = await fillSourceDeposit(deps, HASH as Hex, { relayHash: o.relayHash }).catch((e: unknown) => e)
 		return { result, approvals: [...approvals.values()], fills, pub }
 	}
 
@@ -141,5 +168,18 @@ describe("fillSourceDeposit", () => {
 		const [fill] = ours.fills as [Hex]
 		expect(await fillWay(ours.pub, fill, PINNED)).toBe("self")
 		expect(await fillWay(ours.pub, pad("0x77"), PINNED)).toBe("organic")
+	})
+
+	it("refuses a receipt whose deposit is not the vetted relay before any write", async () => {
+		const vetted = `0x${"9a".repeat(32)}` as Hex
+		const other = await fillWith({ revokeConfirms: true, ourFillLands: true, relayHash: vetted })
+		expect(other.result).toBeInstanceOf(FillRefused)
+		expect(other.result).toMatchObject({ reason: "relay-hash" })
+		expect([other.approvals, other.fills]).toEqual([[], []])
+
+		// The relay the receipt holds is the vetted one: the same call fills.
+		const first = (await fillWith({ revokeConfirms: true, ourFillLands: true })).result as { relayHash: Hex }
+		const same = await fillWith({ revokeConfirms: true, ourFillLands: true, relayHash: first.relayHash })
+		expect(same.fills).toHaveLength(1)
 	})
 })

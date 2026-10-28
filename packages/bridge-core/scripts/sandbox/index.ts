@@ -16,6 +16,7 @@ export {
 	registerHostPorts,
 	registeredPorts,
 	releaseHostPorts,
+	reserveSandboxPorts,
 	startLocalNetwork,
 } from "./local-network"
 export * from "./manifest"

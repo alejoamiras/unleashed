@@ -7,6 +7,7 @@
 		".": "./src/index.ts",
 		"./artifacts": "./src/artifacts.ts",
 		"./fee-juice": "./src/fee-juice.ts",
+		"./fill-testnet": "./scripts/fill-testnet.ts",
 		"./private-fpc-artifact": "./src/private-fpc-artifact.ts",
 		"./sandbox": "./scripts/sandbox/index.ts",
 		"./wallet-store": "./scripts/wallet-store.ts"
