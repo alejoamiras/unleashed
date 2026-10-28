@@ -48,6 +48,17 @@ One JSON line per event ([`src/log.ts`](src/log.ts)), in Workers Logs. No line c
 | `busy` | the filler has a pending transaction: the run sends nothing |
 | `gas-price` | a fill at the gas cap could cost over 0.005 ETH: the run sends nothing |
 | `refused` | the chain, the key or the manifest is not the testnet relayer's: nothing signed, nothing read beyond the two chain ids |
+| `restock-requested` | Circle's faucet API answered `204` to a USDC drip request (`balance` before it); the next runs' balance shows the drip |
+| `restock-refused` | the drip request, or the balance read before it, failed: Circle's status, `code` and message, the key never in it |
+
+## Restock
+
+With the optional secret `CIRCLE_API_KEY` set, a run may ask Circle's faucet API (`POST /v1/faucet/drips`) for a
+USDC drip to the filler on Ethereum Sepolia ([`src/restock.ts`](src/restock.ts)). It asks only in the cron run
+scheduled for the first minute of a UTC day, only after a run whose chain and signer checks passed, and only while the
+float is under 20 USDC (the web faucet's claim; the API states no amount); it never retries. Circle documents no rate for the API, so once a day is a
+conservative cadence, not a documented one. Without the secret, the Worker only logs `low-inventory`; a manual
+`scripts/relayer.ts once` never restocks.
 
 ## Known limits
 
@@ -63,9 +74,15 @@ One JSON line per event ([`src/log.ts`](src/log.ts)), in Workers Logs. No line c
 5. Eight admitted deposits whose fill reverts even at the gas cap (an intent the router refuses, recovering to a
    fallback receiver that Sepolia USDC blacklists) are refused before any write, but fill a run's eight tries ahead
    of any send no larger or later than them, until their deadline.
+6. Restock is one attempt a day. A float spent just after that minute waits up to a day for a drip, past a send's
+   2 h window, so manual top-ups stay; a day whose restock minute's run fails gets no attempt. Circle documents
+   neither the API's cooldown nor its amount, so a request inside the cooldown is refused. A duplicated trigger of
+   one scheduled time would send a second request. Whether the API funds an address that Circle Wallets did not
+   create is unconfirmed until the first drip.
 
 The key is a dedicated one with a small float, never the canary's. Anyone who can deploy to the Cloudflare account
-can deploy code that reads the secret; the loss is the float.
+can deploy code that reads the secrets; the loss is the float, and whatever the Circle key may call (step 6 keeps that
+to one product).
 
 ## The owner's runbook
 
@@ -87,13 +104,23 @@ The agent never holds the key; every step below is the owner's.
    down, a keyed run of `bun packages/testnet-relayer/scripts/relayer.ts once` on the same template fills one
    deposit per call from the owner's machine, with the same code.
 
-Until `TESTNET_FILLER` names the key, the Worker refuses every run: its key does not derive the filler.
+6. **Restock (optional).** Upgrade a Circle developer account for the faucet API (Circle: "requires upgrading to
+   mainnet"). Create a Restricted Access key with no permission on any product but the one the drip endpoint needs
+   (it sits in the Wallets API reference), in whichever environment, TEST or LIVE, the endpoint accepts (Circle keeps
+   them apart; which one is unconfirmed). Store it in 1Password and paste it into the Worker secret
+   `CIRCLE_API_KEY`; never give the Worker an entity secret. Read Circle's terms on scheduled claims while upgrading.
+   At the next 00:00 UTC run with the float under 20 USDC, the logs show `restock-requested` and the Sepolia USDC
+   rises by the drip; `restock-refused` names Circle's code. Delete the secret to turn it off. The manual faucet stays
+   the fallback.
+
+Until `TESTNET_FILLER` names the key, the Worker refuses every run: its key does not derive the filler, and no run
+restocks.
 
 ## Scripts
 
 | Script | What |
 |---|---|
-| `bun run test` | Unit tests: the route, `classify`, `relayOnce` over stubbed chains, the key, the config, and a `wrangler deploy --dry-run` bundle. |
+| `bun run test` | Unit tests: the route, `classify`, `relayOnce` over stubbed chains, the restock and the Worker's gate on it, the key, the config, and a `wrangler deploy --dry-run` bundle. |
 | `bun run test:integration` | `relayOnce` against two anvils at the two chain ids, with the repository's `TestSpokePool` and `MintableERC20` copied to the pinned pool and USDC addresses: a fill and an idle rerun, an ignored deposit, a pass-over and restock, a forged fill, an overlap, the deadline margin. Needs `forge build` in `contracts/bridge/evm`; CI runs it in `_bridge-contracts.yml`. |
 | `bun run typecheck` | `tsc --noEmit`. |
 | `bun run worker:deploy` | `wrangler deploy`: Workers Builds' deploy command, never run by hand. |
