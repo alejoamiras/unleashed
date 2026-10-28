@@ -1,6 +1,7 @@
 /** The manifest the sandbox ships to its consumers, and the artifacts directory a run writes. */
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { manifestPrivateFpc } from "../../src/aztec-line"
 import type { BridgeBlock, ManifestToken, ManifestV2 } from "../../src/manifest-v2"
 import { walletChainIdOf } from "../../src/wallet-chain-id"
 import type { GenerationRecord } from "../generation"
@@ -47,6 +48,7 @@ export function buildManifest(
 			...(deployment.feeAssetHandler ? { feeAssetHandler: deployment.feeAssetHandler } : {}),
 			minFj: MIN_FJ.toString(),
 		},
+		privateFpc: manifestPrivateFpc(CHAIN_ID),
 		privateClaimMode: "salt-v2",
 	}
 }

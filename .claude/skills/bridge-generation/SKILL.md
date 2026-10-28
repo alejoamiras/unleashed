@@ -1,6 +1,6 @@
 ---
 name: bridge-generation
-description: Runbook for the bridge's on-chain side across an Aztec-line bump — classifying the bump, the Noir surface and drift detectors, and deploying a new bridge generation (PortalFactory + TokenBridgeHub, then DepositRouter + TestnetFuelSwapper) when the network resets or a class id moves, or a router-only deploy (DepositRouter + TestnetFuelSwapper) on the current generation. Use when bumping Aztec, when a drift detector goes red, when pre-creating a token, calibrating fjPerTx, deploying a new router or refilling and re-pricing the testnet fuel swapper, promoting a candidate manifest, or running the live canaries.
+description: Runbook for the bridge's on-chain side across an Aztec-line bump — classifying the bump, the Noir surface and drift detectors, and deploying a new bridge generation (PortalFactory + TokenBridgeHub, then DepositRouter + TestnetFuelSwapper) when the network resets or a class id moves, or a router-only deploy (DepositRouter + TestnetFuelSwapper) on the current generation, or Ethereum mainnet's fuel-only route (FuelOnlyGate + DepositRouter). Use when bumping Aztec, when a drift detector goes red, when pre-creating a token, calibrating fjPerTx, deploying a new router or the mainnet fuel route or refilling and re-pricing the testnet fuel swapper, promoting a candidate manifest, or running the live canaries.
 ---
 
 # Bridge generation
@@ -538,6 +538,81 @@ canary holds the matrix's amounts on both chains.
 - **Funding.** Base Sepolia: three cross-chain rows of 6 USDC, plus gas. Sepolia: each self-fill pays the row's
   output (4.5 USDC), plus the Ethereum-origin rows' 5 USDC, plus gas. Base Sepolia's USDC faucet has a two-hour
   cooldown.
+
+## Branch F — mainnet fuel route (a router behind a `FuelOnlyGate`)
+
+Ethereum mainnet has no token portals: its manifest keeps `bridge: null` and gains a `fuelRoute`, a
+`DepositRouter` whose factory slot holds a `FuelOnlyGate`. The gate answers `depositsPaused()` (its
+owner alone sets it) and reverts every `createPortal`, so the router carries gas-only sends and
+nothing else. The router swaps through LI.FI's Diamond (no `TestnetFuelSwapper` on chain 1) into the
+canonical rollup's `FeeJuicePortal`; the app sends there once it reads `fuelRouteOf` (the SDK arcs).
+
+**Preconditions, all before any keyed run:**
+- The owner authorizes exactly this scope in writing: the gate, the router, the canary sends,
+  calibration and promotion, under `MAINNET_CAPS` (`live-intent.ts`, 0.1 ETH), which they review.
+- The security lane's review of `FuelOnlyGate` and the route has landed.
+- The line gate holds: `aztecLineOf(1)` is supported (mainnet's canonical rollup runs the installed
+  line), and `check-fpc-version.ts --network mainnet` is green.
+- The fork suites are green on an archive RPC: `ETH_RPC_URL=… forge test --match-contract
+  '^(LifiDestination|FuelRouteMainnet)Fork$'` from `contracts/bridge/evm`. The fixture's block
+  predates the canonical portal, so the fork proves the route's mechanics against Ethereum's
+  Permit2, Diamond and a real portal; `verify-l1 --strict` proves the deployed binding.
+- `Keyed-Runs/Unleashed-Mainnet` exists, created by the owner around the key of
+  `PLAN_PINNED_L1_SIGNERS.mainnet` (`packages/bridge-core/mainnet-l1.env.example` lists its fields),
+  and the signer holds the ETH the deploys need.
+- The arc's `lessons/` directory is in `OPERATIONAL_ALLOWLIST`, committed before `build`.
+
+**Steps** (from the repository root; every keyed run on `mainnet-l1.env.example`, a signing one with
+`live-intent.ts verify <intent>` chained ahead of it in one `bash -c`):
+1. **Intent.** `bun packages/bridge-core/scripts/live-intent.ts build <intent> --fuel-route`, then
+   commit it. There is no reset baseline on mainnet: `build` pins the mainnet node against the
+   committed `mainnet-bridge.json` (chain, wallet chain id, Fee Juice pair) and `MAINNET_REGISTRY`,
+   and reads the registry's canonical rollup on L1, which must be the node's. The intent records the
+   mainnet journal's committed length; every later `verify` refuses a journal step other than the
+   gate, the router and the candidate.
+2. **Fuel file**, outside the repository: `{ "slippageBps": …, "minFuelFj": "…", "fjPerTx": "0" }`.
+   `minFuelFj` is what `fpc-dust-canary-mainnet.ts` prints as the calibrated floor. `fjPerTx` stays
+   `"0"` until step 5 measures it: `live-intent` refuses a route candidate whose `fjPerTx` or
+   `minFuelFj` is 0, so an uncalibrated route can be deployed and verified on L1 but never promoted.
+3. **Dry run, then deploy.** L1 only:
+   ```bash
+   bun run --cwd packages/bridge-core deploy:generation deploy --fuel-route --fuel <abs path>/fuel.json --dry-run
+   bun run --cwd packages/bridge-core deploy:generation deploy --fuel-route --fuel <abs path>/fuel.json
+   ```
+   The conductor refuses any signer but the pinned mainnet one and any chain but 1 (the sandbox
+   aside), authenticates the node like `build`, and before anything is sent proves the registry's
+   canonical rollup names the portal (`getFeeAssetPortal()`) and the portal names it back, paying the
+   fee asset at the node's version: a registry keeps older rollups, whose portals still take deposits
+   that no claim on this line can redeem. Order:
+   `FuelOnlyGate(signer)` → readback (owner, no pending handover, open) →
+   `DepositRouter(Permit2, FeeJuicePortal, gate, Diamond, signer)` → readback → the candidate
+   `apps/tools/public/mainnet-bridge.candidate.json`: the live placeholder plus `fuelRoute`. Both
+   deploys journal to `deploy-journal/mainnet-fuel-route.jsonl` and are adopted on an identical re-run,
+   as in the router-only deploy.
+4. **Verify.** `bun run --cwd packages/bridge-core verify:l1 --config ../../apps/tools/public/mainnet-bridge.candidate.json --strict`
+   checks code at the router, the gate, Permit2 and the portal; the router's immutables (`FACTORY` =
+   the gate, `SWAP_TARGET` = the Diamond, the canonical Permit2, `FEE_ASSET` = the portal's
+   `UNDERLYING()`), the guardian as owner of both, the gate open (a paused gate fails `--strict`) with
+   no pending handover, the canonical rollup's `getFeeAssetPortal()` = the portal, the portal's
+   `ROLLUP()` = the registry's canonical one and its `VERSION()` = the manifest's wallet chain id,
+   LI.FI's mainnet book, and both runtimes against the forge build.
+5. **Canary, then calibrate.** The route's canary is a gas-only send through the candidate's router
+   from a pinned mainnet canary key, claimed once as public Fee Juice and once as PrivateFPC credit;
+   its paid claims' `transactionFee`s, written as `fees.json` outside the repository
+   (`claim_public` with `fee-juice`, `claim_private` with `private-fpc`), are the calibration input:
+   `bun run --cwd packages/bridge-core deploy:generation calibrate --config ../../apps/tools/public/mainnet-bridge.candidate.json --samples <abs path>/fees.json`
+   writes `fuelRoute.fuel.fjPerTx` (a route registers nothing, so no `fjRegister`). No script runs
+   that canary yet and `PLAN_PINNED_CANARY_SIGNERS.mainnet` is `null`: until both exist, Branch F
+   stops here.
+6. **Promote.** `live-intent.ts verify <intent> --candidate apps/tools/public/mainnet-bridge.candidate.json`
+   records the digest (commit the intent), refuses a candidate that changes the placeholder beyond
+   `fuelRoute`, a guardian other than the signer, another registry or Permit2, or `fjPerTx` or
+   `minFuelFj` 0, and
+   runs strict `verify-l1`. Then `live-intent.ts promote <intent>`: a mainnet promotion moves the
+   bridge manifest alone and runs `check-fpc-version.ts --network mainnet` first.
+
+The gate's owner pauses every send through the route with `setDepositsPaused(true)`; ownership moves
+only through `Ownable2Step` and can never be renounced.
 
 ## Gotchas
 

@@ -12,7 +12,9 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { FEE_JUICE_ADDRESS } from "@aztec-labs/constants"
-import { type Address, type Hex, pad, toHex } from "viem"
+import { FeeJuicePortalAbi } from "@aztec-foundation/l1-artifacts"
+import { type Abi, type Address, type Hex, pad, toHex, zeroHash } from "viem"
+import { assertSupportedLine } from "./aztec-line"
 import { deriveTokenClaimSecret } from "./claim-secret"
 import {
 	type DepositedFacts,
@@ -44,19 +46,29 @@ export function sendGasLimit(estimate: bigint): bigint {
 
 export type SendStage = "signing" | "sending" | "confirming" | "done"
 
-export interface SendGeneration {
+/** What a gas-only send binds to: a bridge's router, or a fuel-only route's router behind its gate. */
+export interface FuelRoute {
 	/** The deposit router: Permit2's spender and the emitter of `Deposited`. */
 	router: Address
 	permit2: Address
-	factory: Address
-	implementation: Address
 	feeJuicePortal: Address
 	/** The FeeJuice ERC-20 — the token whose gas slice needs no swap. */
 	feeAsset: Address
 	chainId: number
+}
+
+/** A bridge's router, which can also send token legs into the factory's clones. */
+export interface SendGeneration extends FuelRoute {
+	factory: Address
+	implementation: Address
 	/** The L2 hub + the Token class it instantiates — what the L2 token address derives from. */
 	hub: string
 	tokenClassId: string
+}
+
+function tokenRouteOf(g: FuelRoute): SendGeneration {
+	if (!("factory" in g)) throw new Error("runSend: this route has no token portals; it sends gas only")
+	return g as SendGeneration
 }
 
 export interface SendGasLeg {
@@ -118,31 +130,41 @@ export interface SendRecoveryHooks {
 type ReadContract = Pick<L1Ctx["pub"], "readContract">
 
 /**
- * The Inbox a send's leaves are recomputed against: the one the factory froze at construction, with
- * its rollup version, in the pinned Aztec line's `MessageSent` shape. The FeeJuicePortal's messages
- * are recorded under the protocol's Fee Juice address, which these lines seed at genesis.
+ * The Inbox a send's leaves are recomputed against, in the installed Aztec line's `MessageSent` shape: the one a
+ * bridge's factory froze at construction, or, on a fuel-only route, the one the FeeJuicePortal sends through. The
+ * FeeJuicePortal's messages are recorded under the protocol's Fee Juice address, which these lines seed at genesis.
  */
-export async function readSendInbox(pub: ReadContract, g: SendGeneration): Promise<InboxContext> {
-	const read = (functionName: "INBOX" | "ROLLUP_VERSION") =>
-		pub.readContract({ address: g.factory, abi: PORTAL_FACTORY_ABI, functionName, args: [] } as never) as Promise<unknown>
-	const [address, rollupVersion] = await Promise.all([read("INBOX"), read("ROLLUP_VERSION")])
+export async function readSendInbox(pub: ReadContract, g: FuelRoute): Promise<InboxContext> {
+	assertSupportedLine(g.chainId)
+	const read = (address: Address, abi: Abi, functionName: string) =>
+		pub.readContract({ address, abi, functionName, args: [] } as never) as Promise<unknown>
+	const [address, rollupVersion] = await Promise.all(
+		"factory" in g
+			? [
+					read(tokenRouteOf(g).factory, PORTAL_FACTORY_ABI, "INBOX"),
+					read(tokenRouteOf(g).factory, PORTAL_FACTORY_ABI, "ROLLUP_VERSION"),
+				]
+			: [read(g.feeJuicePortal, FeeJuicePortalAbi, "INBOX"), read(g.feeJuicePortal, FeeJuicePortalAbi, "VERSION")],
+	)
 	const feeJuice = toHex(FEE_JUICE_ADDRESS)
 	return {
 		address: address as Address,
 		shape: "artifact",
 		rollupVersion: rollupVersion as bigint,
-		l2Hub: g.hub as Hex,
+		// A fuel-only route carries no token leg, so no message names a hub.
+		l2Hub: ("hub" in g ? g.hub : zeroHash) as Hex,
 		feeJuice: { l2: pad(feeJuice, { size: 32 }), l1Sender: pad(feeJuice, { size: 20 }) as Address },
 	}
 }
 
 /** The addresses that authenticate a send's `Deposited`: the router, the FeeJuicePortal and, with a
  *  token leg, the token's derived clone. */
-export function sendLogContext(g: SendGeneration, inbox: InboxContext, x: DepositExpectation): DepositLogContext {
+export function sendLogContext(g: FuelRoute, inbox: InboxContext, x: DepositExpectation): DepositLogContext {
+	const tokenPortal = x.token && predictPortal(tokenRouteOf(g).factory, tokenRouteOf(g).implementation, x.token.erc20)
 	return {
 		router: g.router,
 		feeJuicePortal: g.feeJuicePortal,
-		...(x.token ? { tokenPortal: predictPortal(g.factory, g.implementation, x.token.erc20) as Address } : {}),
+		...(tokenPortal ? { tokenPortal: tokenPortal as Address } : {}),
 		inbox,
 	}
 }
@@ -169,7 +191,7 @@ export function sendLeavesOf(facts: DepositedFacts): Partial<SendResult> {
  * exactly that deposit.
  */
 export async function readSendReceiptLeaves(
-	g: SendGeneration,
+	g: FuelRoute,
 	inbox: InboxContext,
 	expected: DepositExpectation,
 	txHash: Hex,
@@ -232,7 +254,7 @@ export function sendIntentOf(p: SendParams, tokenSecretHash?: Hex, fuelSecretHas
 }
 
 /** What the send's `Deposited` must carry: each leg paid to the recipient this send named for it. */
-function sendExpectation(g: SendGeneration, p: SendParams, tokenSecretHash?: Hex, fuelSecretHash?: Hex): DepositExpectation {
+function sendExpectation(g: FuelRoute, p: SendParams, tokenSecretHash?: Hex, fuelSecretHash?: Hex): DepositExpectation {
 	const gas = p.gas
 	return {
 		l1ChainId: g.chainId,
@@ -264,8 +286,10 @@ async function assertRecipients(p: SendParams): Promise<void> {
 }
 
 /** The shapes the router refuses, refused before anything is signed. */
-async function assertIntent(g: SendGeneration, p: SendParams): Promise<void> {
+async function assertIntent(g: FuelRoute, p: SendParams): Promise<void> {
+	assertSupportedLine(g.chainId)
 	await assertRecipients(p)
+	if (p.intent !== "gas") tokenRouteOf(g)
 	if (p.intent === "token" && p.gas) throw new Error("runSend: a token-only send carries no gas leg")
 	if (p.intent !== "token" && !p.gas) throw new Error(`runSend: intent ${p.intent} requires a gas leg`)
 	if (p.intent === "gas" && p.gas && p.gas.fuelAmount !== p.amount) throw new Error("runSend: gas-only means fuelAmount == amount")
@@ -282,7 +306,7 @@ async function assertIntent(g: SendGeneration, p: SendParams): Promise<void> {
 /** Executes the L1 leg; the L2 claim runs separately against the returned facts. */
 export async function runSend(
 	l1: L1Ctx,
-	g: SendGeneration,
+	g: FuelRoute,
 	p: SendParams,
 	onStage?: (s: SendStage) => void,
 	recovery?: SendRecoveryHooks,
@@ -334,7 +358,7 @@ export async function runSend(
 
 async function readSendResult(
 	l1: L1Ctx,
-	g: SendGeneration,
+	g: FuelRoute,
 	p: SendParams,
 	out: SendResult,
 	tok?: { claimValue: Fr; secretHash: Hex },
@@ -349,10 +373,11 @@ async function readSendResult(
 		out.fuelSecretHashHex = fuel.secretHash
 	}
 	if (p.intent !== "gas") {
-		const reg = await readRegistration(l1.pub as never, g.factory, p.erc20)
+		const bridge = tokenRouteOf(g)
+		const reg = await readRegistration(l1.pub as never, bridge.factory, p.erc20)
 		if (!reg)
 			throw new Error(`the factory has no registration for ${p.erc20} after ${out.txHash} — the router should have created the clone`)
-		out.token = await registrationToBlock(g, p.erc20, reg)
+		out.token = await registrationToBlock(bridge, p.erc20, reg)
 	}
 	return out
 }

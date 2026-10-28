@@ -6,13 +6,18 @@ import type { DepositedFacts } from "./crosschain-discovery"
 import type { L1Ctx } from "./flows"
 import { depositWitness } from "./l1"
 import { predictPortal } from "./portal-address"
-import { runSend, type SendGeneration, type SendParams } from "./send-flow"
+import { type FuelRoute, runSend, type SendGeneration, type SendParams } from "./send-flow"
 
-const { readRouterDeposit } = vi.hoisted(() => ({ readRouterDeposit: vi.fn() }))
+const { readRouterDeposit, assertSupportedLine } = vi.hoisted(() => ({ readRouterDeposit: vi.fn(), assertSupportedLine: vi.fn() }))
 vi.mock("./crosschain-discovery", async (importOriginal) => ({
 	...(await importOriginal<typeof import("./crosschain-discovery")>()),
 	readRouterDeposit,
 }))
+vi.mock("./aztec-line", async (importOriginal) => {
+	const original = await importOriginal<typeof import("./aztec-line")>()
+	assertSupportedLine.mockImplementation(original.assertSupportedLine)
+	return { ...original, assertSupportedLine }
+})
 
 const ROUTER = "0x1111111111111111111111111111111111111111" as const
 const FACTORY = "0x3333333333333333333333333333333333333333" as const
@@ -49,6 +54,7 @@ function fakeL1(status: "success" | "reverted" = "success") {
 	const writes: { functionName: string; address: string; args: unknown[] }[] = []
 	const signed: { message: { spender: string; witness: ReturnType<typeof depositWitness> } }[] = []
 	const reads: string[] = []
+	const readsAt: string[] = []
 	const l1 = {
 		account: { address: "0x7777777777777777777777777777777777777777" },
 		wallet: {
@@ -65,10 +71,11 @@ function fakeL1(status: "success" | "reverted" = "success") {
 		pub: {
 			estimateContractGas: vi.fn(async () => 1_000_001n),
 			waitForTransactionReceipt: vi.fn(async () => ({ status, logs: [] })),
-			readContract: vi.fn(async (req: { functionName: string }) => {
+			readContract: vi.fn(async (req: { functionName: string; address: string }) => {
 				reads.push(req.functionName)
+				readsAt.push(`${req.address}.${req.functionName}`)
 				if (req.functionName === "INBOX") return INBOX
-				if (req.functionName === "ROLLUP_VERSION") return 9n
+				if (req.functionName === "ROLLUP_VERSION" || req.functionName === "VERSION") return 9n
 				return {
 					portal: usdcPortal,
 					decimals: 6,
@@ -80,7 +87,7 @@ function fakeL1(status: "success" | "reverted" = "success") {
 			}),
 		},
 	}
-	return { l1: l1 as unknown as L1Ctx, writes, signed, reads }
+	return { l1: l1 as unknown as L1Ctx, writes, signed, reads, readsAt }
 }
 
 const base = { erc20: USDC, aztecRecipient: RECIPIENT, nonce: 1n, deadline: 2n } as const
@@ -162,6 +169,48 @@ describe("runSend", () => {
 		expect(expected.token).toBeUndefined()
 		expect([res.token, res.tokenLeafIndex, res.fuelLeafIndex]).toEqual([undefined, undefined, 8n])
 		expect(reads).not.toContain("registrationOf")
+	})
+
+	it("sends gas only through a fuel-only route, against the Inbox its FeeJuicePortal sends through", async () => {
+		readRouterDeposit.mockResolvedValueOnce(facts({ fuel: FUEL_LEG }))
+		const { l1, readsAt } = fakeL1()
+		const { factory: _f, implementation: _i, hub: _h, tokenClassId: _t, ...route } = gen
+		const gas = { fuelAmount: 100n, fuelRecipient: FPC, minFuelOutput: 99n, swapData: SWAP_DATA }
+		const res = await runSend(l1, route, {
+			...base,
+			intent: "gas",
+			amount: 100n,
+			isPrivate: true,
+			gas: { ...gas, fuelSecret: Fr.random() },
+		})
+
+		const [, , ctx] = readRouterDeposit.mock.calls[0]
+		expect(ctx).toMatchObject({ router: ROUTER, feeJuicePortal: FEE_PORTAL })
+		expect(ctx.tokenPortal).toBeUndefined()
+		expect(ctx.inbox).toMatchObject({ address: INBOX, rollupVersion: 9n, shape: "artifact", l2Hub: ZERO32 })
+		expect(readsAt).toEqual([`${FEE_PORTAL}.INBOX`, `${FEE_PORTAL}.VERSION`])
+		expect(res.fuelLeafIndex).toBe(8n)
+	})
+
+	it("refuses a token leg on a fuel-only route, and any send on a network whose Aztec line it does not run", async () => {
+		const { l1, signed } = fakeL1()
+		const { factory: _f, implementation: _i, hub: _h, tokenClassId: _t, ...route } = gen
+		const fuelOnly: FuelRoute = route
+		const gas = { fuelAmount: 40n, fuelRecipient: RECIPIENT, minFuelOutput: 1n, swapData: SWAP_DATA }
+		await expect(runSend(l1, fuelOnly, { ...base, intent: "token+gas", amount: 100n, isPrivate: false, gas })).rejects.toThrow(
+			/no token portals/,
+		)
+		const gasOnly = { ...base, intent: "gas", amount: 40n, isPrivate: false, gas } as const
+		assertSupportedLine.mockImplementationOnce(() => {
+			throw new Error("L1 chain 31337 runs Aztec 5.0.1")
+		})
+		await expect(runSend(l1, fuelOnly, gasOnly)).rejects.toThrow(/runs Aztec 5\.0\.1/)
+		expect(assertSupportedLine).toHaveBeenLastCalledWith(31337)
+		expect(signed).toHaveLength(0)
+
+		readRouterDeposit.mockResolvedValueOnce(facts({ fuel: FUEL_LEG }))
+		await runSend(l1, fuelOnly, gasOnly)
+		expect(signed).toHaveLength(1)
 	})
 
 	it("commits a private recipient through its secret and never publishes it", async () => {

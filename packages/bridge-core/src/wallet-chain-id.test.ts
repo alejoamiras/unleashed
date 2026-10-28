@@ -4,7 +4,7 @@ import { walletChainIdOf } from "./wallet-chain-id"
 describe("walletChainIdOf", () => {
 	it("reproduces the two live networks' wallet chain ids", () => {
 		expect(walletChainIdOf(11155111, 679261766)).toBe(685146337)
-		expect(walletChainIdOf(1, 4248422647)).toBe(4248422646)
+		expect(walletChainIdOf(1, 2070860440)).toBe(2070860441)
 	})
 
 	it("is never the bare rollup version and never negative", () => {

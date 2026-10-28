@@ -11,6 +11,9 @@ import { predictPortal } from "../src/portal-address"
 import { sourceChain } from "../src/source-chains"
 import { retried } from "../src/retried"
 
+/** Uniswap's Permit2, created at this one address on every chain the bridge reaches (the sandbox installs it there). */
+export const CANONICAL_PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3"
+
 /** Minimal ERC20 surface the scripts touch. A superset per consumer is harmless — viem only
  *  encodes the functions actually called. */
 export const ERC20_MIN_ABI = [
@@ -72,6 +75,13 @@ export const FUEL_SWAPPER_ABI = [
 		inputs: [{ type: "address" }, { type: "uint256" }],
 		outputs: [],
 	},
+] as const
+
+/** `FuelOnlyGate`'s operator surface: its owner alone pauses every send through the router bound to it. */
+export const FUEL_GATE_ABI = [
+	{ type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "pendingOwner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "depositsPaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
 ] as const
 
 /** Aztec's testnet fee-asset faucet: permissionless, `mintAmount()` per call. */

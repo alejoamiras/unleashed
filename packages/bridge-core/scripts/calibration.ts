@@ -49,10 +49,13 @@ export function calibrateFuelBudgets(samples: readonly CalibrationSample[], marg
 }
 
 /**
- * `m` with `budgets` in the DepositRouter's `fuel` block. Throws when `m` has none, since a manifest with no fuel
+ * `m` with `budgets` in the DepositRouter's `fuel` block: a bridge router's, or a fuel-only route's, which takes
+ * `fjPerTx` alone since nothing on it registers a token. Throws when `m` has neither, since a manifest with no fuel
  * route has nothing to calibrate.
  */
 export function applyFuelBudgets(m: ManifestV2, budgets: FuelBudgets): ManifestV2 {
+	const route = m.fuelRoute
+	if (route) return { ...m, fuelRoute: { ...route, fuel: { ...route.fuel, fjPerTx: budgets.fjPerTx.toString() } } }
 	const fuel = m.bridge?.l1.fuel
 	if (!m.bridge || !fuel) throw new Error(`manifest for ${m.network} carries no fuel budgets to calibrate — STOP`)
 	const measured = { fjPerTx: budgets.fjPerTx.toString(), fjRegister: budgets.fjRegister.toString() }

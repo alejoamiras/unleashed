@@ -12,6 +12,7 @@ import { lifiBook } from "./lifi-addresses"
 import { LIFI_INTEGRATOR, type LifiClient, type LifiQuote, type LifiRefusal, lifiSameChainQuote } from "./lifi-api"
 import { LIFI_ALLOW_EXCHANGES } from "./lifi-gas"
 import type { ManifestV2 } from "./manifest-v2"
+import { fuelRouteOf } from "./send-generation"
 
 /**
  * Both pinned functions open with `(bytes32, string, string, address _receiver, uint256 _minAmountOut, …)`, so the two
@@ -246,21 +247,19 @@ export interface FuelQuoteReads {
 }
 
 /**
- * The provider a manifest's deposit router swaps through, floored by its `l1.fuel` budgets: the pinned
- * `TestnetFuelSwapper` wherever one is listed, otherwise LI.FI on the manifest's L1 through `o.lifi`.
- * Undefined for a bridge without a deposit router, or on LI.FI without a client.
+ * The provider a manifest's deposit router swaps through (its bridge's or a fuel-only route's), floored by the route's
+ * budgets: the pinned `TestnetFuelSwapper` wherever one is listed, otherwise LI.FI on the manifest's L1 through
+ * `o.lifi`. Undefined for a manifest without a router, or on LI.FI without a client.
  */
 export function manifestFuelProvider(
 	m: ManifestV2,
 	reads: FuelQuoteReads,
 	o: { lifi?: LifiClient; transactionId?: Hex } = {},
 ): FuelQuoteProvider | undefined {
-	const l1 = m.bridge?.l1
-	if (!l1?.depositRouter || !l1.fuel) return undefined
-	const policy = { slippageBps: l1.fuel.slippageBps, minFuelFj: BigInt(l1.fuel.minFuelFj) }
-	const router = l1.depositRouter as Address
-	const feeAsset = m.feeJuice.asset as Address
-	const swapper = l1.fuelSwapper as Address | undefined
+	const route = fuelRouteOf(m)
+	if (!route) return undefined
+	const { router, feeAsset, fuelSwapper: swapper } = route
+	const policy = { slippageBps: route.slippageBps, minFuelFj: route.minFuelFj }
 	if (swapper) {
 		const quote = async (token: Address, amountIn: bigint) =>
 			(await reads.readContract({

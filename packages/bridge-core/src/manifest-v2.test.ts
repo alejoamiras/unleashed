@@ -1,9 +1,16 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { getAddress } from "viem"
 import { describe, expect, it } from "vitest"
 import { deriveHubTokenInstance } from "./hub-token"
 import { assertManifestTokensDerive, deriveManifestHub, manifestToken, parseManifestV2, parseManifestV2Strict } from "./manifest-v2"
 import { predictPortal } from "./portal-address"
+import { aztecLineOf } from "./aztec-line"
+import { PRIVATE_FPC_ADDRESS } from "./private-fuel"
+
+const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "apps", "tools", "public")
 
 const TOKEN_CLASS_ID = "0x2ff0939914ff64bd3f7979926dbe8cf3332bc2fee55928bf3cc9ca802568ea9f"
 const FACTORY = "0x3333333333333333333333333333333333333333"
@@ -198,5 +205,61 @@ describe("manifest v2 DepositRouter fields", () => {
 		const routerless = await routed()
 		for (const k of ["depositRouter", "fuelSwapper", "fuel"]) delete routerless.bridge.l1[k]
 		expect(() => parseManifestV2(routerless)).toThrow(/routing needs a depositRouter/)
+	})
+})
+
+/** The FPC of the retired 5.0.1 mainnet rollup, which the registry still lists. */
+const RETIRED_MAINNET_FPC = "0x1a6d21ce5fd80137df0e99632a4ca17e58a42dc8f6c08191a96ca8ae907a1bc0"
+const GATE = "0x6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a"
+
+/** A network with no token portals: a router behind a gate, as mainnet's route would be. */
+async function fuelOnly(l1ChainId = 1) {
+	const route = {
+		depositRouter: ROUTER,
+		gate: GATE,
+		guardian: "0x0000000000000000000000000000000000000002",
+		registry: "0x35b22e09ee0390539439e24f06da43d83f90e298",
+		permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
+		...(l1ChainId === 1 ? {} : { fuelSwapper: SWAPPER }),
+		fuel: { slippageBps: 300, minFuelFj: "1000", fjPerTx: "40" },
+	}
+	return { ...(await fixture()), l1ChainId, walletChainId: l1ChainId, bridge: null, fuelRoute: route as Record<string, unknown> }
+}
+
+describe("manifest v2 fuel route", () => {
+	it("accepts a router behind a gate on a network without a bridge, on mainnet and off it", async () => {
+		expect(parseManifestV2(await fuelOnly()).fuelRoute?.gate).toBe(GATE)
+		expect(parseManifestV2(await fuelOnly(31337)).fuelRoute?.fuelSwapper).toBe(SWAPPER)
+	})
+
+	it("refuses a fuel route beside a bridge, the testnet swapper on mainnet, and a missing swapper elsewhere", async () => {
+		const beside = { ...(await routed()), fuelRoute: (await fuelOnly(31337)).fuelRoute }
+		expect(() => parseManifestV2(beside)).toThrow(/fuelRoute: a fuel route is legal only with bridge: null/)
+		const mainnet = await fuelOnly()
+		mainnet.fuelRoute.fuelSwapper = SWAPPER
+		expect(() => parseManifestV2(mainnet)).toThrow(/fuelRoute\.fuelSwapper: the testnet fuel swapper is refused/)
+		const sandbox = await fuelOnly(31337)
+		sandbox.fuelRoute.fuelSwapper = undefined
+		expect(() => parseManifestV2(sandbox)).toThrow(/fuelRoute\.fuelSwapper: off mainnet, fuelSwapper is present/)
+		const loose = await fuelOnly()
+		loose.fuelRoute.factory = FACTORY
+		expect(() => parseManifestV2(loose)).toThrow(/fuelRoute/)
+	})
+
+	it("binds the PrivateFPC to the network's own Aztec line", async () => {
+		const mainnet = { ...(await fuelOnly()), privateFpc: { address: PRIVATE_FPC_ADDRESS, version: "6.0.0" } }
+		expect(parseManifestV2(mainnet).privateFpc?.address).toBe(PRIVATE_FPC_ADDRESS)
+		const retired = { ...(await fuelOnly()), privateFpc: { address: RETIRED_MAINNET_FPC, version: "5.0.1" } }
+		expect(() => parseManifestV2(retired)).toThrow(/privateFpc\.address: not the PrivateFPC of this network's Aztec line/)
+		expect(() => parseManifestV2(retired)).toThrow(/privateFpc\.version: this network's Aztec line is 6\.0\.0/)
+		const stale = { ...(await fixture()), privateFpc: { address: PRIVATE_FPC_ADDRESS, artifactDigest: "d".repeat(64) } }
+		expect(() => parseManifestV2(stale)).toThrow(/privateFpc\.artifactDigest: not this line's PrivateFPC artifact/)
+	})
+
+	it("the shipped manifests carry their own line's PrivateFPC", async () => {
+		for (const name of ["testnet", "mainnet"]) {
+			const raw = JSON.parse(readFileSync(join(PUBLIC, `${name}-bridge.json`), "utf8"))
+			expect(parseManifestV2(raw).privateFpc?.address).toBe(aztecLineOf(raw.l1ChainId).privateFpc.address)
+		}
 	})
 })
