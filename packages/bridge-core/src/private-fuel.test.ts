@@ -155,25 +155,18 @@ describe("private-fuel keystone", () => {
 		expect(descriptor.network.rollupVersion).toBe(679261766)
 	})
 
-	it("MAINNET DESCRIPTOR — frozen 5.0.1 identity, mainnet pins, FAIL-CLOSED compat", () => {
-		// Mainnet runs the 5.0.1 FPC while testnet moves with the installed package, so these are
-		// frozen literals, never equality with the testnet descriptor or the installed artifact.
-		// check-fpc-version fails closed on mainnet whenever the installed package is not 5.0.1.
+	it("MAINNET DESCRIPTOR — the installed line's FPC, pinned to the canonical mainnet rollup", () => {
+		// Mainnet's canonical rollup runs the installed line, so its FPC is the testnet descriptor's artifact and
+		// address; only the network pins differ. A line bump that leaves mainnet behind re-pins this file by hand.
 		const dir = fileURLToPath(new URL(".", import.meta.url))
-		const mainnet = JSON.parse(readFileSync(join(dir, "private-fpc-canonical-mainnet.json"), "utf8"))
-		expect(mainnet.expectedAddress).toBe("0x1a6d21ce5fd80137df0e99632a4ca17e58a42dc8f6c08191a96ca8ae907a1bc0")
-		expect(mainnet.salt).toBe(PRIVATE_FPC_SALT)
-		expect(mainnet.deployer).toBe(AztecAddress.ZERO.toString())
-		expect(mainnet.artifactSha256).toBe("d5a2453cda5cc05026cbda68a57afc5951f73fb08649f66cea8c412be6c54acc")
-		expect(mainnet.aztecVersion).toBe("5.0.1")
-		// Alpha/mainnet identity: (1 ^ 4248422647) >>> 0 = 4248422646.
+		const read = (name: string) => JSON.parse(readFileSync(join(dir, name), "utf8"))
+		const mainnet = read("private-fpc-canonical-mainnet.json")
+		const testnet = read("private-fpc-canonical.json")
+		for (const key of ["expectedAddress", "salt", "deployer", "artifactSha256", "aztecVersion"]) expect(mainnet[key]).toBe(testnet[key])
+		// The canonical rollup, not the retired 5.0.1 one (4248422647) the registry still lists: (1 ^ 2070860440) >>> 0 = 2070860441.
 		expect(mainnet.network.l1ChainId).toBe(1)
-		expect(mainnet.network.rollupVersion).toBe(4248422647)
-		// The 5.0.1 artifact is curated compatible with the 5.1.0 Alpha
-		// node — and ONLY that. Any other node version (or a new artifact digest) must re-red the
-		// gate until freshly curated.
-		const compat = mainnet.compatibleNodeVersions[mainnet.artifactSha256]
-		expect(compat).toEqual(["5.0.1", "5.1.0"])
+		expect(mainnet.network.rollupVersion).toBe(2070860440)
+		expect(mainnet.compatibleNodeVersions[mainnet.artifactSha256]).toEqual(["6.0.0"])
 	})
 })
 

@@ -2,17 +2,17 @@
 	"schema": 2,
 	"network": "mainnet",
 	"l1ChainId": 1,
-	"walletChainId": 4248422646,
+	"walletChainId": 2070860441,
 	"bridge": null,
 	"feeJuice": {
-		"portal": "0xaf73dd51d1eb8a079bb097f39c832cdd00ac691c",
+		"portal": "0x534361be805ca30bdb6404ec5e6cdaffb3e9f3b3",
 		"asset": "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
 		"minFj": "16000000000000000000"
 	},
 	"privateFpc": {
-		"address": "0x1a6d21ce5fd80137df0e99632a4ca17e58a42dc8f6c08191a96ca8ae907a1bc0",
-		"version": "5.0.1",
-		"artifactDigest": "d5a2453cda5cc05026cbda68a57afc5951f73fb08649f66cea8c412be6c54acc"
+		"address": "0x0516ebb4f9c7988eb3cf6dd9459a47556f7a92db06b17cfa47ffb37fd35c6915",
+		"version": "6.0.0",
+		"artifactDigest": "bc1e27b0cfb48c8c1483071453288a27e302283c5da5fa40869a179a41079bde"
 	},
 	"privateClaimMode": "salt-v2"
 }
