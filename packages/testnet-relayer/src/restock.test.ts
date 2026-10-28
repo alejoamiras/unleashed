@@ -23,7 +23,6 @@ function request(over: Partial<RestockRequest>, answer: Answer = async () => new
 	return { r, fetch, lines }
 }
 
-/** A fetch that settles only when its signal aborts, as one past its deadline does. */
 const hangs: Answer = (init) =>
 	new Promise((_, reject) => {
 		const signal = init.signal as AbortSignal
@@ -31,7 +30,6 @@ const hangs: Answer = (init) =>
 		signal.addEventListener("abort", () => reject(signal.reason))
 	})
 
-/** A 400 whose body never ends, counting the bytes the reader pulled and whether it was cancelled. */
 function endless() {
 	const seen = { bytes: 0, cancelled: false }
 	const body = new ReadableStream<Uint8Array>({

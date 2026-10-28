@@ -24,3 +24,4 @@
 - 2026-10-28 arc a3 started: origin/main (0a81087, PR #29's squash) merged into the branch (8ccdec6), trees identical.
 - 2026-10-28 arc a3 gate green: lint, typecheck:all, relayer test (24), test:all, audit:tools, doc-links; mutation checks bite (lessons/phase-a3.md).
 - 2026-10-28 a3 fix loop round 1: Codex reject (5), Opus (4, one blocking: workerd rejects redirect "error"); all adopted, mutation-checked.
+- 2026-10-28 a3 fix loop round 2: Codex approve (informational item applied). Converged in 2 rounds.

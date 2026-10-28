@@ -489,6 +489,9 @@ have thrown into `restock-refused`, while Bun accepts it and the tests passed; t
 cut; it is now read to 4 KiB and cancelled past it. Tests now pin the literal URL, `AbortSignal.timeout(10_000)` with a
 fetch that settles only on abort, an endless body, a 3xx, the bare `fetch` call workerd needs, and the Worker's slot
 gate before its balance read. `RESTOCK_BELOW` is named for the web faucet's claim, not an API amount.
+Round 2 (resumed): **approve**, no new material finding; the `"manual"` fix checked against Cloudflare's Request docs
+(a 3xx comes back as-is), the byte cap probed at 4,096 and 4,097 bytes and across split UTF-8. Its one informational
+item, two narrating test comments, is applied.
 
 ## Post-implementation
 
