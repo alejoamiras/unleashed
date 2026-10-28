@@ -10,7 +10,7 @@ export const PRIVACY: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: 'This policy is published by the operator of Unleashed ("we", "us"). It covers two websites: unleashed.systems, which describes the project and publishes this policy, and the Unleashed mainnet app at app.unleashed.systems and at any other address that serves the same app (the "app"). It explains what each of them, and the services they rely on, can see about you.',
+					text: 'This policy is published by the operator of Unleashed ("we", "us"). It covers two websites: unleashed.systems (also served at www.unleashed.systems), which describes the project and publishes this policy, and the Unleashed mainnet app at app.unleashed.systems and at any other address that serves the same app (the "app"). It explains what each of them, and the services they rely on, can see about you. It does not cover the Unleashed testnet app, which runs on test networks.',
 				},
 				{ kind: "p", text: "To contact us about this policy or your data, write to hello@unleashed.systems." },
 			],
@@ -25,7 +25,7 @@ export const PRIVACY: LegalDocument = {
 						"Neither website has accounts, analytics, advertising or tracking, and neither sets cookies of its own.",
 						"We run no server that receives your data. What the app needs to remember stays in your browser.",
 						"The company that hosts both websites sees the usual details of each request, and may set its own security cookies.",
-						"While the app sits behind a login wall, the hosting company also checks who logs in and sets a login cookie.",
+						"While the app sits behind a login wall, the hosting company also checks who logs in, keeps a record of each login and sets a login cookie.",
 						"Transactions you send are recorded on public blockchains, permanently.",
 					],
 				},
@@ -36,13 +36,13 @@ export const PRIVACY: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "The unleashed.systems website stores nothing in your browser. Once the app offers the gas flow, it stores these items in your browser's local storage, on your device only:",
+					text: "The unleashed.systems website stores nothing in your browser, and neither does the app's holding page. Once the app offers the gas flow, it may store these items in your browser's local storage, on your device only:",
 				},
 				{
 					kind: "list",
 					items: [
-						"A record of each deposit you start: the network, the contracts, the amounts, your Ethereum and Aztec addresses, transaction hashes, and the secret material needed to claim the deposit. For a public deposit the claim secret is stored as readable text. For a private deposit the secrets are also kept encrypted, but a readable copy of the amount and the recipient stays for display.",
-						"Records that fail the app's checks, set aside rather than deleted, so that nothing that could still be claimed is lost.",
+						"A record of each deposit you start: the network, the contracts, the amounts, your Ethereum and Aztec addresses, transaction hashes, and the secret material needed to claim the deposit. The claim secret is stored as readable text, for public and private deposits alike; a private deposit also keeps, in readable form, the salt its secret comes from, next to an encrypted copy for recovery.",
+						"Records that fail the app's checks, kept apart rather than deleted, so that nothing that could still be claimed is lost. At most the latest 100 are kept.",
 						"Which wallet you chose, and which of its accounts you use.",
 						"Which wallet software produced a signature the app checked, so it does not ask twice.",
 						"A copy of a public token list, refreshed after a day.",
@@ -52,7 +52,7 @@ export const PRIVACY: LegalDocument = {
 				},
 				{
 					kind: "p",
-					text: "The app removes a completed deposit record 7 days after it completes. Everything else stays until you clear your browser data. The software libraries the app uses may also cache public data, such as the parameters used to build proofs. None of this is ever sent to us. Anyone who can use your browser, and any software running in it, may be able to read it. If you clear it before a deposit is claimed and you have no backup, you may lose that deposit.",
+					text: "Each time the app starts, it removes the deposit records that completed at least 7 days earlier, so a record can stay longer if you do not come back. Each list keeps at most 100 records: past that, the oldest completed ones go first, and an unfinished one is never removed. Everything else stays until you clear your browser data or the app replaces it. The software libraries the app uses may also cache public data, such as the parameters used to build proofs. None of this is ever sent to us. Anyone who can use your browser, and any software running in it, may be able to read it. If you clear it before a deposit is claimed and you have no backup, you may lose that deposit.",
 				},
 			],
 		},
@@ -69,7 +69,7 @@ export const PRIVACY: LegalDocument = {
 				},
 				{
 					kind: "p",
-					text: "Until the mainnet app opens to the public, it sits behind Cloudflare Access, a login wall. Cloudflare Access sees the identity you log in with and sets a login cookie on the app's address.",
+					text: "Until the mainnet app opens to the public, it sits behind Cloudflare Access, a login wall. Cloudflare Access checks the identity you log in with, sets a login cookie on the app's address, and records each login: your identity, IP address, the time and whether you were let in. We can see those records.",
 				},
 				{
 					kind: "providers",
@@ -121,7 +121,7 @@ export const PRIVACY: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "Ethereum and Aztec are public networks. A deposit is an Ethereum transaction from your address: anyone can see your address, the token, the amount, the contracts it used and when it happened, forever. A token approval you grant is public too. A public claim on Aztec shows which account received the Fee Juice. A private claim keeps the receiving account off the public record, but the Ethereum side of the deposit stays public. Private is not anonymous: timing, amounts and addresses can still link your activity.",
+					text: "Ethereum and Aztec are public networks. A deposit is an Ethereum transaction from your address: anyone can see your address, the token, the amount, the contracts it used and when it happened, forever. A token approval you grant is public too. For a public deposit, your Aztec account is named on Ethereum as soon as you deposit, and the claim on Aztec is public too. A private claim keeps the receiving account off the public record, but the Ethereum side of the deposit stays public. Private is not anonymous: timing, amounts and addresses can still link your activity.",
 				},
 			],
 		},
@@ -139,7 +139,7 @@ export const PRIVACY: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "The websites link to other sites, such as block explorers, wallet sites and the source code. A link to a block explorer carries your address or transaction hash, so that site learns it when you open the link. Our websites tell the sites they link to only which of our websites you came from, not which page.",
+					text: "The websites link to other sites, such as block explorers, wallet sites and the source code. A link to a block explorer carries your address or transaction hash, so that site learns it when you open the link. When you follow a link, our websites tell the other site at most which of our websites you came from, never which page.",
 				},
 			],
 		},
@@ -162,11 +162,11 @@ export const PRIVACY: LegalDocument = {
 				{
 					kind: "list",
 					items: [
-						"What we process and why: the request details our hosting provider handles for us, to deliver the websites and keep them secure. Our legal basis is our legitimate interest in running and protecting them. We hold no other personal data about you: what the app keeps in your browser never reaches us.",
-						"How long: we keep nothing ourselves. Cloudflare keeps request details for the periods its own privacy policy states.",
-						"Transfers: Cloudflare may process request details outside the UK and the European Economic Area, including in the United States, under the safeguards its data processing terms describe.",
+						"What we process and why: the request details our hosting provider handles, and the login records while the login wall stands, to deliver and protect the websites, in our legitimate interest in running them securely. The details the app needs for a deposit you ask for (your addresses, the transaction details and the claim material) are processed on your device and sent only in the requests described above, to provide the service you ask for under our Terms of Use. Your preferences and your acceptance of these documents are kept in your browser, in our legitimate interest in remembering your choices. If you write to us, we use your address and message to answer you, in our legitimate interest in handling your request, or to meet a legal duty when you exercise your rights. We are responsible for this processing even where the data stays in your browser and never reaches us.",
+						"How long: what stays in your browser follows the rules above. We keep messages you send us as long as we need to handle your request, settle any dispute about it and meet legal duties. Cloudflare keeps request and login records for periods that depend on the service and on its own security and legal needs, as its privacy policy describes.",
+						"Transfers: Cloudflare may process request and login details outside the UK and the European Economic Area, including in the United States. Its data processing terms cover those transfers through the EU-US Data Privacy Framework and its UK Extension, or through the European Commission's standard contractual clauses and the UK's addendum to them. You can ask us for a copy of the safeguards at hello@unleashed.systems.",
 						"Your rights: you can ask us for access to, correction of, or deletion of your personal data, ask us to restrict or stop processing it, and ask for a copy in a portable form. Because we hold almost nothing, there may be nothing for us to give or delete; we will tell you what we have.",
-						"Complaints: you can complain to the data protection authority where you live or work. In the UK that is the Information Commissioner's Office.",
+						"Complaints: you can complain to us first, at hello@unleashed.systems. Where UK law applies, we will acknowledge your complaint within 30 days and tell you the outcome without undue delay. You can also complain to a data protection authority, such as the one where you live or work. In the UK that is the Information Commissioner's Office.",
 					],
 				},
 			],
@@ -180,7 +180,7 @@ export const PRIVACY: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "When we change this policy, we publish the new version here with a new date, and the app asks you to accept it before you use the app again.",
+					text: "When we change this policy, we publish the new version here with a new date. Once the app asks you to accept these documents, it will ask again after every change, before you use the app again.",
 				},
 			],
 		},

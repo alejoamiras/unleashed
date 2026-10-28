@@ -400,8 +400,11 @@ public landing. A deploy of each Worker is independent, so the owner's release s
 
 **Residuals for the owner's lawyer** (the documents do not resolve them): the documents name no person
 and no address (A1/A2), which leaves the UK and EU GDPR identity duty (Art. 13(1)(a)) and a possible
-Art. 27 representative open; a zero liability cap (A8) and an indemnity against consumers may not hold
-under the UK Consumer Rights Act 2015 and UCTA 1977.
+Art. 27 representative open, and the E-Commerce Regulations 2002 reg. 6 ask for a name and a geographic
+address; a zero liability cap (A8) may not hold under the UK Consumer Rights Act 2015 and UCTA 1977; LCIA
+costs above the £5,000 floor face fairness review; a wallet signature identifies a key, not a person.
+Before publication: confirm the Cloudflare plan, the Access log retention and the cookie inventory, and
+assess persistent preferences and caches under PECR reg. 6.
 
 **Outline B (competing).** Markdown under `docs/legal/`, converted by a mainnet-only vite plugin into
 static HTML pages, the gate in one later arc. *For:* Markdown is easier for the owner and a lawyer; pages

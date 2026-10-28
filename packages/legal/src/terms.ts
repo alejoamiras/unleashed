@@ -14,7 +14,7 @@ export const TERMS: LegalDocument = {
 				},
 				{
 					kind: "p",
-					text: "You accept these terms when the app asks you to, or by using the app, whichever comes first. If you do not accept them, do not use the app. Our Privacy Policy explains what the app and the services it uses can see.",
+					text: "You accept these terms when the app asks you to: you sign its acceptance message with your Ethereum wallet, and the message names the version you accept. Visiting the app or reading these pages is not acceptance. If you do not accept these terms, do not use the app. Our Privacy Policy explains what the app and the services it uses can see.",
 				},
 				{ kind: "p", text: "To contact us about these terms, write to hello@unleashed.systems." },
 			],
@@ -43,24 +43,28 @@ export const TERMS: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "Unleashed is an experimental, open-source proof of concept. It is not a finished product and it is not a financial service. It may have bugs, it may change without notice, and it may stop working or be shut down at any time.",
+					text: 'Unleashed is an experimental, open-source proof of concept. It is not a finished product. It may have bugs, and it may change or stop, as "Changes" explains.',
 				},
 				{
 					kind: "p",
-					text: "Today the mainnet app shows only a holding page. When it opens, it will offer one thing: a way to get Fee Juice, the asset that pays transaction fees on the Aztec network, for your own Aztec account. You choose a token on Ethereum; your Ethereum wallet signs and sends a deposit; part or all of the token is swapped into Fee Juice through a third-party route; and the Fee Juice is deposited to the Aztec Fee Juice portal for your account, where your Aztec wallet claims it. The mainnet app does not offer a token bridge.",
+					text: "Today the mainnet app shows only a holding page. When it opens, it will offer one thing: a way to get Fee Juice, the asset that pays transaction fees on the Aztec network, for your own Aztec account. You choose a token on Ethereum; your Ethereum wallet signs and sends a deposit; the token is swapped into Fee Juice through a third-party swap route, unless it already is Fee Juice; and the Fee Juice is deposited to the Aztec Fee Juice portal for your Aztec account, where your Aztec wallet claims it. The mainnet app does not offer a token bridge.",
 				},
 				{
 					kind: "p",
-					text: "The app is a website that runs in your browser. It prepares transactions and messages; your own wallets show them to you, sign them and send them. We are not a custodian, broker, exchange, money transmitter, bank or adviser, and nothing in the app is an offer of any of those services.",
+					text: "The app is a website that runs in your browser. It prepares transactions and messages; your own wallets show them to you, sign them and send them. We do not act as your custodian, broker, exchange, bank or adviser, and nothing in the app is investment, legal or tax advice.",
 				},
 			],
 		},
 		{
-			heading: "We never take custody",
+			heading: "We never hold your keys or your deposits",
 			blocks: [
 				{
 					kind: "p",
-					text: "We never receive, hold or control your private keys, recovery phrases, passwords, claim secrets or funds. We cannot sign for you, and we cannot reverse, cancel, speed up or recover a transaction. Anything you send is final once the network accepts it.",
+					text: "We never receive your private keys, recovery phrases, passwords or claim secrets, and we cannot sign for you. A deposit moves your tokens from your wallet, through our contracts, to the Fee Juice portal within one transaction, so we never hold them in between. Tokens sent to our contracts outside a deposit are different: see the next section.",
+				},
+				{
+					kind: "p",
+					text: "We cannot reverse, cancel or speed up a transaction. Until its network confirms it, a transaction can still fail or be dropped; once confirmed, it is final.",
 				},
 			],
 		},
@@ -116,6 +120,7 @@ export const TERMS: LegalDocument = {
 						"Network risk: Ethereum and Aztec can be congested, slow, expensive, upgraded, paused or reset, and a network change can make a deposit late or unclaimable.",
 						"Pause risk: we can pause new deposits, as described above.",
 						"Price risk: the rate of a swap into Fee Juice can move between quote and execution, and network fees can change.",
+						"Private gas: a private claim credits your Fee Juice to a shared private fee contract, which then pays your transaction fees from your balance there. Each payment takes the transaction's whole fee allowance, even when the network charges less, and the unused part is not returned.",
 						"Third-party risk: wallets, swap routes, network nodes, hosting providers and other services the app relies on can fail, change or act against you.",
 						"Loss of claim material: without the secret material in your browser or a backup, a deposit may never be claimed.",
 						"Legal risk: laws and regulations can change and can affect your use of the app.",
@@ -188,7 +193,7 @@ export const TERMS: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "To the extent the law allows, you will compensate us for any claim, loss, liability or reasonable cost, including legal fees, that arises because you broke these terms, broke the law, or infringed someone else's rights while using the app.",
+					text: "To the extent the law allows, you will cover our reasonable losses and legal costs from a claim that someone else brings against us, to the extent the claim arises from your breaking these terms or the law, or infringing someone else's rights, while using the app. You do not cover losses that we caused.",
 				},
 			],
 		},
@@ -197,7 +202,7 @@ export const TERMS: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "To the extent the law allows, you release us from all claims arising from your use of the app, including claims you do not know about or suspect when you accept these terms.",
+					text: 'To the extent the law allows, you release us from claims for losses that come from the risks you accept in these terms, including losses you do not know about or suspect when you accept them. This release does not cover anything that "Limits on our liability" says we do not exclude, and accepting a new version of these terms does not release a claim you already have.',
 				},
 				{
 					kind: "p",
@@ -210,7 +215,11 @@ export const TERMS: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "We may change, suspend or end the app, or any part of it, at any time and without notice. We may change these terms. When they change, the app will ask you to accept the new version before you use it again. If you do not accept it, stop using the app.",
+					text: "We may change, suspend or end the app, or any part of it, for legal, security, technical or operational reasons. Where we can, we will give notice on unleashed.systems before we end the app, so that you have time to finish your claims or save backups; in an emergency we may act at once.",
+				},
+				{
+					kind: "p",
+					text: "We may change these terms. When they change, the app will ask you to accept the new version before you use it again, and the new version applies only to your use after you accept it. If you do not accept it, stop using the app.",
 				},
 			],
 		},
@@ -227,11 +236,11 @@ export const TERMS: LegalDocument = {
 				},
 				{
 					kind: "p",
-					text: "Disputes are resolved only between you and us, one by one. You may not bring or join a class, collective or representative action or arbitration against us, and no arbitrator may combine claims of different people.",
+					text: "Disputes are resolved only between you and us, one by one. You may not bring or join a class, collective or representative action or arbitration against us, and no arbitrator may combine claims of different people. This does not stop anyone from seeking a public injunction or other relief that the law does not let them give up; if an arbitrator cannot award that relief, a court with jurisdiction may.",
 				},
 				{
 					kind: "p",
-					text: "If you are a consumer, nothing in this section takes away the protection of the mandatory laws of the country where you live. Where those laws give you the right to bring a claim in the courts of that country, or to refuse an agreement to arbitrate made before a dispute arose, you keep that right.",
+					text: "If you are a consumer, nothing in this section takes away the protection of the mandatory laws of the country where you live. Where those laws give you the right to bring a claim in the courts of that country, or to refuse an agreement to arbitrate made before a dispute arose, you keep that right. Where the consumer protections of the Arbitration Act 1996 apply to you, you need not arbitrate a claim for money of £5,000 or less.",
 				},
 			],
 		},
@@ -242,9 +251,9 @@ export const TERMS: LegalDocument = {
 					kind: "list",
 					items: [
 						"These terms and the Privacy Policy are the whole agreement between you and us about the app.",
-						"If a court or arbitrator finds part of these terms invalid or unenforceable, that part is limited or removed to the smallest extent needed, and the rest stays in force.",
+						"If a court or arbitrator finds part of these terms invalid or unenforceable, that part does not apply, and the rest stays in force.",
 						"If we do not enforce a part of these terms at once, we have not given up the right to enforce it later.",
-						"We may transfer our rights and duties under these terms to someone else. You may not transfer yours without our written agreement.",
+						"We may transfer our rights and duties under these terms to someone else, but only in a way that does not reduce your rights under them. You may not transfer yours without our written agreement.",
 						"No one other than you and us has any right to enforce these terms.",
 						"These terms are written in English. A translation is for convenience only.",
 					],
