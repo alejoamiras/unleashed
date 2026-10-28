@@ -440,9 +440,11 @@ async function assertFillable(deps: FillDeps, d: SourceDeposit): Promise<void> {
 async function assertWouldFill(deps: FillDeps, d: SourceDeposit): Promise<void> {
 	const { destination: dest, destinationSpokePool: pool } = deps
 	const amount = d.relay.outputAmount
+	// Without gas, eth_simulateV1 gives a call the block's remaining gas, past the cap a node may enforce.
 	const approve = {
 		to: wordAddress(d.relay.outputToken),
 		data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [pool, amount] }),
+		gas: TX_GAS_CAP,
 	}
 	const data = fillRelayData(fillRelayArgs(d.relay, d.relay.originChainId, dest.wallet.account.address))
 	const outcome = await simulateFill(dest, pool, { to: pool, data, gas: TX_GAS_CAP }, undefined, [approve])

@@ -15,7 +15,8 @@
 	"preview_urls": false,
 	"triggers": { "crons": ["* * * * *"] },
 	"observability": { "enabled": true },
-	// Public keyless endpoints; a keyed provider's URL would go in a dashboard secret, never here.
+	// Public keyless endpoints. A deploy re-applies these, and a secret cannot share a var's name: a keyed provider's
+	// URL becomes a secret of the same name in the change that deletes its var here.
 	"vars": {
 		"BASE_SEPOLIA_RPC_URL": "https://base-sepolia-rpc.publicnode.com",
 		"SEPOLIA_RPC_URL": "https://ethereum-sepolia-rpc.publicnode.com"

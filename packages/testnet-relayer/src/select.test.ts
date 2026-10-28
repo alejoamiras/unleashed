@@ -36,14 +36,20 @@ describe("classify", () => {
 			["relayer", withRelay(d, { exclusiveRelayer: STRANGER })],
 			["relayer", withRelay(d, { exclusivityDeadline: d.relay.fillDeadline - 1 })],
 			["token", withRelay(d, { outputToken: STRANGER })],
+			["token", withRelay(d, { inputToken: STRANGER })],
 			["recipient", withRelay(d, { recipient: pad(USER, { size: 32 }) })],
 			["amount", appDeposit({ input: 8_000_001n, filler: FILLER })],
+			["amount", withRelay(d, { inputAmount: 0n })],
 			["output", withRelay(d, { outputAmount: d.relay.outputAmount + 1n })],
 			["output", withRelay(d, { outputAmount: 0n })],
 			["window", withRelay(d, { fillDeadline: d.relay.fillDeadline + 1, exclusivityDeadline: d.relay.fillDeadline + 1 })],
+			["window", withRelay(d, { fillDeadline: d.quoteTimestamp - 1, exclusivityDeadline: d.quoteTimestamp - 1 })],
 			["message", withRelay(d, { message: `${d.relay.message}${"00".repeat(MAX_MESSAGE_BYTES)}` as Hex })],
 			["message", withStep(d, (s) => s, zeroAddress)],
 			["message", withStep(d, (s) => ({ ...s, fromAmount: (s.fromAmount as bigint) - 1n }))],
+			["message", withStep(d, (s) => ({ ...s, requiresDeposit: true }))],
+			["message", withStep(d, (s) => ({ ...s, sendingAssetId: USER }))],
+			["message", withStep(d, (s) => ({ ...s, receivingAssetId: USER }))],
 			["router", withStep(d, (s) => ({ ...s, callTo: USER, approveTo: USER }))],
 			["router", withStep(d, (s) => ({ ...s, approveTo: USER }))],
 		]
@@ -62,12 +68,16 @@ describe("classify", () => {
 				route,
 			),
 		).toBe("intent")
-		expect(
-			classify(
-				withStep(d, (s) => ({ ...s, callData: call(appIntent(d), out, out + 1n) })),
-				route,
-			),
-		).toBe("intent")
+		for (const [min, max] of [
+			[out, out + 1n],
+			[out - 1n, out],
+		])
+			expect(
+				classify(
+					withStep(d, (s) => ({ ...s, callData: call(appIntent(d), min, max) })),
+					route,
+				),
+			).toBe("intent")
 	})
 
 	it("ignores the recorded Base Sepolia deposit, which names no exclusive relayer", () => {

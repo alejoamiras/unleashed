@@ -46,6 +46,7 @@ interface Chains {
 	/** `FilledRelay` arguments the destination pool logged. */
 	fills?: Record<string, unknown>[]
 	sourceChainId?: number
+	destinationChainId?: number
 	token?: bigint
 	pending?: number
 	maxFeePerGas?: bigint
@@ -72,7 +73,7 @@ function config(o: Chains, signer = ACCOUNT): { c: RelayConfig; lines: RelayLine
 		getLogs: async ({ fromBlock }: { fromBlock: bigint }) => (fromBlock === SOURCE_HEAD - 2n - 4_000n ? (o.deposits ?? []) : []),
 	})
 	const pub = record({
-		getChainId: async () => 11155111,
+		getChainId: async () => o.destinationChainId ?? 11155111,
 		getBalance: async () => 10n ** 17n,
 		readContract: async () => o.token ?? 100_000_000n,
 		getBlock: async () => ({ number: 5_000n, timestamp: BigInt(NOW) }),
@@ -100,9 +101,11 @@ beforeEach(() => {
 
 describe("relayOnce", () => {
 	it("refuses another chain or another signer before any other read", async () => {
-		const wrongChain = config({ sourceChainId: 1, deposits: [depositLog(deposit(5_000_000n, 1n), 1)] })
-		expect(await relayOnce(wrongChain.c)).toEqual({ outcome: "refused" })
-		expect(wrongChain.calls).toEqual(["getChainId", "getChainId"])
+		for (const chains of [{ sourceChainId: 1 }, { destinationChainId: 1 }]) {
+			const wrongChain = config({ ...chains, deposits: [depositLog(deposit(5_000_000n, 1n), 1)] })
+			expect(await relayOnce(wrongChain.c)).toEqual({ outcome: "refused" })
+			expect(wrongChain.calls).toEqual(["getChainId", "getChainId"])
+		}
 		const stranger = config({ deposits: [depositLog(deposit(5_000_000n, 1n), 1)] }, privateKeyToAccount(`0x${"22".repeat(32)}`))
 		expect(await relayOnce(stranger.c)).toEqual({ outcome: "refused" })
 		expect(stranger.calls).toEqual(["getChainId", "getChainId"])

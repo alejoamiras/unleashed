@@ -51,14 +51,18 @@ One JSON line per event ([`src/log.ts`](src/log.ts)), in Workers Logs. No line c
 
 ## Known limits
 
-1. Every fill spends the float, which Across testnet never repays: legitimate sends en masse can empty it, and
-   later sends stay in the source pool.
-2. A deposit missed past its deadline, while the Worker is down or its reads keep failing (a provider's outage or
-   limits), stays in the source pool.
+1. Every fill spends the float, which Across testnet never repays. Sends en masse, or a stranger's admitted
+   deposits (8 faucet USDC each on Base Sepolia drain 6 here), can empty it; later sends wait at `balance` until a
+   top-up, and those past their deadline stay in the source pool.
+2. A deposit missed past its deadline, while the Worker is down or its reads keep failing (a provider's outage, or
+   its log limits, which a stranger's flood of cheap deposits bound for Sepolia can reach), stays in the source pool.
 3. A fill that fails after its approval is retried each minute until its deadline, at an approval and a revoke
    each, and as the largest candidate holds smaller ones back meanwhile.
 4. Overlapping runs (one stalled past a minute) can waste gas on replaced or reverted transactions. They cannot
    lose tokens: the pool pulls from the filler only inside the filler's own `fillRelay`, once per relay.
+5. Eight admitted deposits whose fill reverts even at the gas cap (an intent the router refuses, recovering to a
+   fallback receiver that Sepolia USDC blacklists) are refused before any write, but fill a run's eight tries ahead
+   of any send no larger or later than them, until their deadline.
 
 The key is a dedicated one with a small float, never the canary's. Anyone who can deploy to the Cloudflare account
 can deploy code that reads the secret; the loss is the float.

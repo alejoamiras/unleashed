@@ -16,3 +16,4 @@
 - 2026-10-28 arc a1 phase 4 green: relayOnce, key, Worker, owner script, bundle test; next phase 5 (two-anvil integration).
 - 2026-10-28 arc a1 phase 5 green: two-anvil suite S1–S6 in about 5 s, in the forge job; next phase 6 (runbook and docs).
 - 2026-10-28 arc a1 phase 6 green: relayer README and runbook, AGENTS/README/skill/bridge-core pointers; next the Codex fix loop on a1's diff.
+- 2026-10-28 fix loop round 1 (Codex reject, 4 findings adopted, faac3c8). Owner answered OWNER-ASKS #2 (both: manual plus a Circle faucet-API restock, a new arc after a1) and #3 (Workers Paid); #1 open.

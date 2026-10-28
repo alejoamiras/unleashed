@@ -75,11 +75,11 @@ address new sends name in their calldata.
   recorded variant. The router checks the intent partly against chain state (`DepositRouter._checkShape`); a router
   revert recovers the output to the fallback receiver and the fill still counts.
 - **F4** Across's docs: "relayer settlement does not occur on the testnet and unfilled deposits are not automatically
-  refunded" (docs.across.to/chains-and-contracts, read 2026-10-28). Each fill costs its output for good; a missed
+  refunded" (docs.across.to/chains-and-contracts). Each fill costs its output for good; a missed
   deposit stays in the Base Sepolia pool.
 - **F5** Circle's faucet: 20 USDC per request, once per 2 h per address and chain, reCAPTCHA; its API "requires
   upgrading to mainnet" and its terms are silent on scheduled claims. Sepolia's base fee read 15–30 wei over 1,024
-  blocks and its priority fee 2 wei (2026-10-28): a fill at the 16,777,216-gas cap costs under 10⁻⁹ ETH today.
+  blocks and its priority fee 2 wei: a fill at the 16,777,216-gas cap costs under 10⁻⁹ ETH today.
 - **F6** The manifest (`apps/tools/public/testnet-bridge.json`) names `depositRouter` `0x6e55…035b`, `legacyRouters`
   `[0xad08…4303]` and Base Sepolia USDC `0x036C…CF7e` → Sepolia USDC `0x1c7D…7238`; `lifiBook` names the pools
   (`0x82B5…0F8F`, `0x5ef6…B662`) and Sepolia's `receiverAcrossV4` (`0x51Cd…0f44`). Canary rows name the canary as
@@ -228,12 +228,17 @@ minute until its deadline (known limit 3).
   run stalled past a minute. The canary key signs canaries and its manual fills, so neither shares a nonce with the
   relayer. A lock (a Durable Object) would be a coordination protocol for a gas-only loss; not built.
 - **Known limits** (closed `known-limit` issues at close-out): (1) inventory exhaustion: every fill spends the float
-  (F4), so legitimate sends en masse can empty it and later sends stay in the source pool; (2) a deposit missed past its
-  deadline, while the Worker is down or its reads keep failing (a provider's outage or limits), stays in the source pool; (3) a fill that fails after its approval is retried
-  each minute until its deadline, at an approve and a revoke each, and, as the largest candidate, holds smaller ones
-  back meanwhile; (4) overlapping runs can waste gas as above.
+  (F4), so sends en masse, or a stranger's admitted deposits (8 faucet USDC each drain 6), can empty it and later
+  sends wait or stay in the source pool; (2) a deposit missed past its deadline, while the Worker is down or its reads
+  keep failing (a provider's outage, or its log limits, which a flood of cheap deposits bound for Sepolia can reach),
+  stays in the source pool; (3) a fill that fails after its approval is retried each minute until its deadline, at an
+  approve and a revoke each, and, as the largest candidate, holds smaller ones back meanwhile; (4) overlapping runs
+  can waste gas as above; (5) eight admitted deposits whose fill reverts even at the gas cap (an intent the router
+  refuses, recovering to a receiver Sepolia USDC blacklists) take a run's eight tries ahead of any send no larger or
+  later, until their deadline; reopen if a write-free refusal is shown without a blacklisted receiver.
 - **A lying source RPC** can invent a deposit, since the receipt re-read asks the same provider: one output each;
-  exploitability unknown; the owner can set a keyed provider in the Worker's vars.
+  exploitability unknown; the owner can switch to a keyed provider (its var deleted from `wrangler.jsonc`, a secret
+  of the same name set: a secret cannot share a var's name).
 - **Supply chain and CI.** No new external package (wrangler is already pinned in the lockfile); no Cloudflare
   credential and no new permission in Actions; Workers Builds deploys.
 
@@ -357,7 +362,7 @@ from then on `fill-testnet.ts` fills canary deposits only (the relayer key's fal
 | D4 | move the fill core into `src`, old paths re-export | copy it into the Worker; bundle the Node path | imported, not copied; F8 |
 | D5 | `classify` admits F3's envelope via the app's own formulas | trust `exclusiveRelayer`; mirror the router's intent rules | anyone can name us; the router reads chain state, and a recovery costs what a delivery does |
 | D6 | write-free `unfillable` pre-simulation, and a `gas-price` check at the gas cap before any write | an attempt counter | together they leave no deterministic failure after an approval, with no state |
-| D7 | one write per run, largest output first, write-free refusals passed over, at most eight tried | drain all; oldest deadline first; retry the head only | a run stays well inside a minute; neither dust nor a poisoned deposit holds a send back |
+| D7 | one write per run, largest output first, write-free refusals passed over, at most eight tried | drain all; oldest deadline first; retry the head only | a run stays well inside a minute; neither dust nor fewer than eight poisoned deposits hold a send back (known limit 5) |
 | D8 | `busy` (pending nonce) and `gas-price` stop a run before any write | a Durable Object lock | an overlap costs gas, never tokens (known limit 4); a lock is a protocol for no fund risk |
 | D12 | drop filled deposits by the destination's `FilledRelay` logs, matched by full relay identity | one `fillStatuses` read per deposit; a match by `depositId` | two reads per run however many filled deposits sit in the window; a forged fill of another relay suppresses nothing |
 | D13 | `scripts/relayer.ts once`: the Worker's own run from the owner's machine | unpin `fill-testnet.ts`; no manual path | the canary CLI keeps its pin; the fallback is the code the Worker runs |
@@ -402,6 +407,14 @@ the revoked allowance; (3) the "no per-deposit read" unit test now counts `readC
 (the recovery goes to the message's fallback receiver; the message cap bounds calldata, not gas) and three restated
 their line. Known limit 2 also names a provider's outage or limits.
 
+Beside round 1, an Opus diff review: eight findings, all verified and adopted. Tests: the destination chain's
+refusal (only the source's was tested); seven `classify` rows (input token and amount, a deadline before the quote,
+`requiresDeposit`, both asset ids, `minReceived` alone). Code: the simulated approval carries `TX_GAS_CAP`, since
+`eth_simulateV1` otherwise gives it the block's remaining gas, past the cap a node may enforce (plausible). Docs: known
+limit 1 names a stranger's drain, limit 2 a stranger's log flood, a new limit 5 covers eight deposits made
+unfillable by a blacklisted fallback receiver (needs unsupported conditions); a keyed RPC replaces its var with a
+secret of the same name; two calendar dates dropped. `STATUS.md` keeps its dated lines, the program's format.
+
 ## Post-implementation
 
 While implementing: comments state invariants and whys only. Log attempts in `lessons/phase-N.md`. After each gate:
@@ -428,7 +441,7 @@ arc (`ARC_FAILED`).
    index and `lessons.md`): the `## Outcome` block after the front matter (date, status, PRs, `Known limits:`, `Open
    items:`, a line retiring the seeds); promote "Across's testnet settles no fill and refunds no deposit: a missed
    testnet deposit stays in the source pool" to `lessons.md`; delete `follow-ups.md`'s "Testnet fills are manual" and
-   "Observe an expired testnet deposit's refund"; file the four known limits as closed `known-limit` issues; `git mv`
+   "Observe an expired testnet deposit's refund"; file the five known limits as closed `known-limit` issues; `git mv`
    the folder to `implementations-plan/archive/relayer-1` in its own commit, one line in `archive/index.md`, delete
    `STATUS.md`. No row in `index.md`. Open work's homes:
 

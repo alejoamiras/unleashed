@@ -46,7 +46,7 @@ const SOURCE_LAG = 2n
 /** An ignored deposit is logged by the runs that see it this close to the head, not by every run for two hours. */
 const IGNORED_LOG_BLOCKS = 30n
 const DEADLINE_MARGIN_S = 120n
-/** Candidates one run may try: write-free refusals pass to the next, so a poisoned deposit cannot hold the queue. */
+/** Candidates one run may try: write-free refusals pass to the next, so fewer poisoned deposits cannot hold the queue. */
 export const MAX_TRIES = 8
 /** The worst fee one send may cost, checked at the gas cap before any write and on every send. */
 export const FEE_CEILING_WEI = 5_000_000_000_000_000n
