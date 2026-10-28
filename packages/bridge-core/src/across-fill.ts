@@ -495,9 +495,9 @@ export async function fillSourceDeposit(deps: FillDeps, srcTxHash: Hex, opts: Fi
 }
 
 // What a filler checks a deposit against, from modules as Worker-safe as this one.
-export { SELF_BUILT_FILL_WINDOW_S, selfBuiltTerms, TESTNET_FILLER } from "./across-self-built"
+export { SELF_BUILT_FILL_WINDOW_S, selfBuiltMaxDeposit, selfBuiltTerms, TESTNET_FILLER } from "./across-self-built"
 export { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
 export { type GasPricing, type GasTermsFor, boundedGasTerms } from "./gas-terms"
 export { lifiBook } from "./lifi-addresses"
 export { type DecodedMessage, type DecodedRouterCall, decodeRouterMessage } from "./lifi-decode"
-export { type AcrossRelayData, acrossRelayHash } from "./across-relay"
+export { type AcrossRelayData, acrossRelayHash, FILLED_RELAY, type FilledRelayIdentity, fillsRelay } from "./across-relay"

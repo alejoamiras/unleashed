@@ -245,7 +245,7 @@ Exports `./fill-testnet`; `canaryAccountFromEnv`, `fillEndpointsFromEnv`, `conne
 `fillSourceDeposit`'s `{ relayHash }`; `reserveSandboxPorts` in the sandbox barrel; the refund comment corrected.
 Gate passed: bridge-core tests (671), `typecheck:all`, `lint`.
 
-### Phase 2 — the Worker-safe fill core
+### Phase 2 — the Worker-safe fill core ✓ (`e3fb51c`)
 
 Steps: create `src/retried.ts`, `src/gas-terms.ts`, `src/across-relay.ts`, `src/across-fill.ts` by moving the code in
 the table; turn the old locations into re-exports; add the `./across-fill` export, its re-exports,
@@ -258,7 +258,7 @@ changed only to answer one simulated result per call; `fill-testnet.test.ts`'s `
 **Validation gate.** `bun run --cwd packages/bridge-core test`, `bun run typecheck:all`, `bun run lint`,
 `bun run test:ci-gating`. Pass: exit 0 each. Layers: typecheck/lint, unit, CI gating.
 
-### Phase 3 — the workspace, the config and the pure core
+### Phase 3 — the workspace, the config and the pure core ✓
 
 Steps: scaffold the package (`package.json`, `tsconfig.json`, `vitest.config.ts` spreading `sharedTest`); write
 `wrangler.jsonc`, `route.ts`, `select.ts`, `log.ts`; add the workspace to `scripts/ci-cd/workspaces.test.ts`;
