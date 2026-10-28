@@ -20,6 +20,8 @@
 		"test:browser": "bash scripts/e2e/agent.sh",
 		"deploy:testnet": "bun run scripts/deploy.ts --network testnet",
 		"deploy:testnet:dry": "bun run scripts/deploy.ts --network testnet --dry-run",
+		"deploy:mainnet": "bun run scripts/deploy.ts --network mainnet",
+		"deploy:mainnet:dry": "bun run scripts/deploy.ts --network mainnet --dry-run",
 		"verify:deployments": "bun run scripts/verify-deployments.ts",
 		"verify:build-target": "bun run scripts/verify-build-target.ts",
 		"worker:deploy:testnet": "wrangler deploy -c wrangler.testnet.jsonc",
