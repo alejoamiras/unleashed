@@ -30,9 +30,9 @@ export const DOM_SEP__FPC_BRIDGE_SECRET = 3952304070
  * The canonical PrivateFPC: the installed `@alejoamiras/private-fee-juice` artifact at
  * `salt=PRIVATE_FPC_SALT, deployer=ZERO`, the instance the wallet registers. Pinned rather than
  * derived so the 2.2 MB artifact stays out of the bundle; `private-fuel.test.ts` re-derives it and
- * `check-fpc-version.ts` gates live use. Deposits to any other address are unrecoverable. It is one
- * constant for every network, so a network whose own descriptor names another FPC (mainnet's, frozen
- * at 5.0.1) must ship without a bridge.
+ * `check-fpc-version.ts` gates live use. Deposits to any other address are unrecoverable. It is the
+ * installed line's FPC, the only one this client can register and claim through; a network on another
+ * line (`aztecLineOf`) names its own and refuses every send.
  */
 export const PRIVATE_FPC_ADDRESS = "0x0516ebb4f9c7988eb3cf6dd9459a47556f7a92db06b17cfa47ffb37fd35c6915"
 

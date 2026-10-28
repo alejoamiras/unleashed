@@ -48,6 +48,12 @@ abstract contract MainnetLifiFork is LifiForkBase {
 
     /// Skips unless `ETH_RPC_URL` is set; otherwise forks Ethereum at the fixture block with the stack in place.
     function _setUpEthereum() internal returns (uint256 fork) {
+        fork = _forkEthereum();
+        if (bytes(json).length != 0) _deployStack();
+    }
+
+    /// Skips unless `ETH_RPC_URL` is set; otherwise loads the fixture and forks Ethereum at its block, deploying nothing.
+    function _forkEthereum() internal returns (uint256 fork) {
         string memory rpc = vm.envOr("ETH_RPC_URL", string(""));
         if (bytes(rpc).length == 0) {
             vm.skip(true);
@@ -55,7 +61,6 @@ abstract contract MainnetLifiFork is LifiForkBase {
         }
         _loadFixture();
         fork = vm.createSelectFork(rpc, vm.parseJsonUint(json, ".ethereum.block"));
-        _deployStack();
     }
 
     function _loadFixture() internal {

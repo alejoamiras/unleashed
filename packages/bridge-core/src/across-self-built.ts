@@ -2,9 +2,9 @@
  * Fixed Across terms for a testnet deposit, filled only by our own relayer. Across's testnet relayer cannot
  * complete our message: it fills with 1.15× the node's gas estimate, and under Sepolia's gas rules that lands
  * where LI.FI's ReceiverAcrossV4 recovers the token to the user's wallet instead of depositing it. So every
- * testnet send names `TESTNET_FILLER` as its exclusive relayer, and that key fills it
- * (`packages/bridge-core/scripts/fill-testnet.ts`) before `fillDeadline`; otherwise the SpokePool refunds it on
- * the source chain. Mainnet rides a live quote and any relayer.
+ * testnet send names `TESTNET_FILLER` as its exclusive relayer, and that key fills it before `fillDeadline`: the
+ * `packages/testnet-relayer` service, or `packages/bridge-core/scripts/fill-testnet.ts` by hand. Across's testnet
+ * refunds no unfilled deposit, so a missed one stays in the source pool. Mainnet rides a live quote and any relayer.
  */
 import type { Address } from "viem"
 
@@ -30,7 +30,7 @@ export const SELF_BUILT_MAX_WHOLE_TOKENS = 8n
 export function selfBuiltMaxDeposit(decimals: number): bigint {
 	return SELF_BUILT_MAX_WHOLE_TOKENS * 10n ** BigInt(decimals)
 }
-/** The pinned testnet canary key: the one account `fill-testnet.ts` signs fills with. */
+/** The pinned testnet canary key: the one account testnet fills are signed with. */
 export const TESTNET_FILLER: Address = "0x7A4f7Be599Afa3AfB0A41bb1D44762Ce441f8fAc"
 
 const ETHEREUM_MAINNET = 1

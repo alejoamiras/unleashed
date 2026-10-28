@@ -1,0 +1,27 @@
+- 2026-10-28 phase 0.75: adopted worktree sdk-1 (branch worktree-sdk-1, base fb90e366); recon started (3 Sonnet Explore agents)
+- 2026-10-28 recon done: recon.md written (3 Sonnet explorers + spot checks)
+- 2026-10-28 deep step 1: drafts started (Codex sol high, Opus Plan, main)
+- 2026-10-28 Codex draft done (session 01a183a4, sol high)
+- 2026-10-28 Opus draft done; consolidated plan.md + OWNER-ASKS.md + ledger D1-D16
+- 2026-10-28 deep step 3: contradiction check sent (Codex resumed, Opus resumed)
+- 2026-10-28 ORCHY-STEER: relayer-1 adds bridge-core seam (./fill-testnet export; canaryAccountFromEnv, connectFillRoute, fillSourceDeposit {relayHash}, boundedGasTerms re-export; reserveSandboxPorts in ./sandbox) used by new packages/testnet-relayer; merge order relayer-1 then sdk-1. Plan keeps the seam in bridge-core and adds the relayer workspace to a2's gate.
+- 2026-10-28 ORCHY-STEER: relayer moves to a Cloudflare Worker; it adds a Worker-safe fill core in bridge-core src (no Node-only imports). Plan keeps it Worker-runnable.
+- 2026-10-28 contradiction check: Codex reject→8 fixes applied; Opus holds-after-fixes→10 fixes applied (D17-D21)
+- 2026-10-28 deep step 4: double audit started (Codex resumed, fresh Opus)
+- 2026-10-28 double audit: Codex reject (H: manifest trust roots, publish OIDC exposure; M: undeclared @aztec-labs/ethereum, fee-budget global cache, placeholder parse, capabilitiesFor tokens); Opus conditional (H1 anchors, M1 publish, M2 step order, M3 FPC constant sweep, M4 cache, L1-L5). All accepted; applying.
+- 2026-10-28 double audit fixes applied (D11 trust roots, D22-D24); plan trimmed to 618 lines; final fresh Codex pass started (new session, sol high)
+- 2026-10-28 final fresh Codex pass: reject (H hostile registry→Outbox, M capabilitiesFor inputs, L paired builds); all accepted (D11, D25, 3.2); verification round: approve
+- 2026-10-28 plan complete; committed on worktree-sdk-1; awaiting the orchestrator's approval and the owner's answers (OWNER-ASKS §1-§6)
+- 2026-10-28 a1 started (plan approved by the orchestrator as committed at da846dd; a2-a5 wait for the owner's page)
+- 2026-10-28 a1 1.1 gate: forge build ok; forge test --no-match-contract Fork 172/172; halmos --match-contract '^Formal' 18/18 (FormalFuelOnlyGateTest 3); CI halmos assertion step simulated on the log: exit 0
+- 2026-10-28 ORCHY-STEER: owner signed OWNER-ASKS. §1 interface approved as proposed; bundled networks yes. §2 npm name @unleashed/sdk (org creation is the owner's). §3 corrected: mainnet's canonical rollup runs Aztec 6 (the SDK's line); a 5.0 rollup still runs but is not canonical: verify the canonical rollup read-only through the mainnet registry, refresh the stale mainnet constants (rollup version, mainnet PrivateFPC descriptor, anything pinning 5.0.1) in the earliest arc that needs them (a1, whose fuel route reads them), drop the unsupported-line refusal for mainnet. §4 v1 = gas + token bridge + exits if modest: size exits in the plan, add to an arc. §5 the gate's owner is the pinned mainnet signer alone. §6 the owner publishes v1 from their machine with 2FA; later versions via the workflow. a2-a5 unblocked after a1's report.
+- 2026-10-28 a1 1.2 gate: lint ok; typecheck:all ok; test:all exit 0; audit:tools exit 0; test:integration 47/47 (1915 s); e2e:tools running
+- 2026-10-28 ORCHY-STEER (lane mainnet-1): fuelRoute.fuel gains fjPerTx and calibrate writes it (D30); Branch F documents mainnet calibration and stops before it until a mainnet route canary exists (D31, follow-ups)
+- 2026-10-28 a1 1.3 and 1.4 written and committed (f87ab95, b4904ec); unit tests, typecheck and lint green; Codex round 1 and the Opus review started on fb90e36..HEAD while e2e finishes
+- 2026-10-28 a1 review round 1: Codex 2 Medium 1 Low, Opus 1 Medium 3 Low; fixed the journal stamp, the strict paused gate, the portal check and the fuel floor; known limits #30 and #31 filed closed; committed 2fb28cf
+- 2026-10-28 a1 1.2 gate: e2e:tools 78/78 (1.6 h, 1 worker); 1.2 ✓
+- 2026-10-28 ORCHY-STEER (PR #29 merged): merging origin/main before the 1.3 gate; packages/testnet-relayer kept building
+- 2026-10-28 merged origin/main (6382753; one README conflict); testnet-relayer typecheck and 19 tests green
+- 2026-10-28 a1 1.3 gate on the merged head: lint, typecheck:all, test:all, audit:tools, actionlint, ci-gating green; forge 172/172, halmos 18/18; test:integration 50/51, the failure a real bug (strict verify-l1 refused FuelOnlyGate's artifact, which records no immutables), fixed in 10e94ef, fuel-route file then 4/4; 1.3 ✓
+- 2026-10-28 a1 1.4 gate: doc-links 3/3; 1.4 ✓
+- 2026-10-28 Codex round 2 no new material finding; round 3 on the verifier fix no new material finding; loop closed at three rounds

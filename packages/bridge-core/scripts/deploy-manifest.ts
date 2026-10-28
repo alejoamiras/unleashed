@@ -80,6 +80,7 @@ export const deployStepSchema = z.discriminatedUnion("kind", [
 	z.object({ kind: z.literal("candidate-written"), path: z.string().min(1) }).strict(),
 	adoptableDeployStep("fuel-swapper-deployed"),
 	adoptableDeployStep("deposit-router-deployed"),
+	adoptableDeployStep("fuel-gate-deployed"),
 ])
 
 export type DeployStep = z.infer<typeof deployStepSchema>

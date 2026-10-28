@@ -495,19 +495,20 @@ export async function preCreateToken(
 	return token
 }
 
-// ─── DepositRouter + TestnetFuelSwapper ──────────────────────────────────────
+// ─── DepositRouter, TestnetFuelSwapper, FuelOnlyGate ─────────────────────────
 
 const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000"
 
-export type AdoptableKind = "fuel-swapper-deployed" | "deposit-router-deployed"
+export type AdoptableKind = "fuel-swapper-deployed" | "deposit-router-deployed" | "fuel-gate-deployed"
 type AdoptableStep = Extract<DeployStep, { kind: AdoptableKind }>
 
 const ADOPTABLE_CONTRACT: Readonly<Record<AdoptableKind, string>> = {
 	"fuel-swapper-deployed": "TestnetFuelSwapper",
 	"deposit-router-deployed": "DepositRouter",
+	"fuel-gate-deployed": "FuelOnlyGate",
 }
 
-/** A contract the router-only arc deployed or adopted. */
+/** A contract the router-only arc or the fuel route deployed or adopted. */
 export interface AdoptableDeploy {
 	address: Address
 	/** No transaction was sent: an identical journalled contract with code on chain was reused. */
@@ -632,6 +633,11 @@ export function depositRouterArgs(a: DepositRouterArgs): Address[] {
 
 export function deployDepositRouter(l1: L1Ctx, journal: DeployJournal, a: DepositRouterArgs): Promise<AdoptableDeploy> {
 	return deployOrAdopt(l1, journal, "deposit-router-deployed", depositRouterArgs(a))
+}
+
+/** `FuelOnlyGate`: the router's factory where no token portal exists; `owner` alone can pause it. */
+export function deployFuelOnlyGate(l1: L1Ctx, journal: DeployJournal, owner: Address): Promise<AdoptableDeploy> {
+	return deployOrAdopt(l1, journal, "fuel-gate-deployed", [owner])
 }
 
 export interface RouterBindings extends DepositRouterArgs {

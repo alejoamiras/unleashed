@@ -752,6 +752,24 @@ export function verifyRoute(tx: RouteTx, expected: RouteExpectation): RouteVerdi
 }
 
 /**
+ * Decodes a destination message without an expectation: canonical LI.FI receiver parameters holding exactly one step,
+ * whose calldata is a canonical `bridgeFromCaller`. Checks no value: a caller that knows only the deposit compares
+ * the fields it can derive.
+ */
+export function decodeRouterMessage(
+	bytes: Hex,
+): { ok: true; decoded: { message: DecodedMessage; router: DecodedRouterCall } } | RouteRefusal {
+	return verdict(() => {
+		const m = decodeMessage(bytes)
+		eq("message.swapData.length", m.steps.length, 1)
+		return {
+			message: { transactionId: m.transactionId, step: m.step, receiver: m.receiver },
+			router: decodeRouterCall(m.step.callData),
+		}
+	})
+}
+
+/**
  * Verifies what EndpointV2 delivers to ReceiverStargateV2's `lzCompose` for a Stargate route: sent by the source
  * chain's pinned Diamond from its pinned endpoint id, carrying a destination message that passes the same policy,
  * with the step's `fromAmount` within `[T, amountLD]`.

@@ -24,13 +24,13 @@ export const TESTNET_ROLLUP_VERSION = 679261766
 /** The wallet matches a network by `(l1 ^ rollupVersion) >>> 0` → `685146337`. */
 export const TESTNET_WALLET_CHAIN_ID = (TESTNET_L1_CHAIN_ID ^ TESTNET_ROLLUP_VERSION) >>> 0
 
-/** Ethereum mainnet — the L1 the Alpha/mainnet rollup settles to. */
+/** Ethereum mainnet — the L1 the Aztec mainnet rollup settles to. */
 export const MAINNET_L1_CHAIN_ID = 1
 /**
- * Alpha/mainnet rollup version. MUST be kept as fresh as its wallet-id pair — the Alpha 5.0.1
- * upgrade shipped a stale MAINNET pin once, so a bump re-reads this from the node.
+ * The canonical mainnet rollup's version (6.0.0): the registry's `getCanonicalRollup` and the node agree.
+ * The registry still lists the retired 5.0.1 rollup (4248422647), so a bump re-reads the CANONICAL one.
  */
-export const MAINNET_ROLLUP_VERSION = 4248422647
+export const MAINNET_ROLLUP_VERSION = 2070860440
 
-/** The wallet matches a network by `(l1 ^ rollupVersion) >>> 0` → `4248422646` (== extension CHAIN_IDS.MAINNET). */
+/** The wallet matches a network by `(l1 ^ rollupVersion) >>> 0` → `2070860441`. */
 export const MAINNET_WALLET_CHAIN_ID = (MAINNET_L1_CHAIN_ID ^ MAINNET_ROLLUP_VERSION) >>> 0
