@@ -12,6 +12,8 @@ export type RelayEvent =
 	| "busy"
 	| "gas-price"
 	| "refused"
+	| "restock-requested"
+	| "restock-refused"
 
 export interface RelayLine {
 	event: RelayEvent
