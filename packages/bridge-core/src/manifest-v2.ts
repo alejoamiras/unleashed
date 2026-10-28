@@ -17,6 +17,7 @@ import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { type Hex, isAddress } from "viem"
 import z from "zod"
 import { tokenBridgeHubArtifact } from "./artifacts"
+import { aztecLineOf } from "./aztec-line"
 import { deriveHubTokenInstance } from "./hub-token"
 import { predictPortal } from "./portal-address"
 
@@ -127,6 +128,24 @@ export const bridgeBlockSchema = z
 	})
 	.strict()
 
+/**
+ * A DepositRouter on a network with no token portals: its factory slot holds a `FuelOnlyGate`, so it makes fuel-only
+ * deposits and every token leg reverts. Legal only with `bridge: null`.
+ */
+export const fuelRouteSchema = z
+	.object({
+		depositRouter: evmAddressV2,
+		/** The `FuelOnlyGate` the router reads `depositsPaused()` from. */
+		gate: evmAddressV2,
+		/** The gate's owner, who alone can pause. */
+		guardian: evmAddressV2,
+		permit2: evmAddressV2,
+		/** The router's `SWAP_TARGET` off mainnet; refused when `l1ChainId` is 1, where it is LI.FI's Diamond. */
+		fuelSwapper: evmAddressV2.optional(),
+		fuel: z.object({ slippageBps: z.number().int().min(0).max(9_999), minFuelFj: decimalString }).strict(),
+	})
+	.strict()
+
 export const manifestV2Schema = z
 	.object({
 		schema: z.literal(2),
@@ -134,6 +153,7 @@ export const manifestV2Schema = z
 		l1ChainId: z.number().int().positive(),
 		walletChainId: z.number().int().positive(),
 		bridge: bridgeBlockSchema.nullable(),
+		fuelRoute: fuelRouteSchema.optional(),
 		feeJuice: z
 			.object({
 				portal: evmAddressV2,
@@ -154,6 +174,8 @@ export const manifestV2Schema = z
 	})
 	.strict()
 	.superRefine((m, ctx) => {
+		refinePrivateFpc(m.l1ChainId, m.privateFpc, ctx)
+		if (m.fuelRoute) refineFuelRoute(m.l1ChainId, m.fuelRoute, m.bridge !== null, ctx)
 		if (!m.bridge) return
 		refineRouterBlock(m.l1ChainId, m.bridge, ctx)
 		if (m.bridge.l1.feeJuicePortal.toLowerCase() !== m.feeJuice.portal.toLowerCase()) {
@@ -206,14 +228,41 @@ export const manifestV2Schema = z
 		})
 	})
 
+/** A router swaps through LI.FI's Diamond on Ethereum mainnet and through the testnet swapper everywhere else. */
+function swapperIssue(l1ChainId: number, hasRouter: boolean, hasSwapper: boolean): string | undefined {
+	if (l1ChainId === 1) return hasSwapper ? "the testnet fuel swapper is refused on Ethereum mainnet" : undefined
+	return hasRouter !== hasSwapper ? "off mainnet, fuelSwapper is present exactly when depositRouter is" : undefined
+}
+
+/** Private Fee Juice lands at the PrivateFPC of the network's own Aztec line; any other address strands it. */
+function refinePrivateFpc(
+	l1ChainId: number,
+	fpc: { address: string; version?: string; artifactDigest?: string } | undefined,
+	ctx: z.RefinementCtx,
+): void {
+	if (!fpc) return
+	const line = aztecLineOf(l1ChainId).privateFpc
+	const issue = (key: string, message: string) => ctx.addIssue({ code: "custom", path: ["privateFpc", key], message })
+	if (fpc.address.toLowerCase() !== line.address.toLowerCase())
+		issue("address", `not the PrivateFPC of this network's Aztec line (${line.address})`)
+	if (fpc.version !== undefined && fpc.version !== line.version) issue("version", `this network's Aztec line is ${line.version}`)
+	if (fpc.artifactDigest !== undefined && fpc.artifactDigest !== line.artifactSha256)
+		issue("artifactDigest", "not this line's PrivateFPC artifact")
+}
+
+function refineFuelRoute(l1ChainId: number, route: z.infer<typeof fuelRouteSchema>, hasBridge: boolean, ctx: z.RefinementCtx): void {
+	const issue = (path: string[], message: string) => ctx.addIssue({ code: "custom", path: ["fuelRoute", ...path], message })
+	if (hasBridge) issue([], "a fuel route is legal only with bridge: null; a bridge's own router carries the fuel leg")
+	const swapper = swapperIssue(l1ChainId, true, Boolean(route.fuelSwapper))
+	if (swapper) issue(["fuelSwapper"], swapper)
+}
+
 /** The DepositRouter fields' cross-field rules; every manifest without them still parses. */
 function refineRouterBlock(l1ChainId: number, bridge: z.infer<typeof bridgeBlockSchema>, ctx: z.RefinementCtx): void {
 	const { depositRouter, fuelSwapper, fuel, legacyRouters } = bridge.l1
 	const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path: ["bridge", ...path], message })
-	if (l1ChainId === 1 && fuelSwapper) issue(["l1", "fuelSwapper"], "the testnet fuel swapper is refused on Ethereum mainnet")
-	if (l1ChainId !== 1 && Boolean(depositRouter) !== Boolean(fuelSwapper)) {
-		issue(["l1", "fuelSwapper"], "off mainnet, fuelSwapper is present exactly when depositRouter is")
-	}
+	const swapper = swapperIssue(l1ChainId, Boolean(depositRouter), Boolean(fuelSwapper))
+	if (swapper) issue(["l1", "fuelSwapper"], swapper)
 	if (depositRouter && !fuel) issue(["l1", "fuel"], "a depositRouter needs the fuel budgets")
 	const legacy = (legacyRouters ?? []).map((a) => a.toLowerCase())
 	if (new Set(legacy).size !== legacy.length) issue(["l1", "legacyRouters"], "duplicate legacy router")
@@ -237,6 +286,7 @@ function refineRouterBlock(l1ChainId: number, bridge: z.infer<typeof bridgeBlock
 export type ManifestV2 = z.infer<typeof manifestV2Schema>
 export type ManifestToken = z.infer<typeof manifestTokenSchema>
 export type BridgeBlock = z.infer<typeof bridgeBlockSchema>
+export type FuelRouteBlock = z.infer<typeof fuelRouteSchema>
 
 /** Parse-or-throw with path-annotated issues; the synchronous half (no L2 derivation). */
 export function parseManifestV2(raw: unknown): ManifestV2 {

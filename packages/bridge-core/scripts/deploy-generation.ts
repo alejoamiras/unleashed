@@ -23,9 +23,9 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
+import { manifestPrivateFpc } from "../src/aztec-line"
 import type { L1Ctx } from "../src/flows"
 import { type BridgeBlock, type ManifestToken, type ManifestV2, manifestToken, parseManifestV2 } from "../src/manifest-v2"
-import { PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
 import { walletChainIdOf } from "../src/wallet-chain-id"
 import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 import { openDeployJournal, readCandidate, writeCandidateAtomically } from "./deploy-manifest"
@@ -176,16 +176,6 @@ function priorFuelBudgets(): FuelBudgets {
 	}
 }
 
-/** The canonical PrivateFPC the manifest advertises: the pinned address with the descriptor's
- *  version + artifact digest, so a reader can tell which FPC generation the fuel lane pays through. */
-function privateFpcBlock(): NonNullable<ManifestV2["privateFpc"]> {
-	const descriptor = JSON.parse(readFileSync(join(here, "..", "src", "private-fpc-canonical.json"), "utf8")) as {
-		aztecVersion: string
-		artifactSha256: string
-	}
-	return { address: PRIVATE_FPC_ADDRESS, version: descriptor.aztecVersion, artifactDigest: descriptor.artifactSha256 }
-}
-
 function generationBase(gen: GenerationRecord, addrs: NodeL1, tokens: ManifestToken[]): ManifestV2 {
 	const bridge: BridgeBlock = { l1: { ...gen.l1, fuel: priorFuelBudgets() }, l2: gen.l2, tokens }
 	return {
@@ -200,7 +190,7 @@ function generationBase(gen: GenerationRecord, addrs: NodeL1, tokens: ManifestTo
 			...(addrs.feeAssetHandler ? { feeAssetHandler: addrs.feeAssetHandler } : {}),
 			minFj: MIN_FJ,
 		},
-		privateFpc: privateFpcBlock(),
+		privateFpc: manifestPrivateFpc(addrs.l1ChainId),
 		privateClaimMode: "salt-v2",
 	}
 }
