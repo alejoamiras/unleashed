@@ -1,4 +1,10 @@
-import { FAUCET_DRIPPER_SALT, FAUCET_TOKENS, requireDrpcNodeUrl } from "@unleashed/bridge-core"
+import { Fr } from "@aztec-labs/aztec.js/fields"
+import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
+import type { GrumpkinScalar } from "@aztec-labs/foundation/curves/grumpkin"
+import { poseidon2Hash } from "@aztec-labs/foundation/crypto/poseidon"
+import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
+import { FAUCET_DRIPPER_SALT, type FaucetSymbol, FAUCET_TOKENS, requireDrpcNodeUrl } from "@unleashed/bridge-core"
+import { parseFj } from "@unleashed/bridge-core/drip-deploy"
 
 /**
  * Drip-specific deploy configuration, in the shape of aztec-standards/scripts/deploy-config.ts so
@@ -37,4 +43,127 @@ export function getDeploymentConfig(network: Network): DeploymentConfig {
 export function nodeUrlFor(network: Network): string {
 	if (network === "local-network") return process.env.AZTEC_NODE_URL || "http://localhost:8080"
 	return requireDrpcNodeUrl(network, process.env)
+}
+
+/** What a mainnet run may spend: `--cap` bounds every funding together and has no default. */
+export interface Funding {
+	readonly fund?: bigint
+	readonly cap?: bigint
+}
+
+/**
+ * `--fund` and `--cap`, in AZTEC. Only mainnet deposits, and a live mainnet run refuses without `--cap`, the
+ * owner's spending ceiling, so no amount in code can stand in for it.
+ */
+export function fundingOf(network: Network, flag: (name: string) => string | undefined, dryRun: boolean): Funding {
+	const fund = flag("--fund")
+	const cap = flag("--cap")
+	if (network !== "mainnet") {
+		if (fund !== undefined || cap !== undefined) throw new Error("--fund and --cap apply to mainnet only")
+		return {}
+	}
+	if (cap === undefined && !dryRun) throw new Error("a mainnet run needs --cap <AZTEC>, the most every funding together may reach")
+	return {
+		...(fund === undefined ? {} : { fund: parseFj(fund, "--fund") }),
+		...(cap === undefined ? {} : { cap: parseFj(cap, "--cap") }),
+	}
+}
+
+/** The deployer's seed and the account keys derived from it (NULO-ACCOUNT-KDF v1). */
+export interface DeployerKeys {
+	readonly seed: Fr
+	readonly secretKey: Fr
+	readonly salt: Fr
+	readonly signingKey: GrumpkinScalar
+}
+
+function frFromHexReduce(hex: string): Fr {
+	return Fr.fromBufferReduce(Buffer.from(hex.replace(/^0x/, "").padStart(64, "0"), "hex"))
+}
+
+/**
+ * The hex pair `DEPLOYER_SECRET_KEY` + `DEPLOYER_SALT` reproduces an existing account. Off mainnet, a free-form
+ * `DEPLOYER_SECRET` derives one with salt zero instead; mainnet refuses it, since the seed also derives every
+ * funding secret and a passphrase is a weaker seed than a key.
+ */
+export async function resolveDeployerKeys(network: Network, env: Record<string, string | undefined> = process.env): Promise<DeployerKeys> {
+	const hexSecret = env.DEPLOYER_SECRET_KEY
+	const hexSalt = env.DEPLOYER_SALT
+	if (hexSecret && hexSalt) {
+		// An Ethereum secp256k1 key can exceed the BN254 field modulus - reduce instead of
+		// throwing (deterministic: the same input always derives the same account).
+		const seed = frFromHexReduce(hexSecret)
+		return { seed, salt: frFromHexReduce(hexSalt), ...(await deriveNuloAccountKeys(seed)) }
+	}
+	if (network === "mainnet") throw new Error("mainnet takes DEPLOYER_SECRET_KEY + DEPLOYER_SALT only")
+	const utf8 = env.DEPLOYER_SECRET
+	if (utf8 && utf8.trim().length >= 32) {
+		const seed = await poseidon2Hash([Fr.fromBufferReduce(Buffer.from(utf8, "utf8"))])
+		return { seed, salt: Fr.ZERO, ...(await deriveNuloAccountKeys(seed)) }
+	}
+	throw new Error(
+		"Provide either DEPLOYER_SECRET_KEY+DEPLOYER_SALT (hex Frs, reuses an existing account) " +
+			"or DEPLOYER_SECRET (≥32-char utf8 string, derives a fresh account).",
+	)
+}
+
+// ── Schemas matching src/contracts/deployments.ts ──────────────────────────
+
+interface TokenDeploymentRecord {
+	readonly address: string
+	readonly salt: number
+	readonly deployer: string
+	readonly constructorArtifact: "constructor_with_minter"
+	readonly constructorArgs: {
+		readonly name: string
+		readonly symbol: FaucetSymbol
+		readonly decimals: number
+		readonly minter: string
+		/** 5.0.1 standards Token: constructor_with_minter's 5th parameter. ZERO = no
+		 *  authorization contract; REQUIRED for the rebuild to derive the address. */
+		readonly authContract: string
+	}
+}
+
+interface DripperDeploymentRecord {
+	readonly address: string
+	readonly salt: number
+	readonly deployer: string
+	readonly constructorArtifact: "constructor"
+}
+
+export interface DeploymentsJson {
+	readonly tokens: readonly TokenDeploymentRecord[]
+	readonly dripper: DripperDeploymentRecord
+}
+
+export function buildDeploymentJson(
+	dripperAddress: AztecAddress,
+	tokenAddresses: Record<string, AztecAddress>,
+	config: DeploymentConfig,
+): DeploymentsJson {
+	const tokens: TokenDeploymentRecord[] = config.contracts.tokens
+		.filter((t) => t.symbol in tokenAddresses)
+		.map((t) => ({
+			address: (tokenAddresses[t.symbol] as AztecAddress).toString(),
+			salt: t.salt,
+			deployer: AztecAddress.ZERO.toString(),
+			constructorArtifact: "constructor_with_minter",
+			constructorArgs: {
+				name: t.name,
+				symbol: t.symbol,
+				decimals: t.decimals,
+				minter: dripperAddress.toString(),
+				authContract: AztecAddress.ZERO.toString(),
+			},
+		}))
+	return {
+		tokens,
+		dripper: {
+			address: dripperAddress.toString(),
+			salt: config.contracts.dripper.salt,
+			deployer: AztecAddress.ZERO.toString(),
+			constructorArtifact: "constructor",
+		},
+	}
 }
