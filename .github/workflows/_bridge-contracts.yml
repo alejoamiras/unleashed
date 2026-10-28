@@ -138,6 +138,11 @@ jobs:
           test -f contracts/bridge/evm/out/DepositRouter.sol/DepositRouter.json
           bun run --cwd packages/bridge-core test -- factory-abi deposit-router-abi
 
+      # The testnet relayer's run against two anvils, the pool and USDC mocks from the build above placed at
+      # their real testnet addresses. It boots and reaps its own anvils.
+      - name: testnet relayer on two anvils
+        run: bun run --cwd packages/testnet-relayer test:integration
+
   noir:
     name: nargo test (keystone)
     runs-on: ubuntu-latest

@@ -18,10 +18,8 @@ import {
 	decodeAbiParameters,
 	decodeEventLog,
 	decodeFunctionData,
-	encodeAbiParameters,
 	getAbiItem,
 	type Hex,
-	keccak256,
 	type Log,
 	pad,
 	parseAbi,
@@ -32,6 +30,7 @@ import {
 	toHex,
 	zeroHash,
 } from "viem"
+import { type AcrossRelayData, acrossRelayHash, FILLED_RELAY, type FilledRelayIdentity, fillsRelay } from "./across-relay"
 import { ACROSS_V4_FACET_ABI } from "./across-v4"
 import {
 	assertCanonical,
@@ -232,11 +231,6 @@ export type CrossChainDiscovery =
 const FUNDS_DEPOSITED = parseAbiItem(
 	"event FundsDeposited(bytes32 inputToken, bytes32 outputToken, uint256 inputAmount, uint256 outputAmount, uint256 indexed destinationChainId, uint256 indexed depositId, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityDeadline, bytes32 indexed depositor, bytes32 recipient, bytes32 exclusiveRelayer, bytes message)",
 )
-const FILLED_RELAY = parseAbiItem(
-	"event FilledRelay(bytes32 inputToken, bytes32 outputToken, uint256 inputAmount, uint256 outputAmount, uint256 repaymentChainId, uint256 indexed originChainId, uint256 indexed depositId, uint32 fillDeadline, uint32 exclusivityDeadline, bytes32 exclusiveRelayer, bytes32 indexed relayer, bytes32 depositor, bytes32 recipient, bytes32 messageHash, (bytes32 updatedRecipient, bytes32 updatedMessageHash, uint256 updatedOutputAmount, uint8 fillType) relayExecutionInfo)",
-)
-/** The selector of the `FilledRelay` a SpokePool logs for every fill it executes. */
-export const FILLED_RELAY_TOPIC = toEventSelector(FILLED_RELAY)
 const OFT_SENT = parseAbiItem(
 	"event OFTSent(bytes32 indexed guid, uint32 dstEid, address indexed fromAddress, uint256 amountSentLD, uint256 amountReceivedLD)",
 )
@@ -296,70 +290,13 @@ function eventFrom(emitter: Address, event: AbiEvent, log: RawLog): Args | undef
 
 // ── Across relay identity ────────────────────────────────────────────────────
 
-/** `V3SpokePoolInterface.V3RelayData`, field for field. */
-export interface AcrossRelayData {
-	depositor: Hex
-	recipient: Hex
-	exclusiveRelayer: Hex
-	inputToken: Hex
-	outputToken: Hex
-	inputAmount: bigint
-	outputAmount: bigint
-	originChainId: bigint
-	depositId: bigint
-	fillDeadline: number
-	exclusivityDeadline: number
-	message: Hex
-}
-
-const RELAY_DATA = {
-	type: "tuple",
-	components: [
-		{ name: "depositor", type: "bytes32" },
-		{ name: "recipient", type: "bytes32" },
-		{ name: "exclusiveRelayer", type: "bytes32" },
-		{ name: "inputToken", type: "bytes32" },
-		{ name: "outputToken", type: "bytes32" },
-		{ name: "inputAmount", type: "uint256" },
-		{ name: "outputAmount", type: "uint256" },
-		{ name: "originChainId", type: "uint256" },
-		{ name: "depositId", type: "uint256" },
-		{ name: "fillDeadline", type: "uint32" },
-		{ name: "exclusivityDeadline", type: "uint32" },
-		{ name: "message", type: "bytes" },
-	],
-} as const
-
-/** `SpokePool.getV3RelayHash` on the chain `destinationChainId`: every relay field, the full message
- *  included, so a fill that alters any of them is another relay. */
-export function acrossRelayHash(relay: AcrossRelayData, destinationChainId: number): Hex {
-	return keccak256(encodeAbiParameters([RELAY_DATA, { type: "uint256" }], [relay, BigInt(destinationChainId)]))
-}
-
-/** The `messageHash` a `FilledRelay` logs: zero for an empty message. */
-const relayMessageHash = (message: Hex): Hex => (message === "0x" ? zeroHash : keccak256(message))
+export { type AcrossRelayData, acrossRelayHash, FILLED_RELAY_TOPIC } from "./across-relay"
 
 type SourceTransport = { kind: "across"; relay: AcrossRelayData; relayHash: Hex } | { kind: "stargate"; guid: Hex; pool: Address }
 
 /** A fill is ours only when the relay hash recomputed from its fields and its message hash equals ours. */
-function fillIsOurs(fill: Args, transport: Extract<SourceTransport, { kind: "across" }>, destinationChainId: number): boolean {
-	if (!hexEq(fill.messageHash, relayMessageHash(transport.relay.message))) return false
-	const relay: AcrossRelayData = {
-		depositor: fill.depositor as Hex,
-		recipient: fill.recipient as Hex,
-		exclusiveRelayer: fill.exclusiveRelayer as Hex,
-		inputToken: fill.inputToken as Hex,
-		outputToken: fill.outputToken as Hex,
-		inputAmount: fill.inputAmount as bigint,
-		outputAmount: fill.outputAmount as bigint,
-		originChainId: fill.originChainId as bigint,
-		depositId: fill.depositId as bigint,
-		fillDeadline: fill.fillDeadline as number,
-		exclusivityDeadline: fill.exclusivityDeadline as number,
-		message: transport.relay.message,
-	}
-	return hexEq(acrossRelayHash(relay, destinationChainId), transport.relayHash)
-}
+const fillIsOurs = (fill: Args, transport: Extract<SourceTransport, { kind: "across" }>, destinationChainId: number): boolean =>
+	fillsRelay(fill as unknown as FilledRelayIdentity, transport.relay.message, transport.relayHash, destinationChainId)
 
 // ── source chain ─────────────────────────────────────────────────────────────
 

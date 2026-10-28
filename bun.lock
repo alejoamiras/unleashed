@@ -115,6 +115,20 @@
         "vue": "^3.5.38",
       },
     },
+    "packages/testnet-relayer": {
+      "name": "@unleashed/testnet-relayer",
+      "version": "0.1.0",
+      "dependencies": {
+        "@unleashed/bridge-core": "workspace:*",
+        "viem": "2.57.1",
+      },
+      "devDependencies": {
+        "@types/node": "^24.13.2",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.9",
+        "wrangler": "4.129.1",
+      },
+    },
   },
   "patchedDependencies": {
     "@aztec-foundation/noir-acvm_js@6.0.0": "patches/@aztec-foundation%2Fnoir-acvm_js@6.0.0.patch",
@@ -699,6 +713,8 @@
     "@unleashed/design": ["@unleashed/design@workspace:packages/design"],
 
     "@unleashed/landing": ["@unleashed/landing@workspace:apps/landing"],
+
+    "@unleashed/testnet-relayer": ["@unleashed/testnet-relayer@workspace:packages/testnet-relayer"],
 
     "@unleashed/tools": ["@unleashed/tools@workspace:apps/tools"],
 

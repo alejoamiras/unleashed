@@ -524,10 +524,13 @@ CANARY_PRIVATE_KEY="$(cat ~/.cache/unleashed-canary/testnet.key)" bun packages/b
 It is a keyed run on `testnet-rpc.env.example`; the canary key comes from its file, never the template. The dry
 run builds and verifies every row and reports a funding shortfall; the live run refuses before any spend until the
 canary holds the matrix's amounts on both chains.
-- **Testnet fills are the canary's alone.** Sepolia runs Amsterdam, where a node's gas estimate for a fill of the
+- **Testnet fills are ours alone.** Sepolia runs Amsterdam, where a node's gas estimate for a fill of the
   router message settles on LI.FI's recovery, and Across's testnet relayer sends 1.15 times that estimate. Its fills
   therefore pay the user's Sepolia wallet instead of depositing. Every testnet send's Across terms name the pinned
-  canary signer as `exclusiveRelayer` until `fillDeadline`, and only `fill-testnet.ts` fills.
+  `TESTNET_FILLER` as `exclusiveRelayer` until `fillDeadline`. It is the canary signer until the relayer's dedicated
+  key replaces it; from then the `unleashed-testnet-relayer` Worker
+  ([`packages/testnet-relayer`](../../../packages/testnet-relayer/README.md)) fills app sends each minute, and
+  `fill-testnet.ts` (canary key only) fills the canary's own deposits by hand.
 - **Fill gas.** `sendFill` sends with the smallest doubling of the estimate whose `eth_simulateV1` logs equal those
   at the EIP-7825 cap. The Sepolia RPC must answer `eth_simulateV1` with per-call gas; PublicNode does.
 - **Terms.** Across's testnet API answers `AMOUNT_TOO_LOW` for the router message at 6 to 8 USDC, so rows run on
