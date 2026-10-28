@@ -18,6 +18,7 @@ import { flowGasOnly } from "../../scripts/sandbox/flows"
 import { flowGasOnlyPrivate } from "../../scripts/sandbox/flows-matrix"
 import { sandboxFuelBlock } from "../../scripts/sandbox/manifest"
 import { evmArtifact } from "../../scripts/script-artifacts"
+import { sendL1 } from "../../scripts/script-l1"
 import { verifyL1Manifest } from "../../scripts/verify-l1"
 import { freshActor, INTEGRATION, sandbox } from "./sandbox"
 
@@ -85,7 +86,7 @@ describe.skipIf(!INTEGRATION)("fuel-only route, rehearsed on the sandbox", () =>
 		expect(kinds()).toHaveLength(4)
 	})
 
-	it("the candidate names the route, parses strictly and passes verify:l1 --strict", async () => {
+	it("the candidate names the route, parses strictly and passes verify:l1 --strict, but not while the gate is paused", async () => {
 		const candidate = readCandidate(options.candidatePath)
 		if (!candidate?.fuelRoute) throw new Error("the conductor wrote no fuel route")
 		await parseManifestV2Strict(candidate)
@@ -97,7 +98,20 @@ describe.skipIf(!INTEGRATION)("fuel-only route, rehearsed on the sandbox", () =>
 			guardian: options.l1.account.address.toLowerCase(),
 		})
 		const { clients } = await sandbox()
-		expect(await verifyL1Manifest(candidate, clients.handle.anvilUrl, { strict: true })).toBe(0)
+		const anvil = clients.handle.anvilUrl
+		expect(await verifyL1Manifest(candidate, anvil, { strict: true })).toBe(0)
+
+		const pause = (paused: boolean) =>
+			sendL1(options.l1, {
+				address: first.gate.address,
+				abi: evmArtifact("FuelOnlyGate").abi,
+				functionName: "setDepositsPaused",
+				args: [paused],
+			})
+		await pause(true)
+		expect(await verifyL1Manifest(candidate, anvil, { strict: true })).toBe(1)
+		expect(await verifyL1Manifest(candidate, anvil)).toBe(0)
+		await pause(false)
 	})
 
 	it("gas-only sends through the route claim as public Fee Juice and as PrivateFPC credit", async () => {

@@ -8,7 +8,7 @@
  * before anything is sent. Each deploy is journalled and adopted on an identical re-run, so a crashed run resumes and
  * a finished one sends nothing.
  */
-import { FeeJuicePortalAbi, RegistryAbi } from "@aztec-foundation/l1-artifacts"
+import { FeeJuicePortalAbi, RegistryAbi, RollupAbi } from "@aztec-foundation/l1-artifacts"
 import type { Address } from "viem"
 import type { L1Ctx } from "../src/flows"
 import { lifiBook } from "../src/lifi-addresses"
@@ -95,7 +95,8 @@ export function assertFuelRouteOptions(o: FuelRouteOptions): void {
 }
 
 /** The router freezes its portal for life, and a registry keeps older rollups whose portals still take deposits: the
- *  portal must pay the network's fee asset into the registry's canonical rollup, at the network's version. */
+ *  registry's canonical rollup must name the portal, and the portal must name that rollup, pay the network's fee asset
+ *  and carry its version. Any contract can answer the portal's own reads, so the rollup's is the authority. */
 async function assertCanonicalPortal(l1: L1Ctx, n: FuelRouteNetwork): Promise<void> {
 	const portal = (functionName: "UNDERLYING" | "ROLLUP" | "VERSION") =>
 		l1.pub.readContract({ address: n.feeJuicePortal, abi: FeeJuicePortalAbi, functionName })
@@ -110,6 +111,8 @@ async function assertCanonicalPortal(l1: L1Ctx, n: FuelRouteNetwork): Promise<vo
 		{ underlying, rollup, version },
 		{ underlying: n.feeJuice, rollup: canonical, version: n.rollupVersion },
 	)
+	const named = await l1.pub.readContract({ address: canonical, abi: RollupAbi, functionName: "getFeeAssetPortal" })
+	assertBindings("canonical rollup", { getFeeAssetPortal: named }, { getFeeAssetPortal: n.feeJuicePortal })
 }
 
 /** An adopted gate may since have been paused or handed over: a candidate names only an open gate its signer owns. */

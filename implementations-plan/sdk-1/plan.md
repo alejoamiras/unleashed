@@ -597,6 +597,18 @@ each consult.
   verified two targets against one `dist/` (paired builds). It confirmed the persist-before-sign order and D22.
 - **Final pass, verification (same session resumed): approve.** All three fixes hold; no new material finding.
 
+Arc a1, the implementation (`git diff fb90e36..HEAD`):
+
+- **Round 1, Codex (fresh session): 2 Medium, 1 Low.** A first route's journal stamp failed its own intent's
+  `verify` (fixed: the stamp may open the journal and must name the intent's network and signer); a deploy that
+  lands before its journal line is redeployed on resume (inherited from `deployOrAdopt`; the fix is write-ahead state:
+  known limit #30); strict `verify-l1` passed a paused gate (fixed: `--strict` fails it).
+- **Round 1, Opus 5.5 (beside it): 1 Medium, 3 Low.** The same journal stamp; promotion bounds (fixed: `minFuelFj`
+  0 refused, and Branch F seeds `fjPerTx` at 0 so only a calibrated route promotes; slippage stays with a2's
+  `parseNetwork` cap); the portal check trusted the portal's own `ROLLUP()` (fixed: the canonical rollup's
+  `getFeeAssetPortal()` must name it, verified on mainnet); a promoted route cannot be replaced (fails closed: known
+  limit #31). It found the testnet `live-intent` path unchanged.
+
 ## Delivery
 
 Five sequential PRs against `main`, no stacking. a1 works on `worktree-sdk-1` (it carries this plan); each later arc

@@ -190,11 +190,19 @@ describe("mainnet fuel-route intent", () => {
 		expect(() => assertFuelRouteScope(signer, candidate({ registry: STRANGER }), live)).toThrow(/registry/)
 		expect(() => assertFuelRouteScope(signer, candidate({ permit2: STRANGER }), live)).toThrow(/permit2/)
 		expect(() => assertFuelRouteScope(signer, candidate({ fuel: { ...route.fuel, fjPerTx: "0" } }), live)).toThrow(/calibrate/)
+		expect(() => assertFuelRouteScope(signer, candidate({ fuel: { ...route.fuel, minFuelFj: "0" } }), live)).toThrow(/minFuelFj/)
 	})
 
-	it("allows only the gate, the router and the candidate in the journal after build", () => {
+	it("allows only the gate, the router and the candidate in the journal after build, and its stamp only at its start", () => {
 		const scope = { journal: { path: "j", steps: 2 } }
 		const before = Array.from({ length: 2 }, (): DeployStep => ({ kind: "candidate-written", path: "x" }))
+		const identity = {
+			l1ChainId: 1,
+			rollupVersion: 2070860440,
+			deployer: signer.toLowerCase(),
+			registry: MAINNET_REGISTRY,
+			feeJuicePortal: live.feeJuice.portal,
+		}
 		const tx = `0x${"ab".repeat(32)}`
 		const deployed = (kind: "fuel-gate-deployed" | "deposit-router-deployed" | "fuel-swapper-deployed"): DeployStep => ({
 			kind,
@@ -203,10 +211,18 @@ describe("mainnet fuel-route intent", () => {
 			creationCodeHash: tx,
 			constructorArgs: [signer],
 		})
-		const ok = [...before, deployed("fuel-gate-deployed"), deployed("deposit-router-deployed")]
-		expect(() => assertFuelRouteJournal(scope, ok)).not.toThrow()
-		expect(() => assertFuelRouteJournal(scope, [...ok, deployed("fuel-swapper-deployed")])).toThrow(/outside this fuel-route/)
-		expect(() => assertFuelRouteJournal(scope, before.slice(1))).toThrow(/rewritten/)
+		const route = [deployed("fuel-gate-deployed"), deployed("deposit-router-deployed")]
+		const ok = [...before, ...route]
+		expect(() => assertFuelRouteJournal(scope, ok, identity)).not.toThrow()
+		expect(() => assertFuelRouteJournal(scope, [...ok, deployed("fuel-swapper-deployed")], identity)).toThrow(/outside this fuel-route/)
+		expect(() => assertFuelRouteJournal(scope, before.slice(1), identity)).toThrow(/rewritten/)
+
+		// The first route: the journal did not exist at build, and the conductor stamps it before the gate.
+		const fresh = { journal: { path: "j", steps: 0 } }
+		const stamp: DeployStep = { kind: "identity", ...identity, deployer: signer }
+		expect(() => assertFuelRouteJournal(fresh, [stamp, ...route], identity)).not.toThrow()
+		expect(() => assertFuelRouteJournal(fresh, [{ ...stamp, deployer: STRANGER }, ...route], identity)).toThrow(/deployer/)
+		expect(() => assertFuelRouteJournal(scope, [...ok, stamp], identity)).toThrow(/stamped again/)
 	})
 })
 

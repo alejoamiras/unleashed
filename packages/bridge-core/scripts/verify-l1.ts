@@ -37,7 +37,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { FeeJuicePortalAbi, RegistryAbi } from "@aztec-foundation/l1-artifacts"
+import { FeeJuicePortalAbi, RegistryAbi, RollupAbi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, hexToBytes, keccak256, type PublicClient } from "viem"
 import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { readErc20Metadata } from "../src/erc20"
@@ -317,19 +317,23 @@ async function checkGeneration(pub: PublicClient, m: ManifestV2, b: BridgeBlock,
 	for (const router of legacyRouters) await guarded(`legacy router ${router}`, () => checkLegacyRouter(pub, b, router))
 }
 
-/** The gate stands in the router's factory slot: its owner, the guardian, alone pauses, and no handover may be pending. */
-async function checkGate(pub: PublicClient, r: FuelRouteBlock): Promise<void> {
+/** The gate stands in the router's factory slot: its owner, the guardian, alone pauses, and no handover may be pending.
+ *  A paused gate reverts every send, so a promotion gate refuses it. */
+async function checkGate(pub: PublicClient, r: FuelRouteBlock, strict: boolean): Promise<void> {
 	const read = (functionName: "owner" | "pendingOwner" | "depositsPaused") =>
 		pub.readContract({ address: r.gate as Address, abi: FUEL_GATE_ABI, functionName })
 	const [owner, pendingOwner, paused] = await Promise.all([read("owner"), read("pendingOwner"), read("depositsPaused")])
 	same("gate.owner (the guardian)", owner, r.guardian)
 	same("gate.pendingOwner", pendingOwner, ZERO_ADDRESS, "expected")
-	if (paused) warn("gate.depositsPaused", "every send through this route reverts until the guardian unpauses")
-	else ok("gate.depositsPaused = false")
+	const why = "every send through this route reverts until the guardian unpauses"
+	if (!paused) ok("gate.depositsPaused = false")
+	else if (strict) fail("gate.depositsPaused", why)
+	else warn("gate.depositsPaused", why)
 }
 
 /** The router froze its portal for life, and the registry keeps older rollups whose portals still take deposits: the
- *  portal must pay the fee asset into the registry's canonical rollup, at the version the wallet chain id encodes. */
+ *  registry's canonical rollup must name the portal (any contract can answer the portal's own reads), and the portal
+ *  must name that rollup, pay the fee asset and carry the version the wallet chain id encodes. */
 async function checkRoutePortal(pub: PublicClient, m: ManifestV2, r: FuelRouteBlock): Promise<void> {
 	const portal = (functionName: "UNDERLYING" | "ROLLUP" | "VERSION") =>
 		pub.readContract({ address: m.feeJuice.portal as Address, abi: FeeJuicePortalAbi, functionName })
@@ -339,12 +343,14 @@ async function checkRoutePortal(pub: PublicClient, m: ManifestV2, r: FuelRouteBl
 		portal("VERSION"),
 		pub.readContract({ address: r.registry as Address, abi: RegistryAbi, functionName: "getCanonicalRollup" }),
 	])
+	const named = await pub.readContract({ address: canonical, abi: RollupAbi, functionName: "getFeeAssetPortal" })
+	same("canonical rollup's getFeeAssetPortal", named, m.feeJuice.portal)
 	same("feeJuicePortal.UNDERLYING", underlying, m.feeJuice.asset)
 	same("feeJuicePortal.ROLLUP", rollup, canonical, "registry.getCanonicalRollup()")
 	same("walletChainId from feeJuicePortal.VERSION", walletChainIdOf(m.l1ChainId, Number(version)), m.walletChainId)
 }
 
-async function checkFuelRoute(pub: PublicClient, m: ManifestV2, r: FuelRouteBlock): Promise<void> {
+async function checkFuelRoute(pub: PublicClient, m: ManifestV2, r: FuelRouteBlock, strict: boolean): Promise<void> {
 	const deployed: Array<[string, string | undefined]> = [
 		["depositRouter", r.depositRouter],
 		["gate", r.gate],
@@ -364,7 +370,7 @@ async function checkFuelRoute(pub: PublicClient, m: ManifestV2, r: FuelRouteBloc
 		swapTarget: depositRouterSwapTarget(m, r.fuelSwapper),
 	}
 	await guarded("depositRouter bindings", () => checkDepositRouter(pub, m, router, r.depositRouter as Address))
-	await guarded("gate bindings", () => checkGate(pub, r))
+	await guarded("gate bindings", () => checkGate(pub, r, strict))
 	await guarded("feeJuicePortal binding", () => checkRoutePortal(pub, m, r))
 	const swapper = { guardian: r.guardian, tokens: [], minFuelFj: r.fuel.minFuelFj }
 	if (r.fuelSwapper) await guarded("fuelSwapper bindings", () => checkFuelSwapper(pub, m, swapper, r.fuelSwapper as Address))
@@ -704,7 +710,7 @@ export async function verifyL1Manifest(manifest: ManifestV2, rpcUrl: string, opt
 		await checkGeneration(pub, manifest, route.bridge, strict)
 		for (const token of route.bridge.tokens) await checkToken(pub, route.bridge, token)
 	} else {
-		await checkFuelRoute(pub, manifest, route.fuelRoute)
+		await checkFuelRoute(pub, manifest, route.fuelRoute, strict)
 	}
 	await checkLifiBook(pub, manifest, strict, options.sourceRpcUrl ?? ((chainId) => sourceRpcUrl(chainId)))
 	await checkCodeHashes(pub, route, strict)

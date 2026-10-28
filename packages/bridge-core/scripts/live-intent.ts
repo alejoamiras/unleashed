@@ -39,7 +39,7 @@ import { type BridgeBlock, type ManifestV2, parseManifestV2, parseManifestV2Stri
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
 import { legacyRoutersOf } from "../src/send-generation"
-import { type DeployStep, readDeployJournal } from "./deploy-manifest"
+import { type DeployIdentity, type DeployStep, readDeployJournal } from "./deploy-manifest"
 import { git, resolveBin, run } from "./run"
 import { aztecPin } from "./sandbox/local-network"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
@@ -507,9 +507,21 @@ export function assertRouterOnlyJournal(scope: RouterOnlyScope, steps: readonly 
 /** What a fuel-route arc may journal: its gate, its router and the candidate. */
 const FUEL_ROUTE_STEPS: ReadonlySet<DeployStep["kind"]> = new Set(["fuel-gate-deployed", "deposit-router-deployed", "candidate-written"])
 
-export function assertFuelRouteJournal(scope: FuelRouteScope, steps: readonly DeployStep[]): void {
-	for (const s of stepsSinceBuild(scope.journal, steps)) {
-		if (!FUEL_ROUTE_STEPS.has(s.kind)) throw new Error(`journal step ${s.kind} is outside this fuel-route intent — STOP`)
+/** The conductor stamps a fresh journal before its first deploy, so on the first route the stamp follows `build`: it
+ *  may open the journal and nowhere else, and must name the intent's network and signer. */
+export function assertFuelRouteJournal(scope: FuelRouteScope, steps: readonly DeployStep[], identity: DeployIdentity): void {
+	const since = stepsSinceBuild(scope.journal, steps)
+	for (const [i, s] of since.entries()) {
+		if (s.kind !== "identity") {
+			if (!FUEL_ROUTE_STEPS.has(s.kind)) throw new Error(`journal step ${s.kind} is outside this fuel-route intent — STOP`)
+			continue
+		}
+		if (scope.journal.steps + i !== 0) throw new Error("the journal is stamped again after it opened — STOP")
+		for (const field of Object.keys(identity) as Array<keyof DeployIdentity>) {
+			if (!sameAddr(String(s[field]), String(identity[field]))) {
+				throw new Error(`journal identity ${field} ${s[field]} != intent ${identity[field]} — STOP`)
+			}
+		}
 	}
 }
 
@@ -518,7 +530,8 @@ const asJson = (v: unknown): unknown => JSON.parse(JSON.stringify(v))
 
 /**
  * The candidate is the live placeholder plus a `fuelRoute` the intent's signer guards, against the pinned registry and
- * the canonical Permit2, with a calibrated claim budget: an uncalibrated `fjPerTx` would size every gas share at zero.
+ * the canonical Permit2, with a fuel floor and a calibrated claim budget: the conductor's candidate carries `fjPerTx` 0
+ * until calibration measures it, and a zero would size every gas share at nothing.
  */
 export function assertFuelRouteScope(signer: string, candidate: ManifestV2, live: ManifestV2): void {
 	const { fuelRoute, ...rest } = candidate
@@ -535,6 +548,8 @@ export function assertFuelRouteScope(signer: string, candidate: ManifestV2, live
 		if (!sameAddr(got, want)) throw new Error(`fuel route: ${label} ${got} != ${want} — STOP`)
 	}
 	if (BigInt(fuelRoute.fuel.fjPerTx) === 0n) throw new Error("fuel route: fjPerTx is 0 — calibrate the candidate first; STOP")
+	if (BigInt(fuelRoute.fuel.minFuelFj) === 0n)
+		throw new Error("fuel route: minFuelFj is 0 — a send could buy less gas than its claim costs; STOP")
 }
 
 /** A canary chain's read RPC: Sepolia's is the keyed one; a source chain's is its override or the catalogue's. */
@@ -1008,7 +1023,16 @@ async function verify(intentPath: string, candidatePath?: string): Promise<void>
 	assertSignerUnmoved(intent)
 	assertArtifactDigests(intent)
 	if (intent.routerOnly) assertRouterOnlyJournal(intent.routerOnly, readDeployJournal(join(repoRoot, TESTNET_JOURNAL)))
-	if (intent.fuelRoute) assertFuelRouteJournal(intent.fuelRoute, readDeployJournal(join(repoRoot, MAINNET_JOURNAL)))
+	if (intent.fuelRoute) {
+		const identity = {
+			l1ChainId: intent.identity.l1ChainId,
+			rollupVersion: intent.identity.rollupVersion,
+			deployer: intent.signer,
+			registry: intent.l1.registry,
+			feeJuicePortal: intent.l1.feeJuicePortal,
+		}
+		assertFuelRouteJournal(intent.fuelRoute, readDeployJournal(join(repoRoot, MAINNET_JOURNAL)), identity)
+	}
 	if (candidatePath) await verifyCandidate(intent, intentPath, candidatePath, l1Rpc, nodeUrl)
 	assertSpendWithinCaps(intent, l1Rpc, now.rollupVersion)
 	// No mainnet canary key is pinned, so a mainnet intent covers no canary-signed run.

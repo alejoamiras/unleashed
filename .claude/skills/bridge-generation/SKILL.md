@@ -567,18 +567,20 @@ canonical rollup's `FeeJuicePortal`; the app sends there once it reads `fuelRout
    and reads the registry's canonical rollup on L1, which must be the node's. The intent records the
    mainnet journal's committed length; every later `verify` refuses a journal step other than the
    gate, the router and the candidate.
-2. **Fuel file**, outside the repository: `{ "slippageBps": …, "minFuelFj": "…", "fjPerTx": "…" }`.
-   `minFuelFj` is what `fpc-dust-canary-mainnet.ts` prints as the calibrated floor; `fjPerTx` starts
-   at the best estimate and step 5 replaces it.
+2. **Fuel file**, outside the repository: `{ "slippageBps": …, "minFuelFj": "…", "fjPerTx": "0" }`.
+   `minFuelFj` is what `fpc-dust-canary-mainnet.ts` prints as the calibrated floor. `fjPerTx` stays
+   `"0"` until step 5 measures it: `live-intent` refuses a route candidate whose `fjPerTx` or
+   `minFuelFj` is 0, so an uncalibrated route can be deployed and verified on L1 but never promoted.
 3. **Dry run, then deploy.** L1 only:
    ```bash
    bun run --cwd packages/bridge-core deploy:generation deploy --fuel-route --fuel <abs path>/fuel.json --dry-run
    bun run --cwd packages/bridge-core deploy:generation deploy --fuel-route --fuel <abs path>/fuel.json
    ```
    The conductor refuses any signer but the pinned mainnet one and any chain but 1 (the sandbox
-   aside), authenticates the node like `build`, and before anything is sent proves the portal pays
-   the fee asset into the registry's canonical rollup at the node's version: a registry keeps older
-   rollups, whose portals still take deposits that no claim on this line can redeem. Order:
+   aside), authenticates the node like `build`, and before anything is sent proves the registry's
+   canonical rollup names the portal (`getFeeAssetPortal()`) and the portal names it back, paying the
+   fee asset at the node's version: a registry keeps older rollups, whose portals still take deposits
+   that no claim on this line can redeem. Order:
    `FuelOnlyGate(signer)` → readback (owner, no pending handover, open) →
    `DepositRouter(Permit2, FeeJuicePortal, gate, Diamond, signer)` → readback → the candidate
    `apps/tools/public/mainnet-bridge.candidate.json`: the live placeholder plus `fuelRoute`. Both
@@ -587,7 +589,8 @@ canonical rollup's `FeeJuicePortal`; the app sends there once it reads `fuelRout
 4. **Verify.** `bun run --cwd packages/bridge-core verify:l1 --config ../../apps/tools/public/mainnet-bridge.candidate.json --strict`
    checks code at the router, the gate, Permit2 and the portal; the router's immutables (`FACTORY` =
    the gate, `SWAP_TARGET` = the Diamond, the canonical Permit2, `FEE_ASSET` = the portal's
-   `UNDERLYING()`), the guardian as owner of both, the gate open with no pending handover, the portal's
+   `UNDERLYING()`), the guardian as owner of both, the gate open (a paused gate fails `--strict`) with
+   no pending handover, the canonical rollup's `getFeeAssetPortal()` = the portal, the portal's
    `ROLLUP()` = the registry's canonical one and its `VERSION()` = the manifest's wallet chain id,
    LI.FI's mainnet book, and both runtimes against the forge build.
 5. **Canary, then calibrate.** The route's canary is a gas-only send through the candidate's router
@@ -600,7 +603,8 @@ canonical rollup's `FeeJuicePortal`; the app sends there once it reads `fuelRout
    stops here.
 6. **Promote.** `live-intent.ts verify <intent> --candidate apps/tools/public/mainnet-bridge.candidate.json`
    records the digest (commit the intent), refuses a candidate that changes the placeholder beyond
-   `fuelRoute`, a guardian other than the signer, another registry or Permit2, or `fjPerTx` 0, and
+   `fuelRoute`, a guardian other than the signer, another registry or Permit2, or `fjPerTx` or
+   `minFuelFj` 0, and
    runs strict `verify-l1`. Then `live-intent.ts promote <intent>`: a mainnet promotion moves the
    bridge manifest alone and runs `check-fpc-version.ts --network mainnet` first.
 

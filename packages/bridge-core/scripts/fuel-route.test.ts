@@ -25,7 +25,7 @@ const network: FuelRouteOptions["network"] = {
 }
 
 /** An L1 that answers only the portal and registry reads; any other call is a write path a refusal pre-empts. */
-function chain(portalRollup: string, signer: string = PINNED) {
+function chain(portalRollup: string, signer: string = PINNED, canonicalPortal: string = network.feeJuicePortal) {
 	const touched = vi.fn((what: string) => {
 		throw new Error(`touched the chain: ${what}`)
 	})
@@ -34,6 +34,7 @@ function chain(portalRollup: string, signer: string = PINNED) {
 		ROLLUP: portalRollup,
 		VERSION: BigInt(network.rollupVersion),
 		getCanonicalRollup: CANONICAL_ROLLUP,
+		getFeeAssetPortal: canonicalPortal,
 	}
 	const pub = new Proxy(
 		{ readContract: async ({ functionName }: { functionName: string }) => reads[functionName] ?? touched(functionName) },
@@ -67,11 +68,15 @@ describe("the fuel route's conductor refuses before anything is sent", () => {
 		expect(() => assertFuelRouteOptions(options({ network: { ...network, feeJuicePortal: STRANGER } }))).toThrow(/feeJuice.portal/)
 	})
 
-	it("when the portal belongs to a rollup the registry no longer names canonical", async () => {
+	it("when the portal belongs to a rollup the registry no longer names canonical, or the canonical rollup names another", async () => {
 		const stale = chain(RETIRED_ROLLUP)
 		await expect(deployFuelRoute(options({ l1: stale.l1 }))).rejects.toThrow(/feeJuicePortal.rollup/)
 		await expect(planFuelRoute(options({ l1: stale.l1 }))).rejects.toThrow(/feeJuicePortal.rollup/)
 		expect(stale.touched).not.toHaveBeenCalled()
+		// A lookalike that answers the portal's reads correctly is still not the portal the rollup names.
+		const lookalike = chain(CANONICAL_ROLLUP, PINNED, STRANGER)
+		await expect(deployFuelRoute(options({ l1: lookalike.l1 }))).rejects.toThrow(/getFeeAssetPortal/)
+		expect(lookalike.touched).not.toHaveBeenCalled()
 
 		const lines = await planFuelRoute(options())
 		expect(lines).toContain(`gate: deploy FuelOnlyGate(${PINNED.toLowerCase()})`)

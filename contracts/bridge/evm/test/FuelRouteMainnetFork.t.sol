@@ -70,7 +70,7 @@ contract FuelRouteMainnetFork is MainnetLifiFork {
         assertEq(IERC20(aztec).balanceOf(signer), 0, "Permit2 did not pull exactly the signed amount");
     }
 
-    /// Every token leg reaches the gate's `createPortal`, which reverts before anything is pulled.
+    /// Every token leg reaches the gate's `createPortal`, whose revert unwinds the whole call, Permit2's pull included.
     function test_tokenLeg_revertsWithTheSignersBalanceUnchanged() public {
         uint256 amount = 20e6;
         deal(usdc, signer, amount);
