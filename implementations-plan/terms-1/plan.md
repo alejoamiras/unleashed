@@ -238,7 +238,7 @@ named entry. Testnet: none, in every phase.
 
 ### Arc a1: the documents, rendered on mainnet only
 
-**P1: mainnet root and renderer.** UI impact: the pages are visible on mainnet; the PR waits for C3.
+**P1 ✓: mainnet root and renderer.** UI impact: the pages are visible on mainnet; the PR waits for C3.
 
 1. Add `document.ts`, `testids.ts`, `LegalPage.vue`, `MainnetRoot.vue`, and skeleton `terms.ts` and
    `privacy.ts` (title, one section). Edit `App.vue`.
@@ -250,7 +250,7 @@ named entry. Testnet: none, in every phase.
 
 Gate: `bun run lint && bun run typecheck:all && bun run --cwd apps/tools test`, exit 0 (lint, typecheck, unit).
 
-**P2: prove "mainnet only" in the dist.** UI impact: none.
+**P2 ✓: prove "mainnet only" in the dist.** UI impact: none. Built to D11: the rule checks the placeholder's links and chunk, and the landing's guard checks the pages.
 
 1. Write `scripts/legal-dist.ts`; wire it into `verify-build-target.ts`.
 2. `legal-dist.test.ts`: one broken expectation per case (mainnet without each id; testnet with an id;
@@ -376,6 +376,32 @@ its real host (F10).
 | D8 | Browser coverage | jsdom tests + the dist rule as the regression layer; a scripted dev-server run per arc; the owner's post-deploy check | a committed mainnet browser spec: the browser suite builds only `local`, and the production bundle refuses localhost by design (F10), so a spec would need a new target in the harness to test what jsdom already proves |
 | D9 | Drafting effort | Codex at `max` until no material objection; a repeated, reasoned-against point is a recorded disagreement | a fixed round cap: the lane brief says rounds run until no material objection |
 | D10 | Legal testids | `src/legal/testids.ts` | the global `TESTIDS`: its unused keys ship to testnet (F3) |
+| D11 | Where the public reads the documents (C8) | G: a data-only package `packages/legal` (`@unleashed/legal`) holds the documents, their ids and their public URLs; the landing renders static `/terms` and `/privacy` (CSS and theme boot, no script); the mainnet placeholder links there; a2 imports the package for the digests. Codex and Opus both chose G | C: an Access bypass on the app host for `/terms`, `/privacy` and `/assets/*` (a dashboard dependency, and it exposes the walled bundle). H: the documents in the landing until a2 (a move in a2, and a2's gate would import from an app). L: a renderer per app (two renderers of one text) |
+
+**Deviations in a1 (D11).** The file map's `LegalPage.vue`, `MainnetRoot.vue` and `testids.ts` were
+built in P1 and removed once C8 moved the pages to the landing. The a1 file map is now:
+
+| File | Change |
+|---|---|
+| `packages/legal/` | new: `document.ts` (types, ids), `terms.ts`, `privacy.ts`, `site.ts` (origin, paths, URLs), the hidden-character test |
+| `apps/landing/terms.html`, `privacy.html`, `src/legal-markup.ts`, `src/styles/legal.css` | new: the two pages, rendered at build time through `esc()` |
+| `apps/landing/vite.config.ts`, `scripts/dist-checks.ts`, `src/content.ts`, `src/markup.ts`, `tests/server/static-server.ts`, `tests/browser/*` | edit: three HTML inputs; every page checked; footer links; `/x` served from `x.html` as the Worker does |
+| `apps/tools/src/App.vue` | edit: the literal define test now gates a dynamic import of `MainnetPlaceholderView` |
+| `apps/tools/src/views/MainnetPlaceholderView.vue` | edit: a second row, "Terms of Use", "Privacy Policy", to the landing's pages (C3 (a), as C8's "the mainnet app linking there") |
+| `apps/tools/scripts/legal-dist.ts` | the rule becomes: a mainnet dist carries both document URLs; a testnet or local dist carries neither, no document id, and no `MainnetPlaceholderView` chunk |
+| CI filters | `packages/legal/src/**` and `packages/legal/package.json` join the pr-quick `tools` and `landing` filters and the pr-tools-e2e filter |
+
+One Privacy Policy covers the landing and the mainnet app, and says it does not cover testnet. "The
+landing stores nothing in your browser" becomes a standing promise: a script on the landing that stores
+anything is a policy change. The `[[OWNER` refusal (P6 step 3) lands in the landing's dist check with
+the A11 date fill, in the same commit: before it, the draft status is what keeps the blank off the
+public landing. A deploy of each Worker is independent, so the owner's release step opens the landing's
+`/terms` and `/privacy` as well as the app's `/`.
+
+**Residuals for the owner's lawyer** (the documents do not resolve them): the documents name no person
+and no address (A1/A2), which leaves the UK and EU GDPR identity duty (Art. 13(1)(a)) and a possible
+Art. 27 representative open; a zero liability cap (A8) and an indemnity against consumers may not hold
+under the UK Consumer Rights Act 2015 and UCTA 1977.
 
 **Outline B (competing).** Markdown under `docs/legal/`, converted by a mainnet-only vite plugin into
 static HTML pages, the gate in one later arc. *For:* Markdown is easier for the owner and a lawyer; pages
