@@ -25,3 +25,6 @@
 - 2026-10-28 arc a3 gate green: lint, typecheck:all, relayer test (24), test:all, audit:tools, doc-links; mutation checks bite (lessons/phase-a3.md).
 - 2026-10-28 a3 fix loop round 1: Codex reject (5), Opus (4, one blocking: workerd rejects redirect "error"); all adopted, mutation-checked.
 - 2026-10-28 a3 fix loop round 2: Codex approve (informational item applied). Converged in 2 rounds.
+- 2026-10-28 a3 PR #32 checks: 19 pass, 5 skipping (path-filtered); quality-status, tools-e2e-status, bridge-contracts-status green. Arc a3 done; a2 not started, so the close-out stays with a2.
+- 2026-10-28 arc a2 started: origin/main (3f18e8e, PR #32's squash) merged, trees identical. The owner's relayer key exists (address 0x6bF61c9C868fe8d1b3B3d977fBf80498DBD7Cf1F); the Worker is deployed and funded.
+- 2026-10-28 a2 gate green: lint, typecheck:all, test:all, audit:tools, doc-links; e2e deposit-crosschain.spec.ts at retry 0, 5 passed (12.5 min).

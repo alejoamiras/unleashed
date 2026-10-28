@@ -346,7 +346,7 @@ Until a2 merges and the secret is set, a1's Worker is inert: it refuses every ru
 **Validation gate.** `bun test scripts/ci-cd/doc-links.test.ts`, `bun run lint`, `bun run test:all`,
 `bun run audit:tools`. Pass: exit 0 each. Layers: doc links, lint, unit, the app's build.
 
-### Arc a2 — pin the dedicated relayer (after runbook step 1)
+### Arc a2 — pin the dedicated relayer (after runbook step 1) ✓
 
 Steps: set `TESTNET_FILLER` to the printed address; update the tests that pin its value; note in the README that
 in-flight sends naming the canary at the switch are filled by hand with `fill-testnet.ts` within their 2 h, and that

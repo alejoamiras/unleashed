@@ -1,11 +1,12 @@
 import { parseManifestV2 } from "@unleashed/bridge-core"
+import { TESTNET_FILLER } from "@unleashed/bridge-core/across-fill"
 import { describe, expect, it } from "vitest"
 import manifest from "../../../apps/tools/public/testnet-bridge.json"
 import mainnet from "../../../apps/tools/public/mainnet-bridge.json"
 import { LEGACY_ROUTER, ROUTER, SEPOLIA_USDC, SOURCE_USDC } from "../test/app-deposit"
 import { testnetRoute } from "./route"
 
-const FILLER = "0x7A4f7Be599Afa3AfB0A41bb1D44762Ce441f8fAc"
+const FILLER = TESTNET_FILLER
 
 describe("testnetRoute", () => {
 	it("reads the live testnet manifest into the pinned pools, tokens, receiver and routers", () => {

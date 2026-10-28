@@ -1,9 +1,10 @@
+import { TESTNET_FILLER } from "@unleashed/bridge-core/across-fill"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { RelayLine } from "./log"
 import { RESTOCK_BELOW, type RestockRequest, restock } from "./restock"
 
 const KEY = "TEST_API_KEY:0123456789abcdef:fedcba9876543210secret"
-const FILLER = "0x7A4f7Be599Afa3AfB0A41bb1D44762Ce441f8fAc"
+const FILLER = TESTNET_FILLER
 const MIDNIGHT = Date.UTC(2026, 9, 29)
 
 type Answer = (init: RequestInit) => Promise<Response>

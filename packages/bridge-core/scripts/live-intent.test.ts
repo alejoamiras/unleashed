@@ -120,8 +120,9 @@ describe("router-only intent", () => {
 			if (canary) expect(deploySigners).not.toContain(canary.toLowerCase())
 	})
 
-	it("names the pinned testnet canary as the exclusive relayer of every testnet send", () => {
-		expect(TESTNET_FILLER).toBe(PLAN_PINNED_CANARY_SIGNERS.testnet)
+	it("names a dedicated relayer, neither the canary nor a deploy signer, as the exclusive relayer of every testnet send", () => {
+		const others = [...Object.values(PLAN_PINNED_CANARY_SIGNERS), ...Object.values(PLAN_PINNED_L1_SIGNERS)]
+		expect(others.map((a) => a?.toLowerCase())).not.toContain(TESTNET_FILLER.toLowerCase())
 	})
 })
 
