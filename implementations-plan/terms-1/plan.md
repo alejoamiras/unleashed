@@ -283,7 +283,7 @@ Gate: the P1 gate; the closing round's verdict quoted in `lessons/phase-3.md`.
 
 Gate: the P1 gate; the closing round's verdict quoted in `lessons/phase-4.md`.
 
-**P5: review, screenshots, draft PR.**
+**P5 ✓: review, screenshots, draft PR.** Code loop converged (`lessons/phase-5.md`); `e2e:tools` runs in CI only (`lessons/phase-5.md`).
 
 1. The Codex fix loop on the a1 code diff (Post-implementation).
 2. Claim a port: `bun apps/tools/scripts/e2e/resolve-ports.ts <state-dir> terms-1-shots $$`; in
