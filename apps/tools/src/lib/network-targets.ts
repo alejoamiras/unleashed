@@ -160,6 +160,7 @@ export const TESTNET_TARGET: ToolsTarget = {
 	readRpcUrls: TESTNET_READ_RPCS,
 }
 
+/** Every origin this target reaches is a provider the Privacy Policy names (privacy-providers.test.ts). */
 export const MAINNET_TARGET: ToolsTarget = {
 	key: "mainnet",
 	l1ChainId: MAINNET_L1_CHAIN_ID,

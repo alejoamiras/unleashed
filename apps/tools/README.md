@@ -30,7 +30,8 @@ opens in a new tab and its address can be copied; Back and Forward move between 
 Two build targets (`testnet.app.unleashed.systems`, `app.unleashed.systems`), selected at BUILD time by which vite
 config runs — never at runtime and never from a dashboard variable. A manifest with no `bridge`
 block renders the Send placeholder (both networks until a generation is promoted); the mainnet
-target additionally ships the whole-app placeholder (target-keyed, no faucet).
+target additionally ships the whole-app placeholder (target-keyed, no faucet), which links the Terms of
+Use and the Privacy Policy on the landing ([`packages/legal`](../../packages/legal/README.md)).
 
 Plans + audits: [`implementations-plan/archive/faucet/`](../../implementations-plan/archive/faucet/) (the faucet),
 [`implementations-plan/archive/any-erc20-bridge/`](../../implementations-plan/archive/any-erc20-bridge/) (the Bridge

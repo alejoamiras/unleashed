@@ -46,6 +46,7 @@
 		"@aztec-labs/wallets": "6.0.0",
 		"@unleashed/bridge-core": "workspace:*",
 		"@unleashed/design": "workspace:*",
+		"@unleashed/legal": "workspace:*",
 		"@nulo-sh/resolve-asset": "0.3.0",
 		"@nulo-sh/wallet-crypto": "0.3.0",
 		"@nulo-sh/wallet-sdk-schema-patch": "0.3.0",

@@ -53,12 +53,16 @@ jobs:
               - 'packages/bridge-core/package.json'
               - 'packages/design/src/**'
               - 'packages/design/package.json'
+              - 'packages/legal/src/**'
+              - 'packages/legal/package.json'
               - 'contracts/bridge/aztec/token_bridge_hub/target/**'
               - '.github/workflows/_build-tools.yml'
             landing:
               - 'apps/landing/**'
               - 'packages/design/src/**'
               - 'packages/design/package.json'
+              - 'packages/legal/src/**'
+              - 'packages/legal/package.json'
               - '.github/workflows/_build-landing.yml'
             workflows:
               - '.github/workflows/**'

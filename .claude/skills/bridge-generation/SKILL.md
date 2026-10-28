@@ -342,6 +342,10 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      own commit (the path is allowlisted, so the intent stays valid), then re-run the same `promote`;
      with no live manifest it takes the first-promotion path. Never hand-edit the live manifest to
      get past the check.
+   - **A mainnet promotion re-traces the Privacy Policy** (`packages/legal/src/privacy.ts`) in the same
+     PR: every origin the mainnet target reaches is a provider it names
+     (`apps/tools/src/lib/privacy-providers.test.ts`), and what each request carries is checked by
+     hand. A changed text takes a new `updated` date and the owner's approval.
 8. **The live canaries** (all green is the redeploy gate):
    `bun run --cwd packages/bridge-core verify:l1 --config ../../apps/tools/public/testnet-bridge.json --strict` ·
    `BRIDGE_MANIFEST=public/testnet-bridge.json bun run --cwd apps/tools verify:deployments` ·
