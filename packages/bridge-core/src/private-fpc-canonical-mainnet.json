@@ -1,18 +1,18 @@
 {
-	"$comment": "MAINNET (Alpha) PrivateFPC deployment descriptor \u2014 the per-network sibling of private-fpc-canonical.json (testnet). FROZEN at the 5.0.1 artifact mainnet runs; the testnet descriptor follows the installed package, so the two no longer share an identity. Consumed by check-fpc-version.ts, which selects the descriptor whose network pins match the live node and fails closed while the installed package is not 5.0.1. Machine-asserted as frozen literals by private-fuel.test.ts.",
-	"aztecVersion": "5.0.1",
+	"$comment": "MAINNET PrivateFPC deployment descriptor — the per-network sibling of private-fpc-canonical.json (testnet). Mainnet's canonical rollup runs the installed 6.0.0 line, so the artifact, salt and address equal testnet's; only the network pins differ. Consumed by check-fpc-version.ts, which selects the descriptor whose network pins match the live node, and by aztec-line.ts, which refuses every send to a network whose descriptor is not the installed line's. Machine-asserted by private-fuel.test.ts.",
+	"aztecVersion": "6.0.0",
 	"salt": "0x0000000000000000000000000000000000000000000000000000000000000001",
 	"deployer": "0x0000000000000000000000000000000000000000000000000000000000000000",
-	"expectedAddress": "0x1a6d21ce5fd80137df0e99632a4ca17e58a42dc8f6c08191a96ca8ae907a1bc0",
-	"artifactSha256": "d5a2453cda5cc05026cbda68a57afc5951f73fb08649f66cea8c412be6c54acc",
+	"expectedAddress": "0x0516ebb4f9c7988eb3cf6dd9459a47556f7a92db06b17cfa47ffb37fd35c6915",
+	"artifactSha256": "bc1e27b0cfb48c8c1483071453288a27e302283c5da5fa40869a179a41079bde",
 	"artifactPath": "@alejoamiras/private-fee-juice/target/private_contract-PrivateFPC.json",
 	"network": {
-		"$comment": "Hard identity pins for Aztec MAINNET (Alpha) \u2014 l1ChainId 1, rollupVersion 4248422647 (verified live via node_getNodeInfo; wallet chain id (1 ^ 4248422647) >>> 0 = 4248422646).",
+		"$comment": "Hard identity pins for Aztec MAINNET: l1ChainId 1 and the canonical rollup's version 2070860440 (the registry's getCanonicalRollup and node_getNodeInfo agree; wallet chain id (1 ^ 2070860440) >>> 0 = 2070860441). The registry still lists the retired 5.0.1 rollup (4248422647); nothing here may target it.",
 		"l1ChainId": 1,
-		"rollupVersion": 4248422647
+		"rollupVersion": 2070860440
 	},
 	"compatibleNodeVersions": {
-		"$comment": "HUMAN-CURATED, digest-keyed. 5.0.1 = the artifact's own version (exact-match baseline; the Alpha fleet behind lb.drpc.live is MIXED and either version can answer). 5.1.0 = owner ruling (the post-deploy dust canary remains the authoritative on-net proof before any real funding/promotion). A new artifact digest requires fresh curation, never inherited compat.",
-		"d5a2453cda5cc05026cbda68a57afc5951f73fb08649f66cea8c412be6c54acc": ["5.0.1", "5.1.0"]
+		"$comment": "HUMAN-CURATED, digest-keyed: node versions this exact artifact may run against. 6.0.0 = the artifact's own version, which the mainnet node reports. A new artifact digest requires fresh curation, never inherited compat.",
+		"bc1e27b0cfb48c8c1483071453288a27e302283c5da5fa40869a179a41079bde": ["6.0.0"]
 	}
 }

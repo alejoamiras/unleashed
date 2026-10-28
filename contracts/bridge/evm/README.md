@@ -43,7 +43,7 @@ FOUNDRY_PROFILE=lifi forge build                                     # LI.FI's d
 forge test --no-match-contract Fork                                  # hermetic (CI)
 SEPOLIA_RPC_URL=… AZTEC_REGISTRY=… forge test --match-contract Fork   # live forks (opt-in; each skips without its endpoint, FactoryFork without the registry)
 LIFI_LIVE=1 bun ../../../packages/bridge-core/scripts/lifi-fixtures.ts --run   # LI.FI: fresh fixtures, then every Lifi*Fork at their blocks (opt-in)
-ETH_RPC_URL=… BASE_RPC_URL=… forge test --match-contract '^Lifi(Destination|StargateCompose|Replay)Fork$'   # replay the committed mainnet fixtures (archive RPCs)
+ETH_RPC_URL=… BASE_RPC_URL=… forge test --match-contract '^(Lifi(Destination|StargateCompose|Replay)|FuelRouteMainnet)Fork$'   # replay the committed mainnet fixtures (archive RPCs)
 forge build --ast --force && halmos --match-contract '^Formal'       # symbolic proofs (CI)
 forge snapshot --match-test test_gas_ --no-match-contract Fork --check --tolerance 2   # .gas-snapshot (CI)
 ```
@@ -64,6 +64,9 @@ forge snapshot --match-test test_gas_ --no-match-contract Fork --check --toleran
   through one path: `bridgeWithPermit` (an Ethereum EOA's Permit2 witness signature) and
   `bridgeFromCaller` (any caller that already holds the funds — LI.FI's Executor after a bridge
   delivers them). Creates the clone inline on a token's first deposit.
+- **`FuelOnlyGate`** — stands in the router's factory slot where no token portals exist (mainnet): it answers
+  `depositsPaused()` and reverts `createPortal`, so a router bound to it makes fuel-only deposits and every token
+  leg reverts atomically. One pause bit behind `Ownable2Step`, renounce disabled.
 - **`TestnetFuelSwapper`** — the testnet `SWAP_TARGET` (see INFO-2); mainnet's is LI.FI's Diamond.
 - `MintableERC20` / `TestUsdc` — capped-mint test tokens (testnet only, see INFO-1).
 
@@ -75,8 +78,8 @@ nonce-pinned factory prediction, journalled, candidate-first) deploys from `out/
 
 ## Tests
 
-**161 hermetic forge tests** (`forge test --no-match-contract Fork`), **15 halmos proofs**
-(`FormalDepositRouterTest 11 · FormalFactoryTest 2 · FormalCloneTest 2`; the guard-shaped ones carry a
+**172 hermetic forge tests** (`forge test --no-match-contract Fork`), **18 halmos proofs**
+(`FormalDepositRouterTest 11 · FormalFuelOnlyGateTest 3 · FormalFactoryTest 2 · FormalCloneTest 2`; the guard-shaped ones carry a
 forge canary proving the property fails without the guard), **live fork suites** (the real Sepolia
 registry/Inbox/FeeJuicePortal, real Permit2, LI.FI's deployed contracts, live token metadata), and a
 committed `.gas-snapshot` for the metered first-time vs known `bridgeWithPermit()` and a fueled
@@ -84,13 +87,13 @@ committed `.gas-snapshot` for the metered first-time vs known `bridgeWithPermit(
 
 | Layer | Suites |
 |---|---|
-| unit | `PortalFactory`, `CloneWithdrawRealOutbox` (a clone against Aztec's real `Outbox`: replay, caller binding, cross-clone proofs — the other suites' capturing fake accepts anything), `DepositRouter`, `TestnetFuelSwapper`, `Keystone` (3-way vectors with Noir + TS), `ContentHash`, `DepositWitness` (the vector the TS witness pins) |
+| unit | `PortalFactory`, `FuelOnlyGate` (a router bound to the gate), `CloneWithdrawRealOutbox` (a clone against Aztec's real `Outbox`: replay, caller binding, cross-clone proofs — the other suites' capturing fake accepts anything), `DepositRouter`, `TestnetFuelSwapper`, `Keystone` (3-way vectors with Noir + TS), `ContentHash`, `DepositWitness` (the vector the TS witness pins) |
 | fuzz | `PortalFactoryFuzz`, `CloneRoundtripFuzz`, `DepositRouterFuzz` |
 | invariant | `PortalFactoryInvariant`, `DepositRouterInvariant` (Executor, Permit2 user, donor, hostile venue, pause, sweep) |
-| symbolic | `FormalFactory`, `FormalClone`, `FormalDepositRouter` — see the header of each for what halmos can and cannot model (it has no sha256, so `createPortal` itself is forge-only) |
+| symbolic | `FormalFactory`, `FormalClone`, `FormalDepositRouter`, `FormalFuelOnlyGate` — see the header of each for what halmos can and cannot model (it has no sha256, so `createPortal` itself is forge-only) |
 | adversarial | `BlackhatFactory` (F-1…F-9), `DepositRouterBlackhat` |
 | fork | `FactoryFork`, `DepositRouterPermit2Fork` (real Permit2 on a mainnet fork, `ETH_RPC_URL`) |
-| LI.FI fork | `LifiTestnetRailFork` (Base Sepolia → Across → Sepolia through LI.FI's deployed Diamond, receiver and Executor, into a portal or the router and swapper), `LifiDestinationFork` (Ethereum's receiver and Executor into the router: venue set, RFQ expiry, gas pin, recovery; and the Ethereum-origin entry, a Permit2 witness through the same recorded swap), `LifiStargateComposeFork` (compose gas floor and recovery), `LifiReplayFork` (a Base source transaction replayed into Ethereum's `lzCompose`) |
+| LI.FI fork | `LifiTestnetRailFork` (Base Sepolia → Across → Sepolia through LI.FI's deployed Diamond, receiver and Executor, into a portal or the router and swapper), `LifiDestinationFork` (Ethereum's receiver and Executor into the router: venue set, RFQ expiry, gas pin, recovery; and the Ethereum-origin entry, a Permit2 witness through the same recorded swap), `LifiStargateComposeFork` (compose gas floor and recovery), `LifiReplayFork` (a Base source transaction replayed into Ethereum's `lzCompose`), `FuelRouteMainnetFork` (the mainnet fuel route: a router bound to a `FuelOnlyGate`, a Permit2 signature, the recorded USDC → AZTEC swap to a public recipient and to the PrivateFPC, AZTEC 1:1, a refused token leg, the pause) |
 
 ## Threat model — the factory-bound portal
 

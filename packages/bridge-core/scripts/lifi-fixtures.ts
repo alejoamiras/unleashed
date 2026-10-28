@@ -396,7 +396,7 @@ async function recordMainnet(): Promise<string> {
 
 const FORK_SUITES = {
 	"testnet-rail": "LifiTestnetRailFork",
-	mainnet: "Lifi(Destination|StargateCompose|Replay)Fork",
+	mainnet: "(Lifi(Destination|StargateCompose|Replay)|FuelRouteMainnet)Fork",
 } as const
 type Command = keyof typeof FORK_SUITES
 

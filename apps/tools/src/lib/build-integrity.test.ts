@@ -12,7 +12,7 @@ const TESTNET = {
 const MAINNET = {
 	key: "mainnet" as const,
 	l1ChainId: 1,
-	walletChainId: 4248422646,
+	walletChainId: 2070860441,
 	host: "app.unleashed.systems",
 	workersDevHost: "unleashed-mainnet.alejo-amiras.workers.dev",
 }
