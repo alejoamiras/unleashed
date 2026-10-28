@@ -259,7 +259,7 @@ Gate: `bun run lint && bun run typecheck:all && bun run --cwd apps/tools test`, 
 
 Gate: the P1 gate, then `bun run --cwd apps/tools build:testnet && bun run --cwd apps/tools verify:build-target testnet && bun run --cwd apps/tools build:mainnet && bun run --cwd apps/tools verify:build-target mainnet`; both print ✓ (adds build).
 
-**P3: draft the Terms of Use.** UI impact: the text is C1.
+**P3 ✓: draft the Terms of Use.** UI impact: the text is C1. Closed after three Codex rounds (`lessons/phase-3.md`).
 
 1. Trace each privileged function (F9) and each risk the outline names; record claim → code in
    `lessons/phase-3.md`. Write `terms.ts` from the outline, in plain sentences, each term defined once.
@@ -273,7 +273,7 @@ Gate: the P1 gate, then `bun run --cwd apps/tools build:testnet && bun run --cwd
 
 Gate: the P1 gate; the closing round's verdict quoted in `lessons/phase-3.md`.
 
-**P4: draft the Privacy Policy.** UI impact: the text is C2.
+**P4 ✓: draft the Privacy Policy.** UI impact: the text is C2. Closed after three Codex rounds (`lessons/phase-4.md`).
 
 1. Trace the dist (`.js` chunks), not only `src`, for storage APIs and remote hosts, and resolve each hit
    to its caller; record claim → code in `lessons/phase-4.md`. Write `privacy.ts` from the outline.
@@ -403,8 +403,8 @@ and no address (A1/A2), which leaves the UK and EU GDPR identity duty (Art. 13(1
 Art. 27 representative open, and the E-Commerce Regulations 2002 reg. 6 ask for a name and a geographic
 address; a zero liability cap (A8) may not hold under the UK Consumer Rights Act 2015 and UCTA 1977; LCIA
 costs above the £5,000 floor face fairness review; a wallet signature identifies a key, not a person.
-Before publication: confirm the Cloudflare plan, the Access log retention and the cookie inventory, and
-assess persistent preferences and caches under PECR reg. 6.
+Before publication: confirm the Cloudflare plan, the Access log retention and the cookie inventory, the
+email provider's role and transfers, and assess persistent preferences and caches under PECR reg. 6.
 
 **Outline B (competing).** Markdown under `docs/legal/`, converted by a mainnet-only vite plugin into
 static HTML pages, the gate in one later arc. *For:* Markdown is easier for the owner and a lawyer; pages

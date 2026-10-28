@@ -64,7 +64,7 @@ export const TERMS: LegalDocument = {
 				},
 				{
 					kind: "p",
-					text: "We cannot reverse, cancel or speed up a transaction. Until its network confirms it, a transaction can still fail or be dropped; once confirmed, it is final.",
+					text: "We cannot reverse, cancel or speed up a transaction for you. A transaction you send may fail or be dropped. Even after it is included in a block, the network may replace that block and undo its effects until the transaction is final.",
 				},
 			],
 		},

@@ -29,3 +29,13 @@
 
 Residuals added to plan.md: confirm the Cloudflare plan, Access log retention and the cookie inventory
 before publication; assess persistent preferences and caches under PECR reg. 6.
+
+**Round 2** (resumed): 1 material objection. The 100 cap is not hard: cleanup keeps unfinished valid
+records past it (`journal.ts:475`), and the quarantine's own cap can drop claim material
+(`journal.ts:451`), so "nothing … is lost" was false. Accepted, with the user's own removal
+(`useBridgeJournal.ts:657`, `discard`). Residual added: the email provider's role and transfers.
+
+**Round 3** (resumed), the closing verdict, quoted: "No objections. The Section 3 fix landed correctly
+(high confidence): it distinguishes the quarantine's hard limit from the deposit lists' soft target,
+preserves unfinished records during cleanup, and acknowledges user deletion. … VERDICT: no material
+objection".

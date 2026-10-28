@@ -42,7 +42,7 @@ export const PRIVACY: LegalDocument = {
 					kind: "list",
 					items: [
 						"A record of each deposit you start: the network, the contracts, the amounts, your Ethereum and Aztec addresses, transaction hashes, and the secret material needed to claim the deposit. The claim secret is stored as readable text, for public and private deposits alike; a private deposit also keeps, in readable form, the salt its secret comes from, next to an encrypted copy for recovery.",
-						"Records that fail the app's checks, kept apart rather than deleted, so that nothing that could still be claimed is lost. At most the latest 100 are kept.",
+						"Records that fail the app's checks, kept apart rather than deleted where possible. Each of these lists keeps only its latest 100 entries, so older ones may be discarded even if they hold what is needed to claim a deposit.",
 						"Which wallet you chose, and which of its accounts you use.",
 						"Which wallet software produced a signature the app checked, so it does not ask twice.",
 						"A copy of a public token list, refreshed after a day.",
@@ -52,7 +52,7 @@ export const PRIVACY: LegalDocument = {
 				},
 				{
 					kind: "p",
-					text: "Each time the app starts, it removes the deposit records that completed at least 7 days earlier, so a record can stay longer if you do not come back. Each list keeps at most 100 records: past that, the oldest completed ones go first, and an unfinished one is never removed. Everything else stays until you clear your browser data or the app replaces it. The software libraries the app uses may also cache public data, such as the parameters used to build proofs. None of this is ever sent to us. Anyone who can use your browser, and any software running in it, may be able to read it. If you clear it before a deposit is claimed and you have no backup, you may lose that deposit.",
+					text: "Each time the app starts, it removes the deposit records that completed at least 7 days earlier, so a record can stay longer if you do not come back. The app tries to keep each list of deposits within 100 records by removing the oldest completed ones; it never removes an unfinished one on its own, even if that leaves more than 100. You can remove a record yourself. Other browser data stays until you clear it or the app changes, replaces or removes it. The software libraries the app uses may also cache public data, such as the parameters used to build proofs. None of this is ever sent to us. Anyone who can use your browser, and any software running in it, may be able to read it. If you clear it before a deposit is claimed and you have no backup, you may lose that deposit.",
 				},
 			],
 		},

@@ -34,3 +34,11 @@ tree before it was applied.
 Residuals added to plan.md: the E-Commerce Regulations 2002 reg. 6 identity duty under A1/A2; the
 mainnet PrivateFPC is a frozen 5.0.1 artifact (`private-fpc-canonical-mainnet.json`) this tree cannot
 inspect, so "has no owner" is re-traced at promotion (runbook line).
+
+**Round 2** (resumed): 1 material objection. "Once confirmed, it is final" is false: the deposit path
+accepts a successful receipt (`send-flow.ts:325`) and a reorg can undo an included block before
+finality (`journal.ts:280` names the finalized head). Accepted: inclusion is not finality.
+
+**Round 3** (resumed), the closing verdict, quoted: "No objections. The fix at terms.ts:67 correctly
+distinguishes block inclusion from finality. Confidence: high. … VERDICT: no material objection". Its
+residuals repeat the ones in plan.md.
