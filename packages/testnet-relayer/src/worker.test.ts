@@ -35,12 +35,14 @@ describe("the Worker's restock", () => {
 			drip.mockClear()
 			await worker.scheduled({ scheduledTime: MIDNIGHT }, env)
 			expect(drip, outcome).toHaveBeenCalledTimes(1)
+			// workerd's fetch refuses a foreign `this`; a bare call gives it none.
+			expect(drip.mock.contexts).toEqual([undefined])
 		}
 		expect(readContract).toHaveBeenCalledWith(expect.objectContaining({ functionName: "balanceOf", args: [TESTNET_FILLER] }))
 		quiet.mockRestore()
 	})
 
-	it("reads nothing and asks nothing after a refused or failed run, without a key, or on a manual run", async () => {
+	it("reads nothing and asks nothing after a refused or failed run, outside the minute, without a key, or on a manual run", async () => {
 		const lines: RelayLine[] = []
 		const log = (l: RelayLine) => lines.push(l)
 		for (const outcome of ["refused", "failed"] as const) {
@@ -48,6 +50,7 @@ describe("the Worker's restock", () => {
 			await scheduledRun(env, log, MIDNIGHT)
 		}
 		runs("idle")
+		await scheduledRun(env, log, MIDNIGHT + 60_000)
 		await scheduledRun({ ...env, CIRCLE_API_KEY: undefined }, log, MIDNIGHT)
 		await scheduledRun(env, log)
 		expect(readContract).not.toHaveBeenCalled()

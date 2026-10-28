@@ -363,7 +363,7 @@ web faucet documents 20 USDC per 2 h per address and chain; the console faucet (
 
 | File | Contract |
 |---|---|
-| `src/restock.ts` | `restock({ key, filler, balance, scheduledTime, fetch, log })`, never throws. Sends nothing unless `key` is a non-empty string, `scheduledTime` falls in the first minute of a UTC day (`RESTOCK_PERIOD_MS` = 86,400,000) and `balance` is under `RESTOCK_BELOW` = 20 USDC. Then one `POST` to the constant URL: `Authorization: Bearer <key>`, a random `X-Request-Id`, body `{ address: filler, blockchain: "ETH-SEPOLIA", usdc: true }`, `redirect: "error"`, a 10 s timeout. `204` logs `restock-requested`; anything else, a thrown fetch or the timeout logs `restock-refused` with the status, Circle's `code` and its message's first line (URLs masked and the key's text replaced before it is cut to 200 characters). No retry. |
+| `src/restock.ts` | `restock({ key, filler, balance, scheduledTime, fetch, log })`, never throws. Sends nothing unless `key` is a non-empty string, `scheduledTime` falls in the first minute of a UTC day (`RESTOCK_PERIOD_MS` = 86,400,000) and `balance` is under `RESTOCK_BELOW` = 20 USDC. Then one `POST` to the constant URL: `Authorization: Bearer <key>`, a random `X-Request-Id`, body `{ address: filler, blockchain: "ETH-SEPOLIA", usdc: true }`, `redirect: "manual"` (workerd rejects `"error"`; a 3xx comes back unfollowed and is a refusal), a 10 s timeout. `204` logs `restock-requested`; anything else, a thrown fetch or the timeout logs `restock-refused` with the status, Circle's `code` and its message's first line, read from at most 4 KiB of the body (a larger one is cancelled) (URLs masked and the key's text replaced before it is cut to 200 characters). No retry. |
 | `src/worker.ts` | `scheduled(controller, env)` passes `controller.scheduledTime` to `scheduledRun`. After `relayOnce`, only on an outcome that proves its chain and signer checks passed (`idle`, `busy`, `gas-price`, `filled`, `already-filled`, `skipped`; never `refused` or `failed`, which an RPC error in those checks also yields), with `CIRCLE_API_KEY` set and in the restock minute, it reads the filler's Sepolia USDC once and calls `restock`. `scripts/relayer.ts once` passes no time, so a manual run never restocks. |
 | `src/log.ts` | `RelayEvent` gains `restock-requested` and `restock-refused`. |
 | `README.md` | The two log lines; runbook step 6 (below); known limit 6: one eligible minute a day means a float spent just after it waits up to a day for a drip, past a send's 2 h window, so manual top-ups stay; a slot whose run fails skips that day; the API's real cooldown and amount are undocumented, so a request inside it is refused; a duplicated trigger of one scheduled time sends a second request; and whether the API funds a non-Circle address is unconfirmed until the first drip. |
@@ -374,7 +374,7 @@ which Cloudflare's docs neither promise nor rule out, sends a second request, an
 24 elapsed hours apart; an exact bound needs shared atomic state or upstream idempotency, out of scope, so it is part
 of known limit 6. The API documents no rate (recon); 24 h is a conservative assumption from the console faucet's
 low-confidence figure, not documented compliance. Every request follows `relayOnce`'s completed chain and signer
-checks, names `ETH-SEPOLIA` as a constant and goes to a constant HTTPS URL with redirects refused. The key never
+checks, names `ETH-SEPOLIA` as a constant and goes to a constant HTTPS URL whose redirects are never followed. The key never
 reaches a log, a file, CI or an agent: it is the owner's, pasted into the dashboard secret. A holder of the shared
 build token could read it, and a Standard Circle key "grants read/write access to all APIs, including newly
 introduced endpoints", including billed ones on an upgraded account: the runbook asks for a Restricted Access key
@@ -480,6 +480,15 @@ in known limit 6; `failed` does not prove the chain checks passed (a throwing ch
 runs only on outcomes that do; the runbook asks for a Restricted Access key and no entity secret, since a Standard
 key reaches every API; known limit 6 adds a float spent just after the slot.
 Resumed: **approve**, no remaining or new material finding.
+
+**Fix loop on a3's diff.** Round 1: Codex **reject**, five findings; beside it an Opus diff review, four. All verified
+and adopted. Opus, blocking and demonstrated under the workerd wrangler 4.129.1 ships: workerd rejects
+`redirect: "error"` ("won't be implemented since it does not make sense at the edge"), so every drip request would
+have thrown into `restock-refused`, while Bun accepts it and the tests passed; the request now uses `"manual"`, whose
+3xx is a refusal and carries the key nowhere. Codex: Circle's error body was buffered whole before the 200-character
+cut; it is now read to 4 KiB and cancelled past it. Tests now pin the literal URL, `AbortSignal.timeout(10_000)` with a
+fetch that settles only on abort, an endless body, a 3xx, the bare `fetch` call workerd needs, and the Worker's slot
+gate before its balance read. `RESTOCK_BELOW` is named for the web faucet's claim, not an API amount.
 
 ## Post-implementation
 

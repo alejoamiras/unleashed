@@ -7,12 +7,13 @@ import { errorLine, type RelayLog } from "./log"
 
 export const DRIP_URL = "https://api.circle.com/v1/faucet/drips"
 export const RESTOCK_PERIOD_MS = 86_400_000
-/** One drip's worth: the faucet's 20 USDC, in 6 decimals. */
+/** The web faucet's 20 USDC per claim, in 6 decimals; the API states no amount. */
 export const RESTOCK_BELOW = 20_000_000n
 
 const MINUTE_MS = 60_000
 const TIMEOUT_MS = 10_000
 const REASON_CHARS = 200
+const ERROR_BODY_BYTES = 4_096
 
 export interface RestockRequest {
 	key: string | undefined
@@ -38,9 +39,34 @@ function redact(text: string, key: string): string {
 	return parts.reduce((t, p) => t.split(p).join("<key>"), errorLine(text)).slice(0, REASON_CHARS)
 }
 
-/** Circle's `{ code, message }` error body, or nothing when the body is not one. */
+/** The body as text, or null once it passes `ERROR_BODY_BYTES`: a larger body is cancelled, never buffered. */
+async function boundedText(res: Response): Promise<string | null> {
+	if (!res.body) return ""
+	const reader = res.body.getReader()
+	const decoder = new TextDecoder()
+	let text = ""
+	let size = 0
+	for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+		size += chunk.value.byteLength
+		if (size > ERROR_BODY_BYTES) {
+			await reader.cancel()
+			return null
+		}
+		text += decoder.decode(chunk.value, { stream: true })
+	}
+	return text + decoder.decode()
+}
+
+function parsed(text: string | null): unknown {
+	try {
+		return text ? JSON.parse(text) : null
+	} catch {
+		return null
+	}
+}
+
 async function circleError(res: Response): Promise<string> {
-	const body: unknown = await res.json().catch(() => null)
+	const body = parsed(await boundedText(res))
 	if (typeof body !== "object" || body === null) return ""
 	const { code, message } = body as { code?: unknown; message?: unknown }
 	return [typeof code === "number" ? `code ${code}` : "", typeof message === "string" ? message : ""].filter(Boolean).join(": ")
@@ -59,7 +85,8 @@ export async function restock(r: RestockRequest): Promise<void> {
 			method: "POST",
 			headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-request-id": crypto.randomUUID() },
 			body: JSON.stringify({ address: r.filler, blockchain: "ETH-SEPOLIA", usdc: true }),
-			redirect: "error",
+			// workerd rejects "error"; "manual" returns a 3xx unfollowed, so the key never reaches another host.
+			redirect: "manual",
 			signal: AbortSignal.timeout(TIMEOUT_MS),
 		})
 		if (res.status === 204) r.log({ event: "restock-requested", balance: r.balance })

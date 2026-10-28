@@ -56,7 +56,7 @@ One JSON line per event ([`src/log.ts`](src/log.ts)), in Workers Logs. No line c
 With the optional secret `CIRCLE_API_KEY` set, a run may ask Circle's faucet API (`POST /v1/faucet/drips`) for a
 USDC drip to the filler on Ethereum Sepolia ([`src/restock.ts`](src/restock.ts)). It asks only in the cron run
 scheduled for the first minute of a UTC day, only after a run whose chain and signer checks passed, and only while the
-float is under 20 USDC, one drip's worth; it never retries. Circle documents no rate for the API, so once a day is a
+float is under 20 USDC (the web faucet's claim; the API states no amount); it never retries. Circle documents no rate for the API, so once a day is a
 conservative cadence, not a documented one. Without the secret, the Worker only logs `low-inventory`; a manual
 `scripts/relayer.ts once` never restocks.
 
