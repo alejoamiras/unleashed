@@ -3,9 +3,13 @@
  * probes before any signing, and a `verify` stage re-run before every broadcast group and at
  * promotion. Executable enforcement, not narrative discipline.
  *
- *   bun packages/bridge-core/scripts/live-intent.ts build <intent-path> [--router-only [--pre-create <erc20>]…]
+ *   bun packages/bridge-core/scripts/live-intent.ts build <intent-path> [--router-only [--pre-create <erc20>]… | --fuel-route]
  *   bun packages/bridge-core/scripts/live-intent.ts verify <intent-path> [--candidate <path>]
  *   bun packages/bridge-core/scripts/live-intent.ts promote <intent-path> [--bridge-only]
+ *
+ * `--fuel-route` builds a mainnet intent: the node is the mainnet one, its identity is pinned against the committed
+ * mainnet manifest and `MAINNET_REGISTRY` instead of the testnet reset baseline, the L1 RPC is ETH_RPC_URL, and the
+ * candidate may only add a `fuelRoute` to the committed placeholder. `verify` and `promote` follow the intent's network.
  *
  * `build` records: node identity from the keyed dRPC node (`requireDrpcNodeUrl`); an INDEPENDENT L1
  * corroboration (direct `eth_getCode` on the node-claimed rollup + FeeJuicePortal via SEPOLIA_RPC_URL);
@@ -24,13 +28,14 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, wri
 import { homedir } from "node:os"
 import { dirname, join, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
+import { isDeepStrictEqual } from "node:util"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Address, PublicClient } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import { type BridgeBlock, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import { type BridgeBlock, type ManifestV2, parseManifestV2, parseManifestV2Strict } from "../src/manifest-v2"
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
 import { legacyRoutersOf } from "../src/send-generation"
@@ -38,7 +43,14 @@ import { type DeployStep, readDeployJournal } from "./deploy-manifest"
 import { git, resolveBin, run } from "./run"
 import { aztecPin } from "./sandbox/local-network"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
-import { FACTORY_CONSTANTS_ABI, FUEL_SWAPPER_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI, sourceRpcUrl } from "./script-l1"
+import {
+	CANONICAL_PERMIT2,
+	FACTORY_CONSTANTS_ABI,
+	FUEL_SWAPPER_ABI,
+	manifestL1Chain,
+	ROUTER_CONSTANTS_ABI,
+	sourceRpcUrl,
+} from "./script-l1"
 import { deriveHubInstance } from "./script-l2"
 import { verifyL1Manifest } from "./verify-l1"
 import { walletChainIdOf } from "../src/wallet-chain-id"
@@ -105,6 +117,16 @@ export const CANARY_CAPS: Readonly<Record<string, { maxEthSpend: string }>> = {
 export const CAPS = {
 	maxTotalEthSpend: "2.0", // ether
 }
+
+/** A mainnet fuel-route arc's hard ceiling, in ether: two contract deploys, the gate and the router. The owner reviews
+ *  it before every build. */
+export const MAINNET_CAPS: typeof CAPS = {
+	maxTotalEthSpend: "0.1",
+}
+
+/** Aztec's registry on Ethereum mainnet. Every rollup it registered stays listed and older ones still take deposits,
+ *  so a fuel route's portal must belong to the rollup `getCanonicalRollup()` names. */
+export const MAINNET_REGISTRY = "0x35b22e09ee0390539439e24f06da43d83f90e298"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..")
@@ -175,7 +197,8 @@ async function probeIdentity(url: string): Promise<NodeIdentity> {
 export interface DeployIntent {
 	builtAt: string
 	identity: { nodeVersion: string; l1ChainId: number; rollupVersion: number; walletChainId: number }
-	l1: { rollup: string; feeJuicePortal: string; feeJuice: string; feeAssetHandler: string; registry: string }
+	/** Mainnet has no fee-asset faucet, so its node reports no `feeAssetHandler`. */
+	l1: { rollup: string; feeJuicePortal: string; feeJuice: string; feeAssetHandler?: string; registry: string }
 	l1Corroboration: { rollupHasCode: boolean; portalHasCode: boolean; source: string }
 	secondEndpoint:
 		| { agreed: true }
@@ -189,6 +212,10 @@ export interface DeployIntent {
 	candidateSha256?: string
 	/** Present on a router-only intent: the generation the arc may not move, and the only changes it may make. */
 	routerOnly?: RouterOnlyScope
+	/** Absent on a testnet intent, every one of which predates the field. */
+	network?: "mainnet"
+	/** Present on a mainnet fuel-route intent: the conductor journal the arc may extend. */
+	fuelRoute?: FuelRouteScope
 	/** The canary key the intent covers; `signer: null` refuses every canary-signed run. */
 	canary?: { signer: string | null; caps: typeof CANARY_CAPS; startingBalancesEth?: Record<string, number> }
 }
@@ -209,9 +236,20 @@ export interface RouterOnlyScope {
 	journal: { path: string; steps: number }
 }
 
+/**
+ * A fuel-route arc deploys a FuelOnlyGate and a DepositRouter for the live placeholder; its candidate is that
+ * placeholder as committed at build, plus `fuelRoute`, and nothing else.
+ */
+export interface FuelRouteScope {
+	/** The conductor's journal (repo-relative) and its length at build: later steps may only be the route's own. */
+	journal: { path: string; steps: number }
+}
+
 const OPERATIONAL_ALLOWLIST = [
 	"apps/tools/public/testnet-bridge.candidate.json",
 	"apps/tools/public/testnet-bridge.json",
+	"apps/tools/public/mainnet-bridge.candidate.json",
+	"apps/tools/public/mainnet-bridge.json",
 	"apps/tools/src/contracts/deployments.candidate.json",
 	"apps/tools/src/contracts/deployments.json",
 	"packages/bridge-core/deploy-journal.jsonl",
@@ -229,6 +267,52 @@ const OPERATIONAL_ALLOWLIST = [
 
 /** The conductor's testnet journal, repo-relative: the router-only scope reads what was appended since `build`. */
 const TESTNET_JOURNAL = "packages/bridge-core/deploy-journal/testnet-generation.jsonl"
+/** The mainnet fuel-route conductor's journal, repo-relative. */
+export const MAINNET_JOURNAL = "packages/bridge-core/deploy-journal/mainnet-fuel-route.jsonl"
+
+/** What an intent's network decides: its L1 RPC variable, its conductor journal, its bridge manifest pair, its
+ *  PrivateFPC descriptor and its spend ceiling. */
+interface IntentNetwork {
+	name: "testnet" | "mainnet"
+	l1RpcEnv: "SEPOLIA_RPC_URL" | "ETH_RPC_URL"
+	journal: string
+	bridgeCandidate: string
+	bridgeLive: string
+	descriptor: string
+	caps: typeof CAPS
+}
+
+const NETWORKS: Readonly<Record<IntentNetwork["name"], IntentNetwork>> = {
+	testnet: {
+		name: "testnet",
+		l1RpcEnv: "SEPOLIA_RPC_URL",
+		journal: TESTNET_JOURNAL,
+		bridgeCandidate: "apps/tools/public/testnet-bridge.candidate.json",
+		bridgeLive: "apps/tools/public/testnet-bridge.json",
+		descriptor: "private-fpc-canonical.json",
+		caps: CAPS,
+	},
+	mainnet: {
+		name: "mainnet",
+		l1RpcEnv: "ETH_RPC_URL",
+		journal: MAINNET_JOURNAL,
+		bridgeCandidate: "apps/tools/public/mainnet-bridge.candidate.json",
+		bridgeLive: "apps/tools/public/mainnet-bridge.json",
+		descriptor: "private-fpc-canonical-mainnet.json",
+		caps: MAINNET_CAPS,
+	},
+}
+
+const networkOf = (intent: Pick<DeployIntent, "network">): IntentNetwork => NETWORKS[intent.network ?? "testnet"]
+
+function requireL1Rpc(net: IntentNetwork): string {
+	const url = process.env[net.l1RpcEnv]
+	if (!url) throw new Error(`${net.l1RpcEnv} required: run this through the ${net.name} keyed-run template`)
+	return url
+}
+
+const descriptorSha256 = (net: IntentNetwork): string =>
+	JSON.parse(readFileSync(join(here, "..", "src", net.descriptor), "utf8")).artifactSha256
 
 /** A file entry matches exactly; only an entry ending in `/` matches by prefix — `deployments.json.ts`
  *  is not `deployments.json`. The reset baseline sits in an allowlisted lessons dir but is a trust
@@ -282,6 +366,8 @@ export function assertL1Pins(identity: NodeIdentity, pinned: Record<string, stri
 	]
 	for (const [key, got] of claimed) {
 		const want = pinned[key]
+		// A network without a fee-asset faucet (mainnet) pins none and its node claims none.
+		if (key === "feeAssetHandler" && !want && !got) continue
 		if (!want || String(got).toLowerCase() !== want.toLowerCase()) {
 			throw new Error(`node-claimed L1 ${key} ${got} != ${against} ${want} — STOP`)
 		}
@@ -293,6 +379,49 @@ export function assertL1Pins(identity: NodeIdentity, pinned: Record<string, stri
 export async function authenticatedNode(nodeUrl: string): Promise<NodeIdentity> {
 	const identity = await probeIdentity(nodeUrl)
 	assertNoResetPins(identity)
+	return identity
+}
+
+/** Mainnet has never reset, so the committed mainnet manifest is its baseline: the node must report that manifest's
+ *  chain, wallet chain id and Fee Juice pair, and the pinned registry. */
+export function assertMainnetIdentity(identity: NodeIdentity, live: ManifestV2): void {
+	const a = identity.l1ContractAddresses
+	const pins: Array<[string, unknown, unknown]> = [
+		["l1ChainId", identity.l1ChainId, 1],
+		["walletChainId", walletChainIdOf(identity.l1ChainId, identity.rollupVersion), live.walletChainId],
+		["registry", a.registryAddress, MAINNET_REGISTRY],
+		["feeJuicePortal", a.feeJuicePortalAddress, live.feeJuice.portal],
+		["feeJuice", a.feeJuiceAddress, live.feeJuice.asset],
+	]
+	for (const [label, got, want] of pins) {
+		if (String(got).toLowerCase() !== String(want).toLowerCase())
+			throw new Error(`mainnet node ${label} ${got} != committed ${want} — STOP`)
+	}
+}
+
+/** The mainnet node, refused unless {@link assertMainnetIdentity} holds against `live`. */
+export async function authenticatedMainnetNode(nodeUrl: string, live: ManifestV2): Promise<NodeIdentity> {
+	const identity = await probeIdentity(nodeUrl)
+	assertMainnetIdentity(identity, live)
+	return identity
+}
+
+/** The network's committed bridge manifest at `rev`: the working-tree copy is allowlisted and may be dirty. */
+function manifestAt(rev: string, net: IntentNetwork): ManifestV2 {
+	return parseManifestV2(JSON.parse(git(["show", `${rev}:${net.bridgeLive}`], repoRoot)))
+}
+
+/** The node's identity, authenticated against the network's committed record; on mainnet the registry's canonical
+ *  rollup, read on L1, must also be the node's. */
+async function authenticatedIdentity(net: IntentNetwork, nodeUrl: string, l1Rpc: string): Promise<NodeIdentity> {
+	if (net.name === "testnet") return authenticatedNode(nodeUrl)
+	const identity = await authenticatedMainnetNode(nodeUrl, manifestAt("HEAD", net))
+	const canonical = cast(["call", MAINNET_REGISTRY, "getCanonicalRollup()(address)", "--rpc-url", l1Rpc])
+	if (!sameAddr(canonical, identity.l1ContractAddresses.rollupAddress)) {
+		throw new Error(
+			`the registry's canonical rollup ${canonical} is not the node's ${identity.l1ContractAddresses.rollupAddress} — STOP`,
+		)
+	}
 	return identity
 }
 
@@ -345,6 +474,16 @@ export function assertRouterOnlyScope(scope: RouterOnlyScope, candidate: Manifes
 	if (extra.length > 0) throw new Error(`router-only: the candidate adds tokens the intent did not name: ${extra.join(", ")} — STOP`)
 }
 
+/** The steps appended since `build`; a journal shorter than it was then has been rewritten. */
+function stepsSinceBuild(journal: { steps: number }, steps: readonly DeployStep[]): readonly DeployStep[] {
+	if (steps.length < journal.steps) {
+		throw new Error(
+			`the conductor journal has ${steps.length} step(s), fewer than the ${journal.steps} at build — it was rewritten; STOP`,
+		)
+	}
+	return steps.slice(journal.steps)
+}
+
 /** What a router-only arc may journal: its two contracts, the named pre-creations, calibration and the candidate. */
 const ROUTER_ONLY_STEPS: ReadonlySet<DeployStep["kind"]> = new Set([
 	"fuel-swapper-deployed",
@@ -357,17 +496,45 @@ const ROUTER_ONLY_STEPS: ReadonlySet<DeployStep["kind"]> = new Set([
 /** Every step appended since `build` is one the router-only scope allows: a factory, hub or legacy router deploy
  *  under this intent would be a new generation the owner never authorized. */
 export function assertRouterOnlyJournal(scope: RouterOnlyScope, steps: readonly DeployStep[]): void {
-	if (steps.length < scope.journal.steps) {
-		throw new Error(
-			`the conductor journal has ${steps.length} step(s), fewer than the ${scope.journal.steps} at build — it was rewritten; STOP`,
-		)
-	}
-	for (const s of steps.slice(scope.journal.steps)) {
+	for (const s of stepsSinceBuild(scope.journal, steps)) {
 		if (!ROUTER_ONLY_STEPS.has(s.kind)) throw new Error(`journal step ${s.kind} is outside this router-only intent — STOP`)
 		if (s.kind === "token-precreated" && !scope.preCreate.includes(lcAddr(s.erc20))) {
 			throw new Error(`journal pre-created ${s.erc20}, which this router-only intent does not name — STOP`)
 		}
 	}
+}
+
+/** What a fuel-route arc may journal: its gate, its router and the candidate. */
+const FUEL_ROUTE_STEPS: ReadonlySet<DeployStep["kind"]> = new Set(["fuel-gate-deployed", "deposit-router-deployed", "candidate-written"])
+
+export function assertFuelRouteJournal(scope: FuelRouteScope, steps: readonly DeployStep[]): void {
+	for (const s of stepsSinceBuild(scope.journal, steps)) {
+		if (!FUEL_ROUTE_STEPS.has(s.kind)) throw new Error(`journal step ${s.kind} is outside this fuel-route intent — STOP`)
+	}
+}
+
+/** JSON's view of a manifest: an absent key and an `undefined` one are the same file. */
+const asJson = (v: unknown): unknown => JSON.parse(JSON.stringify(v))
+
+/**
+ * The candidate is the live placeholder plus a `fuelRoute` the intent's signer guards, against the pinned registry and
+ * the canonical Permit2, with a calibrated claim budget: an uncalibrated `fjPerTx` would size every gas share at zero.
+ */
+export function assertFuelRouteScope(signer: string, candidate: ManifestV2, live: ManifestV2): void {
+	const { fuelRoute, ...rest } = candidate
+	if (!fuelRoute) throw new Error("fuel route: the candidate names no fuelRoute — STOP")
+	if (!isDeepStrictEqual(asJson(rest), asJson(live))) {
+		throw new Error("fuel route: the candidate changes the live manifest beyond adding fuelRoute — STOP")
+	}
+	const pins: Array<[string, string, string]> = [
+		["guardian", fuelRoute.guardian, signer],
+		["registry", fuelRoute.registry, MAINNET_REGISTRY],
+		["permit2", fuelRoute.permit2, CANONICAL_PERMIT2],
+	]
+	for (const [label, got, want] of pins) {
+		if (!sameAddr(got, want)) throw new Error(`fuel route: ${label} ${got} != ${want} — STOP`)
+	}
+	if (BigInt(fuelRoute.fuel.fjPerTx) === 0n) throw new Error("fuel route: fjPerTx is 0 — calibrate the candidate first; STOP")
 }
 
 /** A canary chain's read RPC: Sepolia's is the keyed one; a source chain's is its override or the catalogue's. */
@@ -417,70 +584,86 @@ function assertCanary(intent: DeployIntent, sepolia: string): void {
 }
 
 /** The conductor journal's committed length: steps appended before `build` but never committed are checked too. */
-function committedJournalSteps(): number {
-	const blob = run("git", ["show", `HEAD:${TESTNET_JOURNAL}`], { cwd: repoRoot, check: false })
+function committedJournalSteps(journal: string): number {
+	const blob = run("git", ["show", `HEAD:${journal}`], { cwd: repoRoot, check: false })
 	return blob.exitCode === 0 ? blob.stdout.split("\n").filter(Boolean).length : 0
 }
 
 /** The router-only scope from the COMMITTED live manifest: the working-tree copy is allowlisted and may be dirty. */
 function routerOnlyScopeAtHead(preCreate: readonly string[]): RouterOnlyScope {
 	const live = parseManifestV2(JSON.parse(git(["show", "HEAD:apps/tools/public/testnet-bridge.json"], repoRoot)))
-	return routerOnlyScopeOf(live, preCreate, committedJournalSteps())
+	return routerOnlyScopeOf(live, preCreate, committedJournalSteps(TESTNET_JOURNAL))
 }
 
 interface ArcOptions {
 	routerOnly?: { preCreate: string[] }
+	fuelRoute?: boolean
 }
 
-function arcOf(opts: ArcOptions): { scope: Pick<DeployIntent, "routerOnly">; label: string } {
+function arcOf(opts: ArcOptions): { scope: Pick<DeployIntent, "routerOnly" | "network" | "fuelRoute">; label: string } {
 	if (opts.routerOnly) return { scope: { routerOnly: routerOnlyScopeAtHead(opts.routerOnly.preCreate) }, label: ", router-only" }
+	if (opts.fuelRoute) {
+		const fuelRoute = { journal: { path: MAINNET_JOURNAL, steps: committedJournalSteps(MAINNET_JOURNAL) } }
+		return { scope: { network: "mainnet", fuelRoute }, label: ", mainnet fuel route" }
+	}
 	return { scope: {}, label: "" }
 }
 
-async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
-	const sepolia = process.env.SEPOLIA_RPC_URL
-	if (!sepolia) throw new Error("SEPOLIA_RPC_URL required (source packages/bridge-core/.env)")
-	const pk = process.env.PRIVATE_KEY
-	if (!pk) throw new Error("PRIVATE_KEY required (source packages/bridge-core/.env)")
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
-
-	const identity = await probeIdentity(nodeUrl)
-	const walletChainId = walletChainIdOf(identity.l1ChainId, identity.rollupVersion)
-	assertNoResetPins(identity)
-
-	// Independent L1 corroboration of the node's claims — a lying/stale node fails here. The node
-	// controls these strings, so validate them as addresses BEFORE they reach `cast`.
+/** Direct `eth_getCode` on the node-claimed rollup and FeeJuicePortal, through the L1 RPC rather than the node. The node
+ *  controls these strings, so they are validated as addresses before they reach `cast`. */
+function corroborateL1(identity: NodeIdentity, net: IntentNetwork, l1Rpc: string) {
 	const rollup = requireAddress(identity.l1ContractAddresses.rollupAddress, "node rollupAddress")
 	const portal = requireAddress(identity.l1ContractAddresses.feeJuicePortalAddress, "node feeJuicePortalAddress")
-	const rollupCode = cast(["code", rollup, "--rpc-url", sepolia])
-	const portalCode = cast(["code", portal, "--rpc-url", sepolia])
-
-	// Second Aztec endpoint, when one exists.
-	const secondUrl = process.env.INTENT_SECOND_AZTEC_RPC
-	let secondEndpoint: DeployIntent["secondEndpoint"]
-	if (secondUrl) {
-		const second = await probeIdentity(secondUrl)
-		if (second.rollupVersion !== identity.rollupVersion || second.l1ContractAddresses.rollupAddress !== rollup) {
-			throw new Error(`second endpoint DISAGREES: rollupVersion ${second.rollupVersion} vs ${identity.rollupVersion}`)
-		}
-		secondEndpoint = { agreed: true }
-	} else {
-		secondEndpoint = { posture: "SINGLE-L2-NODE (documented residual: no second public endpoint; L1-anchored; caps bound exposure)" }
+	const corroboration = {
+		rollupHasCode: cast(["code", rollup, "--rpc-url", l1Rpc]).length > 4,
+		portalHasCode: cast(["code", portal, "--rpc-url", l1Rpc]).length > 4,
+		source: `direct eth_getCode via ${net.l1RpcEnv}`,
 	}
+	if (!corroboration.rollupHasCode || !corroboration.portalHasCode) {
+		throw new Error(`L1 corroboration FAILED: node-claimed rollup/portal has no code on ${net.name} L1 — HARD STOP`)
+	}
+	return { rollup, portal, corroboration }
+}
+
+/** A second Aztec endpoint must agree with the first when one is given; otherwise the single-node posture is recorded. */
+async function secondEndpointOf(identity: NodeIdentity, rollup: string): Promise<DeployIntent["secondEndpoint"]> {
+	const secondUrl = process.env.INTENT_SECOND_AZTEC_RPC
+	if (!secondUrl) {
+		return { posture: "SINGLE-L2-NODE (documented residual: no second public endpoint; L1-anchored; caps bound exposure)" }
+	}
+	const second = await probeIdentity(secondUrl)
+	if (second.rollupVersion !== identity.rollupVersion || second.l1ContractAddresses.rollupAddress !== rollup) {
+		throw new Error(`second endpoint DISAGREES: rollupVersion ${second.rollupVersion} vs ${identity.rollupVersion}`)
+	}
+	return { agreed: true }
+}
+
+async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
+	const net = opts.fuelRoute ? NETWORKS.mainnet : NETWORKS.testnet
+	const l1Rpc = requireL1Rpc(net)
+	const pk = process.env.PRIVATE_KEY
+	if (!pk) throw new Error(`PRIVATE_KEY required: run this through the ${net.name} keyed-run template`)
+	const nodeUrl = requireDrpcNodeUrl(net.name, process.env)
+
+	const identity = await authenticatedIdentity(net, nodeUrl, l1Rpc)
+	const walletChainId = walletChainIdOf(identity.l1ChainId, identity.rollupVersion)
+	// Independent L1 corroboration of the node's claims — a lying/stale node fails here.
+	const { rollup, portal, corroboration } = corroborateL1(identity, net, l1Rpc)
+	const secondEndpoint = await secondEndpointOf(identity, rollup)
 
 	const signer = signerOf(pk)
-	if (signer.toLowerCase() !== PLAN_PINNED_L1_SIGNER.toLowerCase()) {
-		throw new Error(`env-derived signer ${signer} != plan-pinned ${PLAN_PINNED_L1_SIGNER} — HARD STOP`)
-	}
+	const pinned = requirePinnedSigner(net.name)
+	if (!sameAddr(signer, pinned)) throw new Error(`env-derived signer ${signer} != plan-pinned ${pinned} — HARD STOP`)
 
 	// The PRE-SPEND baseline the caps are measured against. Recorded ONCE at build (before any
 	// broadcast); verify computes `baseline - current` and hard-stops if it exceeds maxTotalEthSpend.
-	const startingBalanceEth = Number(cast(["balance", signer, "--rpc-url", sepolia, "--ether"]))
+	const startingBalanceEth = Number(cast(["balance", signer, "--rpc-url", l1Rpc, "--ether"]))
 	if (!Number.isFinite(startingBalanceEth)) throw new Error(`could not read starting signer balance — STOP`)
 
 	const commit = git(["rev-parse", "HEAD"], repoRoot)
 	const dirty = run("git", ["status", "--porcelain"], { cwd: repoRoot }).stdout.split("\n").filter(Boolean).filter(isNotAllowlisted)
 	const arc = arcOf(opts)
+	const handler = identity.l1ContractAddresses.feeAssetHandlerAddress
 
 	const intent: DeployIntent = {
 		builtAt: new Date().toISOString(),
@@ -494,24 +677,16 @@ async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
 			rollup,
 			feeJuicePortal: portal,
 			feeJuice: identity.l1ContractAddresses.feeJuiceAddress,
-			feeAssetHandler: identity.l1ContractAddresses.feeAssetHandlerAddress,
+			...(handler ? { feeAssetHandler: handler } : {}),
 			registry: identity.l1ContractAddresses.registryAddress,
 		},
-		l1Corroboration: {
-			rollupHasCode: rollupCode.length > 4,
-			portalHasCode: portalCode.length > 4,
-			source: "direct eth_getCode via SEPOLIA_RPC_URL",
-		},
+		l1Corroboration: corroboration,
 		secondEndpoint,
 		signer,
-		caps: CAPS,
+		caps: net.caps,
 		startingBalanceEth,
 		artifacts: {
-			privateFpc: {
-				address: PRIVATE_FPC_ADDRESS,
-				salt: PRIVATE_FPC_SALT,
-				sha256: JSON.parse(readFileSync(join(here, "..", "src", "private-fpc-canonical.json"), "utf8")).artifactSha256,
-			},
+			privateFpc: { address: PRIVATE_FPC_ADDRESS, salt: PRIVATE_FPC_SALT, sha256: descriptorSha256(net) },
 			noirTargets: Object.fromEntries(
 				["token_bridge_hub/target/token_bridge_hub_contract-TokenBridgeHub.json", "keystone/target/keystone.json"].map((rel) => [
 					rel,
@@ -521,10 +696,7 @@ async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
 		},
 		source: { commit, treeClean: dirty.length === 0, operationalAllowlist: OPERATIONAL_ALLOWLIST },
 		...arc.scope,
-		canary: canaryRecord(sepolia),
-	}
-	if (!intent.l1Corroboration.rollupHasCode || !intent.l1Corroboration.portalHasCode) {
-		throw new Error("L1 corroboration FAILED: node-claimed rollup/portal has no code on Sepolia — HARD STOP")
+		...(net.name === "testnet" ? { canary: canaryRecord(l1Rpc) } : {}),
 	}
 	if (dirty.length > 0) {
 		throw new Error(`source tree not clean outside the operational allowlist:\n${dirty.join("\n")}`)
@@ -536,12 +708,6 @@ async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
 		`✓ intent written to ${intentPath} (commit ${commit.slice(0, 8)}, rollupVersion ${identity.rollupVersion}, signer ${signer}` +
 			`${arc.label})`,
 	)
-}
-
-function requireSepoliaRpc(): string {
-	const sepolia = process.env.SEPOLIA_RPC_URL
-	if (!sepolia) throw new Error("SEPOLIA_RPC_URL required (source packages/bridge-core/.env)")
-	return sepolia
 }
 
 /** The intent is the gate's own trust anchor (caps, signer, digests). It lives under the otherwise
@@ -620,7 +786,7 @@ function assertArtifactDigests(intent: DeployIntent): void {
 		const actual = sha256(join(repoRoot, "contracts", "bridge", "aztec", rel))
 		if (actual !== expected) throw new Error(`Noir artifact drifted since intent: ${rel}`)
 	}
-	const descriptorSha = JSON.parse(readFileSync(join(here, "..", "src", "private-fpc-canonical.json"), "utf8")).artifactSha256
+	const descriptorSha = descriptorSha256(networkOf(intent))
 	if (descriptorSha !== intent.artifacts.privateFpc.sha256) {
 		throw new Error(
 			`canonical PrivateFPC digest drifted since intent: ${descriptorSha} != ${intent.artifacts.privateFpc.sha256} — STOP`,
@@ -634,7 +800,7 @@ function assertArtifactDigests(intent: DeployIntent): void {
  * can mint a self-consistent FAKE pair. The intent's values went through baseline byte-equality
  * plus eth_getCode; a candidate that disagrees sends deposits to the wrong portal, unrecoverably.
  */
-function assertFeeJuicePins(m: ManifestV2, intent: DeployIntent, sepolia: string): void {
+function assertFeeJuicePins(m: ManifestV2, intent: DeployIntent, l1Rpc: string): void {
 	const fee = m.feeJuice
 	if (fee.portal.toLowerCase() !== intent.l1.feeJuicePortal.toLowerCase()) {
 		throw new Error(`candidate feeJuice.portal ${fee.portal} != intent pin ${intent.l1.feeJuicePortal} — STOP`)
@@ -642,7 +808,7 @@ function assertFeeJuicePins(m: ManifestV2, intent: DeployIntent, sepolia: string
 	if (fee.asset.toLowerCase() !== intent.l1.feeJuice.toLowerCase()) {
 		throw new Error(`candidate feeJuice.asset ${fee.asset} != intent pin ${intent.l1.feeJuice} — STOP`)
 	}
-	const underlying = cast(["call", fee.portal, "UNDERLYING()(address)", "--rpc-url", sepolia])
+	const underlying = cast(["call", fee.portal, "UNDERLYING()(address)", "--rpc-url", l1Rpc])
 	if (underlying.toLowerCase() !== fee.asset.toLowerCase()) {
 		throw new Error(`portal UNDERLYING ${underlying} != manifest asset ${fee.asset} — STOP`)
 	}
@@ -650,10 +816,10 @@ function assertFeeJuicePins(m: ManifestV2, intent: DeployIntent, sepolia: string
 	// fee asset and no handler, so verify it only when the manifest declares one.
 	const handler = fee.feeAssetHandler
 	if (!handler) return
-	if (handler.toLowerCase() !== intent.l1.feeAssetHandler.toLowerCase()) {
+	if (!sameAddr(handler, intent.l1.feeAssetHandler)) {
 		throw new Error(`candidate feeJuice.feeAssetHandler ${handler} != intent pin ${intent.l1.feeAssetHandler} — STOP`)
 	}
-	const feeAsset = cast(["call", handler, "FEE_ASSET()(address)", "--rpc-url", sepolia])
+	const feeAsset = cast(["call", handler, "FEE_ASSET()(address)", "--rpc-url", l1Rpc])
 	if (feeAsset.toLowerCase() !== fee.asset.toLowerCase()) throw new Error(`handler FEE_ASSET ${feeAsset} != manifest asset — STOP`)
 }
 
@@ -748,7 +914,7 @@ async function verifyGenerationBindings(m: ManifestV2, rpcUrl: string, nodeUrl: 
 /** The candidate must name the network the intent was built against — the app refuses any other.
  *  Its registry is pinned too, and read on L1: every pointer the factory and portals froze is checked
  *  against that registry, so an unauthenticated one would make those checks self-referential. */
-function assertCandidateIdentity(intent: DeployIntent, candidate: ManifestV2, sepolia: string): void {
+function assertCandidateIdentity(intent: DeployIntent, candidate: ManifestV2, l1Rpc: string): void {
 	const want = intent.identity
 	if (candidate.l1ChainId !== want.l1ChainId || candidate.walletChainId !== want.walletChainId) {
 		throw new Error(
@@ -756,22 +922,30 @@ function assertCandidateIdentity(intent: DeployIntent, candidate: ManifestV2, se
 				`(l1 ${want.l1ChainId}, wallet ${want.walletChainId}) — STOP`,
 		)
 	}
-	const registry = requireBridge(candidate).l1.registry
+	const registry = candidate.bridge?.l1.registry ?? candidate.fuelRoute?.registry
+	if (!registry)
+		throw new Error(`candidate for ${candidate.network} names no registry: it carries neither a bridge nor a fuel route — STOP`)
 	if (registry.toLowerCase() !== intent.l1.registry.toLowerCase()) {
 		throw new Error(`candidate registry ${registry} != intent pin ${intent.l1.registry} — STOP`)
 	}
-	const rollup = cast(["call", registry, "getCanonicalRollup()(address)", "--rpc-url", sepolia])
+	const rollup = cast(["call", registry, "getCanonicalRollup()(address)", "--rpc-url", l1Rpc])
 	if (rollup.toLowerCase() !== intent.l1.rollup.toLowerCase()) {
 		throw new Error(`registry ${registry} resolves to rollup ${rollup}, not the intent's ${intent.l1.rollup} — STOP`)
 	}
 }
 
-/** Digest-pin the candidate bytes, strict-parse them, then prove the generation they name. */
+/** The candidate, strict-parsed: a generation's must carry a bridge and tokens, a fuel route's the placeholder's
+ *  `bridge: null`, which `assertFuelRouteScope` then pins. */
+function candidateOf(intent: DeployIntent, raw: string): Promise<ManifestV2> {
+	return intent.fuelRoute ? parseManifestV2Strict(JSON.parse(raw)) : assertFaucetCandidateShape(JSON.parse(raw))
+}
+
+/** Digest-pin the candidate bytes, strict-parse them, then prove the generation or the fuel route they name. */
 async function verifyCandidate(
 	intent: DeployIntent,
 	intentPath: string,
 	candidatePath: string,
-	sepolia: string,
+	l1Rpc: string,
 	nodeUrl: string,
 ): Promise<void> {
 	const raw = readFileSync(candidatePath, "utf8")
@@ -779,23 +953,30 @@ async function verifyCandidate(
 	if (intent.candidateSha256 && intent.candidateSha256 !== digest) {
 		throw new Error(`candidate digest CHANGED since recorded: ${digest} != ${intent.candidateSha256} — never promote`)
 	}
-	const candidate = await assertFaucetCandidateShape(JSON.parse(raw))
+	const candidate = await candidateOf(intent, raw)
 	if (!intent.candidateSha256) {
 		intent.candidateSha256 = digest
 		writeFileSync(intentPath, `${JSON.stringify(intent, null, "\t")}\n`)
 		console.log(`✓ candidate digest recorded: ${digest}`)
 	}
-	assertFeeJuicePins(candidate, intent, sepolia)
-	assertCandidateIdentity(intent, candidate, sepolia)
+	assertFeeJuicePins(candidate, intent, l1Rpc)
+	assertCandidateIdentity(intent, candidate, l1Rpc)
 	if (intent.routerOnly) assertRouterOnlyScope(intent.routerOnly, candidate)
-	await verifyGenerationBindings(candidate, sepolia, nodeUrl)
+	if (intent.fuelRoute) {
+		// The build commit's copy: the live file is allowlisted, so HEAD's may have moved since.
+		assertFuelRouteScope(intent.signer, candidate, manifestAt(intent.source.commit, networkOf(intent)))
+		const failures = await verifyL1Manifest(candidate, l1Rpc, { strict: true })
+		if (failures > 0) throw new Error(`${failures} L1 verification check(s) failed on the candidate — STOP`)
+	} else {
+		await verifyGenerationBindings(candidate, l1Rpc, nodeUrl)
+	}
 	console.log("✓ candidate strict-valid + privileged readbacks agree")
 }
 
 /** Balance-within-caps reconciliation — ENFORCED, not merely printed: the build recorded the
  *  pre-spend baseline, so a cumulative spend past the cap hard-stops here. */
-function assertSpendWithinCaps(intent: DeployIntent, sepolia: string, rollupVersion: number): void {
-	const balance = Number(cast(["balance", requireAddress(intent.signer, "intent signer"), "--rpc-url", sepolia, "--ether"]))
+function assertSpendWithinCaps(intent: DeployIntent, l1Rpc: string, rollupVersion: number): void {
+	const balance = Number(cast(["balance", requireAddress(intent.signer, "intent signer"), "--rpc-url", l1Rpc, "--ether"]))
 	if (typeof intent.startingBalanceEth !== "number" || !Number.isFinite(intent.startingBalanceEth)) {
 		// An intent with no recorded baseline can only be printed against — there is no delta to enforce.
 		console.log(
@@ -817,8 +998,9 @@ function assertSpendWithinCaps(intent: DeployIntent, sepolia: string, rollupVers
 
 async function verify(intentPath: string, candidatePath?: string): Promise<void> {
 	const intent = JSON.parse(readFileSync(intentPath, "utf8")) as DeployIntent
-	const sepolia = requireSepoliaRpc()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const net = networkOf(intent)
+	const l1Rpc = requireL1Rpc(net)
+	const nodeUrl = requireDrpcNodeUrl(net.name, process.env)
 	assertIntentCommitted(intent, intentPath)
 	assertTreeDiscipline()
 	assertNoSourceDrift(intent)
@@ -826,9 +1008,11 @@ async function verify(intentPath: string, candidatePath?: string): Promise<void>
 	assertSignerUnmoved(intent)
 	assertArtifactDigests(intent)
 	if (intent.routerOnly) assertRouterOnlyJournal(intent.routerOnly, readDeployJournal(join(repoRoot, TESTNET_JOURNAL)))
-	if (candidatePath) await verifyCandidate(intent, intentPath, candidatePath, sepolia, nodeUrl)
-	assertSpendWithinCaps(intent, sepolia, now.rollupVersion)
-	assertCanary(intent, sepolia)
+	if (intent.fuelRoute) assertFuelRouteJournal(intent.fuelRoute, readDeployJournal(join(repoRoot, MAINNET_JOURNAL)))
+	if (candidatePath) await verifyCandidate(intent, intentPath, candidatePath, l1Rpc, nodeUrl)
+	assertSpendWithinCaps(intent, l1Rpc, now.rollupVersion)
+	// No mainnet canary key is pinned, so a mainnet intent covers no canary-signed run.
+	if (net.name === "testnet") assertCanary(intent, l1Rpc)
 }
 
 interface PromotionPaths {
@@ -838,10 +1022,10 @@ interface PromotionPaths {
 	faucetLive: string
 }
 
-function promotionPaths(): PromotionPaths {
+function promotionPaths(net: IntentNetwork): PromotionPaths {
 	return {
-		bridgeCandidate: join(repoRoot, "apps/tools/public/testnet-bridge.candidate.json"),
-		bridgeLive: join(repoRoot, "apps/tools/public/testnet-bridge.json"),
+		bridgeCandidate: join(repoRoot, net.bridgeCandidate),
+		bridgeLive: join(repoRoot, net.bridgeLive),
 		faucetCandidate: join(repoRoot, "apps/tools/src/contracts/deployments.candidate.json"),
 		faucetLive: join(repoRoot, "apps/tools/src/contracts/deployments.json"),
 	}
@@ -965,12 +1149,13 @@ function writeReceipt(intentPath: string, mode: string, bridge: unknown, faucet:
  * promotion provably leaves it byte-identical.
  */
 async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}): Promise<void> {
-	const bridgeOnly = opts.bridgeOnly === true
-	const paths = promotionPaths()
-
 	// The recorded candidate digest is REQUIRED BEFORE promote's own verify runs: verify RECORDS a
 	// missing digest, so checking after it would always pass.
 	const intent = JSON.parse(readFileSync(intentPath, "utf8")) as DeployIntent
+	const net = networkOf(intent)
+	// The faucet is a testnet deployment: a mainnet promotion moves the bridge manifest alone.
+	const bridgeOnly = opts.bridgeOnly === true || net.name === "mainnet"
+	const paths = promotionPaths(net)
 	if (!intent.candidateSha256) {
 		throw new Error("intent has no recorded candidateSha256 — run verify --candidate (and commit the intent) BEFORE promote — STOP")
 	}
@@ -978,11 +1163,11 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 
 	// Promotion enables the app's fuel path, which hard-uses PRIVATE_FPC_ADDRESS — a drifted
 	// derivation, or another or upgraded-out class published at that address, must abort it.
-	run("bun", [join(here, "check-fpc-version.ts")], { stdio: "inherit" })
+	run("bun", [join(here, "check-fpc-version.ts"), "--network", net.name], { stdio: "inherit" })
 
 	assertPromotablePaths(paths, bridgeOnly)
 	const bytes = readPromotionBytes(paths, bridgeOnly, intent.candidateSha256)
-	const candidate = await assertFaucetCandidateShape(JSON.parse(bytes.bridge.toString("utf8")))
+	const candidate = await candidateOf(intent, bytes.bridge.toString("utf8"))
 	// Prove the faucet candidate's derivation BEFORE any live write; otherwise a junk candidate
 	// fails only after the live file was overwritten.
 	if (bytes.faucet) {
@@ -1000,7 +1185,7 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 	const receiptPath = writeReceipt(
 		intentPath,
 		bridgeOnly ? "bridge-only" : "bridge+faucet",
-		{ candidateSha256: bytes.bridgeSha, live: "apps/tools/public/testnet-bridge.json" },
+		{ candidateSha256: bytes.bridgeSha, live: net.bridgeLive },
 		bytes.faucetSha
 			? { candidateSha256: bytes.faucetSha, live: "apps/tools/src/contracts/deployments.json" }
 			: { unchangedSha256: bytes.faucetLivePin, live: "apps/tools/src/contracts/deployments.json" },
@@ -1016,7 +1201,7 @@ if (isMain) {
 	const [, , cmd, intentPath, ...rest] = process.argv
 	if (!cmd || !intentPath) {
 		console.error(
-			"usage: live-intent.ts build|verify|promote <intent-path> [--router-only [--pre-create <erc20>]…] [--candidate <path>] [--bridge-only]",
+			"usage: live-intent.ts build|verify|promote <intent-path> [--router-only [--pre-create <erc20>]… | --fuel-route] [--candidate <path>] [--bridge-only]",
 		)
 		process.exit(1)
 	}
@@ -1026,7 +1211,10 @@ if (isMain) {
 	const preCreate = rest.flatMap((arg, i) => (arg === "--pre-create" && rest[i + 1] ? [rest[i + 1] as string] : []))
 	const dispatch =
 		cmd === "build"
-			? build(intentPath, rest.includes("--router-only") ? { routerOnly: { preCreate } } : {})
+			? build(
+					intentPath,
+					rest.includes("--router-only") ? { routerOnly: { preCreate } } : { fuelRoute: rest.includes("--fuel-route") },
+				)
 			: cmd === "verify"
 				? verify(intentPath, candidatePath)
 				: cmd === "promote"

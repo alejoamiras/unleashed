@@ -218,9 +218,10 @@ async function fuelOnly(l1ChainId = 1) {
 		depositRouter: ROUTER,
 		gate: GATE,
 		guardian: "0x0000000000000000000000000000000000000002",
+		registry: "0x35b22e09ee0390539439e24f06da43d83f90e298",
 		permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
 		...(l1ChainId === 1 ? {} : { fuelSwapper: SWAPPER }),
-		fuel: { slippageBps: 300, minFuelFj: "1000" },
+		fuel: { slippageBps: 300, minFuelFj: "1000", fjPerTx: "40" },
 	}
 	return { ...(await fixture()), l1ChainId, walletChainId: l1ChainId, bridge: null, fuelRoute: route as Record<string, unknown> }
 }

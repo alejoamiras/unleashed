@@ -5,6 +5,7 @@
  *
  *   bun scripts/deploy-generation.ts deploy --rates <rates.json> [--routing <routing.json>] [--dry-run]
  *   bun scripts/deploy-generation.ts deploy --router-only --rates <rates.json> [--config <base>] [--routing <routing.json>] [--dry-run]
+ *   bun scripts/deploy-generation.ts deploy --fuel-route --fuel <fuel.json> [--config <base>] [--dry-run]
  *   bun scripts/deploy-generation.ts pre-create --config <candidate> --token <erc20> [--no-register]
  *   bun scripts/deploy-generation.ts calibrate  --config <candidate> --samples <fees.json>
  *
@@ -15,6 +16,11 @@
  * (`{ "<erc20>": "<fee-asset units per whole token>" }`). `--router-only` is L1-only (no L2 account,
  * no proofs): a new DepositRouter and TestnetFuelSwapper for the current generation, `--config`
  * (default: the live manifest) as the base of the candidate it writes.
+ *
+ * `--fuel-route` is Ethereum mainnet's: a FuelOnlyGate and a DepositRouter swapping through LI.FI's Diamond, L1 only,
+ * as a keyed run on mainnet-l1.env.example (PRIVATE_KEY, the pinned mainnet signer; ETH_RPC_URL; DRPC_API_KEY).
+ * `--fuel` names the route's `{ slippageBps, minFuelFj, fjPerTx }`; `--config` (default: the live mainnet manifest)
+ * is the placeholder the candidate extends.
  */
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -25,10 +31,11 @@ import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { manifestPrivateFpc } from "../src/aztec-line"
 import type { L1Ctx } from "../src/flows"
-import { type BridgeBlock, type ManifestToken, type ManifestV2, manifestToken, parseManifestV2 } from "../src/manifest-v2"
+import { type BridgeBlock, fuelRouteSchema, type ManifestToken, type ManifestV2, manifestToken, parseManifestV2 } from "../src/manifest-v2"
 import { walletChainIdOf } from "../src/wallet-chain-id"
 import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 import { openDeployJournal, readCandidate, writeCandidateAtomically } from "./deploy-manifest"
+import { deployFuelRoute, type FuelRouteOptions, planFuelRoute } from "./fuel-route"
 import { deployGeneration, type GenerationRecord, type L2Ctx, preCreateToken } from "./generation"
 import {
 	DEFAULT_CROSS_CHAIN_SLIPPAGE_BPS,
@@ -39,16 +46,25 @@ import {
 	type RouterOnlyNetwork,
 	type RouterOnlyOptions,
 } from "./generation-router"
-import { authenticatedNode, type NodeIdentity, PLAN_PINNED_L1_SIGNERS } from "./live-intent"
+import {
+	authenticatedMainnetNode,
+	authenticatedNode,
+	MAINNET_JOURNAL,
+	MAINNET_REGISTRY,
+	type NodeIdentity,
+	PLAN_PINNED_L1_SIGNERS,
+} from "./live-intent"
 import {
 	createL1Clients,
 	createL2Wallet,
 	createNode,
 	loadManifestV2FromConfigArg,
+	mainnetChain,
 	requireBridge,
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
+import { CANONICAL_PERMIT2 } from "./script-l1"
 import { deployAccountIfAbsent, deployerSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
 
@@ -57,12 +73,15 @@ const PUBLIC_DIR = join(here, "..", "..", "..", "apps", "tools", "public")
 const CANDIDATE_PATH = join(PUBLIC_DIR, "testnet-bridge.candidate.json")
 const LIVE_PATH = join(PUBLIC_DIR, "testnet-bridge.json")
 const JOURNAL_PATH = join(here, "..", "deploy-journal", "testnet-generation.jsonl")
+const REPO_ROOT = join(here, "..", "..", "..")
+const MAINNET_LIVE_PATH = join(PUBLIC_DIR, "mainnet-bridge.json")
+const MAINNET_CANDIDATE = "apps/tools/public/mainnet-bridge.candidate.json"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
 
 /** Sepolia's canonical Permit2. */
-const SEPOLIA_PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3"
+const SEPOLIA_PERMIT2 = CANONICAL_PERMIT2
 const SLIPPAGE_BPS = 300
 // 4× the worst PrivateFPC ceiling the validator measured over three live private claims on the
 // testnet fee schedule (7.44 FJ); a one-sample run may only ever raise it.
@@ -71,12 +90,13 @@ const MIN_FJ = "16000000000000000000"
 
 const lc = (v: string) => v.toLowerCase() as Address
 
-function requireSigner(): ReturnType<typeof privateKeyToAccount> {
-	if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY is required (packages/bridge-core/.env) — STOP")
+/** The env's signer, refused unless it is `network`'s pinned one, before any node or L1 read. */
+function requireSigner(network: "testnet" | "mainnet" = "testnet"): ReturnType<typeof privateKeyToAccount> {
+	if (!PRIVATE_KEY) throw new Error(`PRIVATE_KEY is required: run this through its ${network} keyed-run template — STOP`)
 	const account = privateKeyToAccount(PRIVATE_KEY)
-	const pinned = PLAN_PINNED_L1_SIGNERS.testnet
+	const pinned = PLAN_PINNED_L1_SIGNERS[network]
 	if (!pinned || account.address.toLowerCase() !== pinned.toLowerCase()) {
-		throw new Error(`L1 deployer ${account.address} != pinned testnet signer ${pinned} — wrong key; STOP`)
+		throw new Error(`L1 deployer ${account.address} != pinned ${network} signer ${pinned} — wrong key; STOP`)
 	}
 	return account
 }
@@ -298,6 +318,45 @@ async function commandRouterOnly(): Promise<void> {
 	)
 }
 
+/** Ethereum mainnet's fuel-only route: a gate and a router beside the live placeholder. L1 only. */
+async function commandFuelRoute(): Promise<void> {
+	const mins = stopwatch()
+	const fuelPath = argValue("--fuel")
+	if (!fuelPath) throw new Error('deploy --fuel-route needs --fuel <fuel.json> ({ "slippageBps", "minFuelFj", "fjPerTx" })')
+	const fuel = fuelRouteSchema.shape.fuel.parse(readJson(fuelPath))
+	const rpcUrl = process.env.ETH_RPC_URL
+	if (!rpcUrl) throw new Error("ETH_RPC_URL is required: run this through mainnet-l1.env.example — STOP")
+	const account = requireSigner("mainnet")
+	const base = loadManifestV2FromConfigArg(process.argv, { mode: "fallback", fallbackPath: MAINNET_LIVE_PATH })
+	const info = await authenticatedMainnetNode(requireDrpcNodeUrl("mainnet", process.env), base)
+	const l1: L1Ctx = { ...createL1Clients({ chain: mainnetChain(rpcUrl), rpcUrl, account }), account }
+	const options: FuelRouteOptions = {
+		l1,
+		network: {
+			l1ChainId: info.l1ChainId,
+			rollupVersion: info.rollupVersion,
+			registry: lc(MAINNET_REGISTRY),
+			feeJuicePortal: lc(base.feeJuice.portal),
+			feeJuice: lc(base.feeJuice.asset),
+			permit2: lc(CANONICAL_PERMIT2),
+		},
+		journalPath: join(REPO_ROOT, MAINNET_JOURNAL),
+		base,
+		fuel,
+		candidatePath: join(REPO_ROOT, MAINNET_CANDIDATE),
+	}
+	if (process.argv.includes("--dry-run")) {
+		for (const line of await planFuelRoute(options)) console.log(`dry run: ${line}`)
+		return
+	}
+	const { gate, depositRouter } = await deployFuelRoute(options)
+	// Repo-relative: the journal is the route's record and must not carry a machine's layout.
+	openDeployJournal(options.journalPath).append({ kind: "candidate-written", path: MAINNET_CANDIDATE })
+	const how = (d: { adopted: boolean }) => (d.adopted ? "adopted" : "deployed")
+	console.log(`\n✅ gate ${gate.address} (${how(gate)}), router ${depositRouter.address} (${how(depositRouter)}) (${mins()})`)
+	console.log(`   candidate written to ${MAINNET_CANDIDATE}; next: verify:l1 --strict, the canary, calibrate, live-intent verify.`)
+}
+
 /** Adds one token to an existing generation's candidate: portal clone and hub registration. */
 async function commandPreCreate(): Promise<void> {
 	const mins = stopwatch()
@@ -336,6 +395,7 @@ function commandCalibrate(): void {
 async function main(): Promise<void> {
 	const command = process.argv[2]
 	if (command === "deploy" && process.argv.includes("--router-only")) return commandRouterOnly()
+	if (command === "deploy" && process.argv.includes("--fuel-route")) return commandFuelRoute()
 	if (command === "deploy") return commandDeploy()
 	if (command === "pre-create") return commandPreCreate()
 	if (command === "calibrate") return commandCalibrate()

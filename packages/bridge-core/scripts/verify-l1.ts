@@ -4,7 +4,7 @@
  *
  *   bun packages/bridge-core/scripts/verify-l1.ts [--config <manifest path>] [--strict]
  *
- * Four passes, each read straight off the chain:
+ * Four passes over a bridge, each read straight off the chain:
  *  - the generation: code at every `bridge.l1` address, the factory/implementation cross-bindings
  *    (implementation, hub, guardian, rollup inbox+outbox+version), the DepositRouter's immutables,
  *    witness type string and owner, the fuel swapper's bindings, a rate for every token and its
@@ -17,13 +17,18 @@
  *    this checkout's forge build, with each artifact's immutable slots (per-deployment values) and metadata
  *    trailer (per-checkout paths) masked out, so it passes from any checkout of the deployed sources.
  *
+ * A fuel-only route (no bridge) gets its own: code at the router, the gate, Permit2 and the portal; the router's
+ * immutables and owner; the gate's owner and pause; the portal paying the manifest's fee asset into the registry's
+ * canonical rollup at the manifest's version; LI.FI's book on mainnet, or the swapper on the sandbox; the code hashes.
+ *
  * `--strict` is the promotion gate: the artifacts are rebuilt from source into a fresh directory first
  * (never over a shared `out/` a running sandbox deploys from), and every input a pass cannot obtain is
  * a FAILURE rather than a noted skip — a stale or planted `out/` would otherwise bless whatever runtime
  * it was written to match. Without it (the default) the code-hash pass reuses whatever build is on disk
  * and skips when there is none.
  *
- * Needs an L1 RPC in SEPOLIA_RPC_URL or ETH_RPC_URL (bun auto-loads packages/bridge-core/.env), a read
+ * Needs an L1 RPC: ETH_RPC_URL for a mainnet manifest, else SEPOLIA_RPC_URL or ETH_RPC_URL (bun auto-loads
+ * packages/bridge-core/.env), a read
  * RPC per routing source (BASE_SEPOLIA_RPC_URL defaults to PublicNode), and foundry for the code-hash
  * pass, plus a `remappings.txt` from `gen-remappings.ts` whenever that pass builds (always under
  * `--strict`, otherwise only without an `out/`). Exits non-zero if any check FAILs.
@@ -32,6 +37,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { FeeJuicePortalAbi, RegistryAbi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, hexToBytes, keccak256, type PublicClient } from "viem"
 import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { readErc20Metadata } from "../src/erc20"
@@ -40,15 +46,18 @@ import { readRegistration } from "../src/factory-registry"
 import { DEPOSIT_WITNESS_TYPE_STRING } from "../src/l1"
 import { FUEL_SWAP_SELECTORS } from "../src/lifi-abi"
 import { LIFI_BOOK, type LifiChainBook, type LifiCodeHashes } from "../src/lifi-addresses"
-import type { BridgeBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
+import type { BridgeBlock, FuelRouteBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
 import { toWord } from "../src/register-hash"
 import { legacyRoutersOf } from "../src/send-generation"
+import { walletChainIdOf } from "../src/wallet-chain-id"
 import { resolveBin, run } from "./run"
-import { createL1PublicClient, loadManifestV2FromConfigArg, requireBridge } from "./script-bootstrap"
+import { createL1PublicClient, loadManifestV2FromConfigArg, requireRoute } from "./script-bootstrap"
 import {
 	assertFactoryPortal,
+	CANONICAL_PERMIT2,
 	ERC20_MIN_ABI,
 	FACTORY_CONSTANTS_ABI,
+	FUEL_GATE_ABI,
 	FUEL_SWAPPER_ABI,
 	manifestL1Chain,
 	PORTAL_IMPL_CONSTANTS_ABI,
@@ -201,12 +210,29 @@ async function checkLegacyRouter(pub: PublicClient, b: BridgeBlock, router: Addr
 }
 
 /** The DepositRouter's swap target: the manifest's fuel swapper off mainnet, LI.FI's Diamond on it. */
-function depositRouterSwapTarget(m: ManifestV2, b: BridgeBlock): string | undefined {
-	return b.l1.fuelSwapper ?? (m.l1ChainId === 1 ? LIFI_BOOK[1]?.diamond : undefined)
+function depositRouterSwapTarget(m: ManifestV2, fuelSwapper: string | undefined): string | undefined {
+	return fuelSwapper ?? (m.l1ChainId === 1 ? LIFI_BOOK[1]?.diamond : undefined)
 }
 
+/** What a router's immutables and owner must be: a bridge's binds its factory, a fuel route's its gate. */
+interface RouterExpectation {
+	factory: string
+	permit2: string
+	feeJuicePortal: string
+	guardian: string
+	swapTarget: string | undefined
+}
+
+const bridgeRouterExpectation = (m: ManifestV2, b: BridgeBlock): RouterExpectation => ({
+	factory: b.l1.factory,
+	permit2: b.l1.permit2,
+	feeJuicePortal: b.l1.feeJuicePortal,
+	guardian: b.l1.guardian,
+	swapTarget: depositRouterSwapTarget(m, b.l1.fuelSwapper),
+})
+
 /** Every DepositRouter immutable is fixed for the router's life; its owner can only `sweep`, and must be the guardian. */
-async function checkDepositRouter(pub: PublicClient, m: ManifestV2, b: BridgeBlock, router: Address): Promise<void> {
+async function checkDepositRouter(pub: PublicClient, m: ManifestV2, want: RouterExpectation, router: Address): Promise<void> {
 	const read = (functionName: "PERMIT2" | "FEE_JUICE_PORTAL" | "FACTORY" | "FEE_ASSET" | "SWAP_TARGET" | "DEPOSIT_WITNESS_TYPE_STRING") =>
 		pub.readContract({ address: router, abi: DEPOSIT_ROUTER_ABI, functionName })
 	const [permit2, feeJuicePortal, factory, feeAsset, swapTarget, witness, owner] = await Promise.all([
@@ -218,20 +244,27 @@ async function checkDepositRouter(pub: PublicClient, m: ManifestV2, b: BridgeBlo
 		read("DEPOSIT_WITNESS_TYPE_STRING"),
 		pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "owner" }),
 	])
-	same("depositRouter.SWAP_TARGET", swapTarget, depositRouterSwapTarget(m, b) ?? "(no fuel swapper and no Diamond for this chain)")
-	same("depositRouter.FACTORY", factory, b.l1.factory)
-	same("depositRouter.PERMIT2", permit2, b.l1.permit2)
-	same("depositRouter.FEE_JUICE_PORTAL", feeJuicePortal, b.l1.feeJuicePortal)
+	same("depositRouter.SWAP_TARGET", swapTarget, want.swapTarget ?? "(no fuel swapper and no Diamond for this chain)")
+	same("depositRouter.FACTORY", factory, want.factory)
+	same("depositRouter.PERMIT2", permit2, want.permit2)
+	same("depositRouter.FEE_JUICE_PORTAL", feeJuicePortal, want.feeJuicePortal)
 	same("depositRouter.FEE_ASSET", feeAsset, m.feeJuice.asset)
-	same("depositRouter.owner (the guardian)", owner, b.l1.guardian)
+	same("depositRouter.owner (the guardian)", owner, want.guardian)
 	// The app signs this exact string, case included; a router hashing another one rejects every Permit2 signature.
 	if (witness === DEPOSIT_WITNESS_TYPE_STRING) ok(`depositRouter.DEPOSIT_WITNESS_TYPE_STRING = ${witness}`)
 	else fail("depositRouter.DEPOSIT_WITNESS_TYPE_STRING", `on-chain ${witness} != client ${DEPOSIT_WITNESS_TYPE_STRING}`)
 }
 
+/** Whose the swapper must be, which tokens it must price, and the fuel floor its inventory is measured against. */
+interface SwapperExpectation {
+	guardian: string
+	tokens: readonly ManifestToken[]
+	minFuelFj: string | undefined
+}
+
 /** The swapper pays the router's fuel at owner-set rates: it must pay the manifest's fee asset, belong to the
  *  guardian, price every manifest token, and hold inventory (a shortfall only costs the next swap a faucet call). */
-async function checkFuelSwapper(pub: PublicClient, m: ManifestV2, b: BridgeBlock, swapper: Address): Promise<void> {
+async function checkFuelSwapper(pub: PublicClient, m: ManifestV2, want: SwapperExpectation, swapper: Address): Promise<void> {
 	// Its chain-1 refusal lives in the constructor alone, so the deployed code cannot show it; the chain can.
 	if (m.l1ChainId === 1) fail("fuelSwapper", "the testnet fuel swapper is refused on Ethereum mainnet")
 	const read = (functionName: "FEE_ASSET" | "FEE_ASSET_HANDLER" | "owner") =>
@@ -239,14 +272,14 @@ async function checkFuelSwapper(pub: PublicClient, m: ManifestV2, b: BridgeBlock
 	const [feeAsset, handler, owner] = await Promise.all([read("FEE_ASSET"), read("FEE_ASSET_HANDLER"), read("owner")])
 	same("fuelSwapper.FEE_ASSET", feeAsset, m.feeJuice.asset)
 	same("fuelSwapper.FEE_ASSET_HANDLER", handler, m.feeJuice.feeAssetHandler ?? ZERO_ADDRESS)
-	same("fuelSwapper.owner (the guardian)", owner, b.l1.guardian)
-	for (const t of b.tokens) {
+	same("fuelSwapper.owner (the guardian)", owner, want.guardian)
+	for (const t of want.tokens) {
 		const rate = await pub.readContract({ address: swapper, abi: FUEL_SWAPPER_ABI, functionName: "rate", args: [t.erc20 as Address] })
 		if (rate > 0n) ok(`fuelSwapper.rate(${t.displaySymbol}) = ${rate}`)
 		else fail(`fuelSwapper.rate(${t.displaySymbol})`, `no rate for ${t.erc20}: a fueled send of it reverts`)
 	}
-	if (!b.l1.fuel) return
-	const floor = swapperInventoryFloor(b.l1.fuel.minFuelFj)
+	if (!want.minFuelFj) return
+	const floor = swapperInventoryFloor(want.minFuelFj)
 	const inventory = await pub.readContract({
 		address: m.feeJuice.asset as Address,
 		abi: ERC20_MIN_ABI,
@@ -274,10 +307,67 @@ async function checkGeneration(pub: PublicClient, m: ManifestV2, b: BridgeBlock,
 	await guarded("factory bindings", () => checkFactory(pub, b))
 	await guarded("implementation bindings", () => checkPortalImpl(pub, b))
 	const { depositRouter, fuelSwapper } = b.l1
-	if (depositRouter) await guarded("depositRouter bindings", () => checkDepositRouter(pub, m, b, depositRouter as Address))
-	else unavailable(strict, "depositRouter bindings", "the manifest names no depositRouter")
-	if (fuelSwapper) await guarded("fuelSwapper bindings", () => checkFuelSwapper(pub, m, b, fuelSwapper as Address))
+	if (depositRouter) {
+		await guarded("depositRouter bindings", () => checkDepositRouter(pub, m, bridgeRouterExpectation(m, b), depositRouter as Address))
+	} else {
+		unavailable(strict, "depositRouter bindings", "the manifest names no depositRouter")
+	}
+	const swapper = { guardian: b.l1.guardian, tokens: b.tokens, minFuelFj: b.l1.fuel?.minFuelFj }
+	if (fuelSwapper) await guarded("fuelSwapper bindings", () => checkFuelSwapper(pub, m, swapper, fuelSwapper as Address))
 	for (const router of legacyRouters) await guarded(`legacy router ${router}`, () => checkLegacyRouter(pub, b, router))
+}
+
+/** The gate stands in the router's factory slot: its owner, the guardian, alone pauses, and no handover may be pending. */
+async function checkGate(pub: PublicClient, r: FuelRouteBlock): Promise<void> {
+	const read = (functionName: "owner" | "pendingOwner" | "depositsPaused") =>
+		pub.readContract({ address: r.gate as Address, abi: FUEL_GATE_ABI, functionName })
+	const [owner, pendingOwner, paused] = await Promise.all([read("owner"), read("pendingOwner"), read("depositsPaused")])
+	same("gate.owner (the guardian)", owner, r.guardian)
+	same("gate.pendingOwner", pendingOwner, ZERO_ADDRESS, "expected")
+	if (paused) warn("gate.depositsPaused", "every send through this route reverts until the guardian unpauses")
+	else ok("gate.depositsPaused = false")
+}
+
+/** The router froze its portal for life, and the registry keeps older rollups whose portals still take deposits: the
+ *  portal must pay the fee asset into the registry's canonical rollup, at the version the wallet chain id encodes. */
+async function checkRoutePortal(pub: PublicClient, m: ManifestV2, r: FuelRouteBlock): Promise<void> {
+	const portal = (functionName: "UNDERLYING" | "ROLLUP" | "VERSION") =>
+		pub.readContract({ address: m.feeJuice.portal as Address, abi: FeeJuicePortalAbi, functionName })
+	const [underlying, rollup, version, canonical] = await Promise.all([
+		portal("UNDERLYING"),
+		portal("ROLLUP"),
+		portal("VERSION"),
+		pub.readContract({ address: r.registry as Address, abi: RegistryAbi, functionName: "getCanonicalRollup" }),
+	])
+	same("feeJuicePortal.UNDERLYING", underlying, m.feeJuice.asset)
+	same("feeJuicePortal.ROLLUP", rollup, canonical, "registry.getCanonicalRollup()")
+	same("walletChainId from feeJuicePortal.VERSION", walletChainIdOf(m.l1ChainId, Number(version)), m.walletChainId)
+}
+
+async function checkFuelRoute(pub: PublicClient, m: ManifestV2, r: FuelRouteBlock): Promise<void> {
+	const deployed: Array<[string, string | undefined]> = [
+		["depositRouter", r.depositRouter],
+		["gate", r.gate],
+		["permit2", r.permit2],
+		["feeJuicePortal", m.feeJuice.portal],
+		["fuelSwapper", r.fuelSwapper],
+	]
+	for (const [label, address] of deployed) {
+		if (address) await guarded(`code at ${label}`, () => checkCode(pub, label, address as Address))
+	}
+	same("fuelRoute.permit2", r.permit2, CANONICAL_PERMIT2, "the canonical Permit2")
+	const router: RouterExpectation = {
+		factory: r.gate,
+		permit2: r.permit2,
+		feeJuicePortal: m.feeJuice.portal,
+		guardian: r.guardian,
+		swapTarget: depositRouterSwapTarget(m, r.fuelSwapper),
+	}
+	await guarded("depositRouter bindings", () => checkDepositRouter(pub, m, router, r.depositRouter as Address))
+	await guarded("gate bindings", () => checkGate(pub, r))
+	await guarded("feeJuicePortal binding", () => checkRoutePortal(pub, m, r))
+	const swapper = { guardian: r.guardian, tokens: [], minFuelFj: r.fuel.minFuelFj }
+	if (r.fuelSwapper) await guarded("fuelSwapper bindings", () => checkFuelSwapper(pub, m, swapper, r.fuelSwapper as Address))
 }
 
 /** The factory's frozen record, once the portal exists. Before that there is nothing to compare —
@@ -396,20 +486,25 @@ async function checkLifiChain(client: PublicClient, book: LifiChainBook): Promis
 	}
 }
 
-/** The manifest's L1 and each routing source, the chains a LI.FI route spans. A manifest that routes nothing has no
- *  book to check. */
+/** The chains a LI.FI route spans: a bridge's L1 and each routing source, or mainnet alone for a fuel route there,
+ *  whose router swaps through the Diamond. Empty for a manifest that routes nothing through LI.FI. */
+function lifiChainsOf(m: ManifestV2): number[] {
+	if (m.bridge?.routing) return [m.l1ChainId, ...m.bridge.routing.sources.map((s) => s.chainId)]
+	return !m.bridge && m.fuelRoute && m.l1ChainId === 1 ? [1] : []
+}
+
 async function checkLifiBook(
 	pub: PublicClient,
 	m: ManifestV2,
-	b: BridgeBlock,
 	strict: boolean,
 	rpcFor: (chainId: number) => string | undefined,
 ): Promise<void> {
-	if (!b.routing) {
+	const chains = lifiChainsOf(m)
+	if (chains.length === 0) {
 		skip("LI.FI address book", "the manifest routes nothing")
 		return
 	}
-	for (const chainId of [m.l1ChainId, ...b.routing.sources.map((s) => s.chainId)]) {
+	for (const chainId of chains) {
 		const book = LIFI_BOOK[chainId]
 		if (!book) {
 			fail(`LI.FI book (chain ${chainId})`, "lifi-addresses.ts has no book for a chain this manifest routes through")
@@ -441,7 +536,16 @@ interface CodeTarget {
 }
 
 /** Each deployed contract the manifest names and the forge artifact its runtime must equal. */
-function codeTargets(b: BridgeBlock): CodeTarget[] {
+function codeTargets(route: { bridge: BridgeBlock } | { fuelRoute: FuelRouteBlock }): CodeTarget[] {
+	if ("fuelRoute" in route) {
+		const r = route.fuelRoute
+		return [
+			{ contract: "DepositRouter", address: r.depositRouter },
+			{ contract: "FuelOnlyGate", address: r.gate },
+			...(r.fuelSwapper ? [{ contract: "TestnetFuelSwapper", address: r.fuelSwapper }] : []),
+		]
+	}
+	const b = route.bridge
 	const targets: CodeTarget[] = [
 		{ contract: "TokenPortalImpl", address: b.l1.implementation },
 		{ contract: "PortalFactory", address: b.l1.factory },
@@ -553,14 +657,18 @@ async function checkCodeHash(pub: PublicClient, out: string, contract: string, a
 	same(`${label} hash (immutables and metadata masked)`, hashes.onChain, hashes.built, "build")
 }
 
-async function checkCodeHashes(pub: PublicClient, b: BridgeBlock, strict: boolean): Promise<void> {
+async function checkCodeHashes(
+	pub: PublicClient,
+	route: { bridge: BridgeBlock } | { fuelRoute: FuelRouteBlock },
+	strict: boolean,
+): Promise<void> {
 	const build = forgeBuild(strict)
 	if (!("out" in build)) {
 		unavailable(strict, "runtime code hashes", `no usable forge build of contracts/bridge/evm: ${build.why}`)
 		return
 	}
 	try {
-		for (const t of codeTargets(b)) {
+		for (const t of codeTargets(route)) {
 			await guarded(`${t.contract} runtime code`, () => checkCodeHash(pub, build.out, t.contract, t.address as Address, strict))
 		}
 	} finally {
@@ -576,12 +684,12 @@ export interface VerifyL1Options {
 }
 
 /**
- * Every L1 check over a manifest — the generation's bindings, each token, LI.FI's address book where the
- * manifest routes, the code hashes. Returns the failure count; warnings never count. `strict` fails on any
- * input a check cannot obtain, a missing deposit router included.
+ * Every L1 check over a manifest — the generation's bindings and each token, or a fuel route's, then LI.FI's address
+ * book where the manifest routes through it, then the code hashes. Returns the failure count; warnings never count.
+ * `strict` fails on any input a check cannot obtain, a missing deposit router included. Throws for a placeholder.
  */
 export async function verifyL1Manifest(manifest: ManifestV2, rpcUrl: string, options: VerifyL1Options = {}): Promise<number> {
-	const bridge = requireBridge(manifest)
+	const route = requireRoute(manifest)
 	const pub = createL1PublicClient({
 		chain: manifestL1Chain(manifest, rpcUrl, CANONICAL_MULTICALL3),
 		rpcUrl,
@@ -589,14 +697,17 @@ export async function verifyL1Manifest(manifest: ManifestV2, rpcUrl: string, opt
 	const strict = options.strict === true
 	failures = 0
 	warnings = 0
-	console.log(
-		`verifying ${manifest.network} (l1ChainId ${manifest.l1ChainId}) — ${bridge.tokens.length} token(s)${strict ? ", strict" : ""}\n`,
-	)
+	const what = "bridge" in route ? `${route.bridge.tokens.length} token(s)` : "fuel-only route"
+	console.log(`verifying ${manifest.network} (l1ChainId ${manifest.l1ChainId}) — ${what}${strict ? ", strict" : ""}\n`)
 	await guarded("L1 chain id", () => checkChainId(pub, "L1 RPC", manifest.l1ChainId))
-	await checkGeneration(pub, manifest, bridge, strict)
-	for (const token of bridge.tokens) await checkToken(pub, bridge, token)
-	await checkLifiBook(pub, manifest, bridge, strict, options.sourceRpcUrl ?? ((chainId) => sourceRpcUrl(chainId)))
-	await checkCodeHashes(pub, bridge, strict)
+	if ("bridge" in route) {
+		await checkGeneration(pub, manifest, route.bridge, strict)
+		for (const token of route.bridge.tokens) await checkToken(pub, route.bridge, token)
+	} else {
+		await checkFuelRoute(pub, manifest, route.fuelRoute)
+	}
+	await checkLifiBook(pub, manifest, strict, options.sourceRpcUrl ?? ((chainId) => sourceRpcUrl(chainId)))
+	await checkCodeHashes(pub, route, strict)
 	const warned = warnings > 0 ? ` (${warnings} warning(s) to review)` : ""
 	console.log(failures === 0 ? `\n✓ L1 verification passed${warned}` : `\n✗ ${failures} check(s) FAILED${warned}`)
 	return failures
@@ -607,9 +718,12 @@ async function main(): Promise<number> {
 		mode: "fallback",
 		fallbackPath: join(repoRoot, "apps", "tools", "public", "testnet-bridge.json"),
 	})
-	const rpcUrl = process.env.SEPOLIA_RPC_URL ?? process.env.ETH_RPC_URL
+	// A mainnet keyed run carries ETH_RPC_URL alone; the chain-id check refuses an RPC for another chain either way.
+	const rpcUrl = manifest.l1ChainId === 1 ? process.env.ETH_RPC_URL : (process.env.SEPOLIA_RPC_URL ?? process.env.ETH_RPC_URL)
 	if (!rpcUrl) {
-		console.error("SEPOLIA_RPC_URL (or ETH_RPC_URL) is not set — add it to packages/bridge-core/.env.")
+		console.error(
+			`${manifest.l1ChainId === 1 ? "ETH_RPC_URL" : "SEPOLIA_RPC_URL (or ETH_RPC_URL)"} is not set — run it through its keyed-run template.`,
+		)
 		return 1
 	}
 	return (await verifyL1Manifest(manifest, rpcUrl, { strict: process.argv.includes("--strict") })) === 0 ? 0 : 1

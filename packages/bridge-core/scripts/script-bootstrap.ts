@@ -10,7 +10,7 @@
  * construction step; call sites keep their exact sequencing.
  */
 import { readFileSync } from "node:fs"
-import { type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import { type BridgeBlock, type FuelRouteBlock, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
 import { ownedWalletStore } from "./wallet-store"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
@@ -131,4 +131,11 @@ export function loadManifestV2FromConfigArg(
 export function requireBridge(m: ManifestV2): NonNullable<ManifestV2["bridge"]> {
 	if (!m.bridge) throw new Error(`manifest for ${m.network} carries no bridge (placeholder network) — STOP`)
 	return m.bridge
+}
+
+/** What a manifest sends through: its bridge, else a fuel-only route. A placeholder with neither is refused by name. */
+export function requireRoute(m: ManifestV2): { bridge: BridgeBlock } | { fuelRoute: FuelRouteBlock } {
+	if (m.bridge) return { bridge: m.bridge }
+	if (m.fuelRoute) return { fuelRoute: m.fuelRoute }
+	throw new Error(`manifest for ${m.network} carries neither a bridge nor a fuel route (placeholder network) — STOP`)
 }

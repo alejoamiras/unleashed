@@ -8,6 +8,8 @@ export interface ManifestFuelRoute extends FuelRoute {
 	fuelSwapper?: Address
 	slippageBps: number
 	minFuelFj: bigint
+	/** What one ordinary L2 transaction costs in Fee Juice, as the network's calibration measured it. */
+	fjPerTx: bigint
 }
 
 /**
@@ -30,6 +32,7 @@ export function fuelRouteOf(m: ManifestV2): ManifestFuelRoute | undefined {
 		...(r.fuelSwapper ? { fuelSwapper: r.fuelSwapper as Address } : {}),
 		slippageBps: r.fuel.slippageBps,
 		minFuelFj: BigInt(r.fuel.minFuelFj),
+		fjPerTx: BigInt(r.fuel.fjPerTx),
 	}
 }
 

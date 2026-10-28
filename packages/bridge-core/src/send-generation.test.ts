@@ -8,6 +8,7 @@ import type { LifiClient } from "./lifi-api"
 import { type ManifestV2, parseManifestV2 } from "./manifest-v2"
 import { PRIVATE_FPC_ADDRESS } from "./private-fuel"
 import { fuelRouteOf, sendGenerationOf } from "./send-generation"
+import { mainnetPlaceholderManifest } from "../test/fixtures/frozen-manifests"
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "apps", "tools", "public")
 const shipped = (name: string): ManifestV2 => parseManifestV2(JSON.parse(readFileSync(join(PUBLIC, `${name}-bridge.json`), "utf8")))
@@ -17,13 +18,14 @@ const GATE = "0x6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a"
 /** Mainnet as shipped (no bridge), plus a router behind a gate. */
 const mainnetRoute = (): ManifestV2 =>
 	parseManifestV2({
-		...shipped("mainnet"),
+		...mainnetPlaceholderManifest(),
 		fuelRoute: {
 			depositRouter: ROUTER,
 			gate: GATE,
 			guardian: GATE,
+			registry: "0x35b22e09ee0390539439e24f06da43d83f90e298",
 			permit2: "0x000000000022d473030f116ddee9f6b43ac78ba3",
-			fuel: { slippageBps: 100, minFuelFj: "7" },
+			fuel: { slippageBps: 100, minFuelFj: "7", fjPerTx: "3" },
 		},
 	})
 
@@ -50,15 +52,16 @@ describe("fuelRouteOf", () => {
 			chainId: 1,
 			slippageBps: 100,
 			minFuelFj: 7n,
+			fjPerTx: 3n,
 		})
-		expect(fuelRouteOf(shipped("mainnet"))).toBeUndefined()
+		expect(fuelRouteOf(mainnetPlaceholderManifest())).toBeUndefined()
 	})
 
 	it("quotes a fuel-only route on mainnet through LI.FI only when given a client", () => {
 		const reads = { readContract: async () => 0n }
 		expect(manifestFuelProvider(mainnetRoute(), reads)).toBeUndefined()
 		expect(manifestFuelProvider(mainnetRoute(), reads, { lifi: {} as LifiClient })).toBeDefined()
-		expect(manifestFuelProvider(shipped("mainnet"), reads, { lifi: {} as LifiClient })).toBeUndefined()
+		expect(manifestFuelProvider(mainnetPlaceholderManifest(), reads, { lifi: {} as LifiClient })).toBeUndefined()
 	})
 })
 

@@ -23,7 +23,7 @@ import {
 	privateFpcFeeLimit,
 	privateMintAndPayFee,
 } from "../../src/private-fuel"
-import { runSend, type SendGasLeg, type SendParams, type SendResult } from "../../src/send-flow"
+import { type FuelRoute, runSend, type SendGasLeg, type SendParams, type SendResult } from "../../src/send-flow"
 import type { CalibrationSample } from "../calibration"
 import { feeJuiceFor } from "../fee-juice-l2"
 import { type L2Ctx, waitForL1ToL2Message } from "../generation"
@@ -108,6 +108,8 @@ export interface SmokeContext {
 	guardianOpts: Record<string, unknown>
 	manifest: ManifestV2
 	bridge: BridgeBlock
+	/** Sends through this route instead of the generation's router: a fuel-only route rehearsed beside it. */
+	route?: FuelRoute
 	hub: ContractBase
 	feeJuiceL2: ContractBase
 	/** Every fresh token the battery deploys, so a later flow can read its L2 balance. */
@@ -215,7 +217,7 @@ export async function balanceOf(contract: ContractBase, from: AztecAddress, kind
 
 // ─── Sends and claims ────────────────────────────────────────────────────────
 
-const generationOf = (s: SmokeContext) => sendGenerationOf(s.manifest, s.bridge)
+const generationOf = (s: SmokeContext): FuelRoute => s.route ?? sendGenerationOf(s.manifest, s.bridge)
 
 /** The deposit router's fuel swapper; a sandbox booted before the router existed has none. */
 export function fuelSwapperOf(s: Pick<SmokeContext, "clients">): Address {

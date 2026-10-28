@@ -139,10 +139,13 @@ export const fuelRouteSchema = z
 		gate: evmAddressV2,
 		/** The gate's owner, who alone can pause. */
 		guardian: evmAddressV2,
+		/** The Aztec registry whose canonical rollup `feeJuice.portal` must belong to; a network keeps older rollups registered. */
+		registry: evmAddressV2,
 		permit2: evmAddressV2,
 		/** The router's `SWAP_TARGET` off mainnet; refused when `l1ChainId` is 1, where it is LI.FI's Diamond. */
 		fuelSwapper: evmAddressV2.optional(),
-		fuel: z.object({ slippageBps: z.number().int().min(0).max(9_999), minFuelFj: decimalString }).strict(),
+		/** No token leg means no registration and no cross-chain delivery: only the swap floor and the claim budget. */
+		fuel: fuelBudgetSchema.pick({ slippageBps: true, minFuelFj: true, fjPerTx: true }).strict(),
 	})
 	.strict()
 
