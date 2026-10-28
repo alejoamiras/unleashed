@@ -10,3 +10,7 @@
 - 2026-10-28 mid step 4: final fresh Codex pass started.
 - 2026-10-28 mid step 4: final fresh Codex pass conditional approve (5 findings, all accepted) → verification conditional approve (2, accepted) → verification approve.
 - 2026-10-28 approval gate: plan committed on worktree-mainnet-1; awaiting the orchestrator's approval and the owner's answers (OWNER-ASKS M1–M7).
+- 2026-10-28 a2: orchestrator approved the plan as committed (ec09fe8); P5-07 Option B (a single-purpose funding key; the cap is a required run input, no default). Merged origin/main (#29, #32, #33) at f6f6a47.
+- 2026-10-28 a2 preconditions: C1 holds (MAINNET_ROLLUP_VERSION 2070860440, wallet id 2070860441, portal 0x5343…f3b3, PrivateFPC 6.0.0 mainnet descriptor, aztecLineOf(1) supported); C2 holds (fuelRoute.fuel has fjPerTx; branch F step 5 calibrates it).
+- 2026-10-28 a2 2.1 gate: lint ok; typecheck:all ok; test:all exit 0; audit:tools exit 0; deployer-funding integration test 1/1 on an attached sandbox (59 s); full test:integration running
+- 2026-10-28 a2 2.2 gate: doc-links 3/3; node-keys 2/2; lint ok

@@ -339,6 +339,33 @@ One commit with 1.5's testnet half and its test; the orchestrator merges it afte
   runs on a `bridge: null` bundle in either arrangement (final pass); gating is proven in unit tests.
 - **D9 P1-12 in the build, not in the verifier.** Opus: Workers Builds never runs the verifier (F12).
 
+Recorded while implementing a2 (the tree won where it disagreed with the plan):
+
+- **D10 a2 ships first and carries this plan.** Delivery gave the plan commit to a1, which still waits on sdk-1 a3 and
+  a4; a2 needed only sdk-1 a1 (#33), so it opens the lane's first PR from `worktree-mainnet-1`.
+- **D11 Claim-and-deploy is aztec.js's self-paid account deploy, not the canary's `--fresh-selfpay` shape.** On the
+  embedded wallet that shape (`BatchCall([])` from an undeployed account) fails on the account's signing-key note
+  (archived `bridge-permit2-recipient-commitment`, `lessons/phase-10-aztec-5.0.1-merge.md`). The deploy sends the
+  account's `DeployAccountMethod` from `NO_FROM` with `FeeJuicePaymentMethodWithClaim`, which aztec.js routes through
+  the new account's entrypoint. Its explicit limits, `ACCOUNT_CLAIM_DEPLOY_GAS`, were measured on the 6.0.0 sandbox
+  (742,498 L2, 864 DA) with `PUBLIC_FUEL_CLAIM_GAS`'s ~2.3× margin. The canary imports the lifted deposit and the
+  carrierless claim; its `--fresh-selfpay` flag is unchanged.
+- **D12 The flow lives in bridge-core.** `scripts/drip-deploy.ts` (catalog, sends, the run) and
+  `scripts/deployer-funding.ts` (secrets, the authenticated scan, `decideFunding`, the pins), exported as
+  `@unleashed/bridge-core/drip-deploy`, so the sandbox integration test runs the code the owner runs; `deploy.ts`
+  wires the keys, flags and manifest. Unit tests are `deployer-funding.test.ts`, `drip-deploy.test.ts` and
+  `deploy-config.test.ts` (the plan named `fund.test.ts`). Testnet and the local network share the catalog path, so a
+  published, uninitialized instance is initialized there too, and `deployAccountIfAbsent` replaces
+  `ensureAccountDeployed`.
+- **D13 The scan starts at the portal's first block**, 26,160,102 (the canonical rollup's too), pinned per portal in
+  `PORTAL_FIRST_BLOCKS`; a portal without an entry is refused, so a rollup switch cannot scan from a block that
+  misses its fundings. Logs are read in 10,000-block windows (the free-plan ceiling of dRPC's L1 endpoint).
+- **D14 P5-07 Option B.** The funding key is new and single-purpose, pinned in `MAINNET_DRIP_FUNDER` (`null` until
+  the owner creates it, so every mainnet run refuses); `--cap` is required on every live mainnet run, has no
+  default, and bounds every authenticated funding together, the new one included. Each send's balance check uses
+  the gas settings the send then commits (simulated gas plus 10%, the predicted worst fee), so the two cannot
+  disagree.
+
 ## Audit verdicts
 
 Codex ran `gpt-6.1-sol` at high. Every finding was verified against the tree first; `lessons/phase-0.md` logs each
