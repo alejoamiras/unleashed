@@ -7,6 +7,7 @@ the map; this file is the ruleset. `CLAUDE.md` imports it.
 
 - The README of the package you touch: [`apps/tools`](apps/tools/README.md),
   [`apps/landing`](apps/landing/README.md), [`packages/bridge-core`](packages/bridge-core/README.md), [`packages/design`](packages/design/README.md),
+  [`packages/testnet-relayer`](packages/testnet-relayer/README.md),
   [`contracts/bridge/evm`](contracts/bridge/evm/README.md), [`contracts/bridge/aztec`](contracts/bridge/aztec/README.md).
 - [`apps/tools/tests/browser/README.md`](apps/tools/tests/browser/README.md) before touching the
   browser suite: the parallel-safe runner, the fixtures, the egress rule.
@@ -132,6 +133,12 @@ The landing is a third assets-only Worker, `unleashed-landing` (`apps/landing/wr
 the same way from the root directory `apps/landing`. Its custom domains, `unleashed.systems` and
 `www.unleashed.systems`, are also attached in the dashboard. A deploy is checked against a reference
 build of the same commit: [`apps/landing/README.md`](apps/landing/README.md) § Hosting.
+
+The testnet relayer is a fourth Worker, `unleashed-testnet-relayer` (`packages/testnet-relayer/wrangler.jsonc`),
+deployed the same way from the root directory `packages/testnet-relayer`. It runs from a cron trigger alone, with no
+route and no `workers.dev` URL, and refuses any chain but Base Sepolia and Sepolia. Its signing key is a Worker secret
+the owner sets in the dashboard: a dedicated key with a small float, never the canary's.
+[`packages/testnet-relayer/README.md`](packages/testnet-relayer/README.md) has the owner's runbook.
 
 ## Security
 

@@ -314,7 +314,7 @@ CI: run `bun run --cwd packages/testnet-relayer test:integration` in the forge j
 test:integration`, `bun run lint:actions`, `bun run test:ci-gating`, then the Phase 3 commands. Pass: exit 0 each;
 S1–S6 green at retry 0; the measured runtime in `lessons/phase-5.md`; no row of the run left in `~/.agents/ports.md`.
 
-### Phase 6 — the runbook and docs
+### Phase 6 — the runbook and docs ✓
 
 Steps: `packages/testnet-relayer/README.md` (what it fills and ignores, the log lines, the known limits, the
 runbook); a line in `AGENTS.md` § Read before you start and § Hosting (a fourth Worker, cron only); the
