@@ -19,14 +19,9 @@ import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { OutboxContract } from "@aztec-labs/ethereum/contracts"
 import { computeL2ToL1MembershipWitness } from "@aztec-labs/stdlib/messaging"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import {
-	type JournalTokenBlock,
 	type L1Ctx,
-	PORTAL_FACTORY_ABI,
-	PRIVATE_FPC_ADDRESS,
-	PRIVATE_HUB_EXIT_GAS,
-	type SendWithdrawRecord,
-	TOKEN_PORTAL_ABI,
 	awaitL1Receipt,
 	consumeWithdrawal,
 	exitViaHub,
@@ -34,11 +29,17 @@ import {
 	hubExitsPaused,
 	hubTokenFor,
 	isOutboxMessageConsumed,
-	makeProvisionalWithdrawId,
 	preflightHubExit,
+} from "@unleashed/sdk/internal"
+import {
+	PORTAL_FACTORY_ABI,
+	PRIVATE_FPC_ADDRESS,
+	PRIVATE_HUB_EXIT_GAS,
+	TOKEN_PORTAL_ABI,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/protocol"
+import { type SendWithdrawRecord, makeProvisionalWithdrawId } from "@unleashed/bridge-core"
 import { decodeFunctionData } from "viem"
 import { type Ref, ref } from "vue"
 import { HUB, SEND_GENERATION } from "@/contracts/bridge-generation"

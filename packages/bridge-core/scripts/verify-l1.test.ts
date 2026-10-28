@@ -1,7 +1,6 @@
 import { concat, type Hex, hexToBytes, keccak256, toHex } from "viem"
 import { describe, expect, it } from "vitest"
-import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR } from "../src/across-v4"
-import type { LifiChainBook } from "../src/lifi-addresses"
+import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR, type LifiChainBook } from "@unleashed/sdk/protocol"
 import { judgeBook, maskedRuntimeHashes, type ObservedBook } from "./verify-l1"
 
 /** A runtime laid out as solc emits it: code, an INVALID guard, then the CBOR metadata map

@@ -25,3 +25,4 @@
 - 2026-10-28 a1 1.3 gate on the merged head: lint, typecheck:all, test:all, audit:tools, actionlint, ci-gating green; forge 172/172, halmos 18/18; test:integration 50/51, the failure a real bug (strict verify-l1 refused FuelOnlyGate's artifact, which records no immutables), fixed in 10e94ef, fuel-route file then 4/4; 1.3 ✓
 - 2026-10-28 a1 1.4 gate: doc-links 3/3; 1.4 ✓
 - 2026-10-28 Codex round 2 no new material finding; round 3 on the verifier fix no new material finding; loop closed at three rounds
+- 2026-10-28 a2 2.1 written: packages/sdk with protocol/ and execution/ moved by git mv, router-receipt extracted, progress/status deleted, every importer migrated (app, bridge-core, sandbox, browser suite, relayer via ./l1), CI filters and pins; lint, typecheck:all, test:all, actionlint, ci-gating, ABI pins green; test:integration running

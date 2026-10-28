@@ -104,10 +104,10 @@ surface:
    bridge manifest with the new artifacts: the hub from its recorded `salt` and
    `[tokenClassId, factory, guardian]`, every L2 token from the hub and its attested words. Run it
    both ways.
-2. The PrivateFPC tripwire (`packages/bridge-core/src/private-fuel.test.ts`): fires on artifact or
+2. The PrivateFPC tripwire (`packages/sdk/src/protocol/private-fuel.test.ts`): fires on artifact or
    bytecode drift. Re-pinning `PRIVATE_FPC_ADDRESS` is a conscious act that owes a live re-canary and
    a note to the Nulo wallet's repository, which pins the same address; never silence the test.
-3. `packages/bridge-core/src/noir-artifact-classids.test.ts` and `hub-token.test.ts`: the committed
+3. `packages/bridge-core/src/noir-artifact-classids.test.ts` and `packages/sdk/src/protocol/hub-token.test.ts`: the committed
    hub class id and the standards Token class id the hub derives from. Either moving means the live
    hub cannot be re-pinned, so a new generation.
 4. **The sandbox smoke on the JS line**: `bun run --cwd packages/bridge-core deploy:sandbox --smoke`
@@ -217,8 +217,8 @@ script: an assignment after it is just another argument. `pre-create` and `calib
 `--config` to the candidate.
 
 1. **ChainId cascade.** The wallet chainId is `walletChainIdOf(l1ChainId, rollupVersion) = (l1 ^ rollupVersion) >>> 0`
-   (`packages/bridge-core/src/wallet-chain-id.ts`). The literals: `apps/tools/src/lib/chain-constants.ts`
-   (and `chain-info.test.ts`), `packages/bridge-core/src/wallet-chain-id.test.ts`,
+   (`packages/sdk/src/protocol/wallet-chain-id.ts`). The literals: `apps/tools/src/lib/chain-constants.ts`
+   (and `chain-info.test.ts`), `packages/sdk/src/protocol/wallet-chain-id.test.ts`,
    `private-fuel.test.ts` and the `private-fpc-canonical.json` identity pins. `rg` the old
    rollupVersion repo-wide and classify every hit. The manifest's `walletChainId` is written by the
    conductor from the node, and the build-integrity check refuses a manifest whose chain disagrees

@@ -14,12 +14,11 @@ import {
 	discoveryPatch,
 	type EncryptionKey,
 	envelopeV3MatchesRecord,
-	lifiBook,
 	openDepositEnvelopeV3,
-	predictPortal,
-	readSendInbox,
 	resealExactEnvelope,
 } from "@unleashed/bridge-core"
+import { lifiBook, predictPortal } from "@unleashed/sdk/protocol"
+import { readSendInbox } from "@unleashed/sdk/internal"
 import type { Address } from "viem"
 import { SEND_GENERATION } from "@/contracts/bridge-generation"
 import { bridgingLate } from "@/lib/crosschain-steps"

@@ -3,7 +3,7 @@
  * and the interlock that stops a promotion from quietly moving the network or the generation.
  * Extracted so the fund-adjacent checks are unit-testable without live RPC plumbing.
  */
-import { type ManifestV2, parseManifestV2Strict } from "./manifest-v2"
+import { type ManifestV2, parseManifestV2Strict } from "@unleashed/sdk/protocol"
 
 /**
  * Strict-parses a candidate — both halves, so every token's L2 address is the hub's derivation —

@@ -1,4 +1,5 @@
-import { DEPOSIT_ROUTER_ABI, PRIVATE_FPC_ADDRESS, type SendDepositRecord, LEGACY_ROUTER_ABI } from "@unleashed/bridge-core"
+import { DEPOSIT_ROUTER_ABI, PRIVATE_FPC_ADDRESS, LEGACY_ROUTER_ABI } from "@unleashed/sdk/protocol"
+import type { SendDepositRecord } from "@unleashed/bridge-core"
 import { encodeFunctionData } from "viem"
 import { describe, expect, it, vi } from "vitest"
 import { type DepositSearchOptions, findDepositTx, type ReconcileL1Client } from "./deposit-reconcile"

@@ -4,16 +4,15 @@
  */
 import {
 	type DepositJournalRecord,
-	type JournalTokenBlock,
 	type KV,
 	patchRecord as kvPatchRecord,
 	type SendDepositRecord,
 	type SendWithdrawRecord,
-	feeJuiceAddress,
-	predictPortal,
 	recoveryKeyFromSignature,
 	sealDepositEnvelope,
 } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@/contracts/bridge-generation", () => ({ FUEL_PORTAL: "0xfd05ee8687d4ca828ba3d26ef04b80dd1348e5bd" }))

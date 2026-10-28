@@ -20,8 +20,8 @@ import {
 	privateFpcFeeLimit,
 	proposeGasShare,
 	signedMinFuelOutput,
-	type TokenState,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/protocol"
+import type { TokenState } from "@unleashed/sdk/internal"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { ref, type Ref } from "vue"
 import { FUEL } from "@/contracts/bridge-generation"

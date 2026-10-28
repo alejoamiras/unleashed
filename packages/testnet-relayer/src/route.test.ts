@@ -1,4 +1,4 @@
-import { parseManifestV2 } from "@unleashed/bridge-core"
+import { parseManifestV2 } from "@unleashed/sdk/protocol"
 import { describe, expect, it } from "vitest"
 import manifest from "../../../apps/tools/public/testnet-bridge.json"
 import mainnet from "../../../apps/tools/public/mainnet-bridge.json"

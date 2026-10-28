@@ -20,16 +20,15 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { GasFees } from "@aztec-labs/stdlib/gas"
+import type { DepositJournalRecord, SendDepositRecord } from "@unleashed/bridge-core"
 import {
-	type DepositJournalRecord,
 	deriveBridgeSecret,
 	deriveTokenClaimSecret,
-	type SendDepositRecord,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	PUBLIC_HUB_CLAIM_GAS,
 	PUBLIC_HUB_REGISTER_CLAIM_GAS,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/protocol"
 import { encodeAbiParameters, keccak256, toHex } from "viem"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
@@ -77,7 +76,7 @@ vi.mock("@/lib/wallet-features", () => ({
 	DAPP_SELF_PAY_FEATURE: "dapp-self-pay",
 	walletSupports: async () => h.selfPay,
 }))
-vi.mock("@unleashed/bridge-core/private-fpc-artifact", () => ({ PrivateFPCContractArtifact: {} }))
+vi.mock("@unleashed/sdk/private-fpc-artifact", () => ({ PrivateFPCContractArtifact: {} }))
 vi.mock("@aztec-labs/aztec.js/contracts", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@aztec-labs/aztec.js/contracts")>()),
 	Contract: { at: async () => ({}) },
@@ -138,8 +137,8 @@ vi.mock("@aztec-labs/aztec.js/node", () => ({
 
 // Only the Wonderland payment method is faked, so the salt the private claim actually pays with is
 // observable; every derivation around it stays real.
-vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/bridge-core")>()),
+vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
 	privateMintAndPayFee: (_fpc: unknown, amount: bigint, secret: { toString(): string }, salt: { toString(): string }) => {
 		h.t("privateMintAndPayFee", { amount, secret: secret.toString(), salt: salt.toString() })
 		return { kind: "private-fpc" }
@@ -152,7 +151,10 @@ vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
 		h.t("selfPaidFeeJuicePayment", { payer: payer.toString() })
 		return { kind: "self-paid-fj" }
 	},
-	// The deposit router's receipt is authenticated in bridge-core; here only what the recovery hands it.
+}))
+vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
+	// The deposit router's receipt is authenticated in the SDK; here only what the recovery hands it.
 	readSendInbox: async (_pub: unknown, g: { factory: string }) => ({ fromFactory: g.factory }),
 	readSendReceiptLeaves: async (g: { router: string }, inbox: unknown, expected: unknown) => {
 		h.t("readSendReceiptLeaves", { router: g.router, inbox, expected })

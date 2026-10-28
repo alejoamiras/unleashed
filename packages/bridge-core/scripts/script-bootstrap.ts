@@ -10,7 +10,7 @@
  * construction step; call sites keep their exact sequencing.
  */
 import { readFileSync } from "node:fs"
-import { type BridgeBlock, type FuelRouteBlock, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import { type BridgeBlock, type FuelRouteBlock, type ManifestV2, parseManifestV2 } from "@unleashed/sdk/protocol"
 import { ownedWalletStore } from "./wallet-store"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"

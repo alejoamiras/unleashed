@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { PRIVATE_FPC_ADDRESS, parseManifestV2 } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS, parseManifestV2 } from "@unleashed/sdk/protocol"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -27,8 +27,9 @@ const descriptorFor = (network: string) =>
 				"..",
 				"..",
 				"packages",
-				"bridge-core",
+				"sdk",
 				"src",
+				"protocol",
 				`private-fpc-canonical${network === "mainnet" ? "-mainnet" : ""}.json`,
 			),
 			"utf8",

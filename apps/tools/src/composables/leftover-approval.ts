@@ -3,7 +3,8 @@
  * token from the sender's wallet on the source chain. Read without a wallet; revoked only from the
  * sender's own wallet, on that chain, by an exact `approve(diamond, 0)`.
  */
-import { type CrossChainDepositRecord, lifiBook } from "@unleashed/bridge-core"
+import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
+import { lifiBook } from "@unleashed/sdk/protocol"
 import { type Address, encodeFunctionData, erc20Abi } from "viem"
 import { chainLabel } from "@/lib/chains"
 import { shortAddress } from "@/lib/crosschain-activity"

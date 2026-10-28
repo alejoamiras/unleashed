@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { type CrossChainDiscovery, deriveCrossChainDepositStage, ERC20_ABI, openDepositEnvelopeV3 } from "@unleashed/bridge-core"
+import { type CrossChainDiscovery, deriveCrossChainDepositStage, openDepositEnvelopeV3 } from "@unleashed/bridge-core"
+import { ERC20_ABI } from "@unleashed/sdk/protocol"
 import { type Address, decodeFunctionData, type Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { stepperPhases } from "@/lib/bridge-steps"

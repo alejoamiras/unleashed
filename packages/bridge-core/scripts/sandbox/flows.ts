@@ -6,13 +6,25 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TestERC20Abi } from "@aztec-foundation/l1-artifacts"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import { type Address, type Hex, parseAbi, toFunctionSelector } from "viem"
-import { PORTAL_FACTORY_ABI, TOKEN_PORTAL_ABI } from "../../src/factory-abi"
-import { consumeWithdrawal } from "../../src/flows"
-import { exitViaHub, type HubExitParams, hubExitsPaused, hubTokenFor, preflightHubExit, simulateHubExit } from "../../src/hub-l2"
-import type { JournalTokenBlock } from "../../src/journal"
-import type { ManifestToken } from "../../src/manifest-v2"
-import { deriveBridgeSecret, PRIVATE_FPC_ADDRESS, PRIVATE_HUB_CLAIM_GAS } from "../../src/private-fuel"
-import type { SendResult } from "../../src/send-flow"
+import {
+	PORTAL_FACTORY_ABI,
+	TOKEN_PORTAL_ABI,
+	type ManifestToken,
+	deriveBridgeSecret,
+	PRIVATE_FPC_ADDRESS,
+	PRIVATE_HUB_CLAIM_GAS,
+} from "@unleashed/sdk/protocol"
+import {
+	consumeWithdrawal,
+	exitViaHub,
+	type HubExitParams,
+	hubExitsPaused,
+	hubTokenFor,
+	preflightHubExit,
+	simulateHubExit,
+	type SendResult,
+} from "@unleashed/sdk/internal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import { waitForL1ToL2Message } from "../generation"
 import { ensureRouterPermit2 } from "../script-l1"
 import { registerPrivateFpc } from "../script-l2"

@@ -11,16 +11,14 @@ import {
 	assertCanonical,
 	type BudgetedRead,
 	budgetedReads,
-	DEPOSIT_ROUTER_ABI,
 	firstBlockAfter,
 	hexEq,
 	openChainScan,
-	PRIVATE_FPC_ADDRESS,
 	ScanIncomplete,
-	type SendDepositRecord,
-	LEGACY_ROUTER_ABI,
 	scanRange,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/internal"
+import { DEPOSIT_ROUTER_ABI, PRIVATE_FPC_ADDRESS, LEGACY_ROUTER_ABI } from "@unleashed/sdk/protocol"
+import type { SendDepositRecord } from "@unleashed/bridge-core"
 import { decodeFunctionData, getAbiItem } from "viem"
 
 type Hex = `0x${string}`

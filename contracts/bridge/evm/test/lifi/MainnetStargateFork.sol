@@ -104,7 +104,7 @@ interface IEndpointV2Compose {
 /// fed the way Stargate's `lzReceive` feeds it (the pool credits the receiver, then queues the compose), with the
 /// recorded Base quote decoded so the forks run the compose message LI.FI itself built around our router call.
 abstract contract MainnetStargateFork is MainnetLifiFork {
-    /// Mirrors of `packages/bridge-core/src/lifi-gas.ts`; change both together.
+    /// Mirrors of `packages/sdk/src/protocol/lifi-gas.ts`; change both together.
     uint256 internal constant LIFI_TO_CONTRACT_GAS_LIMIT = 1_000_000;
     uint256 internal constant LIFI_STARGATE_COMPOSE_OVERHEAD = 300_000;
     uint256 internal constant LIFI_MIN_COMPOSE_GAS = LIFI_TO_CONTRACT_GAS_LIMIT + LIFI_STARGATE_COMPOSE_OVERHEAD;

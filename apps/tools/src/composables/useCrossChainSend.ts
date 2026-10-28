@@ -4,7 +4,7 @@
  * whichever chain the wallet is on), the route for the user's ask with its gas slice sized by the same `useGasShare`
  * the Ethereum-origin path uses, what that route means in the source token's units, and the send itself.
  */
-import type { TokenState } from "@unleashed/bridge-core"
+import type { TokenState } from "@unleashed/sdk/internal"
 import type { AppSource } from "@/lib/network"
 import { type ComputedRef, computed, type Ref, ref, watch } from "vue"
 import type { Address, WalletClient } from "viem"

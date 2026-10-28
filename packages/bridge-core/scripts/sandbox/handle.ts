@@ -1,10 +1,9 @@
 /** The run handle: strings only, so it crosses a process boundary and vitest's `provide()` intact.
  *  `openSandbox` turns it back into connected clients for whichever process holds it. */
 import z from "zod"
-import type { L1Ctx } from "../../src/flows"
-import type { ManifestV2 } from "../../src/manifest-v2"
-import { manifestV2Schema } from "../../src/manifest-v2"
-import { createL1Clients } from "../script-bootstrap"
+import type { L1Ctx } from "@unleashed/sdk/internal"
+import { type ManifestV2, manifestV2Schema } from "@unleashed/sdk/protocol"
+import { createL1Clients, stopwatch } from "../script-bootstrap"
 import { privateKeyToAccount } from "viem/accounts"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -12,7 +11,6 @@ import { ARTIFACT_FILES } from "./manifest"
 import { CHAIN_ID, SOURCE_CHAIN_ID, sandboxChain } from "./constants"
 import type { L1Deployment } from "./l1"
 import { adoptGuardian, connectL2, type L2Base } from "./l2"
-import { stopwatch } from "../script-bootstrap"
 
 const hex = z.string().regex(/^0x[0-9a-fA-F]+$/)
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/)

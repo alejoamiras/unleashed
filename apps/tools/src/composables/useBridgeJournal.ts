@@ -5,7 +5,6 @@ import {
 	type DepositEnvelopeV2,
 	type EncryptionKey,
 	type DepositJournalRecord,
-	type JournalTokenBlock,
 	type KV,
 	type SendDepositRecord,
 	type SendJournalRecord,
@@ -15,7 +14,6 @@ import {
 	assetKindOf,
 	envelopeMatchesRecord,
 	envelopeV3MatchesRecord,
-	feeJuiceAddress,
 	isCrossChainRecord,
 	loadAllRecords,
 	loadCrossChainJournal,
@@ -24,7 +22,6 @@ import {
 	openDepositEnvelopeV3,
 	patchRecord as journalPatch,
 	patchRecordWhen as journalPatchWhen,
-	predictPortal,
 	pruneCompleted,
 	quarantineInvalid,
 	recoveryKeyFromSignature,
@@ -36,6 +33,8 @@ import {
 	revokeSealTrust,
 	upsertRecord,
 } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import type { GrantOutcome } from "@/lib/send-model"
 import { NETWORK } from "@/lib/network"
 import { computed, ref } from "vue"

@@ -1,6 +1,6 @@
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
-import { preexistingFeeJuicePayment } from "../src/fee-juice"
+import { preexistingFeeJuicePayment } from "@unleashed/sdk/protocol"
 import { deployCanonicalPrivateFpc } from "./deploy-canonical-private-fpc"
 import { resolveDeployerKeys } from "./deployer-keys"
 

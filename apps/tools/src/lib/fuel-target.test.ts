@@ -1,4 +1,4 @@
-import { PRIVATE_FPC_ADDRESS } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
 import { describe, expect, it } from "vitest"
 import { fuelRecipientFor } from "./fuel-target"
 

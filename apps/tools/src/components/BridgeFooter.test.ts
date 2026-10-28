@@ -1,4 +1,4 @@
-import { lifiBook } from "@unleashed/bridge-core"
+import { lifiBook } from "@unleashed/sdk/protocol"
 import { mount } from "@vue/test-utils"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 

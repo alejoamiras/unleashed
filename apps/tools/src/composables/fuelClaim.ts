@@ -30,7 +30,7 @@ import {
 	deriveBridgeSecret,
 	privateMintAndPayFee,
 	publicFeeJuicePayment,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/protocol"
 import { isPrivateFuelInsufficiency } from "@/lib/fuel-claim-state"
 import { clampGas } from "@/lib/wallet-fee-budget"
 

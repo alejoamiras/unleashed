@@ -23,7 +23,7 @@ const readContract = vi.fn(async ({ functionName }: { functionName: string }) =>
 })
 
 // Shaped like the real wait: a revert and an exhausted wait both throw.
-vi.mock("@unleashed/bridge-core", () => ({
+vi.mock("@unleashed/sdk/internal", () => ({
 	awaitL1Receipt: async () => {
 		if (!receipt.confirmed) throw new Error("The Ethereum transaction 0xmint was not confirmed after 2 rounds of waiting.")
 		if (receipt.status === "reverted") throw new Error("The Ethereum transaction 0xmint reverted on-chain.")

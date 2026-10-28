@@ -16,15 +16,12 @@ vi.mock("@aztec-labs/aztec.js/contracts", () => ({
 	}),
 	toSimulateOptions: vi.fn((o: unknown) => o),
 }))
-vi.mock("@unleashed/bridge-core", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@unleashed/bridge-core")>()
-	return {
-		...actual,
-		privateMintAndPayFee: vi.fn(() => ({})),
-		publicFeeJuicePayment: vi.fn(() => ({})),
-		deriveBridgeSecret: vi.fn(() => Fr.fromString("0xdead")),
-	}
-})
+vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
+	privateMintAndPayFee: vi.fn(() => ({})),
+	publicFeeJuicePayment: vi.fn(() => ({})),
+	deriveBridgeSecret: vi.fn(() => Fr.fromString("0xdead")),
+}))
 
 import { buildFuelClaimInteraction } from "./fuelClaim"
 

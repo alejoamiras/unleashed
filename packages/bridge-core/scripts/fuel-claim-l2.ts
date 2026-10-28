@@ -8,17 +8,19 @@ import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas, type GasFees } from "@aztec-labs/stdlib/gas"
-import { type MinFeeNode, predictedWorstMinFees, publicFeeJuicePayment } from "../src/fee-juice"
-import { claimViaHub, type HubClaimOutcome, hubTokenFor } from "../src/hub-l2"
-import type { JournalTokenBlock } from "../src/journal"
 import {
+	type MinFeeNode,
+	predictedWorstMinFees,
+	publicFeeJuicePayment,
 	deriveBridgeSecret,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	privateFeeJuicePayment,
 	privateMintAndPayFee,
-} from "../src/private-fuel"
+} from "@unleashed/sdk/protocol"
+import { claimViaHub, type HubClaimOutcome, hubTokenFor } from "@unleashed/sdk/internal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 

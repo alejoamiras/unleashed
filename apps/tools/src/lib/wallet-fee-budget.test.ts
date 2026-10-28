@@ -8,7 +8,7 @@ vi.mock("@aztec-labs/aztec.js/authorization", () => ({
 vi.mock("@aztec-labs/aztec.js/node", () => ({
 	createAztecNodeClient: () => ({ getNodeInfo: async () => ({ txsLimits: { gas: { daGas: 55_882, l2Gas: 6_540_000 } } }) }),
 }))
-vi.mock("@unleashed/bridge-core", () => ({
+vi.mock("@unleashed/sdk/protocol", () => ({
 	predictedWorstMinFees: async () => ({ feePerDaGas: 10n, feePerL2Gas: 20n }),
 }))
 vi.mock("@/lib/network", () => ({ NETWORK: { nodeUrl: "http://127.0.0.1:1" } }))

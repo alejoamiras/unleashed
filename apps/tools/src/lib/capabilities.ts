@@ -1,4 +1,4 @@
-import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/sdk/protocol"
 
 /** The canonical L2 FeeJuice protocol contract (identical on every network). */
 const FEE_JUICE_L2 = AztecAddress.fromStringUnsafe(feeJuiceAddress)

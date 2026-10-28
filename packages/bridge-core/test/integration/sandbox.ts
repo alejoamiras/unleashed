@@ -2,7 +2,7 @@
  *  context so no test inherits another's balances, notes or registrations. */
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { inject } from "vitest"
-import type { ManifestToken, ManifestV2 } from "../../src/manifest-v2"
+import type { ManifestToken, ManifestV2 } from "@unleashed/sdk/protocol"
 import { buildContext, type SmokeContext, tokenBlockOf } from "../../scripts/sandbox/context"
 import { openSandbox, readManifest, type SandboxClients } from "../../scripts/sandbox/handle"
 import { type Actor, createActor, freshActorSecret } from "../../scripts/sandbox/l2"

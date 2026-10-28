@@ -2,22 +2,21 @@ import {
 	type DepositEnvelopeV2,
 	type DepositJournalRecord,
 	JOURNAL_KEY,
-	type JournalTokenBlock,
 	type KV,
 	type SendDepositRecord,
 	type SendWithdrawRecord,
 	type WithdrawJournalRecord,
-	feeJuiceAddress,
 	isSealTrusted,
 	loadJournal,
 	markSealTrusted,
 	removeRecord,
-	predictPortal,
 	recoveryKeyFromSignature,
 	rekeyRecord,
 	sealDepositEnvelope,
 	upsertRecord,
 } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GrantOutcome } from "@/lib/send-model"
 import { stepperPhases } from "@/lib/bridge-steps"

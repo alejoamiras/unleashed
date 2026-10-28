@@ -23,14 +23,20 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import { FeeAssetHandlerAbi } from "@aztec-foundation/l1-artifacts"
 import { Gas } from "@aztec-labs/stdlib/gas"
 import { privateKeyToAccount } from "viem/accounts"
-import { predictedWorstMinFees, publicFeeJuicePayment } from "../src/fee-juice"
-import { FeeJuicePortalAbi, feeJuiceDepositArgs, parseFeeJuiceDeposit, planPublicFuelDeposit } from "../src/fuel"
+import {
+	predictedWorstMinFees,
+	publicFeeJuicePayment,
+	FeeJuicePortalAbi,
+	feeJuiceDepositArgs,
+	parseFeeJuiceDeposit,
+	planPublicFuelDeposit,
+	walletChainIdOf,
+} from "@unleashed/sdk/protocol"
 import { ERC20_MIN_ABI } from "./script-l1"
 import { feeJuiceFor } from "./fee-juice-l2"
 import { deployAccountIfAbsent, freshSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { createL1Clients, createL2Wallet, createNode, loadManifestV2FromConfigArg, sepoliaChain, stopwatch } from "./script-bootstrap"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
-import { walletChainIdOf } from "../src/wallet-chain-id"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined

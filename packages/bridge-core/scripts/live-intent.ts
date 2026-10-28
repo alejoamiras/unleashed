@@ -33,12 +33,19 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Address, PublicClient } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import { type BridgeBlock, type ManifestV2, parseManifestV2, parseManifestV2Strict } from "../src/manifest-v2"
-import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
+import {
+	DEPOSIT_ROUTER_ABI,
+	PORTAL_FACTORY_ABI,
+	type BridgeBlock,
+	type ManifestV2,
+	parseManifestV2,
+	parseManifestV2Strict,
+	PRIVATE_FPC_ADDRESS,
+	PRIVATE_FPC_SALT,
+	walletChainIdOf,
+} from "@unleashed/sdk/protocol"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
-import { legacyRoutersOf } from "../src/send-generation"
+import { legacyRoutersOf } from "@unleashed/sdk/internal"
 import { type DeployIdentity, type DeployStep, readDeployJournal } from "./deploy-manifest"
 import { git, resolveBin, run } from "./run"
 import { aztecPin } from "./sandbox/local-network"
@@ -53,7 +60,6 @@ import {
 } from "./script-l1"
 import { deriveHubInstance } from "./script-l2"
 import { verifyL1Manifest } from "./verify-l1"
-import { walletChainIdOf } from "../src/wallet-chain-id"
 import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
 
 /**
@@ -312,7 +318,7 @@ function requireL1Rpc(net: IntentNetwork): string {
 }
 
 const descriptorSha256 = (net: IntentNetwork): string =>
-	JSON.parse(readFileSync(join(here, "..", "src", net.descriptor), "utf8")).artifactSha256
+	JSON.parse(readFileSync(join(here, "..", "..", "sdk", "src", "protocol", net.descriptor), "utf8")).artifactSha256
 
 /** A file entry matches exactly; only an entry ending in `/` matches by prefix — `deployments.json.ts`
  *  is not `deployments.json`. The reset baseline sits in an allowlisted lessons dir but is a trust

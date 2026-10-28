@@ -13,7 +13,7 @@ import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { predictedWorstMinFees } from "@unleashed/bridge-core"
+import { predictedWorstMinFees } from "@unleashed/sdk/protocol"
 import { NETWORK } from "@/lib/network"
 
 export type MaxFees = { feePerDaGas: bigint; feePerL2Gas: bigint }

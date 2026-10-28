@@ -1,6 +1,6 @@
 import { type Address, type Hex, pad } from "viem"
 import { describe, expect, it } from "vitest"
-import { type AcrossRelayData, FILLED_RELAY_TOPIC } from "../../src/crosschain-discovery"
+import { type AcrossRelayData, FILLED_RELAY_TOPIC } from "../../src/across-relay"
 import { type Destination, fillGas, sendFill, TX_GAS_CAP } from "./relayer"
 
 const POOL: Address = `0x${"5b".repeat(20)}`

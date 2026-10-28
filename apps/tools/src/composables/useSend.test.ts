@@ -4,7 +4,8 @@
  * Node, not jsdom: the private legs derive real claim material through bb.js poseidon, which does
  * not run under jsdom.
  */
-import type { JournalTokenBlock, Registration, SendResult } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import type { Registration, SendResult } from "@unleashed/sdk/internal"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GasLegPlan, ResolvedToken, SendPlan } from "@/lib/send-model"
 
@@ -60,9 +61,10 @@ const h = vi.hoisted(() => ({
 vi.mock("@/contracts/bridge-generation", async () => {
 	const { readFileSync } = await import("node:fs")
 	const { fileURLToPath } = await import("node:url")
-	const core = await vi.importActual<typeof import("@unleashed/bridge-core")>("@unleashed/bridge-core")
+	const protocol = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
+	const internal = await vi.importActual<typeof import("@unleashed/sdk/internal")>("@unleashed/sdk/internal")
 	const path = fileURLToPath(new URL("../../../../packages/bridge-core/fixtures/sandbox-manifest.json", import.meta.url))
-	const manifest = core.parseManifestV2(JSON.parse(readFileSync(path, "utf8")))
+	const manifest = protocol.parseManifestV2(JSON.parse(readFileSync(path, "utf8")))
 	const bridge = manifest.bridge as NonNullable<typeof manifest.bridge>
 	h.rebuiltL2Token.value = bridge.tokens[0].l2Token
 	return {
@@ -71,7 +73,7 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		MANIFEST_CHAIN: { l1ChainId: manifest.l1ChainId, walletChainId: manifest.walletChainId },
 		IS_PLACEHOLDER: false,
 		MANIFEST_TOKENS: bridge.tokens,
-		SEND_GENERATION: core.sendGenerationOf(manifest, bridge),
+		SEND_GENERATION: internal.sendGenerationOf(manifest, bridge),
 		HUB: { toString: () => bridge.l2.hub.address },
 		TOKEN_CLASS_ID: bridge.l2.tokenClassId,
 		FUEL_PORTAL: manifest.feeJuice.portal,
@@ -160,8 +162,8 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 	}
 })
 
-vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/bridge-core")>()),
+vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
 	runSend: h.runSend,
 	claimViaHub: async () => ({ path: "claim", claimTxHash: "0xhubclaim" }),
 	hubAt: () => ({ methods: {} }),
@@ -175,14 +177,11 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import {
 	type DepositJournalRecord,
 	type SendDepositRecord,
-	PRIVATE_FPC_ADDRESS,
-	deriveBridgeSecret,
-	deriveTokenClaimSecret,
 	openDepositEnvelope,
-	predictPortal,
 	recoveryKeyFromSignature,
 	validateAnyBackupRecord,
 } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
 import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
 import {

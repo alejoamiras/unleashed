@@ -29,10 +29,17 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { manifestPrivateFpc } from "../src/aztec-line"
-import type { L1Ctx } from "../src/flows"
-import { type BridgeBlock, fuelRouteSchema, type ManifestToken, type ManifestV2, manifestToken, parseManifestV2 } from "../src/manifest-v2"
-import { walletChainIdOf } from "../src/wallet-chain-id"
+import {
+	manifestPrivateFpc,
+	type BridgeBlock,
+	fuelRouteSchema,
+	type ManifestToken,
+	type ManifestV2,
+	manifestToken,
+	parseManifestV2,
+	walletChainIdOf,
+} from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 import { openDeployJournal, readCandidate, writeCandidateAtomically } from "./deploy-manifest"
 import { deployFuelRoute, type FuelRouteOptions, planFuelRoute } from "./fuel-route"

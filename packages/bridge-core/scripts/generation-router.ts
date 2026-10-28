@@ -11,9 +11,8 @@
 import { readDeployJournal, openDeployJournal, type DeployJournal, writeCandidateAtomically } from "./deploy-manifest"
 import type { Address } from "viem"
 import z from "zod"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import type { L1Ctx } from "../src/flows"
-import { type BridgeBlock, evmHexAddress, type ManifestV2, routingSchema } from "../src/manifest-v2"
+import { PORTAL_FACTORY_ABI, type BridgeBlock, evmHexAddress, type ManifestV2, routingSchema } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import {
 	type AdoptableDeploy,
 	assertBindings,

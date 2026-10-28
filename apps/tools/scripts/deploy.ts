@@ -33,7 +33,8 @@ import {
 	type InteractionFeeOptions,
 } from "@aztec-labs/aztec.js/contracts"
 import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee"
-import { type FaucetSymbol, preexistingFeeJuicePayment } from "@unleashed/bridge-core"
+import type { FaucetSymbol } from "@unleashed/bridge-core"
+import { preexistingFeeJuicePayment } from "@unleashed/sdk/protocol"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { PublicKeys } from "@aztec-labs/aztec.js/keys"
 import { type AztecNode, createAztecNodeClient } from "@aztec-labs/aztec.js/node"

@@ -569,6 +569,22 @@ Each row: the decision, its source, the rejected view with its reason.
   words and decimals and an async derivation (`hub-token.ts:36`), which `capabilitiesFor(net, Address[])` lacked.
   Rejected: an async `capabilitiesFor` with `Reads`, which would resolve the token a second time beside the quote.
 
+- **D33 A workspace-only `./l1` entry for Workers.** esbuild resolves every member of a barrel it reaches, so the
+  testnet relayer's Worker could not import one ABI from `./protocol` without the Aztec graph (`tty`). `./l1` names the
+  viem-only slice (the router and LI.FI ABIs, the LI.FI book and gas table); the SDK is `"sideEffects": false`.
+  bridge-core's bundle guard walks whole SDK entries.
+- **D34 bridge-core re-exports nothing it moved, the relayer included.** `across-fill`'s re-exports of
+  `DEPOSIT_ROUTER_ABI` and `lifiBook` went with D17; the relayer imports them from `@unleashed/sdk/l1`.
+- **D35 Workspace entries for the two artifacts.** `./artifacts` (the hub, eager) and `./private-fpc-artifact` (lazy)
+  keep their split; which of them a published entry exposes is 2.2's staging decision.
+- **D36 The frozen manifests stay bridge-core's fixtures.** The moved SDK tests that read
+  `fixtures/sandbox-manifest.json` and `test/fixtures/mainnet-bridge.placeholder.json` read them by relative path;
+  bridge-core's script tests are their other readers.
+- **D37 The layout guarantee for the SDK is its own imports test.** `src/imports.test.ts` scans the shipped source:
+  no Node built-in, and every bare import is a declared runtime dependency that resolves from the SDK. It replaces
+  extending bridge-core's `layout-identity.test.ts`, which resolves assets rather than imports.
+- **D38 `tsconfig.build.json` arrives with the build.** 2.1 lists it; it lands in 2.2 with `stage.ts`, its only user.
+
 ## Audit verdicts
 
 Codex ran `gpt-6.1-sol` at high; every finding was verified against the tree and accepted. `lessons/phase-0.md` logs

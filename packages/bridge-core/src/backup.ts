@@ -1,17 +1,18 @@
 import type { EncryptionKey } from "@nulo-sh/wallet-crypto"
-import type {
-	AnyJournalRecord,
-	BridgeJournalRecord,
-	CrossChainDepositRecord,
-	CrossChainExtraDeposit,
-	CrossChainRoute,
-	DepositFuelBlock,
-	DepositJournalRecord,
-	JournalTokenBlock,
-	SendJournalRecord,
-	WithdrawJournalRecord,
+import {
+	type AnyJournalRecord,
+	type BridgeJournalRecord,
+	type CrossChainDepositRecord,
+	type CrossChainExtraDeposit,
+	type CrossChainRoute,
+	type DepositFuelBlock,
+	type DepositJournalRecord,
+	type SendJournalRecord,
+	type WithdrawJournalRecord,
+	isProvisionalRecordId,
+	isProvisionalWithdrawId,
 } from "./journal"
-import { isProvisionalRecordId, isProvisionalWithdrawId } from "./journal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import { openSecret, sealSecret } from "./recovery-crypto"
 
 /**

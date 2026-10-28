@@ -4,10 +4,10 @@
  * a hub claim consumes.
  */
 import type { Address, Hex } from "viem"
-import { type FuelQuoteReads, manifestFuelProvider } from "../src/fuel-quote"
-import type { JournalTokenBlock } from "../src/journal"
-import type { BridgeBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
-export { sendGenerationOf } from "../src/send-generation"
+import { type FuelQuoteReads, manifestFuelProvider } from "@unleashed/sdk/internal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import type { BridgeBlock, ManifestToken, ManifestV2 } from "@unleashed/sdk/protocol"
+export { sendGenerationOf } from "@unleashed/sdk/internal"
 
 /** `--token <erc20>`, or the manifest's first token when the flag is absent. */
 export function selectToken(bridge: BridgeBlock, argv: readonly string[]): ManifestToken {

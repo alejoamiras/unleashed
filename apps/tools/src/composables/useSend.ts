@@ -13,30 +13,25 @@ import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
+import { type EncryptionKey, type SendDepositRecord, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import {
-	type EncryptionKey,
-	type JournalTokenBlock,
 	type L1Ctx,
 	type Registration,
-	type SendDepositRecord,
 	type SendGasLeg,
 	type SendOpts,
 	type SendParams,
 	type SendResult,
 	type SendStage,
-	PERMIT_DEADLINE_SECONDS,
 	claimSendOpts,
 	claimViaHub,
-	deriveBridgeSecret,
-	deriveTokenClaimSecret,
 	hubAt,
 	hubTokenFor,
-	isProvisionalRecordId,
 	l1ToL2MessageReadiness,
-	makeProvisionalDepositId,
 	readRegistration,
 	runSend,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/internal"
+import { PERMIT_DEADLINE_SECONDS, deriveBridgeSecret, deriveTokenClaimSecret } from "@unleashed/sdk/protocol"
 import type { Hex, PublicClient } from "viem"
 import { type Ref, effectScope, ref, watch } from "vue"
 import {
@@ -64,7 +59,7 @@ import { resumeCrossChainWatches } from "./crosschain-watch"
 import { findDepositTx } from "./deposit-reconcile"
 import { readClientFor } from "./useEthereumReader"
 import { sliceSwapData } from "./useFuelQuote"
-import { reconcileFuelConsumed } from "./fuel-recovery"
+import { reconcileFuelConsumed, fuelOverrideActive, launchStandaloneFuelClaim } from "./fuel-recovery"
 import { hubMessageState } from "@/lib/message-nullifier"
 import { resolveToolsTarget } from "@/lib/network-targets"
 import {
@@ -92,7 +87,6 @@ import {
 	resolveHubClaimSendOpts,
 	sealPrivateRecord,
 } from "./deposit-flow"
-import { fuelOverrideActive, launchStandaloneFuelClaim } from "./fuel-recovery"
 import { type FuelClaimRetry, simulateFeePayload } from "./fuelClaim"
 import { useBridgeWallet } from "./useBridgeWallet"
 import { useL1Wallet } from "./useL1Wallet"

@@ -23,17 +23,14 @@ vi.mock("@aztec-labs/aztec.js/contracts", () => ({
 // Keep every real export EXCEPT the fee-method builders each path feeds material into — stub them so we can
 // (a) capture the salt/secret each path routed in, and (b) avoid real poseidon in jsdom (deriveBridgeSecret
 // would compute an @aztec hash — the module-load-crash class).
-vi.mock("@unleashed/bridge-core", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@unleashed/bridge-core")>()
-	return {
-		...actual,
-		privateMintAndPayFee: vi.fn(() => ({})),
-		publicFeeJuicePayment: vi.fn(() => ({})),
-		deriveBridgeSecret: vi.fn(() => Fr.fromString("0xdead")),
-	}
-})
+vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
+	privateMintAndPayFee: vi.fn(() => ({})),
+	publicFeeJuicePayment: vi.fn(() => ({})),
+	deriveBridgeSecret: vi.fn(() => Fr.fromString("0xdead")),
+}))
 
-import { privateMintAndPayFee, publicFeeJuicePayment } from "@unleashed/bridge-core"
+import { privateMintAndPayFee, publicFeeJuicePayment } from "@unleashed/sdk/protocol"
 import { walletErrorCodeOf } from "@/lib/errors"
 import { buildFuelClaimInteraction } from "./fuelClaim"
 

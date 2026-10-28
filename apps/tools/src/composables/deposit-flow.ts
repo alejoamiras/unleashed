@@ -15,32 +15,36 @@ import {
 	type DepositJournalRecord,
 	type EncryptionKey,
 	type SendDepositRecord,
+	depositExpectationOf,
+	isSealTrusted,
+	isSendRecord,
+	markSealTrusted,
+	sealDepositRecord,
+} from "@unleashed/bridge-core"
+import {
 	type SendGeneration,
 	type SendOpts,
 	type SendResult,
+	awaitL1Receipt,
+	emittedBy,
+	readLegacySendLeaves,
+	readSendInbox,
+	readSendReceiptLeaves,
+} from "@unleashed/sdk/internal"
+import {
 	ERC20_ABI,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
-	awaitL1Receipt,
-	depositExpectationOf,
 	deriveBridgeSecret,
-	emittedBy,
 	ensurePermit2Allowance,
-	isSealTrusted,
-	isSendRecord,
-	markSealTrusted,
 	ownGasTxs,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
 	privateMintAndPayFee,
 	publicFeeJuicePayment,
-	readLegacySendLeaves,
-	readSendInbox,
-	readSendReceiptLeaves,
 	selfPaidFeeJuicePayment,
-	sealDepositRecord,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/protocol"
 import type { Log } from "viem"
 import { NETWORK } from "@/lib/network"
 import { FUEL, FUEL_MIN_FJ, LEGACY_ROUTERS } from "@/contracts/bridge-generation"
@@ -294,7 +298,7 @@ export async function readPublicFeeJuiceBalance(aztec: unknown, recipient: Aztec
  *  from bridge-core's dedicated code-split entry (never the eager `./artifacts` barrel). `balance_of`
  *  is `abi_utility` — scoped in the combined manifest's `simulation.utilities`. */
 export async function readPrivateFeeJuiceBalance(aztec: unknown, recipient: AztecAddress): Promise<bigint> {
-	const { PrivateFPCContractArtifact } = await import("@unleashed/bridge-core/private-fpc-artifact")
+	const { PrivateFPCContractArtifact } = await import("@unleashed/sdk/private-fpc-artifact")
 	const fpc = await Contract.at(AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS), PrivateFPCContractArtifact, aztec as never)
 	return readBalance(aztec as never, fpc, "balance_of", recipient)
 }

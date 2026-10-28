@@ -6,9 +6,13 @@
  */
 
 import { type Address, encodeFunctionData, getAddress, type Hex, keccak256, slice, toHex } from "viem"
-import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { LIFI_DENY_EXCHANGES, LIFI_INTEGRATOR, LIFI_TO_CONTRACT_GAS_LIMIT } from "../src/lifi-gas"
-import privateFpcMainnet from "../src/private-fpc-canonical-mainnet.json" with { type: "json" }
+import {
+	DEPOSIT_ROUTER_ABI,
+	manifestPrivateFpc,
+	LIFI_DENY_EXCHANGES,
+	LIFI_INTEGRATOR,
+	LIFI_TO_CONTRACT_GAS_LIMIT,
+} from "@unleashed/sdk/protocol"
 
 const LI_QUEST = "https://li.quest/v1"
 const QUOTE_TIMEOUT_MS = 30_000
@@ -133,7 +137,7 @@ function worstIntent(token: Address, slice: bigint, minFuelOutput: bigint) {
 		tokenSecretHash: TOKEN_SECRET_HASH,
 		isPrivate: true,
 		fuelSlice: slice,
-		fuelRecipient: privateFpcMainnet.expectedAddress as Hex,
+		fuelRecipient: manifestPrivateFpc(1).address as Hex,
 		fuelSecretHash: FUEL_SECRET_HASH,
 		minFuelOutput,
 	}

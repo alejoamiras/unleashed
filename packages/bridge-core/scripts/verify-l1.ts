@@ -39,17 +39,23 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { FeeJuicePortalAbi, RegistryAbi, RollupAbi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, hexToBytes, keccak256, type PublicClient } from "viem"
-import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { readErc20Metadata } from "../src/erc20"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import { readRegistration } from "../src/factory-registry"
-import { DEPOSIT_WITNESS_TYPE_STRING } from "../src/l1"
-import { FUEL_SWAP_SELECTORS } from "../src/lifi-abi"
-import { LIFI_BOOK, type LifiChainBook, type LifiCodeHashes } from "../src/lifi-addresses"
-import type { BridgeBlock, FuelRouteBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
-import { toWord } from "../src/register-hash"
-import { legacyRoutersOf } from "../src/send-generation"
-import { walletChainIdOf } from "../src/wallet-chain-id"
+import {
+	DEPOSIT_ROUTER_ABI,
+	readErc20Metadata,
+	PORTAL_FACTORY_ABI,
+	DEPOSIT_WITNESS_TYPE_STRING,
+	FUEL_SWAP_SELECTORS,
+	LIFI_BOOK,
+	type LifiChainBook,
+	type LifiCodeHashes,
+	type BridgeBlock,
+	type FuelRouteBlock,
+	type ManifestToken,
+	type ManifestV2,
+	toWord,
+	walletChainIdOf,
+} from "@unleashed/sdk/protocol"
+import { readRegistration, legacyRoutersOf } from "@unleashed/sdk/internal"
 import { resolveBin, run } from "./run"
 import { createL1PublicClient, loadManifestV2FromConfigArg, requireRoute } from "./script-bootstrap"
 import {

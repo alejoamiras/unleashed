@@ -4,7 +4,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { siloNullifier } from "@aztec-labs/stdlib/hash"
 import { computeFeeJuiceMessageNullifier, L1Actor, L1ToL2Message, L2Actor } from "@aztec-labs/stdlib/messaging"
-import { deriveTokenClaimSecret, mintToPrivateContentHash, mintToPublicContentHash } from "@unleashed/bridge-core"
+import { deriveTokenClaimSecret, mintToPrivateContentHash, mintToPublicContentHash } from "@unleashed/sdk/protocol"
 import { describe, expect, it, vi } from "vitest"
 import { hubMessageState, recomputeTokenMessageHash, tokenMessageNullifier, tokenMessageState } from "./message-nullifier"
 

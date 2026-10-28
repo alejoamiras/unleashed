@@ -15,7 +15,7 @@ import { randomBytes } from "node:crypto"
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from "node:fs"
 import { dirname, join } from "node:path"
 import z from "zod"
-import { evmAddressV2, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import { evmAddressV2, type ManifestV2, parseManifestV2 } from "@unleashed/sdk/protocol"
 
 const aztecAddress = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected a 32-byte 0x hex address")
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected a 32-byte 0x hex word")

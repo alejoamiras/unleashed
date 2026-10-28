@@ -4,10 +4,8 @@
  * runs before it trusts a generation.
  */
 import { type Abi, type Address, type Chain, defineChain, type Hex } from "viem"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import type { L1Ctx } from "../src/flows"
-import { ensurePermit2Allowance } from "../src/l1"
-import { predictPortal } from "../src/portal-address"
+import { PORTAL_FACTORY_ABI, ensurePermit2Allowance, predictPortal } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import { sourceChain } from "../src/source-chains"
 import { retried } from "../src/retried"
 

@@ -2,7 +2,7 @@
 import { GasFees } from "@aztec-labs/stdlib/gas"
 import { type Address, defineChain, type Hex } from "viem"
 import { mnemonicToAccount } from "viem/accounts"
-import type { L1Ctx } from "../../src/flows"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 
 export const CHAIN_ID = 31337
 export const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address

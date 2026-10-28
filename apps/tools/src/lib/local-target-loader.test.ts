@@ -3,7 +3,7 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseManifestV2 } from "@unleashed/bridge-core"
+import { parseManifestV2 } from "@unleashed/sdk/protocol"
 import { afterEach, describe, expect, it } from "vitest"
 import { loadLocalRun } from "./local-target-loader"
 

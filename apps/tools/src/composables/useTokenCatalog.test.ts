@@ -1,4 +1,5 @@
-import { type CatalogToken, parseManifestV2 } from "@unleashed/bridge-core"
+import type { CatalogToken } from "@unleashed/bridge-core"
+import { parseManifestV2 } from "@unleashed/sdk/protocol"
 import type { Address } from "viem"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import rawManifest from "../../../../packages/bridge-core/fixtures/sandbox-manifest.json"
@@ -32,10 +33,10 @@ vi.mock("@/contracts/bridge-generation", () => ({
 	},
 }))
 
-vi.mock("@unleashed/bridge-core", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@unleashed/bridge-core")>()
-	return { ...actual, loadTokenList: h.loadTokenList }
-})
+vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/bridge-core")>()),
+	loadTokenList: h.loadTokenList,
+}))
 
 const MANIFEST = parseManifestV2(rawManifest)
 const FIXTURE_TOKENS = MANIFEST.bridge?.tokens ?? []

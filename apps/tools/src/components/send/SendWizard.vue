@@ -9,14 +9,12 @@ import {
 	type SendDepositRecord,
 	type SendJournalRecord,
 	type SendWithdrawRecord,
-	PERMIT_DEADLINE_SECONDS,
-	type TokenState,
-	PORTAL_FACTORY_ABI,
 	assetKindOf,
 	isCrossChainRecord,
 	isSendRecord,
-	predictPortal,
 } from "@unleashed/bridge-core"
+import { PERMIT_DEADLINE_SECONDS, PORTAL_FACTORY_ABI, predictPortal } from "@unleashed/sdk/protocol"
+import type { TokenState } from "@unleashed/sdk/internal"
 import type { Address, PublicClient } from "viem"
 import { computed, onBeforeUnmount, onScopeDispose, ref, shallowRef, watch } from "vue"
 import { FUEL, HUB, HUB_TOKEN_ARTIFACT, SEND_GENERATION } from "@/contracts/bridge-generation"

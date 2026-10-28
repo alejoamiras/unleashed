@@ -2,7 +2,7 @@
  * Fee states (cells 7–12): what the account holds decides whether the token alone may be chosen,
  * and the confirm re-reads it. Every stop is the wizard's own copy, on screen before any signature.
  */
-import { PRIVATE_FPC_ADDRESS } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
 import { fundPublicFeeJuice, mint, mintPrivateGasNote, privateFpc } from "@unleashed/bridge-core/sandbox"
 import { TESTIDS } from "../../../src/lib/testids"
 import { type ActorHandle, expect, test } from "../fixtures/test"

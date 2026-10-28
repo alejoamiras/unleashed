@@ -14,7 +14,7 @@ import { join } from "node:path"
  */
 const ROOT = join(import.meta.dir, "..", "..")
 const LOCKFILES = ["bun.lock", "contracts/bridge/aztec/txe-server/bun.lock"]
-const PIN_SOURCES = ["packages/bridge-core/package.json", "apps/tools/package.json"]
+const PIN_SOURCES = ["packages/bridge-core/package.json", "packages/sdk/package.json", "apps/tools/package.json"]
 const EXACT = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/
 const STANDARDS = "@aztec-foundation/aztec-standards"
 
