@@ -353,7 +353,7 @@ in-flight sends naming the canary at the switch are filled by hand with `fill-te
 from then on `fill-testnet.ts` fills canary deposits only (the relayer key's fallback is `scripts/relayer.ts once`).
 **Validation gate.** `bun run audit:tools`, `bun run test:all`, `bun run e2e:tools` on the cross-chain specs at retry 0.
 
-### Arc a3 — restock through Circle's faucet API (after a1)
+### Arc a3 — restock through Circle's faucet API (after a1) ✓
 
 The owner's answer to `OWNER-ASKS.md` #2: manual claims stay, and the Worker requests a drip when its Sepolia USDC
 runs low, at most at the API's documented rate, with the Circle API key as a second Worker secret; no key, no

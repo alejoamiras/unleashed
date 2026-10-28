@@ -19,3 +19,7 @@
 - 2026-10-28 fix loop round 1 (Codex reject, 4 findings adopted, faac3c8). Owner answered OWNER-ASKS #2 (both: manual plus a Circle faucet-API restock, a new arc after a1) and #3 (Workers Paid); #1 open.
 - 2026-10-28 fix loop converged: round 2 Codex approve (two non-blocking items adopted, a02ac14); all a1 gates green on 1606d00 (lint, typecheck:all, test:all, test:ci-gating, lint:actions, audit:tools, doc-links, integration 3.6 s). Arc a3 (Circle restock) planned; its Codex pass running.
 - 2026-10-28 arc a3 (Circle faucet restock) planned: Codex reject (4 adopted) then approve. No new owner question on a surface a1 touches; a1 goes to its PR.
+- 2026-10-28 a1 PR #29 opened (head 44157a5); checks watched.
+- 2026-10-28 PR #29 checks: 29 pass, 1 skipping (Shellcheck, path-filtered); quality-status, tools-e2e-status, bridge-contracts-status green. Arc a1 done.
+- 2026-10-28 arc a3 started: origin/main (0a81087, PR #29's squash) merged into the branch (8ccdec6), trees identical.
+- 2026-10-28 arc a3 gate green: lint, typecheck:all, relayer test (24), test:all, audit:tools, doc-links; mutation checks bite (lessons/phase-a3.md).

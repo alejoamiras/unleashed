@@ -137,7 +137,8 @@ build of the same commit: [`apps/landing/README.md`](apps/landing/README.md) § 
 The testnet relayer is a fourth Worker, `unleashed-testnet-relayer` (`packages/testnet-relayer/wrangler.jsonc`),
 deployed the same way from the root directory `packages/testnet-relayer`. It runs from a cron trigger alone, with no
 route and no `workers.dev` URL, and refuses any chain but Base Sepolia and Sepolia. Its signing key is a Worker secret
-the owner sets in the dashboard: a dedicated key with a small float, never the canary's.
+the owner sets in the dashboard: a dedicated key with a small float, never the canary's. An optional second secret,
+a Restricted Access Circle key, lets it request one faucet drip a day.
 [`packages/testnet-relayer/README.md`](packages/testnet-relayer/README.md) has the owner's runbook.
 
 ## Security
