@@ -173,10 +173,12 @@ describe("CI behavior-gating guard", () => {
     expect(pin("landing")).toBe(pin("tools"))
   })
 
-  test("bridge-contracts covers the contracts, the harness package, its graph, and the adopted manifests", () => {
+  test("bridge-contracts covers the contracts, the harness package, the testnet relayer, their graphs, and the adopted manifests", () => {
     const contracts = filtersOf("bridge-contracts.yml")["contracts"]
     expect(contracts, "the Solidity + Noir sources").toContain("contracts/bridge/**")
     assertGraphCovered(contracts, "bridge-core", "bridge-contracts")
+    // Its one workspace dependency is bridge-core, gated whole by the line above.
+    expect(contracts, "the relayer's two-anvil suite runs in the forge job").toContain("packages/testnet-relayer/**")
     for (const manifest of ["apps/tools/public/testnet-bridge.json", "apps/tools/public/mainnet-bridge.json"]) {
       expect(contracts, "a manifest bump is the frontend adopting a generation — the round trips must re-run").toContain(manifest)
     }

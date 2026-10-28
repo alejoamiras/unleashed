@@ -38,7 +38,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
           # Positive-only, no `!` negations — the dorny `some`-quantifier footgun. Whole-package for
-          # the contracts and for bridge-core (its scripts ARE the sandbox harness); the deployed
+          # the contracts, for bridge-core (its scripts ARE the sandbox harness) and for the testnet
+          # relayer (its two-anvil suite runs in the forge job); the deployed
           # manifests, because the integration suite is the closest local proof that the frontend's
           # adopted generation still round-trips. The npm packages bridge-core imports move with
           # bun.lock.
@@ -47,6 +48,7 @@ jobs:
             contracts:
               - 'contracts/bridge/**'
               - 'packages/bridge-core/**'
+              - 'packages/testnet-relayer/**'
               - 'apps/tools/public/testnet-bridge.json'
               - 'apps/tools/public/mainnet-bridge.json'
               - 'package.json'

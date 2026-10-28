@@ -14,3 +14,4 @@
 - 2026-10-28 arc a1 phase 2 green (e3fb51c): Worker-safe fill core; next phase 3 (workspace, config, pure core).
 - 2026-10-28 arc a1 phase 3 green: workspace, wrangler config, route and classify; next phase 4 (run and Worker).
 - 2026-10-28 arc a1 phase 4 green: relayOnce, key, Worker, owner script, bundle test; next phase 5 (two-anvil integration).
+- 2026-10-28 arc a1 phase 5 green: two-anvil suite S1–S6 in about 5 s, in the forge job; next phase 6 (runbook and docs).

@@ -283,7 +283,7 @@ missing key is refused and never echoed. `bundle.test.ts`: `wrangler deploy --dr
 
 **Validation gate.** The Phase 3 commands plus `bun run test:all`. Pass: exit 0 each. Layers: as Phase 3, bundling.
 
-### Phase 5 — the two-anvil integration test and its CI step
+### Phase 5 — the two-anvil integration test and its CI step ✓
 
 Warning: a fresh worktree has no `contracts/bridge/evm/lib`. Copy `lib/` or run `forge install --no-git`, then
 `forge build` (`implementations-plan/lessons.md`).
