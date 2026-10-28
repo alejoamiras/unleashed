@@ -28,7 +28,7 @@ size: "over the 350-line mid target: the revision for ask13 keeps the superseded
     and the sandbox e2e fills as that address.
   - The owner created the key, deployed the Worker from Workers Builds, set its secret and funded it on Sepolia
     (0.5 ETH, 40 USDC): runbook steps 1–3.
-- **Reviews.** The audit verdicts below: plan audits, then fix loops on a1 (2 rounds), a3 (2 rounds) and a2.
+- **Reviews.** The audit verdicts below: plan audits, then fix loops on a1, a3 and a2, each converged in 2 rounds.
 - **Dispositions.**
   - Option A, a Bun process under a keyed run: superseded by the Worker (ask13). Phase 1's seam stays.
   - The canary key as the filler: replaced by the dedicated key. `fill-testnet.ts` now fills only the canary's own
@@ -541,6 +541,9 @@ no mainnet path reads the pin. Adopted:
 Declined: Codex's literal pin of the address in a test. The test refuses the canary and both deploy signers, which
 covers the plausible regression, a revert; a copy of the literal pins only itself, and a wrong pin shows as
 `refused` on the first run.
+Round 2 (resumed): **approve**, no remaining or new material finding; the rotation clause probed in memory (`once`
+refuses a signer that does not derive its checkout's pin and admits the old key's deposit under the old pin), and the
+declined assertion accepted as nonblocking.
 
 ## Post-implementation
 
