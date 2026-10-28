@@ -7,7 +7,7 @@ import { buildCommit } from "./build-commit.ts"
 import { type Channel, channelOf, pageHeaders, renderHeadersFile } from "./security-headers.ts"
 import { LEGAL_PAGES } from "./src/legal-pages.ts"
 import { legalBody, legalHead } from "./src/legal-markup.ts"
-import { renderBody } from "./src/markup.ts"
+import { fillSlot, renderBody } from "./src/markup.ts"
 
 const BODY_SLOT = "<!--landing:body-->"
 const HEAD_SLOT = "<!--landing:head-->"
@@ -46,14 +46,10 @@ function preloadTags(fileNames: readonly string[]): HtmlTagDescriptor[] {
 
 /** Each HTML file's rendered slots: the landing's body, or a legal page's head and body. */
 function render(html: string, file: string): string {
-	const fill = (page: string, slot: string, value: string) => {
-		if (!page.includes(slot)) throw new Error(`${file} has no ${slot}`)
-		return page.replace(slot, value)
-	}
-	if (file === "index.html") return fill(html, BODY_SLOT, renderBody())
+	if (file === "index.html") return fillSlot(html, BODY_SLOT, renderBody())
 	const legal = LEGAL_PAGES.find((page) => page.file === file)
 	if (!legal) throw new Error(`no page renders ${file}`)
-	return fill(fill(html, HEAD_SLOT, legalHead(legal)), BODY_SLOT, legalBody(legal))
+	return fillSlot(fillSlot(html, HEAD_SLOT, legalHead(legal)), BODY_SLOT, legalBody(legal))
 }
 
 /** Renders every page's slots, and emits `_headers` and `build.json` for the Worker. */

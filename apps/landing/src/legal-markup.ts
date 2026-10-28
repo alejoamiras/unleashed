@@ -29,7 +29,6 @@ function nav(page: LegalPage): string {
 	return `<nav class="l-nav ul-notch" aria-label="${esc(COPY.brand)}">${home}<div class="l-links">${docs}</div></nav>`
 }
 
-/** The page's title, description and canonical link, for the template's head slot. */
 export function legalHead(page: LegalPage): string {
 	const title = esc(`${page.doc.title} · ${COPY.brand}`)
 	const description = esc(`The ${page.doc.title} of ${COPY.brand}, a lab for private apps on Aztec.`)

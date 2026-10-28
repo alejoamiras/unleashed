@@ -2,11 +2,9 @@
 import { defineAsyncComponent } from "vue"
 
 /**
- * The mainnet build mounts the placeholder and nothing else; every other target mounts the shell. The
- * shell loads asynchronously because a static import would evaluate the wallet-session singleton at page
- * load, on a build that must never open a transport. The target test is a literal `define` comparison in
- * this module on purpose: the bundler folds it and drops the placeholder's chunk from other targets,
- * which it does not do through `IS_MAINNET` or an imported flag.
+ * Mainnet mounts only the placeholder. The target test stays a literal `define` comparison in this module,
+ * the only form the bundler folds to drop the placeholder's chunk elsewhere (not `IS_MAINNET`); the shell
+ * stays lazy because importing it constructs the wallet session, which mainnet must never open.
  */
 const MAINNET_BUILD = import.meta.env.VITE_TOOLS_TARGET === "mainnet"
 const MainnetPlaceholder = MAINNET_BUILD ? defineAsyncComponent(() => import("./views/MainnetPlaceholderView.vue")) : null

@@ -3,7 +3,7 @@ import { MARK_INK } from "@unleashed/design/core/mark.ts"
 import { describe, expect, test } from "vitest"
 import { EXPERIMENTS, type Experiment, LINKS } from "./content.ts"
 import { LEGAL_PAGES } from "./legal-pages.ts"
-import { esc, experimentRow, renderBody, tag } from "./markup.ts"
+import { esc, experimentRow, fillSlot, renderBody, tag } from "./markup.ts"
 
 const body = renderBody()
 const allowed = new Set<string>([...Object.values(LINKS), ...LEGAL_PAGES.map((page) => page.path)])
@@ -11,6 +11,11 @@ const allowed = new Set<string>([...Object.values(LINKS), ...LEGAL_PAGES.map((pa
 describe("page markup", () => {
 	test("escapes every character that could leave a text node or an attribute", () => {
 		expect(esc(`<a href="x" onclick='y'>&</a>`)).toBe("&lt;a href=&quot;x&quot; onclick=&#39;y&#39;&gt;&amp;&lt;/a&gt;")
+	})
+
+	test("fills a slot literally, so a $ sequence in the text survives", () => {
+		expect(fillSlot("<p><!--s--></p>", "<!--s-->", "$& $$ $` $'")).toBe("<p>$& $$ $` $'</p>")
+		expect(() => fillSlot("<p></p>", "<!--s-->", "x")).toThrow("no <!--s--> to fill")
 	})
 
 	test("links only to LINKS and the legal pages, and the footer links every legal page", () => {

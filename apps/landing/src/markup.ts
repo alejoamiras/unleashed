@@ -14,6 +14,12 @@ export function esc(value: string): string {
 	return value.replace(/[&<>"']/g, (ch) => ESCAPES[ch])
 }
 
+/** `html` with its one `slot` replaced by `value`, taken literally: a string replacement would expand `$&` and its kin. */
+export function fillSlot(html: string, slot: string, value: string): string {
+	if (!html.includes(slot)) throw new Error(`no ${slot} to fill`)
+	return html.replace(slot, () => value)
+}
+
 export function icon(name: PixelIconName, size: 12 | 24): string {
 	const { viewBox, d } = ICONS[name]
 	const paths = d.map((path) => `<path d="${esc(path)}"/>`).join("")
