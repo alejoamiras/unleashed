@@ -2,20 +2,23 @@ import { readFileSync } from "node:fs"
 import { MARK_INK } from "@unleashed/design/core/mark.ts"
 import { describe, expect, test } from "vitest"
 import { EXPERIMENTS, type Experiment, LINKS } from "./content.ts"
+import { LEGAL_PAGES } from "./legal-pages.ts"
 import { esc, experimentRow, renderBody, tag } from "./markup.ts"
 
 const body = renderBody()
-const allowed = new Set<string>(Object.values(LINKS))
+const allowed = new Set<string>([...Object.values(LINKS), ...LEGAL_PAGES.map((page) => page.path)])
 
 describe("page markup", () => {
 	test("escapes every character that could leave a text node or an attribute", () => {
 		expect(esc(`<a href="x" onclick='y'>&</a>`)).toBe("&lt;a href=&quot;x&quot; onclick=&#39;y&#39;&gt;&amp;&lt;/a&gt;")
 	})
 
-	test("links only to LINKS", () => {
+	test("links only to LINKS and the legal pages, and the footer links every legal page", () => {
 		const hrefs = [...body.matchAll(/href="([^"]*)"/g)].map((m) => m[1])
 		expect(hrefs.length).toBeGreaterThan(0)
 		for (const href of hrefs) expect(allowed.has(href), href).toBe(true)
+		const footer = body.slice(body.indexOf("<footer"))
+		for (const page of LEGAL_PAGES) expect(footer).toContain(`<a href="${page.path}">${page.doc.title}</a>`)
 	})
 
 	test("renders one row per experiment, the open slot as a div, and a screen only where an engine is named", () => {

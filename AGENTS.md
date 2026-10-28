@@ -7,6 +7,7 @@ the map; this file is the ruleset. `CLAUDE.md` imports it.
 
 - The README of the package you touch: [`apps/tools`](apps/tools/README.md),
   [`apps/landing`](apps/landing/README.md), [`packages/bridge-core`](packages/bridge-core/README.md), [`packages/design`](packages/design/README.md),
+  [`packages/legal`](packages/legal/README.md),
   [`contracts/bridge/evm`](contracts/bridge/evm/README.md), [`contracts/bridge/aztec`](contracts/bridge/aztec/README.md).
 - [`apps/tools/tests/browser/README.md`](apps/tools/tests/browser/README.md) before touching the
   browser suite: the parallel-safe runner, the fixtures, the egress rule.
@@ -129,7 +130,9 @@ custom domains (`app.unleashed.systems`,
 hosting has the commands and the host model.
 
 The landing is a third assets-only Worker, `unleashed-landing` (`apps/landing/wrangler.jsonc`), deployed
-the same way from the root directory `apps/landing`. Its custom domains, `unleashed.systems` and
+the same way from the root directory `apps/landing`. It also serves the mainnet app's Terms of Use and
+Privacy Policy at `/terms` and `/privacy`, outside the app's login wall; merging a change to
+`packages/legal` publishes it. Its custom domains, `unleashed.systems` and
 `www.unleashed.systems`, are also attached in the dashboard. A deploy is checked against a reference
 build of the same commit: [`apps/landing/README.md`](apps/landing/README.md) § Hosting.
 

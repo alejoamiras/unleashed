@@ -1,6 +1,7 @@
 /**
  * Serves a built dist/ the way the assets-only Worker does, for the browser smoke: the emitted
- * `_headers` rules for the request path, and index.html with a 200 for any unmatched request. With no
+ * `_headers` rules for the request path, `/x` from `x.html` (the default `html_handling`), and
+ * index.html with a 200 for any unmatched request. With no
  * Worker script, single-page-application mode falls back for every request, not only navigations.
  * Binds port 0 on loopback and is closed by the process that opened it, so parallel runs never share
  * a port or leave a server behind.
@@ -28,12 +29,17 @@ export interface StaticServer {
 	close(): Promise<void>
 }
 
-async function fileFor(root: string, path: string): Promise<string | null> {
-	if (NOT_SERVED.has(path)) return null
-	const file = resolve(root, `.${path === "/" ? "/index.html" : path}`)
+async function fileAt(root: string, path: string): Promise<string | null> {
+	const file = resolve(root, `.${path}`)
 	if (file !== root && !file.startsWith(root + sep)) return null
 	const info = await stat(file).catch(() => null)
 	return info?.isFile() ? file : null
+}
+
+async function fileFor(root: string, path: string): Promise<string | null> {
+	if (NOT_SERVED.has(path)) return null
+	if (path === "/") return fileAt(root, "/index.html")
+	return (await fileAt(root, path)) ?? (extname(path) ? null : fileAt(root, `${path}.html`))
 }
 
 export async function serveDist(dist: string): Promise<StaticServer> {

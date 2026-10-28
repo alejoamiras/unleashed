@@ -6,6 +6,7 @@
 import { ICONS, type PixelIconName } from "@unleashed/design/core/icons.ts"
 import { MARK_INK, MARK_SIGNAL } from "@unleashed/design/core/mark.ts"
 import { COPY, EXPERIMENTS, type Experiment, LINKS, SCREEN_PLACEMENT, TAG_LABELS, type TagKind } from "./content.ts"
+import { LEGAL_PAGES } from "./legal-pages.ts"
 
 const ESCAPES: Readonly<Record<string, string>> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }
 
@@ -23,9 +24,9 @@ export function mark(): string {
 	return `<svg class="mark" viewBox="0 0 8 8" shape-rendering="crispEdges" aria-hidden="true"><path d="${MARK_INK}" fill="currentColor"/><path class="sig" d="${MARK_SIGNAL}"/></svg>`
 }
 
-const lockup = (cls = "lockup") => `<span class="${cls}">${mark()}<span class="wordmark">${esc(COPY.brand)}</span></span>`
+export const lockup = (cls = "lockup") => `<span class="${cls}">${mark()}<span class="wordmark">${esc(COPY.brand)}</span></span>`
 
-const link = (cls: string, href: string, body: string) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(href)}">${body}</a>`
+export const link = (cls: string, href: string, body: string) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(href)}">${body}</a>`
 
 function nav(): string {
 	const links = COPY.navLinks.map((l) => link("txt ul-notch", l.href, esc(l.label))).join("")
@@ -89,13 +90,14 @@ function caveat(): string {
 	].join("")
 }
 
-/** The Pause button ships hidden: main.ts reveals it once it can honour it. */
-function footer(): string {
+/** With motion, a Pause button ships hidden: main.ts reveals it once it can honour it. */
+export function footer(motion: boolean): string {
+	const legal = LEGAL_PAGES.map((page) => link("", page.path, esc(page.doc.title))).join("")
 	const facts = COPY.footer.facts.map((fact) => `<span>${esc(fact)}</span>`).join("")
-	const pause = `<button type="button" class="btn quiet sm ul-notch" data-motion hidden>${esc(COPY.pause)}</button>`
-	return `<footer class="l-foot ul-notch">${lockup()}${link("", LINKS.source, esc(COPY.footer.source))}${facts}${pause}</footer>`
+	const pause = motion ? `<button type="button" class="btn quiet sm ul-notch" data-motion hidden>${esc(COPY.pause)}</button>` : ""
+	return `<footer class="l-foot ul-notch">${lockup()}${link("", LINKS.source, esc(COPY.footer.source))}${legal}${facts}${pause}</footer>`
 }
 
 export function renderBody(): string {
-	return `<div class="land" id="land"><div class="land-in">${nav()}<main class="land-main">${hero()}${experiments()}${caveat()}</main>${footer()}</div></div>`
+	return `<div class="land" id="land"><div class="land-in">${nav()}<main class="land-main">${hero()}${experiments()}${caveat()}</main>${footer(true)}</div></div>`
 }

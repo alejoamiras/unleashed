@@ -1,9 +1,11 @@
 /**
  * The build guard's rules over a built dist/, as pure functions of its files. Imports nothing but
- * node:crypto and the content file, so the whole check is short enough to read.
+ * node:crypto, the content file and the legal pages' data, so the whole check is short enough to read.
  */
 import { createHash } from "node:crypto"
+import { LEGAL_DOC_IDS } from "@unleashed/legal"
 import { CANONICAL, LINKS } from "../src/content.ts"
+import { LEGAL_PAGES } from "../src/legal-pages.ts"
 
 /** dist/ as `relative path → bytes`. */
 export type Dist = ReadonlyMap<string, Uint8Array>
@@ -11,7 +13,12 @@ export type Dist = ReadonlyMap<string, Uint8Array>
 const MAX_JS_BYTES = 40_000
 const MAX_NON_FONT_BYTES = 200_000
 const FONT_FILES = ["AtkinsonHyperlegibleNext", "AtkinsonHyperlegibleMono", "SixtyfourConvergence-subset"]
-const ALLOWED_URLS = new Set<string>([...Object.values(LINKS), CANONICAL])
+const PAGES = ["index.html", ...LEGAL_PAGES.map((page) => page.file)]
+// A provider's policy URL is https: the package's own test holds it to that.
+const POLICY_URLS = LEGAL_PAGES.flatMap((page) => page.doc.sections.flatMap((s) => s.blocks))
+	.flatMap((block) => (block.kind === "providers" ? block.rows : []))
+	.map((row) => row.policyUrl)
+const ALLOWED_URLS = new Set<string>([...Object.values(LINKS), CANONICAL, ...LEGAL_PAGES.map((page) => page.url), ...POLICY_URLS])
 /*
  * The link rules catch a link nobody meant to ship. They are no defence against build tooling, which
  * is trusted: it could navigate from the script bundle, where no HTML check looks. Tampering shows as
@@ -46,7 +53,7 @@ export function wildcardHeaders(headersFile: string): Map<string, string> {
 }
 
 function checkPresence(dist: Dist): string[] {
-	return ["index.html", "_headers", "build.json"].filter((path) => !dist.has(path)).map((path) => `missing ${path}`)
+	return [...PAGES, "_headers", "build.json"].filter((path) => !dist.has(path)).map((path) => `missing ${path}`)
 }
 
 function checkCsp(headers: Map<string, string>): string[] {
@@ -58,19 +65,28 @@ function checkCsp(headers: Map<string, string>): string[] {
 	return errors
 }
 
-function checkHtml(html: string): string[] {
+function checkHtml(page: string, html: string): string[] {
 	const errors: string[] = []
-	if (/<script(?![^>]*\ssrc=)[^>]*>/.test(html)) errors.push("index.html has an inline <script>")
-	if (/\sstyle=/.test(html)) errors.push("index.html has a style= attribute")
-	if (HTTP_EQUIV.test(html)) errors.push("index.html has an http-equiv meta")
-	if (FOREIGN_ENTITY.test(html)) errors.push("index.html has a character reference the renderer never emits")
+	if (/<script(?![^>]*\ssrc=)[^>]*>/.test(html)) errors.push(`${page} has an inline <script>`)
+	if (/\sstyle=/.test(html)) errors.push(`${page} has a style= attribute`)
+	if (HTTP_EQUIV.test(html)) errors.push(`${page} has an http-equiv meta`)
+	if (FOREIGN_ENTITY.test(html)) errors.push(`${page} has a character reference the renderer never emits`)
 	for (const [, name, ...quoted] of html.matchAll(DESTINATION)) {
 		const value = quoted.find((v) => v !== undefined) ?? ""
 		if (ALLOWED_URLS.has(value)) continue
 		if (name.toLowerCase() === "content" ? URL_LIKE.test(value) : !LOCAL_PATH.test(value))
-			errors.push(`index.html links outside LINKS: ${name}=${value}`)
+			errors.push(`${page} links outside LINKS: ${name}=${value}`)
 	}
 	return errors
+}
+
+/** The documents are build-time data: a script that carries one has pulled them into the page's JavaScript. */
+function checkScripts(dist: Dist): string[] {
+	return [...dist.keys()]
+		.filter((path) => path.endsWith(".js"))
+		.flatMap((path) =>
+			LEGAL_DOC_IDS.filter((id) => text(dist, path).includes(id)).map((id) => `${path} carries the legal document ${id}`),
+		)
 }
 
 function checkFonts(dist: Dist): string[] {
@@ -95,17 +111,20 @@ function checkSizes(dist: Dist): string[] {
 	]
 }
 
-/** build.json's identity, matched against the HTML and the channel's markers. */
+/** build.json's identity, matched against every page and the channel's markers. */
 function checkIdentity(dist: Dist, headers: Map<string, string>): string[] {
 	const meta = JSON.parse(text(dist, "build.json") || "{}") as { buildId?: string; channel?: string }
-	const html = text(dist, "index.html")
 	const errors: string[] = []
-	if (!meta.buildId || !html.includes(`<meta name="unleashed-build" content="${meta.buildId}">`))
-		errors.push("build id missing or not in index.html")
 	const preview = meta.channel === "preview"
 	if (meta.channel !== "production" && !preview) errors.push(`unknown channel '${meta.channel}'`)
 	if (preview !== headers.has("x-robots-tag")) errors.push("X-Robots-Tag must be sent by previews only")
-	if (preview !== html.includes('<meta name="robots" content="noindex">')) errors.push("the noindex meta must be in previews only")
+	for (const page of PAGES) {
+		const html = text(dist, page)
+		if (!meta.buildId || !html.includes(`<meta name="unleashed-build" content="${meta.buildId}">`))
+			errors.push(`build id missing or not in ${page}`)
+		if (preview !== html.includes('<meta name="robots" content="noindex">'))
+			errors.push(`${page}: the noindex meta must be in previews only`)
+	}
 	return errors
 }
 
@@ -116,7 +135,8 @@ export function checkDist(dist: Dist): string[] {
 	const headers = wildcardHeaders(text(dist, "_headers"))
 	return [
 		...checkCsp(headers),
-		...checkHtml(text(dist, "index.html")),
+		...PAGES.flatMap((page) => checkHtml(page, text(dist, page))),
+		...checkScripts(dist),
 		...checkFonts(dist),
 		...checkSizes(dist),
 		...checkIdentity(dist, headers),
