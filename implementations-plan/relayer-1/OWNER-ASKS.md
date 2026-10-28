@@ -43,3 +43,21 @@ refund testnet never makes.
 **Recommendation.** A, until testnet traffic outgrows one faucet's rate.
 
 **What ships now.** A: the service logs `low-inventory` and never claims from any faucet.
+
+## 3. Workers Paid for the relayer's account
+
+**Surface.** None in the app. It decides whether the Cloudflare account that hosts the relayer runs Workers Paid.
+
+**Why.** A run reads eight log ranges, balances and fill statuses, and a fill sends an approval and a fill and polls
+both receipts: tens of subrequests and a few signatures. Workers Free allows 50 subrequests and 10 ms of CPU per cron
+run; Workers Paid allows 30 s of CPU and many more subrequests. On Free, a run that fills can be cut off between its
+approval and its fill (the next run revokes nothing; the exact allowance stays until a later fill spends it).
+
+**Options.**
+
+- **A. Workers Paid** on the account that already hosts the app and the landing.
+- **B. Free.** Runs that only scan fit; runs that fill may stop midway.
+
+**Recommendation.** A.
+
+**What ships now.** The Worker's code and config; nothing deploys until the owner connects it (runbook step 2).

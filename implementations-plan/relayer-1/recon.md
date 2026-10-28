@@ -54,3 +54,11 @@ two-anvil harness, and an external-facts search. The parent checked the decisive
 - `implementations-plan/follow-ups.md` "Testnet fills are manual" is the open item this lane resolves.
   "Observe an expired testnet deposit's refund" is answered by Across's docs: there is none.
 - No open issue, no closed `known-limit` issue and no open PR touch this area (`gh issue list --state all`).
+
+## Revision for ask13 (hosted Worker)
+
+Rows above that say "from `@unleashed/bridge-core`" assumed a Bun process. A Worker cannot load the package root
+(`src/index.ts` reaches Aztec through `crosschain-discovery.ts`, `manifest-v2.ts` and `private-fuel.ts`); it imports
+`@unleashed/bridge-core/across-fill`, whose graph is viem only (`src/across-fill-bundle.test.ts`). The private
+`decodeMessage` is reached through the new pure export `decodeRouterMessage`. Workers Paid allows 10,000 subrequests per
+invocation (developers.cloudflare.com/workers/platform/limits); Free allows 50.
