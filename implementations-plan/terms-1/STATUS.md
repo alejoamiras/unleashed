@@ -7,3 +7,5 @@
 - 2026-10-28 phase 2: dual audit round 1 done (Codex conditional approve, 9 findings; Opus conditional approve, 13 findings); all verified and dispositioned in plan.md; OWNER-ASKS gained A12–A14.
 - 2026-10-28 phase 3: final fresh Codex pass: conditional approve (7 findings, all applied), then approve after two resumed verification rounds.
 - 2026-10-28 approval gate: plan committed on worktree-terms-1; awaiting the orchestrator's approval and the owner's answers (OWNER-ASKS.md).
+- 2026-10-28 a1: orchestrator approved the plan as committed (3134526); implementing a1 with blanks open; owner facts arrive as ORCHY-STEER notes.
+- 2026-10-28 a1 P1 gate: lint pass, typecheck:all pass, apps/tools test pass (135 files, 1810 tests, twice).
