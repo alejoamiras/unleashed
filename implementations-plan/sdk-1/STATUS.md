@@ -18,3 +18,6 @@
 - 2026-10-28 a1 1.2 gate: lint ok; typecheck:all ok; test:all exit 0; audit:tools exit 0; test:integration 47/47 (1915 s); e2e:tools running
 - 2026-10-28 ORCHY-STEER (lane mainnet-1): fuelRoute.fuel gains fjPerTx and calibrate writes it (D30); Branch F documents mainnet calibration and stops before it until a mainnet route canary exists (D31, follow-ups)
 - 2026-10-28 a1 1.3 and 1.4 written and committed (f87ab95, b4904ec); unit tests, typecheck and lint green; Codex round 1 and the Opus review started on fb90e36..HEAD while e2e finishes
+- 2026-10-28 a1 review round 1: Codex 2 Medium 1 Low, Opus 1 Medium 3 Low; fixed the journal stamp, the strict paused gate, the portal check and the fuel floor; known limits #30 and #31 filed closed; committed 2fb28cf
+- 2026-10-28 a1 1.2 gate: e2e:tools 78/78 (1.6 h, 1 worker); 1.2 ✓
+- 2026-10-28 ORCHY-STEER (PR #29 merged): merging origin/main before the 1.3 gate; packages/testnet-relayer kept building

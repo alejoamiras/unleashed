@@ -305,7 +305,7 @@ wall-clock before and after in the PR body.
   halmos command CI runs (`_bridge-contracts.yml`), all pass; the halmos count assertion is raised by the new proofs.
   Layers: unit, symbolic.
 
-**Phase 1.2 — the manifest and the send binding.**
+**Phase 1.2 — the manifest and the send binding.** ✓
 - `manifest-v2.ts`: a top-level `fuelRoute { depositRouter, gate, guardian, permit2, fuelSwapper?, fuel { slippageBps,
   minFuelFj } }`, legal only with `bridge: null`; the `refineRouterBlock` rules apply to it (chain 1 refuses a
   swapper; other chains require one). Existing manifests parse unchanged.
