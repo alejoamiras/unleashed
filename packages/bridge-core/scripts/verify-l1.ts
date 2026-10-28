@@ -651,15 +651,9 @@ async function checkCodeHash(pub: PublicClient, out: string, contract: string, a
 	}
 	const built = hexToBytes(object)
 	const onChain = hexToBytes(((await pub.getCode({ address })) ?? "0x") as Hex)
-	const refs = artifact.deployedBytecode?.immutableReferences
-	if (!refs) {
-		// A length match over unmasked bytes proves nothing about the logic between the immutables.
-		if (strict) fail(label, "the artifact records no immutableReferences — the masked comparison cannot run")
-		else if (onChain.length === built.length) ok(`${label} length ${built.length} — immutables-masked comparison unavailable`)
-		else fail(label, `length ${onChain.length} != build ${built.length}; immutables-masked comparison unavailable`)
-		return
-	}
-	const hashes = maskedRuntimeHashes(onChain, built, refs)
+	// forge omits immutableReferences for a contract with none (FuelOnlyGate). An empty mask compares every
+	// byte, and the build holds zeros where immutables sit, so dropped spans fail unless the deployed values are zero too.
+	const hashes = maskedRuntimeHashes(onChain, built, artifact.deployedBytecode?.immutableReferences ?? {})
 	same(`${label} hash (immutables and metadata masked)`, hashes.onChain, hashes.built, "build")
 }
 

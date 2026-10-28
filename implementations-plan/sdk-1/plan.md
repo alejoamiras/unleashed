@@ -608,6 +608,12 @@ Arc a1, the implementation (`git diff fb90e36..HEAD`):
   `parseNetwork` cap); the portal check trusted the portal's own `ROLLUP()` (fixed: the canonical rollup's
   `getFeeAssetPortal()` must name it, verified on mainnet); a promoted route cannot be replaced (fails closed: known
   limit #31). It found the testnet `live-intent` path unchanged.
+- **Round 2, Codex (same session resumed, after `origin/main` merged): no new material finding.** It exercised
+  each fix's guard and its negative test, read `getFeeAssetPortal()` on mainnet's canonical rollup through the
+  installed ABI, and accepted #30 and #31 as known limits. Converged.
+- **Round 3, Codex (same session): no new material finding** on the one fix after round 2 (strict `verify-l1` refused
+  `FuelOnlyGate`'s artifact, which records no immutables; an absent map is now an empty mask). It tightened the fix's
+  comment. Closed at the three-round cap.
 
 ## Delivery
 

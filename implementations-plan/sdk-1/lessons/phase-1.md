@@ -16,3 +16,12 @@
   test was compile-checked into a scratch `--out` instead.
 - **Review round 1.** Codex (`gpt-6.1-sol`, high) and Opus 5.5 both found that a first route's journal stamp failed
   its own intent; see the plan's Audit verdicts. Known limits filed closed: #30, #31.
+- **Review round 2.** Codex resumed on the merged head: no new material finding; the loop converged at two rounds.
+- **`forge fmt --check` is not a CI gate.** On forge 1.4.1 it flags 21 files the arc never touched; the arc's own five
+  Solidity files are clean, checked by name.
+- **1.3: forge omits `immutableReferences` for a contract with none.** Strict `verify-l1` refused any artifact without
+  them, so a fuel route (its `FuelOnlyGate` has no immutables) could never pass the promotion gate; only the sandbox
+  integration test, run on the merged head, caught it. An absent map is now an empty mask, which compares every byte
+  so a build that dropped real spans fails unless their deployed values are zero.
+- **Review round 3.** Codex on the verifier fix: no new material finding; it corrected the fix's comment, which
+  claimed dropped spans always fail. Loop closed at its three-round cap.

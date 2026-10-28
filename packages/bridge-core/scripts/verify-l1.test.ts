@@ -38,6 +38,13 @@ describe("maskedRuntimeHashes", () => {
 		expect(() => maskedRuntimeHashes(extended, runtime(CODE, 0x22), REFS)).toThrow(/length 90 != build 89/)
 	})
 
+	it("with no immutables recorded, matches an exact deployment and fails one carrying immutables", () => {
+		const exact = maskedRuntimeHashes(runtime(CODE, 0x11), runtime(CODE, 0x22), {})
+		expect(exact.onChain).toBe(exact.built)
+		const unmasked = maskedRuntimeHashes(runtime(DEPLOYED, 0x11), runtime(CODE, 0x22), {})
+		expect(unmasked.onChain).not.toBe(unmasked.built)
+	})
+
 	it("refuses a build whose trailer length is bogus instead of masking code", () => {
 		const overlong = runtime(CODE, 0x22)
 		overlong.set([0xff, 0xff], overlong.length - 2)
