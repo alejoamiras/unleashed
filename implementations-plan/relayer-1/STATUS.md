@@ -17,3 +17,5 @@
 - 2026-10-28 arc a1 phase 5 green: two-anvil suite S1–S6 in about 5 s, in the forge job; next phase 6 (runbook and docs).
 - 2026-10-28 arc a1 phase 6 green: relayer README and runbook, AGENTS/README/skill/bridge-core pointers; next the Codex fix loop on a1's diff.
 - 2026-10-28 fix loop round 1 (Codex reject, 4 findings adopted, faac3c8). Owner answered OWNER-ASKS #2 (both: manual plus a Circle faucet-API restock, a new arc after a1) and #3 (Workers Paid); #1 open.
+- 2026-10-28 fix loop converged: round 2 Codex approve (two non-blocking items adopted, a02ac14); all a1 gates green on 1606d00 (lint, typecheck:all, test:all, test:ci-gating, lint:actions, audit:tools, doc-links, integration 3.6 s). Arc a3 (Circle restock) planned; its Codex pass running.
+- 2026-10-28 arc a3 (Circle faucet restock) planned: Codex reject (4 adopted) then approve. No new owner question on a surface a1 touches; a1 goes to its PR.

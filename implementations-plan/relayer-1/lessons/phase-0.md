@@ -58,3 +58,11 @@ magnitude under it); the nonce check is no lock; per-deposit status reads let du
 CLI cannot rescue relayer-key deposits. First resume: reject on a new path: dropping filled deposits by `depositId`
 lets a stranger's fill of another relay suppress a real one; fixed by moving discovery's full-identity check into
 `across-relay.ts` (`fillsRelay`). Second resume: approve, no new material finding.
+
+## Consults after the revision
+
+- Fix loop round 1 on a1's diff (Codex gpt-6.1-sol, high, read-only): reject, four findings adopted (`faac3c8`).
+  Beside it, an Opus general-purpose diff review: eight findings adopted (`9dfc0a8`).
+- Round 2 (resumed): approve; two non-blocking items adopted (`a02ac14`).
+- Arc a3's plan (the owner's answer to OWNER-ASKS #2; a Sonnet research agent on Circle's faucet API, its facts
+  re-fetched by the lead): Codex reject, four findings adopted; resumed: approve.

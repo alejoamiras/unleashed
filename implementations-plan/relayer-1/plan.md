@@ -35,6 +35,7 @@ built for A and stays: its exports are promised to sdk-1 and the CLI uses its ex
 |---|---|---|
 | ask4 | a1 | The service, its unit and two-anvil tests, the runbook. Restock is manual: Across's testnet repays no fill and no automated channel with permitting terms exists (F4, F5); `OWNER-ASKS.md` #2. |
 | ask13 | a1, a2 | a1: the Worker, its secret, its config and the runbook's owner steps. a2: point `TESTNET_FILLER` at the dedicated key once the owner has created it (one constant and its tests). a2 waits for that owner step. |
+| `OWNER-ASKS.md` #2, answered "both" | a3 | The manual top-up stays; the Worker also requests a Circle faucet-API drip when its Sepolia USDC runs low, at most once a day, with the Circle key as a second Worker secret, off without it. After a1, independent of a2. |
 | Issues | none | `gh issue list --state all` shows none in this area. |
 
 **UI impact:** none. Recorded owner decision: "none recorded: this lane changes nothing a person sees. Any change
@@ -237,8 +238,8 @@ minute until its deadline (known limit 3).
   refuses, recovering to a receiver Sepolia USDC blacklists) take a run's eight tries ahead of any send no larger or
   later, until their deadline; reopen if a write-free refusal is shown without a blacklisted receiver.
 - **A lying source RPC** can invent a deposit, since the receipt re-read asks the same provider: one output each;
-  exploitability unknown; the owner can switch to a keyed provider (its var deleted from `wrangler.jsonc`, a secret
-  of the same name set: a secret cannot share a var's name).
+  exploitability unknown; the owner can switch to a keyed provider (its var deleted from `wrangler.jsonc` and a secret
+  of the same name set, in one change: every deploy re-applies the config's vars).
 - **Supply chain and CI.** No new external package (wrangler is already pinned in the lockfile); no Cloudflare
   credential and no new permission in Actions; Workers Builds deploys.
 
@@ -308,7 +309,7 @@ as `filler`; own `vitest.integration.config.ts`, gated on `RELAYER_INTEGRATION=1
 | S2 | deposits naming another relayer, a foreign router, or an output over the terms are ignored at no transaction | the never-happens control beside S1 on real logs |
 | S3 | a deposit above the float and a smaller one: the same run skips the first on `balance` and fills the second; after a `mint` the next run fills the first | the poisoned-first-candidate path and real balance reads across runs |
 | S4 | a deposit inside the deadline margin by the destination clock is skipped with no fill | needs two chain clocks |
-| S5 | a run held at its fill's nonce read, its approval landed; meanwhile a second run, on a source node lagging behind that deposit, approves, fills and revokes an older one; the first run's fill then reverts on the revoked allowance (`failed`), and a later run fills it: each deposit filled once, the filler's USDC down by exactly the two outputs, no allowance left | token safety when one run's approval and revoke land inside another's, which stubs cannot interleave |
+| S5 | a run held at its `fillRelay` write, its approval landed; meanwhile a second run, on a source node lagging behind that deposit, approves and fills an older one, its exact fill using up the allowance; the first run's fill then reverts (`failed`) and it revokes, and a later run fills its deposit: each deposit filled once, the filler's USDC down by exactly the two outputs, no allowance left | token safety when one run's approval and fill land inside another's, which stubs cannot interleave |
 | S6 | a stranger fills a relay reusing an app deposit's origin and id (another recipient, no message, no exclusivity) before the run: the app deposit is still filled | the full-identity match on real `FilledRelay` logs |
 
 CI: run `bun run --cwd packages/testnet-relayer test:integration` in the forge job of `_bridge-contracts.yml` after
@@ -352,6 +353,57 @@ in-flight sends naming the canary at the switch are filled by hand with `fill-te
 from then on `fill-testnet.ts` fills canary deposits only (the relayer key's fallback is `scripts/relayer.ts once`).
 **Validation gate.** `bun run audit:tools`, `bun run test:all`, `bun run e2e:tools` on the cross-chain specs at retry 0.
 
+### Arc a3 — restock through Circle's faucet API (after a1)
+
+The owner's answer to `OWNER-ASKS.md` #2: manual claims stay, and the Worker requests a drip when its Sepolia USDC
+runs low, at most at the API's documented rate, with the Circle API key as a second Worker secret; no key, no
+request. Facts in `recon.md` § Restock: the API is `POST https://api.circle.com/v1/faucet/drips` with a Bearer key,
+answers `204` or `400 { code, message }`, "requires upgrading to mainnet", and documents no rate and no amount. The
+web faucet documents 20 USDC per 2 h per address and chain; the console faucet (low confidence) once per 24 h.
+
+| File | Contract |
+|---|---|
+| `src/restock.ts` | `restock({ key, filler, balance, scheduledTime, fetch, log })`, never throws. Sends nothing unless `key` is a non-empty string, `scheduledTime` falls in the first minute of a UTC day (`RESTOCK_PERIOD_MS` = 86,400,000) and `balance` is under `RESTOCK_BELOW` = 20 USDC. Then one `POST` to the constant URL: `Authorization: Bearer <key>`, a random `X-Request-Id`, body `{ address: filler, blockchain: "ETH-SEPOLIA", usdc: true }`, `redirect: "error"`, a 10 s timeout. `204` logs `restock-requested`; anything else, a thrown fetch or the timeout logs `restock-refused` with the status, Circle's `code` and its message's first line (URLs masked and the key's text replaced before it is cut to 200 characters). No retry. |
+| `src/worker.ts` | `scheduled(controller, env)` passes `controller.scheduledTime` to `scheduledRun`. After `relayOnce`, only on an outcome that proves its chain and signer checks passed (`idle`, `busy`, `gas-price`, `filled`, `already-filled`, `skipped`; never `refused` or `failed`, which an RPC error in those checks also yields), with `CIRCLE_API_KEY` set and in the restock minute, it reads the filler's Sepolia USDC once and calls `restock`. `scripts/relayer.ts once` passes no time, so a manual run never restocks. |
+| `src/log.ts` | `RelayEvent` gains `restock-requested` and `restock-refused`. |
+| `README.md` | The two log lines; runbook step 6 (below); known limit 6: one eligible minute a day means a float spent just after it waits up to a day for a drip, past a send's 2 h window, so manual top-ups stay; a slot whose run fails skips that day; the API's real cooldown and amount are undocumented, so a request inside it is refused; a duplicated trigger of one scheduled time sends a second request; and whether the API funds a non-Circle address is unconfirmed until the first drip. |
+
+**Security.** One eligible scheduled minute per UTC day and one attempt per invocation, with no state: overlapping
+runs of other minutes cannot add requests. This is not an exact bound: a duplicated trigger of one scheduled time,
+which Cloudflare's docs neither promise nor rule out, sends a second request, and two days' requests can fall under
+24 elapsed hours apart; an exact bound needs shared atomic state or upstream idempotency, out of scope, so it is part
+of known limit 6. The API documents no rate (recon); 24 h is a conservative assumption from the console faucet's
+low-confidence figure, not documented compliance. Every request follows `relayOnce`'s completed chain and signer
+checks, names `ETH-SEPOLIA` as a constant and goes to a constant HTTPS URL with redirects refused. The key never
+reaches a log, a file, CI or an agent: it is the owner's, pasted into the dashboard secret. A holder of the shared
+build token could read it, and a Standard Circle key "grants read/write access to all APIs, including newly
+introduced endpoints", including billed ones on an upgraded account: the runbook asks for a Restricted Access key
+with one product and nothing else, and no entity secret ever reaches the Worker (developer-wallet transfers need it,
+so the key alone cannot move wallet funds). Restock never delays a fill: it runs after the run's write, and any
+failure is a log line. Circle's terms on scheduled API claims are unread (F5); the owner reads them during the
+upgrade.
+
+**Tests** (`src/restock.test.ts`, `src/worker.test.ts`, stubs for `fetch` and the clients): the request in the slot
+below the threshold (URL, method, headers, body, `redirect`, one call, `restock-requested`); no request without a key,
+outside the slot or at the threshold (one table); a `400` with Circle's error, a rejected fetch and a timeout each log
+`restock-refused` with no key text and never throw; the Worker passes `scheduledTime`, restocks after a run and never
+after a refused one, a failed one (a chain-id read that throws) or one with no `scheduledTime` (the manual `once`
+path). An explicit exception to the repository's real-data test rule: a live call needs the owner's key and spends
+the day's drip, so no `describe.skipIf` test makes one; runbook step 6's first `restock-requested` and the balance
+rising are that check.
+
+**Runbook step 6 (optional, the owner's).** Upgrade a Circle developer account for the faucet API (Circle: "requires
+upgrading to mainnet"); create a Restricted Access key with no permission on any product but the one the drip
+endpoint needs (it sits in the Wallets API reference), in whichever environment, TEST or LIVE, the endpoint accepts
+(Circle keeps them apart; unconfirmed which), store it in 1Password and paste it into the Worker secret
+`CIRCLE_API_KEY`. Never give the Worker an entity secret. At the next 00:00 UTC run with the float under 20 USDC, the logs show
+`restock-requested` and the Sepolia USDC rises by the drip; `restock-refused` names Circle's code. Delete the secret
+to turn it off. The manual faucet stays the fallback.
+
+**Validation gate.** `bun run lint`, `bun run typecheck:all`, `bun run --cwd packages/testnet-relayer test`,
+`bun run test:all`, `bun run audit:tools`, `bun test scripts/ci-cd/doc-links.test.ts`. Pass: exit 0 each; the
+restock tests fail when the slot check, the threshold or the key check is removed (mutation, logged in lessons).
+
 ## Decision ledger
 
 | # | Decision | Rejected | Why |
@@ -368,7 +420,9 @@ from then on `fill-testnet.ts` fills canary deposits only (the relayer key's fal
 | D13 | `scripts/relayer.ts once`: the Worker's own run from the owner's machine | unpin `fill-testnet.ts`; no manual path | the canary CLI keeps its pin; the fallback is the code the Worker runs |
 | D9 | integration test on two anvils at the real addresses via `anvil_setCode` | anvil addresses with an injected route | the production route runs unchanged |
 | D10 | integration in the forge job | a new job or workflow | `out/` is built there; no new required check |
-| D11 | manual float top-up | Circle API faucet | the owner's account and terms (`OWNER-ASKS.md` #2) |
+| D11 | manual float top-up, plus a Circle faucet-API drip in a3 | manual only | the owner's answer to `OWNER-ASKS.md` #2 |
+| D14 | a3 attempts once per invocation, only in the scheduled minute that starts a UTC day, below 20 USDC | every run while low; a stored timestamp (KV, a Durable Object); every 2 h | the API documents no rate, so a one-minute loop would hammer a `400`; the clock gives the cadence with no state; 2 h is the web faucet's rate, not the API's; one constant moves once Circle states it |
+| D15 | a3's restock follows `relayOnce`, only on an outcome that proves its checks passed | restock first; any outcome but `refused` | the chain and signer checks gate every outbound call (an RPC error in them yields `failed`); a fill is never delayed |
 
 ## Audit verdicts
 
@@ -401,9 +455,9 @@ Second resume: **approve**, no new material finding.
 
 **Fix loop on a1's diff.** Round 1: Codex **reject**, four findings, all verified and adopted: (1) the fill-log
 bucket by deposit id was rebuilt on each log, quadratic in a stranger's fills of one id (demonstrated): it appends;
-(2) S5's two runs signed identical transactions, so it proved no interleaving: it now holds a run at its fill's nonce
-read while a second run on a lagging source approves, fills and revokes another deposit, and the held fill reverts on
-the revoked allowance; (3) the "no per-deposit read" unit test now counts `readContract`; (4) two comments overstated
+(2) S5's two runs signed identical transactions, so it proved no interleaving: it now holds a run at its `fillRelay` write
+while a second run on a lagging source approves and fills another deposit, using up the allowance, and the held fill
+reverts; (3) the "no per-deposit read" unit test now counts `readContract`; (4) two comments overstated
 (the recovery goes to the message's fallback receiver; the message cap bounds calldata, not gas) and three restated
 their line. Known limit 2 also names a provider's outage or limits.
 
@@ -414,6 +468,18 @@ refusal (only the source's was tested); seven `classify` rows (input token and a
 limit 1 names a stranger's drain, limit 2 a stranger's log flood, a new limit 5 covers eight deposits made
 unfillable by a blacklisted fallback receiver (needs unsupported conditions); a keyed RPC replaces its var with a
 secret of the same name; two calendar dates dropped. `STATUS.md` keeps its dated lines, the program's format.
+
+Round 2 (resumed on `8049992..9dfc0a8`): **approve**, no new material finding; all eleven fixes verified, the capped
+approval simulated on PublicNode (block 12,014,502, gas limit 199,999,619). Two non-blocking items adopted: S5 holds at
+the wallet's `fillRelay` write instead of counting nonce reads (viem may read the nonce through
+`eth_fillTransaction`), and its description drops a revoke the second run never sends.
+
+**Arc a3's plan (OWNER-ASKS #2's answer).** Codex **reject**, four findings, all adopted, none adding state: the
+daily slot is one eligible minute, not an exact bound (duplicated triggers; no documented API rate), now stated and
+in known limit 6; `failed` does not prove the chain checks passed (a throwing chain-id read yields it), so restock
+runs only on outcomes that do; the runbook asks for a Restricted Access key and no entity secret, since a Standard
+key reaches every API; known limit 6 adds a float spent just after the slot.
+Resumed: **approve**, no remaining or new material finding.
 
 ## Post-implementation
 
@@ -437,11 +503,11 @@ arc (`ARC_FAILED`).
    "feat(testnet-relayer): fill exclusive testnet deposits from a cron worker"`. Body: what and why, gates and
    outcomes, the integration runtime, `Delivers ask4`, `Delivers ask13` (a2 completes the key switch), and
    `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Then `gh pr checks <n> --watch` once, bounded.
-3. **Close-out** (in a2's PR, or a1's if a2 is dropped; after merging `origin/main` and reading what changed in the
+3. **Close-out** (in the later of a2's and a3's PRs, or a1's if both are dropped; after merging `origin/main` and reading what changed in the
    index and `lessons.md`): the `## Outcome` block after the front matter (date, status, PRs, `Known limits:`, `Open
    items:`, a line retiring the seeds); promote "Across's testnet settles no fill and refunds no deposit: a missed
    testnet deposit stays in the source pool" to `lessons.md`; delete `follow-ups.md`'s "Testnet fills are manual" and
-   "Observe an expired testnet deposit's refund"; file the five known limits as closed `known-limit` issues; `git mv`
+   "Observe an expired testnet deposit's refund"; file the known limits (five, a sixth with a3) as closed `known-limit` issues; `git mv`
    the folder to `implementations-plan/archive/relayer-1` in its own commit, one line in `archive/index.md`, delete
    `STATUS.md`. No row in `index.md`. Open work's homes:
 
@@ -461,8 +527,10 @@ arc (`ARC_FAILED`).
 
 ## Delivery
 
-Two arcs, sequential PRs against `main`, no stack. **a1** = Phases 1–6, from `worktree-relayer-1` (it holds the plan
-commit). **a2** = the pin, from `origin/main` after a1 merges and the owner has run runbook step 1; it carries the
+Three arcs, sequential PRs against `main`, no stack. **a1** = Phases 1–6, from `worktree-relayer-1` (it holds the
+plan commit). **a2** = the pin, from `origin/main` after a1 merges and the owner has run runbook step 1. **a3** = the
+restock, from `origin/main` after a1 merges, before or after a2; both edit the README and this plan, so the second
+rebases on the first. a3 stays inert until a2's pin, like the rest of the Worker. The later of a2 and a3 carries the
 close-out. `code_review: off`. No lanes: the phases share files.
 
 ## Seeds

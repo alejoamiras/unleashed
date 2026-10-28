@@ -62,3 +62,17 @@ Rows above that say "from `@unleashed/bridge-core`" assumed a Bun process. A Wor
 `@unleashed/bridge-core/across-fill`, whose graph is viem only (`src/across-fill-bundle.test.ts`). The private
 `decodeMessage` is reached through the new pure export `decodeRouterMessage`. Workers Paid allows 10,000 subrequests per
 invocation (developers.cloudflare.com/workers/platform/limits); Free allows 50.
+
+## Restock through Circle's faucet API (OWNER-ASKS #2's answer)
+
+| Fact | Source | Confidence |
+|---|---|---|
+| `POST https://api.circle.com/v1/faucet/drips`, Bearer key `PREFIX:ID:SECRET`; body `address`, `blockchain` (`ETH-SEPOLIA` among the enum), `native` / `usdc` / `eurc` booleans, default false; optional `X-Request-Id` (a UUID) | developers.circle.com/api-reference/wallets/programmable-wallets/request-testnet-tokens | high |
+| Responses: `204` "Successfully requested testnet tokens. No content in body."; `400` with `{ code: integer, message: string }`; no `429`, no retry header, no idempotency key documented | same page | high |
+| "Calling the `/v1/faucet/drips` API requires upgrading to mainnet." What the upgrade costs or requires is not stated | same page | high / unknown |
+| The API reference states no rate limit and no amount | same page | high |
+| Public web faucet: "20 USDC on testnet every 2 hours, per address, and per blockchain"; reCAPTCHA; no account | faucet.circle.com | high |
+| Developer Console faucet: 20 USDC, once per 24 h per testnet, ten requests per account per 24 h; funds Circle Wallets addresses only | a search summary of developers.circle.com's console faucet page, which now redirects to faucet.circle.com | low |
+| Whether the API funds an arbitrary EOA: its `address` is "associated with wallet (account), smart contract or other blockchain objects"; not confirmed for a non-Circle address | API reference | unknown |
+| Circle's Wallets APIs answer `429 Too Many Requests` past their rate limit (5 POST/s by default) | developers.circle.com/wallets/api-rate-limits | high |
+| A cron handler's `controller.scheduledTime`: "The time the `ScheduledEvent` was scheduled to be executed in milliseconds since January 1, 1970, UTC." Whether one scheduled time can run twice is not stated | developers.cloudflare.com/workers/runtime-apis/handlers/scheduled | high / unknown |
