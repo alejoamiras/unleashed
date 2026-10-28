@@ -529,8 +529,8 @@ canary holds the matrix's amounts on both chains.
   therefore pay the user's Sepolia wallet instead of depositing. Every testnet send's Across terms name the pinned
   `TESTNET_FILLER` as `exclusiveRelayer` until `fillDeadline`: the relayer's dedicated key, never the canary's. The
   `unleashed-testnet-relayer` Worker ([`packages/testnet-relayer`](../../../packages/testnet-relayer/README.md))
-  fills app sends each minute; canary rows name the canary, and `fill-testnet.ts` (canary key only) fills them by
-  hand.
+  fills app sends each minute; canary rows name the canary, which the canary run fills itself; `fill-testnet.ts` (canary key
+  only) is the by-hand fallback.
 - **Fill gas.** `sendFill` sends with the smallest doubling of the estimate whose `eth_simulateV1` logs equal those
   at the EIP-7825 cap. The Sepolia RPC must answer `eth_simulateV1` with per-call gas; PublicNode does.
 - **Terms.** Across's testnet API answers `AMOUNT_TOO_LOW` for the router message at 6 to 8 USDC, so rows run on

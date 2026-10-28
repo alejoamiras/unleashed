@@ -31,16 +31,17 @@ export function selfBuiltMaxDeposit(decimals: number): bigint {
 	return SELF_BUILT_MAX_WHOLE_TOKENS * 10n ** BigInt(decimals)
 }
 /**
- * The testnet relayer's dedicated key, a Worker secret: the one account app sends are filled from. Never the canary,
- * whose deposits name the canary and are filled by `fill-testnet.ts`, so the two never share a nonce.
+ * The testnet relayer's address; its key is the Worker's secret, and the Worker refuses a key that does not derive
+ * it. Never the canary, which fills its own deposits, so the two never share a nonce. A send built before this moves
+ * keeps naming the old address.
  */
 export const TESTNET_FILLER: Address = "0x6bF61c9C868fe8d1b3B3d977fBf80498DBD7Cf1F"
 
 const ETHEREUM_MAINNET = 1
 
 /**
- * Terms priced like Across's testnet quotes and timed from the source chain's head: the output keeps
- * `SELF_BUILT_RELAY_FEE_BPS` of `srcAmount`, the fill deadline is `SELF_BUILT_FILL_WINDOW_S` after the head,
+ * Terms priced like Across's testnet quotes and timed from the source chain's head: the output is
+ * `srcAmount` less `SELF_BUILT_RELAY_FEE_BPS`, the fill deadline is `SELF_BUILT_FILL_WINDOW_S` after the head,
  * and `filler` alone may fill until then. `etaSeconds` is the whole window: nobody quotes a fill time.
  *
  * @param l1ChainId The destination L1 of the manifest the deposit is built for.

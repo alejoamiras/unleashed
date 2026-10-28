@@ -59,7 +59,7 @@ and filling through a Worker-safe fill core moved into bridge-core's `src`: alwa
 owner accepted a testnet key in the shared Cloudflare account (ask13).
 
 **Revision.** The first approved draft ran a Bun process under a keyed run (option A). The owner then chose a hosted
-Worker and a dedicated key (ask13), and the orchestrator steered the design (`STATUS.md`). Phase 1 (`8cfea22`) was
+Worker and a dedicated key (ask13), and the orchestrator steered the design. Phase 1 (`8cfea22`) was
 built for A and stays: its exports are promised to sdk-1 and the CLI uses its extractions.
 
 ## Scope map
@@ -525,6 +525,22 @@ gate before its balance read. `RESTOCK_BELOW` is named for the web faucet's clai
 Round 2 (resumed): **approve**, no new material finding; the `"manual"` fix checked against Cloudflare's Request docs
 (a 3xx comes back as-is), the byte cap probed at 4,096 and 4,097 bytes and across split UTF-8. Its one informational
 item, two narrating test comments, is applied.
+
+**Fix loop on a2's diff and the close-out.** Round 1: Codex **reject**, three findings; beside it an Opus diff review,
+**approve** with nine minor ones. Both found the signer split sound: no path fills an app send with the canary key, and
+no mainnet path reads the pin. Adopted:
+- Codex, demonstrated: the by-hand fill of a send naming the canary must start more than 120 s before `fillDeadline`,
+  not "within its 2 h", or the fill core refuses it.
+- `selfBuiltTerms`' TSDoc had the fee backwards.
+- The pin's TSDoc now states that the Worker refuses a key that does not derive it, and that the canary fills its own
+  deposits: its matrix self-fills, and `fill-testnet.ts` is the by-hand fallback.
+- The runbook's rotation says who fills a send naming the old key.
+- Docs: a comment and a README row still said "by hand", and three lessons had drifted from their sources in the
+  rewrite; `lessons.md` is back under 8 KiB.
+
+Declined: Codex's literal pin of the address in a test. The test refuses the canary and both deploy signers, which
+covers the plausible regression, a revert; a copy of the literal pins only itself, and a wrong pin shows as
+`refused` on the first run.
 
 ## Post-implementation
 

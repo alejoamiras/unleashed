@@ -93,7 +93,8 @@ The agent never holds the key; every step below is the owner's.
    packages/testnet-relayer/testnet-relayer.env.example --slug relayer-address -- bun
    packages/testnet-relayer/scripts/relayer.ts address`. The owner runs `op-remote create <host> <id>`, which
    generates the key into 1Password, and approves; the run prints the address, never the key. `TESTNET_FILLER` is
-   pinned to that address in its own PR. A rotated key repeats this step, the pin and step 2's secret.
+   pinned to that address in its own PR. A rotated key repeats this step, the pin and step 2's secret; a send that
+   names the old key is filled by `scripts/relayer.ts once` with the old key, from a checkout before the pin moved.
 2. **Create the Worker.** In the Cloudflare dashboard, create it from Workers Builds with the settings in
    [`wrangler.jsonc`](wrangler.jsonc)'s header (root directory `packages/testnet-relayer`), and paste the key from
    1Password into the secret `RELAYER_PRIVATE_KEY`. Cron runs need Workers Paid: a run that fills makes up to about
@@ -114,8 +115,8 @@ The agent never holds the key; every step below is the owner's.
 
 A secret that does not derive `TESTNET_FILLER`, as in a rotation half done, makes the Worker refuse every run, and no
 run restocks. A send built before the pin moved names the canary, which the Worker ignores (`relayer`): fill it by
-hand with `fill-testnet.ts` and the canary key within its 2 h. From then on `fill-testnet.ts` fills the canary's own
-deposits only.
+hand with `fill-testnet.ts` and the canary key while more than 120 s of its window remain, since it refuses a fill
+closer to `fillDeadline`. From then on `fill-testnet.ts` fills the canary's own deposits only.
 
 ## Scripts
 
