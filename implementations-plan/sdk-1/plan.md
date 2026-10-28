@@ -325,7 +325,7 @@ wall-clock before and after in the PR body.
 - Validation gate: base commands; `bun run audit:tools`; the browser suite (the phase edits the app's claim code);
   `bun run --cwd packages/bridge-core test:integration`. Layers: typecheck, lint, unit, integration, e2e.
 
-**Phase 1.3 — the conductor, the verifier, the intent tooling.**
+**Phase 1.3 — the conductor, the verifier, the intent tooling.** ✓
 - `scripts/fuel-route.ts` behind `deploy-generation.ts deploy --fuel-route [--dry-run]`: deploy or adopt the gate
   (owner as given), then `deployDepositRouter(permit2, feeJuice.portal, gate, swapTarget, owner)` (`generation.ts:633`)
   with the Diamond `lifiBook(1).diamond` on chain 1; journal each step; read the bindings back; write
@@ -348,7 +348,7 @@ wall-clock before and after in the PR body.
   1.1 passes. The fork suite is an owner keyed run (archive `ETH_RPC_URL`) and a precondition of the runbook's
   promotion, not of the merge. Layers: unit, integration (sandbox).
 
-**Phase 1.4 — the runbook.**
+**Phase 1.4 — the runbook.** ✓
 - `bridge-generation` SKILL: "Branch F: mainnet fuel route" (preconditions: the security lane, the line gate,
   owner authorisation, the fork suite green; then intent build → keyed deploy → `verify-l1 --strict` → canary →
   promote). `UPDATE.md`: the line table. `contracts/bridge/evm/README.md`: the gate.

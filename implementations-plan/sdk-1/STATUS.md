@@ -21,3 +21,7 @@
 - 2026-10-28 a1 review round 1: Codex 2 Medium 1 Low, Opus 1 Medium 3 Low; fixed the journal stamp, the strict paused gate, the portal check and the fuel floor; known limits #30 and #31 filed closed; committed 2fb28cf
 - 2026-10-28 a1 1.2 gate: e2e:tools 78/78 (1.6 h, 1 worker); 1.2 ✓
 - 2026-10-28 ORCHY-STEER (PR #29 merged): merging origin/main before the 1.3 gate; packages/testnet-relayer kept building
+- 2026-10-28 merged origin/main (6382753; one README conflict); testnet-relayer typecheck and 19 tests green
+- 2026-10-28 a1 1.3 gate on the merged head: lint, typecheck:all, test:all, audit:tools, actionlint, ci-gating green; forge 172/172, halmos 18/18; test:integration 50/51, the failure a real bug (strict verify-l1 refused FuelOnlyGate's artifact, which records no immutables), fixed in 10e94ef, fuel-route file then 4/4; 1.3 ✓
+- 2026-10-28 a1 1.4 gate: doc-links 3/3; 1.4 ✓
+- 2026-10-28 Codex round 2 no new material finding; round 3 on the verifier fix no new material finding; loop closed at three rounds
