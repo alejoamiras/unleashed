@@ -83,6 +83,7 @@ jobs:
           2 FormalFactoryTest
           2 FormalCloneTest
           11 FormalDepositRouterTest
+          3 FormalFuelOnlyGateTest
           EXPECTED
 
           # A name listed twice is proved by two contracts, so it must pass twice: one passing
@@ -93,6 +94,9 @@ jobs:
           check_fromCaller_conservesReceived
           check_fromCaller_pullsOnlyFromCaller
           check_fuelOnly_noTokenLeg
+          check_gate_pausedRefusesFuelOnly
+          check_gate_refusesEveryTokenLeg
+          check_gate_setDepositsPaused_revertsForNonOwner
           check_noStandingApproval
           check_partialFeeAssetNeverIntoFeeJuicePortal
           check_permit_conservesUserFunds
@@ -113,8 +117,8 @@ jobs:
           done < <(sort proofs.want | uniq -c)
 
           summaries=$(grep -c '^Symbolic test result: ' halmos.clean || true)
-          if [ "$summaries" -ne 3 ]; then
-            echo "::error::expected 3 proof contracts to run, saw ${summaries}"
+          if [ "$summaries" -ne 4 ]; then
+            echo "::error::expected 4 proof contracts to run, saw ${summaries}"
             fail=1
           fi
           if grep -qE '^Symbolic test result: [0-9]+ passed; [1-9]' halmos.clean; then

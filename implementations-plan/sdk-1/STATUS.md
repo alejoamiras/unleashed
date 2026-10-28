@@ -12,3 +12,5 @@
 - 2026-10-28 double audit fixes applied (D11 trust roots, D22-D24); plan trimmed to 618 lines; final fresh Codex pass started (new session, sol high)
 - 2026-10-28 final fresh Codex pass: reject (H hostile registry→Outbox, M capabilitiesFor inputs, L paired builds); all accepted (D11, D25, 3.2); verification round: approve
 - 2026-10-28 plan complete; committed on worktree-sdk-1; awaiting the orchestrator's approval and the owner's answers (OWNER-ASKS §1-§6)
+- 2026-10-28 a1 started (plan approved by the orchestrator as committed at da846dd; a2-a5 wait for the owner's page)
+- 2026-10-28 a1 1.1 gate: forge build ok; forge test --no-match-contract Fork 172/172; halmos --match-contract '^Formal' 18/18 (FormalFuelOnlyGateTest 3); CI halmos assertion step simulated on the log: exit 0
