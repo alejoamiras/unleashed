@@ -161,7 +161,7 @@ filler. **Choice:** a small float topped up by hand on `low-inventory`.
 | `wrangler.jsonc` | `name` `unleashed-testnet-relayer`, `main` `src/worker.ts`, `triggers.crons` `["* * * * *"]`, `workers_dev` false, no routes, no assets, `observability` on; `vars` `BASE_SEPOLIA_RPC_URL` and `SEPOLIA_RPC_URL` (PublicNode). The secret `RELAYER_PRIVATE_KEY` is set in the dashboard. Workers Builds settings as in the landing's header comment. |
 | `src/route.ts` | `RelayerRoute { source: { chainId; spokePool; token }; destination: { chainId; spokePool; token; recipient; routers }; filler; maxInput }`. `testnetRoute(manifest, filler)` reads `network`, `l1ChainId`, `bridge.l1.depositRouter`, `legacyRouters` and the 84532 routing pair from the bundled testnet manifest JSON, and takes the pools and receiver from `lifiBook`. It throws unless the manifest is testnet on 11155111. A Bun test pins its reading against `parseManifestV2` on the same file. |
 | `src/select.ts` | `classify(d, route): IgnoreReason \| null`, pure. It admits F3's envelope: destination chain; `exclusiveRelayer` = `filler` and `exclusivityDeadline` = `fillDeadline` (F12); both tokens; recipient = `receiverAcrossV4`; `0 < input ≤ maxInput`; `0 < output ≤ selfBuiltTerms(…).outputAmount`; `fillDeadline − quoteTimestamp ≤ SELF_BUILT_FILL_WINDOW_S`; message ≤ 2,048 bytes and `decodeRouterMessage` accepts it, receiver ≠ 0, the step's `callTo` = `approveTo` in `routers`, both asset ids = the output token, `fromAmount` = the output, `requiresDeposit` false; the router call's `intent.token` = the output token and `minReceived` = `maxPull` = the output. |
-| `src/run.ts` | `relayOnce(c: RelayConfig): Promise<RunSummary>`, `RelayConfig { source: PublicClient; destination: Destination; filler; log }`, and `connectRelay(account, endpoints)`, which builds those clients over HTTP. Clients come in so the tests can stub or wrap them. Steps below. |
+| `src/run.ts` | `relayOnce(c: RelayConfig): Promise<RunSummary>`, `RelayConfig { source: PublicClient; destination: Destination; route; log }` (the route names the filler), and `connectRelay(account, route, endpoints)`, which builds those clients over HTTP. Clients come in so the tests can stub or wrap them. Steps below. |
 | `src/key.ts` | `relayerAccount(env)`: `RELAYER_PRIVATE_KEY` → account; a missing or malformed key is refused without echo. |
 | `src/worker.ts` | `export default { scheduled }`: `relayerAccount(env)`, `filler` = `TESTNET_FILLER`, then `relayOnce`. Minimal local types for the handler; no new type dependency. |
 | `src/log.ts` | One JSON line per event through `console.log`: `event`, `outcome`, `reason`, `relayHash`, `srcTx`, `fillTx`, amounts, `fillDeadline`. Never a key or an RPC URL; an error's first line only. |
@@ -271,7 +271,7 @@ negative case (`relayer`).
 **Validation gate.** `bun run --cwd packages/testnet-relayer test`, `bun run typecheck:all`, `bun run lint`,
 `bun run test:ci-gating`. Pass: exit 0 each. Layers: typecheck/lint, unit, CI gating.
 
-### Phase 4 — the run and the Worker
+### Phase 4 — the run and the Worker ✓
 
 Steps: write `run.ts`, `key.ts`, `worker.ts`, `scripts/relayer.ts`, the env template. Tests: `run.test.ts` with
 stubbed clients: chain or key mismatch refuses before any other read; deposits in the `FilledRelay` logs, late ones

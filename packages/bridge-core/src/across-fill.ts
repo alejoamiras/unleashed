@@ -499,5 +499,6 @@ export { SELF_BUILT_FILL_WINDOW_S, selfBuiltMaxDeposit, selfBuiltTerms, TESTNET_
 export { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
 export { type GasPricing, type GasTermsFor, boundedGasTerms } from "./gas-terms"
 export { lifiBook } from "./lifi-addresses"
+export { retried } from "./retried"
 export { type DecodedMessage, type DecodedRouterCall, decodeRouterMessage } from "./lifi-decode"
 export { type AcrossRelayData, acrossRelayHash, FILLED_RELAY, type FilledRelayIdentity, fillsRelay } from "./across-relay"

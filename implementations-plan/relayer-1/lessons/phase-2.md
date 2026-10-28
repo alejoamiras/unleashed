@@ -15,3 +15,13 @@
   failed. As `bunfig.toml` prescribes, the excludes went in locally for one install and came straight out; the
   committed `bun.lock` gained only the new workspace, and `bun install --frozen-lockfile` passes on the committed
   `bunfig.toml` (a frozen install never re-gates).
+
+# Phase 4
+
+- `relayOnce` takes its route rather than a bare filler: the Worker builds it from the bundled manifest, the tests
+  from the same file, so the route under test is the production one.
+- Two mutations prove the run tests bite: ending the run on any `FillRefused` fails the pass-over and dust cases;
+  matching fills by `depositId` fails the forged-fill case.
+- `wrangler deploy --dry-run` bundles the Worker in about 2 s: 786 KiB (161 KiB gzipped), viem and its crypto, no
+  Aztec module and no `node:` import.
+- Gate: lint, `typecheck:all` (five workspaces), `test:ci-gating`, `test:all` (relayer 19 tests), all exit 0.
