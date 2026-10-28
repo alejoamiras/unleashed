@@ -43,7 +43,7 @@ FOUNDRY_PROFILE=lifi forge build                                     # LI.FI's d
 forge test --no-match-contract Fork                                  # hermetic (CI)
 SEPOLIA_RPC_URL=… AZTEC_REGISTRY=… forge test --match-contract Fork   # live forks (opt-in; each skips without its endpoint, FactoryFork without the registry)
 LIFI_LIVE=1 bun ../../../packages/bridge-core/scripts/lifi-fixtures.ts --run   # LI.FI: fresh fixtures, then every Lifi*Fork at their blocks (opt-in)
-ETH_RPC_URL=… BASE_RPC_URL=… forge test --match-contract '^Lifi(Destination|StargateCompose|Replay)Fork$'   # replay the committed mainnet fixtures (archive RPCs)
+ETH_RPC_URL=… BASE_RPC_URL=… forge test --match-contract '^(Lifi(Destination|StargateCompose|Replay)|FuelRouteMainnet)Fork$'   # replay the committed mainnet fixtures (archive RPCs)
 forge build --ast --force && halmos --match-contract '^Formal'       # symbolic proofs (CI)
 forge snapshot --match-test test_gas_ --no-match-contract Fork --check --tolerance 2   # .gas-snapshot (CI)
 ```
@@ -93,7 +93,7 @@ committed `.gas-snapshot` for the metered first-time vs known `bridgeWithPermit(
 | symbolic | `FormalFactory`, `FormalClone`, `FormalDepositRouter`, `FormalFuelOnlyGate` — see the header of each for what halmos can and cannot model (it has no sha256, so `createPortal` itself is forge-only) |
 | adversarial | `BlackhatFactory` (F-1…F-9), `DepositRouterBlackhat` |
 | fork | `FactoryFork`, `DepositRouterPermit2Fork` (real Permit2 on a mainnet fork, `ETH_RPC_URL`) |
-| LI.FI fork | `LifiTestnetRailFork` (Base Sepolia → Across → Sepolia through LI.FI's deployed Diamond, receiver and Executor, into a portal or the router and swapper), `LifiDestinationFork` (Ethereum's receiver and Executor into the router: venue set, RFQ expiry, gas pin, recovery; and the Ethereum-origin entry, a Permit2 witness through the same recorded swap), `LifiStargateComposeFork` (compose gas floor and recovery), `LifiReplayFork` (a Base source transaction replayed into Ethereum's `lzCompose`) |
+| LI.FI fork | `LifiTestnetRailFork` (Base Sepolia → Across → Sepolia through LI.FI's deployed Diamond, receiver and Executor, into a portal or the router and swapper), `LifiDestinationFork` (Ethereum's receiver and Executor into the router: venue set, RFQ expiry, gas pin, recovery; and the Ethereum-origin entry, a Permit2 witness through the same recorded swap), `LifiStargateComposeFork` (compose gas floor and recovery), `LifiReplayFork` (a Base source transaction replayed into Ethereum's `lzCompose`), `FuelRouteMainnetFork` (the mainnet fuel route: a router bound to a `FuelOnlyGate`, a Permit2 signature, the recorded USDC → AZTEC swap to a public recipient and to the PrivateFPC, AZTEC 1:1, a refused token leg, the pause) |
 
 ## Threat model — the factory-bound portal
 

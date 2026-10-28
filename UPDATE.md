@@ -115,11 +115,15 @@ on these inputs, so they move only with a new generation.
     the digest's compatibility entry, the identity pins, the artifact digest and the descriptor's
     coherence with the constants. At the pinned address, absence is green, and a published instance
     must carry the expected original and current class. An RPC failure is an error, never absence.
-  - Mainnet keeps its own descriptor (`private-fpc-canonical-mainnet.json`, frozen at the FPC it
-    runs) and its scripts (`deploy-private-fpc-mainnet.ts`, `deploy-canonical-private-fpc.ts`, and
-    `fpc-dust-canary-mainnet.ts`, which keeps its own presence check). `PRIVATE_FPC_ADDRESS` follows
-    testnet, so a network may enable a bridge only while its descriptor names that address
-    (`bridge-generation.test.ts`).
+  - **The line table** (`packages/bridge-core/src/aztec-line.ts`) keys each L1 chain to its line's
+    descriptor: mainnet to `private-fpc-canonical-mainnet.json` (its own identity pins), every other
+    chain to the installed one. A line is supported only while its descriptor's `aztecVersion` is the
+    installed one; every send on another line is refused before signing, and a manifest's
+    `privateFpc` must name its line's FPC and digest. A bump moves both descriptors together when
+    mainnet's canonical rollup runs the new line, and only testnet's while mainnet's still runs the
+    old one, which then refuses until its own bump. `PRIVATE_FPC_ADDRESS` stays the installed line's.
+    Mainnet's FPC scripts (`deploy-private-fpc-mainnet.ts`, `deploy-canonical-private-fpc.ts`,
+    `fpc-dust-canary-mainnet.ts`) keep their own presence checks.
 - **Fee Juice contract**: bound through `FeeJuiceContract.withWallet` from
   `@aztec-labs/aztec.js/protocol`. The scripts take it from `packages/bridge-core/scripts/fee-juice-l2.ts`,
   which asserts the bound address equals the node's `protocolContractAddresses.feeJuice`, so a wrong

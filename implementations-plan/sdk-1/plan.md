@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: audited (final Codex pass: approve); awaiting the orchestrator's approval; a2–a5 also wait for the owner's interface answer
+status: approved; the owner answered OWNER-ASKS §1–§6; a1 in progress
 base: main fb90e366
 budget: "recon: 3 Sonnet explorers; drafts: driver + Codex + Opus 5.5; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -200,15 +200,15 @@ The full sketch is `OWNER-ASKS.md` §1. Its contracts, which every arc after a1 
   `FACTORY.depositsPaused()` on every entry (:235) and calls `createPortal` only on a token leg (:253, :266). A new
   `FuelOnlyGate` in that slot answers `depositsPaused()` and reverts `createPortal`, so a token leg reverts atomically.
   The router source does not change: `verify-l1 --strict` compares masked runtime hashes with the live testnet router.
-- **The line table.** `readSendInbox` reads the factory and hard-codes the `artifact` event shape and the genesis Fee
-  Juice sender (`send-flow.ts:125-137`). The fuel leg reads `INBOX()`/`VERSION()` from the Fee Juice portal instead. A
-  static table keyed by L1 chain holds each line's PrivateFPC descriptor and support: every chain but 1 → the
-  installed line; chain 1 → `unsupported` while Alpha runs 5.0.1, whose Inbox emits the older `checkpoint` shape
-  (`crosschain-discovery.ts:117-122`). A line bump edits the table (`UPDATE.md`); no node-version probe can unblock
-  it. Keying by rollup version would fail the sandbox, whose version is read at each boot (`sandbox/deploy.ts:138`).
-  Under option A (§3) the `checkpoint` shape is never parsed on a send, so a1 builds no support for it.
-- **The line gate.** While a network's table entry is `unsupported`, every deposit and claim on it refuses
-  `unsupported-line` before any wallet prompt (owner ask §3, option A).
+- **The line table** (`aztec-line.ts`). `readSendInbox` reads the factory and hard-codes the `artifact` event shape and
+  the genesis Fee Juice sender (`send-flow.ts:125-137`); the fuel leg reads `INBOX()`/`VERSION()` from the Fee Juice
+  portal instead. Each L1 chain's line is its PrivateFPC descriptor (chain 1 → `private-fpc-canonical-mainnet.json`,
+  every other chain → the installed one); a line is supported when its descriptor's version is the installed one. Keyed
+  by L1 chain because the sandbox's rollup version is read at each boot (`sandbox/deploy.ts:138`). Mainnet's canonical
+  rollup runs 6.0.0 (owner answer §3), so today every network is supported; a bump that leaves a network behind
+  re-pins its descriptor and the gate refuses it (`UPDATE.md`). No `checkpoint`-shape send support is built (D24).
+- **The line gate.** On a network whose line is not supported, every send refuses before any wallet prompt
+  (`assertSupportedLine` in `runSend` and `readSendInbox`; the SDK's `unsupported-line`).
 - **Persist-then-emit.** The SDK never emits an event naming a hash, a leaf or a registration before `persist` resolved
   with it, and never honours an abort between a wallet send and persisting its hash.
 
@@ -277,11 +277,14 @@ change (D10), the browser cell (D13), the arc order (D15).
 - npm trusted publishing cannot be configured before a package's first version exists, so the first publish needs a
   credential (`OWNER-ASKS.md` §6). Settled by the owner at publish time.
 
-### Asks (owner; each is in `OWNER-ASKS.md`, and the dependent work waits)
+### Owner answers (`OWNER-ASKS.md` §1–§6, signed)
 
-§1 the public interface and §2 the npm name (a2 onwards waits); §3 the mainnet line gate (recommended: refuse every
-mainnet deposit and claim until Alpha runs the SDK's line; the route's promotion waits); §4 v1 scope (ask5's flows);
-§5 the gate's owner (a constructor argument, so a1 ships either way); §6 the first publish's credential.
+§1 the interface as proposed, bundled networks yes. §2 `@unleashed/sdk`; creating the npm organization is the owner's
+step. §3 corrected: mainnet's canonical rollup already runs Aztec 6, the SDK's line (a 5.0 rollup still runs but is not
+canonical), so the SDK supports mainnet; a1 verified it read-only and re-pinned the stale mainnet constants (D27). §4 v1
+covers gas, the token bridge, and exits when the cost is modest; a2's start sizes exits and places them in an arc.
+§5 the gate's owner is the pinned mainnet signer alone (D28). §6 the owner publishes v1 from their machine with npm's
+two-factor prompt; every later version goes through the workflow.
 
 ## Phases
 
@@ -291,7 +294,7 @@ wall-clock before and after in the PR body.
 
 ### Arc a1: the fuel route for mainnet (no interface dependency; starts on approval)
 
-**Phase 1.1 — `FuelOnlyGate`.**
+**Phase 1.1 — `FuelOnlyGate`.** ✓
 - Add `contracts/bridge/evm/src/FuelOnlyGate.sol`: `Ownable2Step`, `renounceOwnership` reverts, `bool public
   depositsPaused`, `setDepositsPaused(bool)` with an event, `createPortal(address)` reverts `TokenLegsDisabled()`.
 - Add `test/FuelOnlyGate.t.sol` and a halmos `FormalFuelOnlyGate` beside `FormalDepositRouter`: a router bound to the
@@ -311,14 +314,14 @@ wall-clock before and after in the PR body.
 - `readSendInbox`: the fuel-only leg reads `INBOX()`/`VERSION()` from the Fee Juice portal; the line table (keyed by
   L1 chain; chain 1 `unsupported`) holds each line's PrivateFPC descriptor.
 - Make the manifest's `privateFpc.address` authoritative, checked against the descriptor of its line; the sandbox's
-  `buildManifest` (`scripts/sandbox/manifest.ts`) writes `privateFpc`, which it lacks today. Delete the exported
-  `PRIVATE_FPC_ADDRESS`; its twelve users (Assumptions, Facts) take the manifest's value (testnet and sandbox: the same
-  address, so no behaviour change).
+  `buildManifest` (`scripts/sandbox/manifest.ts`) writes `privateFpc`, which it lacks today. `PRIVATE_FPC_ADDRESS`
+  stays as the installed line's FPC (deviation, D26).
 - Tests: `manifest-v2.test.ts` (a `fuelRoute` beside a bridge is refused; chain 1 with a swapper is refused; a valid
   mainnet route parses); `send-flow.test.ts` (a fuel-only send on a gate authenticates its leaves with the Inbox read
-  from the portal, and fails against a forged emitter); a descriptor-mismatch FPC is refused; with a manifest whose
-  FPC differs from today's address, a private record's `fuel.fpc`, its reconcile match and its fee target all follow
-  the manifest.
+  from the portal, and fails against a forged emitter); a descriptor-mismatch FPC is refused. The "FPC differs from
+  today's" app case is dropped with D26.
+- Re-pin mainnet to its canonical rollup (owner answer §3, D27): `MAINNET_ROLLUP_VERSION`, the mainnet manifest's
+  wallet chain id, Fee Juice portal and PrivateFPC, and the mainnet FPC descriptor.
 - Validation gate: base commands; `bun run audit:tools`; the browser suite (the phase edits the app's claim code);
   `bun run --cwd packages/bridge-core test:integration`. Layers: typecheck, lint, unit, integration, e2e.
 
@@ -536,7 +539,32 @@ Each row: the decision, its source, the rejected view with its reason.
 - **D23 Chain assert and re-quote before `persist`.** Opus audit: the app's persist is a seal prompt, and today a
   wrong chain costs no prompt (`useSend.ts:684-690`); the first order would have been a visible change.
 - **D24 No `checkpoint`-shape support in a1.** Opus audit (proportion): under option A the shape is never parsed on a
-  send; a later arc adds it only if the owner picks B or C.
+  send; a later arc adds it only if the owner picks B or C. Moot since §3's answer: every network runs the line.
+- **D26 `PRIVATE_FPC_ADDRESS` stays; the manifest's FPC is checked against its line.** Deviation from 1.2's "delete
+  the export". The tree: the app registers and claims through the instance it derives from the installed artifact
+  (`apps/tools/src/contracts/private-fpc.ts:28-33`), so on every supported line the manifest's FPC can only be the
+  constant, and an unsupported line refuses every send before an FPC is used. Rewiring the twelve runtime users (and
+  about twenty script sites the plan did not count) would change no behaviour, and the plan's "FPC differs" case cannot
+  exist under its own parse-time check. The SDK's `parseNetwork` takes the manifest's validated value (a2).
+- **D27 Mainnet runs the installed line.** Owner answer §3, verified read-only: the registry's `getCanonicalRollup` is
+  `0xE37A…402f`, version 2070860440, whose node reports 6.0.0 and whose FeeJuicePortal is `0x5343…f3b3`; the 5.0.1
+  rollup (4248422647, portal `0xaf73…691c`) is still listed. a1 re-pins every mainnet constant to the canonical rollup;
+  the line gate (D20) becomes data-driven and refuses nothing today. Supersedes D14 and D20's mainnet refusal.
+- **D28 The mainnet gate's owner is the pinned mainnet signer** (owner answer §5); the conductor refuses any other.
+- **D29 `fuelRoute` names its registry.** The registry keeps the 5.0.1 rollup listed and its portal still takes
+  deposits, so a route bound to it would strand every fuel leg. The conductor, `verify-l1` and `live-intent` check
+  the portal's `ROLLUP()` against `registry.getCanonicalRollup()`; the manifest carries the registry those checks read,
+  and `live-intent` pins it to `MAINNET_REGISTRY`.
+- **D30 `fuelRoute.fuel` carries `fjPerTx`** (lane mainnet-1's coordination note): the gas share sizes the claim from
+  it. `calibrate` writes it into a route (no `fjRegister`: a route registers nothing), and `live-intent` refuses a
+  route candidate whose `fjPerTx` is 0.
+- **D31 The mainnet route's canary is not in a1.** No script sends through a candidate route from a pinned mainnet
+  canary key, and that key is unpinned; Branch F documents the step and stops before calibration until both exist
+  (`follow-ups.md`). The calibration input it would produce is the step mainnet-1 needs.
+- **D32 A mainnet intent is a `live-intent` network profile, not a second tool.** Mainnet has no reset baseline: its
+  node is pinned against the committed `mainnet-bridge.json` and `MAINNET_REGISTRY`, and the registry's canonical
+  rollup is read on L1. The testnet path is unchanged; the node's absent `feeAssetHandler` is accepted only when the
+  pin has none either.
 - **D25 Tokens resolve once, through `resolveToken`.** Final Codex pass: a permissionless token's L2 address needs its
   words and decimals and an async derivation (`hub-token.ts:36`), which `capabilitiesFor(net, Address[])` lacked.
   Rejected: an async `capabilitiesFor` with `Reads`, which would resolve the token a second time beside the quote.
