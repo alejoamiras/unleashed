@@ -115,8 +115,14 @@ export function sourceRpcUrl(chainId: number, env: Readonly<Record<string, strin
 export async function sendL1(
 	l1: L1Ctx,
 	call: { address: Address; abi: Abi; functionName: string; args: readonly unknown[] },
+	nonce?: number,
 ): Promise<Hex> {
-	const hash = await l1.wallet.writeContract({ ...call, account: l1.account, chain: l1.wallet.chain } as never)
+	const hash = await l1.wallet.writeContract({
+		...call,
+		account: l1.account,
+		chain: l1.wallet.chain,
+		...(nonce === undefined ? {} : { nonce }),
+	} as never)
 	const receipt = await l1.pub.waitForTransactionReceipt({ hash })
 	if (receipt.status !== "success") throw new Error(`${call.functionName} on ${call.address} REVERTED (${hash}) — STOP`)
 	return hash
@@ -127,13 +133,14 @@ export { boundedGasTerms, type GasPricing, type GasTerms, type GasTermsFor, type
 /**
  * Leaves `spender`'s allowance over `owner`'s `token` at exactly `amount`, never above: a standing max approval is
  * what an exploited spender drains. A token that refuses to move a non-zero allowance (USDT) is reset to zero
- * first. Returns the transactions sent, none when the allowance already equals `amount`.
+ * first. Returns the transactions sent, none when the allowance already equals `amount`. `nonce`, when given, hands
+ * out each write's nonce.
  */
-export async function approveExact(l1: L1Ctx, token: Address, spender: Address, amount: bigint): Promise<Hex[]> {
+export async function approveExact(l1: L1Ctx, token: Address, spender: Address, amount: bigint, nonce?: () => number): Promise<Hex[]> {
 	const current = await allowanceOf(l1, token, spender)
 	if (current === amount) return []
-	const sent = current > 0n && amount > 0n ? [await sendL1(l1, approveCall(token, spender, 0n))] : []
-	sent.push(await setAllowance(l1, token, spender, amount))
+	const sent = current > 0n && amount > 0n ? [await sendL1(l1, approveCall(token, spender, 0n), nonce?.())] : []
+	sent.push(await setAllowance(l1, token, spender, amount, nonce?.()))
 	return sent
 }
 
@@ -143,8 +150,8 @@ export async function approveExact(l1: L1Ctx, token: Address, spender: Address, 
  *
  * @throws when the approval reverts, or the allowance reads back as anything but `amount`.
  */
-export async function setAllowance(l1: L1Ctx, token: Address, spender: Address, amount: bigint): Promise<Hex> {
-	const hash = await sendL1(l1, approveCall(token, spender, amount))
+export async function setAllowance(l1: L1Ctx, token: Address, spender: Address, amount: bigint, nonce?: number): Promise<Hex> {
+	const hash = await sendL1(l1, approveCall(token, spender, amount), nonce)
 	// A backend without the approval's block errors, and the read retries.
 	const { blockNumber } = await l1.pub.waitForTransactionReceipt({ hash })
 	const after = await retried(() => allowanceOf(l1, token, spender, blockNumber))
