@@ -33,3 +33,8 @@
   - Not taken: `goToReview` waits for the Ethereum review's testid, so a stood-down cross-chain review cannot retry
     in `confirmReview`. This predates the diff.
 - Round 2, verifying 9e34306: **no material findings**. Converged in 2 rounds.
+- Round 3, the last allowed, verifying b9dc86d (P10-01 B folded after round 2) and the merge of origin/main:
+  **no material findings**. Codex judged the mapping separate from the Ethereum send's on purpose: there,
+  `wrong-chain` describes the wallet's transport, but here the reader is the build's pinned one, so a "switch your
+  wallet" sentence would misdiagnose it. A missing reader causes no new false refusal, because `sendOn` already
+  needs the same reader.

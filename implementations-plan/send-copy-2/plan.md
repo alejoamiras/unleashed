@@ -203,7 +203,9 @@ exists; `git status` shows no `zz-*` spec and no `network.ts` change.
 - a1 Codex fix loop (gpt-6.1-sol, high): round 1, **no material findings**; nits taken (cell 53's lapsed terms at
   both confirms, two comments trimmed). Opus beside round 1: two low findings, both fixed (the held-check test now
   opens a newer review and fails without `reviewStands`; the no-reader path logs its code). Round 2 verified the fix
-  commit: **no material findings**. Converged in 2 rounds. Detail: `lessons/phase-1.md`.
+  commit: **no material findings**. Converged in 2 rounds. After the loop, P10-01 B was folded into the arc
+  (b9dc86d). Round 3, the last allowed, verified it and the merge of origin/main: **no material findings**.
+  Detail: `lessons/phase-1.md`.
 - a1 deviations: the shots use the sandbox build's own chain labels (no display-only `network.ts` edit), since the
   a1 surfaces are the sentence and its absence; cell 53's before time was measured by running main's cell 53 against
   this build on the same sandbox.
