@@ -11,7 +11,7 @@
  * mainnet manifest and `MAINNET_REGISTRY` instead of the testnet reset baseline, the L1 RPC is ETH_RPC_URL, and the
  * candidate may only add a `fuelRoute` to the committed placeholder. `verify` and `promote` follow the intent's network.
  *
- * `build` records: node identity from the keyed dRPC node (`requireDrpcNodeUrl`); an INDEPENDENT L1
+ * `build` records: node identity from the keyed dRPC node (`keyedNodeUrl`); an INDEPENDENT L1
  * corroboration (direct `eth_getCode` on the node-claimed rollup + FeeJuicePortal via SEPOLIA_RPC_URL);
  * whether a second Aztec endpoint (INTENT_SECOND_AZTEC_RPC) agreed, else the documented
  * single-node posture; the env-derived signer CHECKED against the pinned allowlist (the constant
@@ -55,7 +55,8 @@ import { createL1PublicClient, createNode, requireBridge } from "./script-bootst
 import { FACTORY_CONSTANTS_ABI, FUEL_SWAPPER_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI, sourceRpcUrl } from "./script-l1"
 import { deriveHubInstance } from "./script-l2"
 import { verifyL1Manifest } from "./verify-l1"
-import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
+import { postNodeRpc, readNodeRpcBody } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 /**
  * The only L1 signers authorized to broadcast, one per network — keys never cross networks. Pinned
@@ -659,7 +660,7 @@ async function build(intentPath: string, opts: ArcOptions = {}): Promise<void> {
 	const l1Rpc = requireL1Rpc(net)
 	const pk = process.env.PRIVATE_KEY
 	if (!pk) throw new Error(`PRIVATE_KEY required: run this through the ${net.name} keyed-run template`)
-	const nodeUrl = requireDrpcNodeUrl(net.name, process.env)
+	const nodeUrl = keyedNodeUrl(net.name)
 
 	const identity = await authenticatedIdentity(net, nodeUrl, l1Rpc)
 	const walletChainId = walletChainIdOf(identity.l1ChainId, identity.rollupVersion)
@@ -1016,7 +1017,7 @@ async function verify(intentPath: string, candidatePath?: string): Promise<void>
 	const intent = JSON.parse(readFileSync(intentPath, "utf8")) as DeployIntent
 	const net = networkOf(intent)
 	const l1Rpc = requireL1Rpc(net)
-	const nodeUrl = requireDrpcNodeUrl(net.name, process.env)
+	const nodeUrl = keyedNodeUrl(net.name)
 	assertIntentCommitted(intent, intentPath)
 	assertTreeDiscipline()
 	assertNoSourceDrift(intent)
@@ -1234,7 +1235,7 @@ if (isMain) {
 	const candidatePath = candidateFlag !== -1 ? rest[candidateFlag + 1] : undefined
 	const bridgeOnly = rest.includes("--bridge-only")
 	const preCreate = rest.flatMap((arg, i) => (arg === "--pre-create" && rest[i + 1] ? [rest[i + 1] as string] : []))
-	const dispatch =
+	const dispatch = () =>
 		cmd === "build"
 			? build(
 					intentPath,
@@ -1245,8 +1246,5 @@ if (isMain) {
 				: cmd === "promote"
 					? promote(intentPath, { bridgeOnly })
 					: Promise.reject(new Error(`unknown command ${cmd}`))
-	dispatch.catch((err) => {
-		console.error(`✗ ${err instanceof Error ? err.message : err}`)
-		process.exit(1)
-	})
+	runKeyed(dispatch, (err) => `✗ ${err instanceof Error ? err.message : err}`)
 }

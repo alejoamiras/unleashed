@@ -28,7 +28,7 @@ import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifac
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { catalogMismatches } from "../src/faucet-catalog"
 import { stopwatch } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const here = dirname(fileURLToPath(import.meta.url))
 // `--config <path>` targets a CANDIDATE manifest (candidate-first: the canary must
@@ -153,7 +153,7 @@ async function dripEach(ewallet: EmbeddedWallet, nodeUrl: string, { dripper: dri
 }
 
 async function main() {
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 	console.log(`drip canary config: ${deploymentsPath}`)
 	const mins = stopwatch()
 	const rebuilt = await rebuildAll()
@@ -189,7 +189,4 @@ async function main() {
 	)
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

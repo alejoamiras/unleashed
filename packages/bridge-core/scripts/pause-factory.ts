@@ -27,6 +27,7 @@ import {
 } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { PORTAL_FACTORY_ABI, type ManifestV2 } from "@unleashed/sdk/protocol"
+import { runKeyed } from "./keyed-run"
 import { requirePinnedSigner } from "./live-intent"
 import { createL1Clients, loadManifestV2FromConfigArg, requireBridge, sepoliaChain } from "./script-bootstrap"
 import { FACTORY_CONSTANTS_ABI } from "./script-l1"
@@ -162,11 +163,4 @@ async function main(): Promise<void> {
 	console.log(`✓ factory ${plan.factory}: ${describe(after)} (tx ${hash})`)
 }
 
-if (import.meta.main) {
-	try {
-		await main()
-	} catch (e) {
-		console.error(`✗ ${e instanceof Error ? e.message : String(e)}`)
-		process.exit(1)
-	}
-}
+if (import.meta.main) runKeyed(main, (e) => `✗ ${e instanceof Error ? e.message : String(e)}`)

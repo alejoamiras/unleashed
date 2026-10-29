@@ -44,8 +44,9 @@ import { AztecAddress } from "@aztec-labs/stdlib/aztec-address"
 import { getContractClassFromArtifact, getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract"
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
 
-import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
+import { postNodeRpc, readNodeRpcBody } from "../src/drpc-node"
 import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 type GateNetwork = "testnet" | "mainnet"
 
@@ -122,7 +123,7 @@ function selectDescriptor(here: string, info: LiveNodeInfo): FpcDescriptor {
 /** The gate as an importable function: it throws on any RED, so a fund-moving script awaits it
  *  inline before its first broadcast and cannot skip it. The CLI at the bottom wraps it. */
 export async function runFpcGate(network: GateNetwork = "testnet"): Promise<void> {
-	const nodeUrl = requireDrpcNodeUrl(network, process.env)
+	const nodeUrl = keyedNodeUrl(network)
 	const here = fileURLToPath(new URL(".", import.meta.url))
 	const pkg = JSON.parse(readFileSync(resolvePackageFile("@alejoamiras/private-fee-juice", "package.json"), "utf8"))
 	const artifactBytes = readFileSync(resolvePackageFile("@alejoamiras/private-fee-juice", "target/private_contract-PrivateFPC.json"))
@@ -266,8 +267,8 @@ async function assertLiveClass(nodeUrl: string, artifactBytes: Buffer): Promise<
 /** True only when this file is the process entrypoint (not when imported). */
 const isMain = process.argv[1] ? fileURLToPath(import.meta.url) === resolve(process.argv[1]) : false
 if (isMain) {
-	runFpcGate(parseNetwork(process.argv.slice(2))).catch((err) => {
-		console.error("\n✗ gate errored (treat as RED — an RPC failure is never absence):", err instanceof Error ? err.message : err)
-		process.exit(1)
-	})
+	runKeyed(
+		() => runFpcGate(parseNetwork(process.argv.slice(2))),
+		(err) => `\n✗ gate errored (treat as RED — an RPC failure is never absence): ${err instanceof Error ? err.message : err}`,
+	)
 }

@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { inspect } from "node:util"
-import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import { git, resolveBin, run, RunError } from "./run"
 
 // The engine running this test is the scripted child, so every case runs under Node and under Bun.
@@ -135,5 +135,21 @@ describe("resolveBin", () => {
 describe("git", () => {
 	test("returns trimmed stdout and honours --end-of-options", () => {
 		expect(git(["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"], process.cwd())).toMatch(/^[0-9a-f]{40}$/)
+	})
+})
+
+describe("RunError's stderr tail", () => {
+	test("redacts a keyed value before the cut, so no fragment of it survives", () => {
+		const key = "sentinel_Key-0123456789"
+		vi.stubEnv("DRPC_API_KEY", key)
+		try {
+			// The last 4000 characters begin two characters into the key.
+			const stderr = `${"x".repeat(10)}${key}${"y".repeat(4000 - (key.length - 2))}`
+			const err = new RunError("cast", 0, { exitCode: 1, signal: null, stdout: "", stderr })
+			expect(err.message.includes(key.slice(2))).toBe(false)
+			expect(err.message.includes("<DRPC_API_KEY>")).toBe(true)
+		} finally {
+			vi.unstubAllEnvs()
+		}
 	})
 })

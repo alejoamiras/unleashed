@@ -2,10 +2,10 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { GrumpkinScalar } from "@aztec-labs/foundation/curves/grumpkin"
 import { poseidon2Hash } from "@aztec-labs/foundation/crypto/poseidon"
-import { overwriteLoggingStream } from "@aztec-labs/foundation/log"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
-import { FAUCET_DRIPPER_SALT, type FaucetSymbol, FAUCET_TOKENS, requireDrpcNodeUrl } from "@unleashed/bridge-core"
+import { FAUCET_DRIPPER_SALT, type FaucetSymbol, FAUCET_TOKENS } from "@unleashed/bridge-core"
 import { parseFj } from "@unleashed/bridge-core/drip-deploy"
+import { keyedNodeUrl } from "@unleashed/bridge-core/keyed-run"
 
 /**
  * Drip-specific deploy configuration, in the shape of aztec-standards/scripts/deploy-config.ts so
@@ -43,7 +43,7 @@ export function getDeploymentConfig(network: Network): DeploymentConfig {
  */
 export function nodeUrlFor(network: Network): string {
 	if (network === "local-network") return process.env.AZTEC_NODE_URL || "http://localhost:8080"
-	return requireDrpcNodeUrl(network, process.env)
+	return keyedNodeUrl(network)
 }
 
 /** What a mainnet run may spend: `--cap` bounds every funding from the funding key to this deployer, together,
@@ -116,57 +116,6 @@ export async function resolveDeployerKeys(network: Network, env: Record<string, 
 		"Provide either DEPLOYER_SECRET_KEY+DEPLOYER_SALT (hex Frs, reuses an existing account) " +
 			"or DEPLOYER_SECRET (≥32-char utf8 string, derives a fresh account).",
 	)
-}
-
-/** The keyed run's values: the node and L1 URLs embed provider keys, and the transports put the URL in their
- *  error text. */
-const SECRET_ENV = ["DRPC_API_KEY", "ETH_RPC_URL", "FUNDING_PRIVATE_KEY", "DEPLOYER_SECRET_KEY", "DEPLOYER_SECRET"] as const
-
-/** `text` with every keyed-run value replaced by its name, so a failure can be printed whole. */
-export function redactSecrets(text: string, env: Record<string, string | undefined> = process.env): string {
-	return SECRET_ENV.reduce((out, name) => {
-		const value = env[name]
-		return value ? out.replaceAll(value, `<${name}>`) : out
-	}, text)
-}
-
-const LEVELS: Readonly<Record<number, string>> = {
-	10: "TRACE",
-	20: "DEBUG",
-	25: "VERBOSE",
-	30: "INFO",
-	40: "WARN",
-	50: "ERROR",
-	60: "FATAL",
-}
-const ENVELOPE = new Set(["level", "time", "pid", "hostname", "module", "msg"])
-
-function readable(line: string): string {
-	try {
-		const entry = JSON.parse(line) as Record<string, unknown>
-		const data = Object.fromEntries(Object.entries(entry).filter(([k]) => !ENVELOPE.has(k)))
-		const extra = Object.keys(data).length > 0 ? ` ${JSON.stringify(data)}` : ""
-		return `${LEVELS[entry.level as number] ?? entry.level} ${entry.module ?? ""}: ${entry.msg ?? ""}${extra}\n`
-	} catch {
-		return line
-	}
-}
-
-/**
- * Routes every SDK log line through {@link redactSecrets} before `write`. The node client logs each failed attempt
- * with its URL before it retries, so a keyed run installs this before it creates any client.
- */
-export function installRedactedLogging(
-	write: (text: string) => void = (text) => process.stderr.write(text),
-	env: Record<string, string | undefined> = process.env,
-): void {
-	// Typed as a Writable, but pino needs only `write` from a destination.
-	overwriteLoggingStream({
-		write: (line: string) => {
-			write(redactSecrets(readable(line), env))
-			return true
-		},
-	} as Parameters<typeof overwriteLoggingStream>[0])
 }
 
 // ── Schemas matching src/contracts/deployments.ts ──────────────────────────

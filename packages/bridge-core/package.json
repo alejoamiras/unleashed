@@ -8,6 +8,7 @@
 		"./across-fill": "./src/across-fill.ts",
 		"./drip-deploy": "./scripts/drip-deploy.ts",
 		"./fill-testnet": "./scripts/fill-testnet.ts",
+		"./keyed-run": "./scripts/keyed-run.ts",
 		"./sandbox": "./scripts/sandbox/index.ts",
 		"./wallet-store": "./scripts/wallet-store.ts"
 	},

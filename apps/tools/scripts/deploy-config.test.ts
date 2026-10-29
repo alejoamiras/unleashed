@@ -1,8 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { spawnSync } from "node:child_process"
-import { FAUCET_TOKENS, requireDrpcNodeUrl } from "@unleashed/bridge-core"
+import { FAUCET_TOKENS } from "@unleashed/bridge-core"
 import { dripCatalog } from "@unleashed/bridge-core/drip-deploy"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildDeploymentJson, fundingOf, getDeploymentConfig, nodeUrlFor, resolveDeployerKeys } from "./deploy-config"
@@ -27,14 +26,11 @@ describe("getDeploymentConfig", () => {
 describe("nodeUrlFor", () => {
 	afterEach(() => vi.unstubAllEnvs())
 
-	// A boolean: a failing `toBe` on a keyed URL would print the key.
-	it("takes testnet and mainnet from DRPC_API_KEY, whatever AZTEC_NODE_URL says", () => {
-		const key = "sentinel_Key-0123456789"
-		vi.stubEnv("DRPC_API_KEY", key)
+	// Outside runKeyed the keyed node refuses, so a stray AZTEC_NODE_URL can never stand in for it.
+	it("takes testnet and mainnet from the keyed node only, whatever AZTEC_NODE_URL says", () => {
+		vi.stubEnv("DRPC_API_KEY", "sentinel_Key-0123456789")
 		vi.stubEnv("AZTEC_NODE_URL", "http://127.0.0.1:8080")
-		for (const network of ["testnet", "mainnet"] as const) {
-			expect(nodeUrlFor(network) === requireDrpcNodeUrl(network, { DRPC_API_KEY: key })).toBe(true)
-		}
+		for (const network of ["testnet", "mainnet"] as const) expect(() => nodeUrlFor(network)).toThrow(/only inside runKeyed/)
 	})
 
 	it("keeps the local network's loopback default, which AZTEC_NODE_URL overrides", () => {
@@ -88,43 +84,5 @@ describe("resolveDeployerKeys", () => {
 		expect(err).toBeInstanceOf(Error)
 		expect((err as Error).message).toMatch(message)
 		expect((err as Error).message).not.toContain(env.DEPLOYER_SECRET_KEY.slice(2, 10))
-	})
-})
-
-describe("redacted logging", () => {
-	// A child process with the operator's environment: vitest's NODE_ENV=test silences the SDK's logger.
-	// Booleans: a failing `toContain` on the captured text would print the key.
-	it("keeps the keyed URL out of the node client's retry logs and out of its final error", () => {
-		const key = "sentinel_Key-0123456789"
-		const child = spawnSync(
-			"bun",
-			[
-				"-e",
-				`import { inspect } from "node:util"
-				import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-				import { makeFetch } from "@aztec-labs/foundation/json-rpc/client"
-				import { installRedactedLogging, redactSecrets } from "./scripts/deploy-config.ts"
-				installRedactedLogging()
-				const node = createAztecNodeClient(process.env.PROBE_URL, { fetch: makeFetch([0], false) })
-				console.log(redactSecrets(inspect(await node.getBlockNumber().catch((e) => e))))`,
-			],
-			{
-				cwd: join(import.meta.dirname, ".."),
-				encoding: "utf8",
-				timeout: 60_000,
-				env: {
-					...process.env,
-					NODE_ENV: "production",
-					LOG_LEVEL: "info",
-					DRPC_API_KEY: key,
-					PROBE_URL: `http://127.0.0.1:9/aztec?dkey=${key}`,
-				},
-			},
-		)
-		const out = `${child.stdout}${child.stderr}`
-		expect(child.status, "the probe ran").toBe(0)
-		expect(child.stderr.includes("Error while retrying"), "the SDK logged its retry").toBe(true)
-		expect(out.includes(key)).toBe(false)
-		expect(child.stderr.includes("<DRPC_API_KEY>") && child.stdout.includes("<DRPC_API_KEY>")).toBe(true)
 	})
 })

@@ -8,6 +8,7 @@ import { PORTAL_FACTORY_ABI, ensurePermit2Allowance, predictPortal } from "@unle
 import type { L1Ctx } from "@unleashed/sdk/internal"
 import { sourceChain } from "../src/source-chains"
 import { retried } from "../src/retried"
+import { redactSecrets } from "./keyed-env"
 
 /** Minimal ERC20 surface the scripts touch. A superset per consumer is harmless — viem only
  *  encodes the functions actually called. */
@@ -211,7 +212,9 @@ export async function retryOnRevert<T>(fn: () => Promise<T>, tries = 3): Promise
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e)
 			if (i >= tries || !/REVERTED/.test(msg)) throw e
-			console.log(`bridge() reverted (attempt ${i}/${tries}) — waiting one Aztec slot and retrying: ${msg.slice(0, 120)}`)
+			console.log(
+				`bridge() reverted (attempt ${i}/${tries}) — waiting one Aztec slot and retrying: ${redactSecrets(msg).slice(0, 120)}`,
+			)
 			await new Promise((r) => setTimeout(r, 45_000))
 		}
 	}
