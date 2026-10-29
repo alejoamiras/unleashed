@@ -12,8 +12,29 @@ base: main a111e8a
 trunk: main
 budget: "recon: 1 Sonnet explorer; code-review: off; foreign reviewer gpt-6.1-sol at high"
 size: "about 80 lines over the 150-line light target: ask34 joined after the first audit, with its own phase, security cases and tests"
-status: approved by Codex (Phases 1 and 2); a1 in progress
 ---
+
+## Outcome
+
+- **Status: closed, shipped** in #66. Phases 1 and 2 are ✓.
+- **Shipped.** The testnet relayer reads every Base Sepolia block stamped within 7,800 s of Sepolia's head time,
+  found by a timestamp search, never a block count (closes #60). Each cron run makes up to four passes 15 s apart, one
+  at a time (ask34): a pass that overran a slot is followed at the next one, and no try starts with under 25 s left
+  in the run.
+- **Reviews.** The audit verdicts below: the plan audits, then a1's fix loop, converged in 3 rounds beside one Opus
+  diff review.
+- **Dispositions.**
+  - Scanning only the blocks since the previous pass: rejected (D9).
+  - A lock across runs, and a fill path that waits rather than revokes: the owner's option A (`OWNER-ASKS.md` §1),
+    not built.
+  - The sdk's `firstBlockAfter`: it does not bundle for a Worker (D3).
+- **Known limits:** #36; new #67 (a receipt timeout revokes while the approval may be pending) and #68 (a lagging
+  Sepolia backend can make a pass retry a relay just filled).
+- **Open items.**
+  - #61: bridge-core's Base Sepolia fallback RPC caps `getLogs` at 200 blocks.
+  - Once Workers Builds deploys `main`, Workers Logs show up to four passes a minute; repeated `failed` lines from a
+    throttled PublicNode reopen D9.
+- **Retired:** the `/goal` and `/loop` seeds below. This plan is a record, never a task list.
 
 # relayer-2: a time-based scan window and a 15-second cadence for the testnet relayer
 
