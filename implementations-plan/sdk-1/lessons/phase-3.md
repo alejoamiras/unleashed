@@ -26,3 +26,6 @@
 - **CI: a new SDK event reaches the sandbox integration suite's pinned scripts.** `sdk-flows.integration.test.ts`
   pins each deposit's event script; D63's `approval:requested` failed it on CI after every local gate had passed,
   because none of them runs `test:integration`. An SDK event or order change runs `sdk-flows` before the PR.
+- **Host: a Bun `SIGBUS` at startup is a full `/dev/shm`.** Barretenberg leaves a 4 MB `bb-sync-<pid>-0-0_request`
+  buffer behind per process; a day of sandbox runs on a shared host filled the 2 GB mount, and every integration
+  worker then crashed on its first mapping. `df -h /dev/shm` before suspecting the code.
