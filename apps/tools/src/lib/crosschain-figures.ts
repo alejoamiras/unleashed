@@ -30,11 +30,11 @@ export interface CrossChainFigures {
 	gasExpected: bigint | null
 	gasFloor: bigint | null
 	etaSeconds: number
-	/** Seconds from the quote to the fill deadline: how long an undelivered send waits before its refund. */
+	/** Seconds from the quote to the fill deadline; past it, mainnet's Across refunds an undelivered send. */
 	refundAfterSeconds: number | null
 	/** Across's bounds on the amount; null on fixed terms. */
 	limits: { min: bigint; max: bigint } | null
-	/** Built on fixed testnet terms: the relay fee is a fixed share and the fill is manual. */
+	/** Built on fixed testnet terms: the relay fee is a fixed share and only our testnet relayer fills it. */
 	fixed: boolean
 }
 
@@ -92,7 +92,7 @@ export function feeCeilingOf(f: CrossChainFigures, decimals: number, o: { intent
 	return { over, blocks: over && o.mainnet && o.intent !== "gas", minimum }
 }
 
-/** "2 hours", "1 hour", "45 minutes": the refund wait, in the unit a person reads it in. */
+/** "2 hours", "1 hour", "45 minutes": a fill window, in the unit a person reads it in. */
 export function waitText(seconds: number): string {
 	if (seconds >= 3600) {
 		const hours = Math.round(seconds / 3600)

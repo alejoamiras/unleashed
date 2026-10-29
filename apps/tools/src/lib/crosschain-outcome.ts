@@ -133,27 +133,40 @@ function deliveredCopy(rec: CrossChainDepositRecord, w: Words, endedAgo: string,
 	}
 }
 
-/** Why an expired transfer ended: on testnet it waited out its manual-fill window. */
+/** Why an expired transfer ended: on testnet it waited out our testnet relayer's fill window. */
 function expiryHappened(rec: CrossChainDepositRecord, w: Words): string {
 	if (IS_MAINNET) return `${expiryLead(rec, `this transfer to ${w.l1}`)}, so it expired.`
 	const window = windowWords(rec)
 	return window
-		? `This transfer waited ${window} for a manual fill on ${w.l1} and wasn’t filled, so it expired.`
+		? `This transfer waited ${window} for our testnet relayer on ${w.l1} and wasn’t filled, so it expired.`
 		: `${expiryLead(rec, "this transfer")}, so it expired.`
 }
 
+/** Across refunds an unfilled deposit on mainnet only: on testnet it stays in the source chain's pool. */
 function expiredCopy(rec: CrossChainDepositRecord, w: Words, endedAgo: string): OutcomeCopy {
-	return {
+	const sent = sentTx(rec, `Sent on ${w.src}`, w.sent)
+	const shared = {
 		tag: "Expired",
 		tagTone: "raised",
-		title: `Refund pending on ${w.src}`,
 		when: `expired ${endedAgo}`,
 		happened: expiryHappened(rec, w),
-		means: `Nothing reached ${w.l1} or Aztec, and there is nothing to claim. ${w.rail} refunds the ${w.symbol} to your wallet on ${w.src}; the network fee for the send is not returned.`,
-		figure: figureOf(rec, rec.route.srcAmount, "due back in", w.src, w),
 		next: `${RETRY_WORDS.tryAgain} Or send from another network instead.`,
 		nextTone: "raised",
-		txs: [sentTx(rec, `Sent on ${w.src}`, w.sent), { label: `Refund on ${w.src}`, note: `pending · ${w.sent}` }],
+	} as const
+	if (!IS_MAINNET) {
+		return {
+			...shared,
+			title: `Not filled on ${w.l1}`,
+			means: `Nothing reached ${w.l1} or Aztec, and there is nothing to claim. ${w.rail} keeps the ${w.symbol} in its pool on ${w.src}: testnet sends are not refunded automatically. The network fee for the send is not returned.`,
+			txs: [sent],
+		}
+	}
+	return {
+		...shared,
+		title: `Refund pending on ${w.src}`,
+		means: `Nothing reached ${w.l1} or Aztec, and there is nothing to claim. ${w.rail} refunds the ${w.symbol} to your wallet on ${w.src}; the network fee for the send is not returned.`,
+		figure: figureOf(rec, rec.route.srcAmount, "due back in", w.src, w),
+		txs: [sent, { label: `Refund on ${w.src}`, note: `pending · ${w.sent}` }],
 	}
 }
 

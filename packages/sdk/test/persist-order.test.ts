@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import type { BridgeError } from "../src/errors.ts"
 import { depositFuel, quoteFuel } from "../src/fuel/index.ts"
 import { type Network, parseNetwork, type Reads } from "../src/network.ts"
-import { allowanceAfterApprove, readsOf, type Step, testnet, walletOf, worldOf } from "./fakes.ts"
+import { allowanceAfterApprove, readsOf, type Step, testnet, type World, walletOf, worldOf } from "./fakes.ts"
 
 vi.mock("../src/protocol/code-hash.ts", async (importOriginal) => {
 	const real = await importOriginal<typeof import("../src/protocol/code-hash.ts")>()
@@ -28,6 +28,7 @@ let net: Network
 let r: Reads
 let log: Step[]
 let feeAsset: Address
+let world: World
 
 beforeAll(async () => {
 	recipient = (await AztecAddress.random()).toString()
@@ -36,6 +37,7 @@ beforeAll(async () => {
 async function setup(chainId?: number) {
 	log = []
 	const w = worldOf(testnet())
+	world = w
 	feeAsset = w.m.feeJuice.asset as Address
 	w.reads.set(`${feeAsset.toLowerCase()}:allowance`, allowanceAfterApprove(log))
 	r = readsOf(w)
@@ -85,6 +87,16 @@ describe("persist before every prompt", () => {
 		const persist = vi.fn(async () => {})
 		const e = await failure(depositFuel(net, r, wallet, quote, { persist }))
 		expect([e?.code, e?.submission]).toEqual(["wrong-chain", "none"])
+		expect(persist).not.toHaveBeenCalled()
+		expect(log).toEqual([])
+	})
+
+	it("a paused route costs no prompt and no persist", async () => {
+		const { quote, wallet } = await setup()
+		world.reads.set(`${String(net.bridge?.factory).toLowerCase()}:depositsPaused`, true)
+		const persist = vi.fn(async () => {})
+		const e = await failure(depositFuel(net, r, wallet, quote, { persist }))
+		expect([e?.code, e?.submission]).toEqual(["paused", "none"])
 		expect(persist).not.toHaveBeenCalled()
 		expect(log).toEqual([])
 	})

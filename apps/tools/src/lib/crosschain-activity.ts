@@ -118,6 +118,8 @@ export function currentRowParts(
 		case "delivered":
 			return { word: { text: "Continue", tone: "need", spoken: "delivered to Ethereum" }, detail: "now on Ethereum" }
 		case "expired":
+			// Across refunds an unfilled deposit on mainnet only; testnet's stays in the source pool.
+			if (!IS_MAINNET) return { word: { text: chip.word, tone: chip.tone }, detail: null }
 			return {
 				word: { text: chip.word, tone: chip.tone, spoken: `refund pending on ${chainLabel(rec.route.srcChainId)}` },
 				detail: "refund pending",
@@ -141,7 +143,7 @@ export function phaseDetail(phase: CrossChainPhase, visibility: string): string 
 		case "delivered":
 			return "in your Ethereum wallet"
 		case "expired":
-			return "refund pending"
+			return IS_MAINNET ? "refund pending" : visibility
 		default:
 			return visibility
 	}
@@ -255,11 +257,11 @@ export function phaseGuide(rec: CrossChainDepositRecord, phase: CrossChainPhase,
 			return `${what} is in your Ethereum wallet ${who}, not on Aztec. Continuing from Ethereum is a new send and needs ETH there for gas${held}.`
 		}
 		case "expired":
-			return `${expiryLead(rec)}. Refund pending on ${src}, to ${who}.`
+			return IS_MAINNET ? `${expiryLead(rec)}. Refund pending on ${src}, to ${who}.` : `${expiryLead(rec)}.`
 	}
 }
 
-/** "It wasn’t filled on Ethereum · Sepolia within 2 hours" on testnet, where every send waits for a manual fill;
+/** "It wasn’t filled on Ethereum · Sepolia within 2 hours" on testnet, where our testnet relayer fills every send;
  *  "Across’s relayers didn’t deliver it within 2 hours" on mainnet. */
 export function expiryLead(rec: CrossChainDepositRecord, what = "it"): string {
 	const window = windowWords(rec)
