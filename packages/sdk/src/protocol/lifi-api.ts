@@ -1,9 +1,9 @@
 /**
  * A keyless li.quest client. Every response is hostile input: read through `cappedFetchJson`, parsed by schemas
  * that keep exactly the fields the decoder, the fuel quote and the UI read (extra fields are dropped, a missing or
- * ill-typed needed field is a refusal), and held to the request it answers. A quote is never trusted for what it
- * makes the user sign: `verifyRoute` decides that from the bytes. `/v1/status` is an accelerator that can only name a
- * transaction for discovery to check on chain.
+ * ill-typed needed field is a refusal), and held to the request it answers. What a quote makes the user sign is held to
+ * the pins from its bytes: `verifyRoute` for a route, `fuelSwapIssue` for a gas swap. `/v1/status` is an accelerator
+ * that can only name a transaction for discovery to check on chain.
  */
 import { type Address, getAddress, type Hex } from "viem"
 import z from "zod"

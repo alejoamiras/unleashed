@@ -30,16 +30,19 @@ import {
 	DEPOSIT_INTENT_COMPONENTS,
 	DEPOSIT_ROUTER_ABI,
 	type RouterIntent,
-	FUEL_SWAP_SELECTORS,
+	decodeFeeCall,
+	decodeFuelSwap,
+	type FuelSwap,
+	type FuelSwapVenue,
+	fuelFeeCall,
+	fuelSwapIssue,
+	LIFI_FEE_CAP_BPS,
 	LIFI_RECEIVER_MESSAGE_PARAMS,
 	type LifiBridgeData,
 	type LifiSwapData,
-	SWAP_TOKENS_MULTIPLE_V3_ABI,
-	SWAP_TOKENS_SINGLE_V3_ABI,
 	type LifiChainBook,
 	lifiBook,
 	stargatePoolFor,
-	LIFI_ALLOW_EXCHANGES,
 	LIFI_INTEGRATOR,
 	LIFI_MIN_COMPOSE_GAS,
 	START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR,
@@ -47,33 +50,6 @@ import {
 } from "@unleashed/sdk/l1"
 import { decodeLzOptions, decodeOftComposeMessage, type LzExecutorOption, type OftComposeMessage, STARGATE_FACET_V2_ABI } from "./stargate"
 
-/** LI.FI's own fee on the fee tier: at most 0.25 % of the input. Our integrator fee is 0, so no second share exists. */
-export const LIFI_FEE_CAP_BPS = 25n
-
-const FUEL_SWAP_ABI = [...SWAP_TOKENS_SINGLE_V3_ABI, ...SWAP_TOKENS_MULTIPLE_V3_ABI] as const
-
-/** LI.FI's `FeeForwarder.forwardERC20Fees`, the fee step li.quest prepends to a route. */
-export const FEE_FORWARDER_ABI = [
-	{
-		type: "function",
-		name: "forwardERC20Fees",
-		stateMutability: "nonpayable",
-		inputs: [
-			{ name: "_token", type: "address" },
-			{
-				name: "_distributions",
-				type: "tuple[]",
-				components: [
-					{ name: "recipient", type: "address" },
-					{ name: "amount", type: "uint256" },
-				],
-			},
-		],
-		outputs: [],
-	},
-] as const
-
-const FORWARD_ERC20_FEES_SELECTOR: Hex = toFunctionSelector(FEE_FORWARDER_ABI[0])
 const BRIDGE_FROM_CALLER_SELECTOR: Hex = toFunctionSelector(getAbiItem({ abi: DEPOSIT_ROUTER_ABI, name: "bridgeFromCaller" }))
 const RAIL_SELECTORS: Readonly<Record<RailExpectation["kind"], readonly Hex[]>> = {
 	acrossV4: [START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR],
@@ -121,6 +97,8 @@ export interface RouteExpectation {
 	routerCall: Hex
 	/** The provider of the fuel quote `routerCall` embeds; required whenever its intent carries a slice. */
 	fuel?: FuelProvider
+	/** The manifest's testnet swapper; required with a `testnetSwapper` fuel provider. */
+	fuelSwapper?: Address
 	rail: RailExpectation
 }
 
@@ -220,43 +198,46 @@ export const ROUTE_FIELD_POLICY: readonly (readonly [field: string, kind: FieldP
 	["fuelSwap._receiver", "equal"],
 	["fuelSwap._minAmountOut", "equal"],
 	["fuelSwap._swapData.length", "atMost"],
+	["fuelSwap._swapData.callTo", "equal"],
+	["fuelSwap._swapData.approveTo", "equal"],
 	["fuelSwap._swapData.sendingAssetId", "equal"],
 	["fuelSwap._swapData.receivingAssetId", "equal"],
 	["fuelSwap._swapData.fromAmount", "equal"],
+	["fuelSwap._swapData[0].callTo", "equal"],
+	["fuelSwap._swapData[0].approveTo", "equal"],
 	["fuelSwap._swapData[0].sendingAssetId", "equal"],
 	["fuelSwap._swapData[0].receivingAssetId", "equal"],
 	["fuelSwap._swapData[0].fromAmount", "equal"],
+	["fuelFee.selector", "oneOf"],
+	["fuelFee._token", "equal"],
+	["fuelFee._distributions.length", "equal"],
+	["fuelFee._distributions[0].amount", "atMost"],
+	["fuelSwap._swapData[1].callTo", "equal"],
+	["fuelSwap._swapData[1].approveTo", "equal"],
 	["fuelSwap._swapData[1].sendingAssetId", "equal"],
 	["fuelSwap._swapData[1].receivingAssetId", "equal"],
+	["fuelSwap._swapData[1].fromAmount", "equal"],
 ]
 
 const LABEL = "an event label the facet emits and never acts on"
-const INNER_SWAP =
-	"the facet's on-chain LibAllowList gates inner targets and calls, and the router's fee-asset floor bounds any loss to the slice"
+const VENUE_CALL = "the venue's own call, behind its pinned contract; the router's fee-asset floor checks what it delivers"
 
 /** Decoded leaves no policy constrains, each with the reason that is safe. */
 export const ROUTE_UNPOLICED: readonly (readonly [field: string, reason: string])[] = [
 	["call._bridgeData.bridge", LABEL],
 	["call._bridgeData.referrer", LABEL],
 	["fee._distributions[0].recipient", "LI.FI's fee wallet; the fee cap bounds what it receives"],
+	["fuelFee._distributions[0].recipient", "LI.FI's fee wallet; the fee cap bounds what it receives"],
 	["options.lzReceive.length", "lzReceive gas options add up; more gas only raises the messaging fee, which its cap bounds"],
 	["options.lzReceive[].gas", "more lzReceive gas only raises the messaging fee, which its cap bounds"],
 	["message.swapData[0].requiresDeposit", "the Executor ignores it; LI.FI sends true, our builder false"],
 	["fuelSwap._transactionId", LABEL],
 	["fuelSwap._integrator", LABEL],
 	["fuelSwap._referrer", LABEL],
-	["fuelSwap._swapData.callTo", INNER_SWAP],
-	["fuelSwap._swapData.approveTo", INNER_SWAP],
-	["fuelSwap._swapData.callData", INNER_SWAP],
-	["fuelSwap._swapData[].callTo", INNER_SWAP],
-	["fuelSwap._swapData[].approveTo", INNER_SWAP],
-	["fuelSwap._swapData[].callData", INNER_SWAP],
+	["fuelSwap._swapData.callData", VENUE_CALL],
+	["fuelSwap._swapData[].callData", VENUE_CALL],
 	["fuelSwap._swapData.requiresDeposit", "the router measures its pull from the allowance left, never from this flag"],
 	["fuelSwap._swapData[].requiresDeposit", "the router measures its pull from the allowance left, never from this flag"],
-	[
-		"fuelSwap._swapData[1].fromAmount",
-		"the facet returns unswapped input to the router, which joins the token leg; the floor bounds the output",
-	],
 ]
 
 function fieldPattern(field: string): RegExp {
@@ -349,11 +330,6 @@ function equalTree(path: string, actual: unknown, wanted: unknown): void {
 	if (d) refuse(d, "differs from our own encoding")
 }
 
-/** Positional ABI arguments keyed by their parameter names, the shape every field path uses. */
-function named(inputs: readonly { name: string }[], args: readonly unknown[]): Record<string, unknown> {
-	return Object.fromEntries(inputs.map((p, i) => [p.name, args[i]]))
-}
-
 function bookFor(field: string, chainId: number): LifiChainBook {
 	try {
 		return lifiBook(chainId)
@@ -364,16 +340,10 @@ function bookFor(field: string, chainId: number): LifiChainBook {
 
 // Each layer decoder checks the selector first and the canonical re-encoding last; a failure names the layer.
 
-function decodeFeeCall(data: Hex) {
-	if (selectorOf(data) !== FORWARD_ERC20_FEES_SELECTOR) refuse("fee.selector", `${selectorOf(data)} is not forwardERC20Fees`)
-	let args: readonly [Address, readonly { recipient: Address; amount: bigint }[]]
-	try {
-		args = decodeFunctionData({ abi: FEE_FORWARDER_ABI, data }).args
-	} catch (e) {
-		return refuse("fee", errorText(e))
-	}
-	if (encodeFunctionData({ abi: FEE_FORWARDER_ABI, args }) !== data.toLowerCase()) refuse("fee", "non-canonical encoding")
-	return { token: args[0], distributions: args[1] }
+/** A shared decoder's result, or its refusal under the field it names. */
+function unwrap<T extends object>(r: T | { field: string; reason: string }): T {
+	if ("reason" in r && "field" in r) return refuse(r.field, r.reason)
+	return r as T
 }
 
 function decodeRouterCall(data: Hex): DecodedRouterCall {
@@ -390,34 +360,6 @@ function decodeRouterCall(data: Hex): DecodedRouterCall {
 		refuse("router", "non-canonical encoding")
 	}
 	return { intent, swapData, minReceived, maxPull }
-}
-
-interface FuelSwap {
-	selector: Hex
-	/** `_swapData` is one tuple in the single entrypoint, an array in the multiple one. */
-	single: boolean
-	args: Record<string, unknown>
-	receiver: Address
-	minAmountOut: bigint
-	steps: readonly LifiSwapData[]
-}
-
-function decodeFuelSwap(data: Hex): FuelSwap {
-	const selector = selectorOf(data)
-	if (!FUEL_SWAP_SELECTORS.includes(selector)) refuse("fuelSwap.selector", `${selector} is neither pinned swap entrypoint`)
-	let decoded: ReturnType<typeof decodeFunctionData<typeof FUEL_SWAP_ABI>>
-	try {
-		decoded = decodeFunctionData({ abi: FUEL_SWAP_ABI, data })
-	} catch (e) {
-		return refuse("fuelSwap", errorText(e))
-	}
-	const reencoded = encodeFunctionData({ abi: FUEL_SWAP_ABI, ...decoded } as Parameters<typeof encodeFunctionData>[0])
-	if (reencoded !== data.toLowerCase()) refuse("fuelSwap", "non-canonical encoding")
-	const single = decoded.functionName === "swapTokensSingleV3ERC20ToERC20"
-	const last = decoded.args[5]
-	const steps: readonly LifiSwapData[] = Array.isArray(last) ? last : [last as LifiSwapData]
-	const inputs = FUEL_SWAP_ABI[single ? 0 : 1].inputs
-	return { selector, single, args: named(inputs, decoded.args), receiver: decoded.args[3], minAmountOut: decoded.args[4], steps }
 }
 
 function decodeMessage(bytes: Hex): DecodedMessage & { steps: readonly LifiSwapData[] } {
@@ -470,39 +412,26 @@ function checkOurRouterCall(x: RouteExpectation): DecodedRouterCall & { fuelSwap
 		eq("router.swapData", ours.swapData, "0x")
 		return ours
 	}
-	checkFuelProvider(x)
-	const fuelSwap = decodeFuelSwap(ours.swapData)
+	const venue = fuelVenueOf(x)
+	const fuelSwap = unwrap(decodeFuelSwap(ours.swapData))
 	eq("fuelSwap._receiver", fuelSwap.receiver, x.router)
 	eq("fuelSwap._minAmountOut", fuelSwap.minAmountOut, ours.intent.minFuelOutput)
-	checkFuelSteps(fuelSwap, ours.intent, x)
+	const issue = fuelSwapIssue(fuelSwap, {
+		chainId: x.l1ChainId,
+		token: x.destToken,
+		slice: ours.intent.fuelSlice,
+		feeAsset: x.feeAsset,
+		venue,
+	})
+	if (issue) refuse(issue.field, issue.reason)
 	return { ...ours, fuelSwap }
 }
 
-function checkFuelProvider(x: RouteExpectation): void {
+function fuelVenueOf(x: RouteExpectation): FuelSwapVenue {
 	const fuel = x.fuel
-	if (fuel?.provider === "lifi") {
-		// The venue is an API field: only venues proven to survive a late fill pass, and the router's floor binds whatever runs.
-		if (!(LIFI_ALLOW_EXCHANGES as readonly string[]).includes(fuel.tool))
-			refuse("fuel.tool", `venue "${fuel.tool}" is not a proven venue`)
-	} else if (fuel?.provider === "testnetSwapper") {
-		if (x.l1ChainId === 1) refuse("fuel.provider", "TestnetFuelSwapper never serves mainnet")
-	} else {
-		refuse("fuel.provider", "a fuel slice needs the provider of the quote it embeds")
-	}
-}
-
-/** One optional non-asset-changing step (LI.FI's fee) then exactly one swap into the fee asset. */
-function checkFuelSteps(swap: FuelSwap, intent: RouterIntent, x: RouteExpectation): void {
-	const at = (i: number, k: string) => (swap.single ? `fuelSwap._swapData.${k}` : `fuelSwap._swapData[${i}].${k}`)
-	const steps = swap.steps
-	// The facet returns each step's leftover input to `_receiver`, so a longer route would strand intermediates there.
-	if (steps.length < 1 || steps.length > 2) refuse("fuelSwap._swapData.length", `${steps.length} steps; at most a fee step and one swap`)
-	eq(at(0, "sendingAssetId"), steps[0].sendingAssetId, x.destToken)
-	eq(at(0, "fromAmount"), steps[0].fromAmount, intent.fuelSlice)
-	for (const [i, s] of steps.entries()) {
-		if (i > 0) eq(at(i, "sendingAssetId"), s.sendingAssetId, steps[i - 1].receivingAssetId)
-		eq(at(i, "receivingAssetId"), s.receivingAssetId, i === steps.length - 1 ? x.feeAsset : s.sendingAssetId)
-	}
+	if (fuel?.provider === "lifi") return fuel
+	if (fuel?.provider !== "testnetSwapper") return refuse("fuel.provider", "a fuel slice needs the provider of the quote it embeds")
+	return { provider: "testnetSwapper", swapper: x.fuelSwapper }
 }
 
 function checkEnvelope(tx: RouteTx, x: RouteExpectation, src: LifiChainBook): void {
@@ -537,7 +466,7 @@ function checkSourceSwaps(swaps: readonly LifiSwapData[], x: RouteExpectation, s
 	eq(f("receivingAssetId"), s.receivingAssetId, x.srcToken)
 	eq(f("fromAmount"), s.fromAmount, x.srcAmount)
 	eq(f("requiresDeposit"), s.requiresDeposit, true)
-	const fee = decodeFeeCall(s.callData)
+	const fee = unwrap(decodeFeeCall(s.callData, "fee"))
 	eq("fee._token", fee.token, x.srcToken)
 	eq("fee._distributions.length", fee.distributions.length, 1)
 	const amount = fee.distributions[0].amount
@@ -672,14 +601,23 @@ function checkRouterCallBytes(data: Hex, ours: ReturnType<typeof checkOurRouterC
 	const actual = decodeRouterCall(data)
 	equalTree("router.intent", actual.intent, ours.intent)
 	if (ours.fuelSwap && actual.swapData !== "0x") {
-		const swap = decodeFuelSwap(actual.swapData)
+		const swap = unwrap(decodeFuelSwap(actual.swapData))
 		eq("fuelSwap.selector", swap.selector, ours.fuelSwap.selector)
+		checkFeeCallBytes(swap, ours.fuelSwap)
 		equalTree("fuelSwap", swap.args, ours.fuelSwap.args)
 	}
 	eq("router.swapData", actual.swapData, ours.swapData)
 	eq("router.minReceived", actual.minReceived, ours.minReceived)
 	eq("router.maxPull", actual.maxPull, ours.maxPull)
 	eq("message.swapData[0].callData", data, x.routerCall)
+}
+
+/** A fee leaf changed in transit is named as itself, before the swap tree names the whole step's `callData`. */
+function checkFeeCallBytes(actual: FuelSwap, ours: FuelSwap): void {
+	const want = fuelFeeCall(ours)
+	const got = fuelFeeCall(actual)
+	if (!want || !got || "reason" in want) return
+	equalTree("fuelFee", unwrap(got).args, want.args)
 }
 
 function checkRoute(tx: RouteTx, x: RouteExpectation): DecodedRoute {

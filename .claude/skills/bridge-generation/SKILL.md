@@ -335,13 +335,21 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      changes: **commit it now**, `promote` refuses an uncommitted intent), runs strict `verify-l1` and
      the hub initialization-hash readback. Then `live-intent.ts promote <intent>` (`--bridge-only`
      when the faucet candidate is not part of this arc), the only thing that touches
-     `testnet-bridge.json`. Never hand-copy.
+     `testnet-bridge.json`. Never hand-copy. The promoted manifest is the SDK's bundled network, the
+     only one `parseNetwork` accepts on its chain: publish the SDK once the promotion is on `main`
+     (`packages/sdk/README.md` § Releasing).
    - **On a reset, retire the old live manifest first.** `promote` refuses any network, chain,
      factory or hub move against an existing live manifest ("promotion would change the network
      identity"), and a reset moves all four. Delete `apps/tools/public/testnet-bridge.json` in its
      own commit (the path is allowlisted, so the intent stays valid), then re-run the same `promote`;
      with no live manifest it takes the first-promotion path. Never hand-edit the live manifest to
      get past the check.
+   - **A mainnet promotion re-traces both legal documents** (`packages/legal/src/`) in the same PR:
+     every origin the mainnet target reaches is a provider the Privacy Policy names
+     (`apps/tools/src/lib/privacy-providers.test.ts`), what each request carries is checked by hand, and
+     the Terms' claims about the deployed contracts (the pause and sweep keys, the PrivateFPC having no
+     owner) are checked against the promoted addresses. A changed text takes a new `updated` date and
+     the owner's approval.
 8. **The live canaries** (all green is the redeploy gate):
    `bun run --cwd packages/bridge-core verify:l1 --config ../../apps/tools/public/testnet-bridge.json --strict` ·
    `BRIDGE_MANIFEST=public/testnet-bridge.json bun run --cwd apps/tools verify:deployments` ·

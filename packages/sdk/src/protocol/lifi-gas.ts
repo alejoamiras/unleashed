@@ -1,3 +1,5 @@
+import { SANDBOX_LIFI_CHAIN_IDS } from "./lifi-addresses.ts"
+
 /**
  * Gas and venue constants for LI.FI deliveries into `DepositRouter`, each pinned by a mainnet fork assertion
  * (`contracts/bridge/evm/test/LifiDestinationFork.t.sol`, `LifiStargateComposeFork.t.sol`) at the blocks
@@ -34,3 +36,6 @@ export const LIFI_DENY_EXCHANGES = ["bitget"] as const
 
 /** Fuel venues: the warp fork proved nordstern (Ethereum block 26,128,734) and sushiswap (26,128,931) survive ETA × 3. */
 export const LIFI_ALLOW_EXCHANGES = ["nordstern", "sushiswap"] as const
+
+/** Chains whose gas leg may swap through a LI.FI venue: the sandbox's anvils. Enabling a live chain is a release. */
+export const LIFI_FUEL_CHAIN_IDS: readonly number[] = SANDBOX_LIFI_CHAIN_IDS

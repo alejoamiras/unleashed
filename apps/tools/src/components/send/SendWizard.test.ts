@@ -104,6 +104,7 @@ const releaseForeground = vi.fn((id: string) => {
 const sendError = ref<string | null>(null)
 const sendBusy = ref(false)
 const sendFn = vi.fn(async (): Promise<string> => "")
+const checkFn = vi.fn(async (_plan: unknown): Promise<string | null> => null)
 const sendDispose = vi.fn()
 const exitError = ref<string | null>(null)
 const exitFn = vi.fn(async (_plan: unknown, _approvedCeiling?: bigint): Promise<string> => "")
@@ -115,8 +116,13 @@ const isRegisteredFn = vi.fn(async () => false)
 const aztecWallet = ref<object | null>(null)
 const l1WrongChain = ref(false)
 const l1ChainId = ref(31337)
+const l1Address = ref<string | null>(L1_ADDRESS)
+/** The build's pinned Ethereum reader, as `readClientFor` hands it out. */
+const PINNED_L1 = { pinned: true }
 let rowOwner: () => string | undefined = () => undefined
+let rowReader: () => unknown = () => undefined
 let selectionOwner: () => string | undefined = () => undefined
+let selectionReader: () => unknown = () => undefined
 const addTokenStatus = ref<{ kind: string; error?: { message: string } }>({ kind: "idle" })
 const toasts: { kind: string; text: string }[] = []
 
@@ -155,7 +161,7 @@ vi.mock("@/contracts/bridge-generation", () => ({
 }))
 vi.mock("@/composables/useL1Wallet", () => ({
 	useL1Wallet: () => ({
-		address: ref(L1_ADDRESS),
+		address: l1Address,
 		chainId: l1ChainId,
 		wrongChain: l1WrongChain,
 		publicClient: { readContract },
@@ -259,13 +265,18 @@ vi.mock("@/composables/useGasHeld", () => ({
 		dispose: vi.fn(),
 	}),
 }))
+vi.mock("@/composables/useEthereumReader", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@/composables/useEthereumReader")>()),
+	readClientFor: () => PINNED_L1,
+}))
 vi.mock("@/composables/useAddressLookup", () => ({
 	useAddressLookup: () => ({ state: ref(null), dispose: vi.fn() }),
 }))
 const rowRefresh = vi.fn(async () => {})
 vi.mock("@/composables/useRowBalances", () => ({
-	useRowBalances: (deps: { owner: () => string | undefined }) => {
+	useRowBalances: (deps: { owner: () => string | undefined; pub: () => unknown }) => {
 		rowOwner = deps.owner
+		rowReader = deps.pub
 		return { balances: ref({}), refresh: rowRefresh, dispose: vi.fn() }
 	},
 }))
@@ -286,8 +297,9 @@ vi.mock("@/composables/useFeeAssetMint", async () => {
 	}
 })
 vi.mock("@/composables/useTokenSelection", () => ({
-	useTokenSelection: (deps: { l1Account: () => string | undefined }) => {
+	useTokenSelection: (deps: { l1Account: () => string | undefined; balanceReader: () => unknown }) => {
 		selectionOwner = deps.l1Account
+		selectionReader = deps.balanceReader
 		return {
 			selected,
 			balances,
@@ -330,7 +342,7 @@ vi.mock("@/composables/useGasShare", () => ({
 	}),
 }))
 vi.mock("@/composables/useSend", () => ({
-	useSend: () => ({ send: sendFn, stage: ref(null), busy: sendBusy, error: sendError, dispose: sendDispose }),
+	useSend: () => ({ send: sendFn, check: checkFn, stage: ref(null), busy: sendBusy, error: sendError, dispose: sendDispose }),
 	previewBlock: (plan: { token: ResolvedToken }) => ({
 		erc20: plan.token.address,
 		portal: plan.token.portal,
@@ -533,9 +545,11 @@ describe("SendWizard", () => {
 		isRegisteredFn.mockResolvedValue(false)
 		aztecWallet.value = {}
 		l1WrongChain.value = false
+		l1Address.value = L1_ADDRESS
 		toasts.length = 0
 		readContract.mockResolvedValue("0x0000000000000000000000000000000000000000")
 		sendFn.mockResolvedValue("")
+		checkFn.mockReset().mockResolvedValue(null)
 		exitFn.mockResolvedValue("")
 		proposeFn.mockReturnValue({ fuelAmount: 2_000_000n, fuelFj: 5n * 10n ** 18n, capped: null })
 	})
@@ -1131,6 +1145,64 @@ describe("SendWizard", () => {
 		expect(sendFn).toHaveBeenCalledTimes(1)
 	})
 
+	/** A public token+gas review confirmed with its bridge check held: such a send has no gas re-read of its own, so
+	 *  the check is its confirm's only wait. */
+	async function confirmHeld(w: Awaited<ReturnType<typeof wizard>>, answer: string | null) {
+		let release = (): void => {}
+		checkFn.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					release = () => resolve(answer)
+				}),
+		)
+		;(await atReview(w)).vm.$emit("back")
+		await flushPromises()
+		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
+		w.findComponent({ name: "AmountStep" }).vm.$emit("update:isPrivate", false)
+		setRoute({ kind: "route", venue: VENUE, probeOut: 135n * 10n ** 18n })
+		await flushPromises()
+		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
+		await flushPromises()
+		w.findComponent({ name: "ReviewStep" }).vm.$emit("confirm")
+		await flushPromises()
+		expect(checkFn.mock.calls[0]?.[0]).toMatchObject({ intent: "token+gas", isPrivate: false })
+		return release
+	}
+
+	it.each([
+		{ name: "passes", answer: null },
+		{ name: "refuses", answer: "Deposits on this route are paused right now. Nothing was sent." },
+	])("a bridge check that $name after the account switched sends nothing and shows nothing", async ({ answer }) => {
+		const release = await confirmHeld(await wizard(), answer)
+		selectedAccount.value = `0x${"20".repeat(32)}`
+		await flushPromises()
+		release()
+		await flushPromises()
+		expect(sendFn).not.toHaveBeenCalled()
+		expect(sendError.value).toBeNull()
+	})
+
+	it("a receipt asked for while the bridge check reads opens once it returns, and the review it replaced never sends", async () => {
+		const w = await wizard()
+		const release = await confirmHeld(w, null)
+		crossChainRecords.value = [xcRecord({ id: "xc-2", completedAt: 9_000, claimTxHash: WORD as `0x${string}` })]
+		useShell().showReceipt("xc-2")
+		await flushPromises()
+		// The hold defers the request; dropping it is what lets the receipt in.
+		expect(w.findComponent({ name: "BridgeReceipt" }).exists()).toBe(false)
+		release()
+		await flushPromises()
+		expect(w.findComponent({ name: "BridgeReceipt" }).exists()).toBe(true)
+		expect(sendFn).not.toHaveBeenCalled()
+	})
+
+	it("a bridge check that passes on a review still standing sends it", async () => {
+		const release = await confirmHeld(await wizard(), null)
+		release()
+		await flushPromises()
+		expect(sendFn).toHaveBeenCalledTimes(1)
+	})
+
 	it("a backgrounded send that lands re-resolves the token, standing down a next review priced from it", async () => {
 		let releaseSend = (): void => {}
 		sendFn.mockImplementation(async () => {
@@ -1711,18 +1783,20 @@ describe("SendWizard", () => {
 		expect(w.findComponent({ name: "AmountStep" }).props("blockedReason")).toBe(EXIT_TOKEN_NOT_REGISTERED)
 	})
 
-	it("reads no Ethereum balance on the wrong chain, and re-reads both kinds on the switch back", async () => {
+	it("reads Ethereum balances through the pinned reader whichever chain the wallet is on; an account change re-reads them", async () => {
 		const w = await wizard()
 		w.findComponent({ name: "TokenStep" }).vm.$emit("select", candidate())
 		await flushPromises()
-		expect(rowOwner()).toBe(L1_ADDRESS)
-		l1WrongChain.value = true
-		await flushPromises()
-		expect([rowOwner(), selectionOwner()]).toEqual([undefined, undefined])
 		refreshBalances.mockClear()
-		l1WrongChain.value = false
+		l1WrongChain.value = true
+		l1ChainId.value = XC_SOURCE
 		await flushPromises()
 		expect([rowOwner(), selectionOwner()]).toEqual([L1_ADDRESS, L1_ADDRESS])
+		expect([rowReader(), selectionReader()]).toEqual([PINNED_L1, PINNED_L1])
+		expect(refreshBalances).not.toHaveBeenCalled()
+		l1Address.value = XC_SENDER
+		await flushPromises()
+		expect([rowOwner(), selectionOwner()]).toEqual([XC_SENDER, XC_SENDER])
 		expect(refreshBalances).toHaveBeenCalledOnce()
 	})
 

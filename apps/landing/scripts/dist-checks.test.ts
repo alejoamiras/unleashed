@@ -5,19 +5,24 @@ import { checkDist, type Dist, distDigest } from "./dist-checks.ts"
 const bytes = (value: string) => new TextEncoder().encode(value)
 const BUILD = "0.1.0+0123abcd"
 const HTML = `<!doctype html><head><script src="/theme-boot.js"></script><script type="module" crossorigin src="/assets/index-x.js"></script><meta name="unleashed-build" content="${BUILD}"></head><body><a href="https://github.com/alejoamiras/unleashed">x</a></body>`
+const POLICY = '<a href="https://www.cloudflare.com/privacypolicy/">y</a>'
+const LEGAL = (canonical: string, body = "") =>
+	`<!doctype html><head><script src="/theme-boot.js"></script><link rel="canonical" href="${canonical}"><meta name="unleashed-build" content="${BUILD}"></head><body><a href="/">x</a>${body}</body>`
 const FONTS = ["AtkinsonHyperlegibleNext-a", "AtkinsonHyperlegibleMono-b", "SixtyfourConvergence-subset-c"]
 
 /** A minimal production dist/ that every rule accepts; each case breaks exactly one thing. */
-function dist(overrides: Record<string, string> = {}): Map<string, Uint8Array> {
-	const files: Record<string, string> = {
+function dist(overrides: Record<string, string | undefined> = {}): Map<string, Uint8Array> {
+	const files: Record<string, string | undefined> = {
 		"index.html": HTML,
+		"terms.html": LEGAL("https://unleashed.systems/terms"),
+		"privacy.html": LEGAL("https://unleashed.systems/privacy", POLICY),
 		_headers: renderHeadersFile("production", []),
 		"build.json": JSON.stringify({ buildId: BUILD, channel: "production" }),
 		"assets/index-x.css": `@font-face{src:url(/assets/${FONTS[0]}.woff2)}`,
 		...Object.fromEntries(FONTS.map((font) => [`assets/${font}.woff2`, "font"])),
 		...overrides,
 	}
-	return new Map(Object.entries(files).map(([path, value]) => [path, bytes(value)]))
+	return new Map(Object.entries(files).flatMap(([path, value]) => (value === undefined ? [] : [[path, bytes(value)]])))
 }
 
 describe("build guard", () => {
@@ -51,6 +56,33 @@ describe("build guard", () => {
 			{ "index.html": HTML.replace("<body>", '<body><meta property="og:url" content="x;url=http:evil.example">') },
 			"outside LINKS",
 		],
+		["a missing legal page", { "terms.html": undefined }, "missing terms.html"],
+		[
+			"an owner's blank on a page",
+			{ "terms.html": LEGAL("https://unleashed.systems/terms", "<p>Last updated [[OWNER: A11]]</p>") },
+			"terms.html still has an owner's blank",
+		],
+		[
+			"a policy link on a page whose document names no provider",
+			{ "terms.html": LEGAL("https://unleashed.systems/terms", POLICY) },
+			"terms.html links outside LINKS",
+		],
+		[
+			"the landing linking a legal page by URL",
+			{ "index.html": HTML.replace("<body>", '<body><a href="https://unleashed.systems/terms">x</a>') },
+			"index.html links outside LINKS",
+		],
+		[
+			"a legal page linking outside LINKS",
+			{ "privacy.html": LEGAL("https://evil.example/privacy") },
+			"privacy.html links outside LINKS",
+		],
+		[
+			"a legal page without the build id",
+			{ "terms.html": LEGAL("https://unleashed.systems/terms").replace(BUILD, "x") },
+			"not in terms.html",
+		],
+		["a script carrying a document", { "assets/index-x.js": 'id:"unleashed-privacy-policy"' }, "carries the legal document"],
 		["a data: font", { "assets/index-x.css": "@font-face{src:url(data:font/woff2;base64,AAAA)}" }, "data: URL"],
 		["an unsafe CSP", { _headers: "/*\n  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'\n" }, "'unsafe-'"],
 		["a preview marker in production", { _headers: renderHeadersFile("preview", []) }, "X-Robots-Tag"],

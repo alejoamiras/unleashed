@@ -268,6 +268,7 @@ export const TESTIDS = {
 	sendReceiptAddToken: "tl-send-receipt-add-token",
 	mainnetPlaceholder: "tl-mainnet-placeholder",
 	mainnetPlaceholderLink: "tl-mainnet-placeholder-link",
+	mainnetPlaceholderLegalLink: "tl-mainnet-placeholder-legal-link",
 
 	// A send running in the background: the strip above the wizard and its jump to the journal
 	sendBackgroundStrip: "tl-send-background-strip",

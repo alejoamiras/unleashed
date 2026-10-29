@@ -50,8 +50,9 @@ export interface ToolsTarget {
 	l1ExplorerBaseUrl: string
 	/** CSP `connect-src` for this target — the node host MUST be listed or the app can't reach it. */
 	cspConnectSrc: string
-	/** Keyless read RPCs per chain id, preferred first, each serving `eth_getLogs` without silently truncating it:
-	 *  what watches a cross-chain deposit without a wallet. A chain absent here has no wallet-independent reads. */
+	/** Keyless read RPCs per chain id, preferred first, each refusing an `eth_getLogs` range past its cap rather than
+	 *  truncating it: what watches a cross-chain deposit without a wallet. A chain absent here has no
+	 *  wallet-independent reads. */
 	readRpcUrls: Readonly<Record<number, readonly string[]>>
 	/** The Across API base the testnet rail asks for its relay fee; absent where no route is quoted through it. */
 	acrossApiUrl?: string
@@ -164,6 +165,7 @@ export const TESTNET_TARGET: ToolsTarget = {
 	readRpcUrls: TESTNET_READ_RPCS,
 }
 
+/** Every origin this target reaches is a provider the Privacy Policy names (privacy-providers.test.ts). */
 export const MAINNET_TARGET: ToolsTarget = {
 	key: "mainnet",
 	l1ChainId: MAINNET_L1_CHAIN_ID,

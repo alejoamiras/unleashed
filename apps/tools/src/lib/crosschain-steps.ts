@@ -87,21 +87,20 @@ export function etaRange(seconds: number): string {
 	return `${lo}–${hi} min`
 }
 
-/** The bridging line the stepper and the card share. A send on fixed terms has no ETA: it waits for a manual fill
- *  until its deadline, and the source chain refunds it after. */
+/** The bridging line the stepper and the card share. A send on fixed terms (testnet only) waits for our testnet
+ *  relayer, its exclusive filler; its `etaSeconds` is the whole fill window, not an estimate. */
 export function bridgingPrompt(rec: CrossChainDepositRecord, symbol: string): string {
 	const rail = railLabel(rec.route.rail)
 	const l1 = chainLabel(rec.chainId)
 	if (rec.route.terms !== "fixed")
 		return `${rail} is moving your ${symbol} to ${l1}. Nothing for you to do; usually ${etaRange(rec.route.etaSeconds)}.`
-	const src = chainLabel(rec.route.srcChainId)
-	return `${rail} holds your ${symbol} until a manual fill on ${l1}. Nothing for you to do; unfilled after ${waitText(rec.route.etaSeconds)}, it is refunded on ${src}.`
+	return `${rail} holds your ${symbol} until our testnet relayer fills it on ${l1}. Nothing for you to do.`
 }
 
 const LATE_FLOOR_MINUTES = 5
 
 /** Whether a send has been on its rail longer than the top of its range, by a minute and at least five. A send on
- *  fixed terms is never late: it waits for its fill or its refund. */
+ *  fixed terms is never late: it waits for its fill until its deadline. */
 export function bridgingLate(rec: CrossChainDepositRecord, now: number): boolean {
 	if (rec.route.terms === "fixed") return false
 	const [, hi] = etaMinutes(rec.route.etaSeconds)
@@ -252,7 +251,7 @@ function bridgeCopy(rec: CrossChainDepositRecord, w: Words): PhaseCopy {
 	return {
 		label: `Bridge to ${w.l1}`,
 		prompt: bridgingPrompt(rec, w.token?.symbol ?? "funds"),
-		eta: fixed ? `manual fill, up to ${range}` : `usually ${range}`,
+		eta: fixed ? `usually a few minutes, up to ${range}` : `usually ${range}`,
 		estimate: fixed ? `up to ${range}` : `~${range}`,
 		compact: { label: "Bridge", weight: 1.6 },
 		done: tx ? linkOf(scan, tx, "on LI.FI") : {},
@@ -313,8 +312,8 @@ function aztecCopy(
 			label: "Cross to Aztec",
 			prompt: "Aztec picks up deposits every few blocks. Nothing for you to do.",
 			drawn: true,
-			eta: "usually 1-4 min",
-			estimate: "~1–4 min",
+			eta: "usually ~1 min",
+			estimate: "~1 min",
 			compact: { label: "Cross", weight: 1 },
 			live: meterOf(rec, rt),
 		},

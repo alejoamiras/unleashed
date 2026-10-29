@@ -143,17 +143,16 @@ const lookup = useAddressLookup({
 	known: () => catalog.tokens.value,
 	chainId: () => catalog.chainId,
 })
-/** No owner while the Ethereum wallet sits on another chain: a balance read there is another
- *  chain's, and the switch back reads afresh. */
-const l1Reader = computed(() => (l1.wrongChain.value ? undefined : (l1.address.value ?? undefined)))
+/** Ethereum balances read through the build's own RPCs, so they stand whichever chain the wallet is on. */
+const bridgeL1 = () => readClientFor(NETWORK.l1ChainId)
+const l1Owner = () => l1.address.value ?? undefined
 const rowBalances = useRowBalances({
-	pub: () => l1.publicClient as unknown as PublicClient,
-	owner: () => l1Reader.value,
+	pub: bridgeL1,
+	owner: l1Owner,
 	tokens: () => catalog.filtered.value,
 })
-// Reads through the build's own RPCs, so the owner stands whichever chain the wallet is on.
 const sourceChain = useSourceChain({
-	owner: () => l1.address.value ?? undefined,
+	owner: l1Owner,
 	walletChainId: () => l1.chainId.value,
 	switchChain: (chainId) => l1.switchChain(chainId),
 })
@@ -163,7 +162,8 @@ const sourceKeys = new Set(sourceChain.rows.map((r) => r.logoKey))
 const isSourceRow = (token: SelectableToken): boolean => sourceKeys.has(token.logoKey)
 const selection = useTokenSelection({
 	pub: () => l1.publicClient as unknown as PublicClient,
-	l1Account: () => l1Reader.value,
+	balanceReader: bridgeL1,
+	l1Account: l1Owner,
 	readBinding: readHubBinding,
 	l2Account: () => bridge.selectedAccount.value ?? undefined,
 	tokenContract: async (l2Token) => {
@@ -894,8 +894,8 @@ function onMinted(): void {
 // outlives both, is what refreshes after one.
 watch(feeAssetMinted, onMinted)
 
-// The row balances re-read themselves when the reader changes; the selected token's are read here.
-watch(l1Reader, () => void selection.refreshBalances())
+// The row balances re-read themselves when the account changes; the selected token's are read here.
+watch(l1Owner, () => void selection.refreshBalances())
 
 function onDirection(next: Direction): void {
 	direction.value = next
@@ -1162,26 +1162,54 @@ function adoptRunRecord(): void {
 watch(journal.listedRecords, adoptRunRecord)
 
 /**
- * The gas gate is re-read at CONFIRM, not trusted from when the amount step opened: gas spent
- * elsewhere meanwhile would strand the deposit at its claim. The read holds the buttons but leaves
- * the review live, so an account or chain that moves under it stands it down as usual; only a
- * review still standing when the read returns goes on to sign.
+ * An Ethereum send first passes the bridge check; then the gas gate is re-read at CONFIRM, not
+ * trusted from when the amount step opened: gas spent elsewhere meanwhile would strand the deposit
+ * at its claim. Each read holds the buttons but leaves the review live, so an account or chain that
+ * moves under it stands it down as usual; only a review still standing when the reads return goes on
+ * to sign.
  */
 async function preflight(snapshot: ReviewSnapshot): Promise<boolean> {
 	const target = snapshot.plan
 	if (target.direction === "l2-to-l1") return target.isPrivate ? privateExitPreflight(snapshot) : true
+	if (!snapshot.crossChain && !(await bridgeChecked(snapshot, target))) return false
 	const privateSlice = target.isPrivate && target.intent === "token+gas" ? (target.gas ?? null) : null
 	if (target.intent !== "token" && !privateSlice) return true
 	const repriced = await preflightReads(target.intent === "token", privateSlice !== null)
-	// The SNAPSHOT must be the one still on screen — not merely its plan, which the wizard caches
-	// across an account switch, so a review re-entered under another account would carry the same
-	// plan object and let a confirm nobody gave for it resume.
-	if (reviewed.value !== snapshot || step.value !== 2) return false
-	if (snapshot.account !== (bridge.selectedAccount.value ?? "")) return false
+	if (!reviewStands(snapshot)) return false
 	const why = preflightStandDown(target, privateSlice, repriced, snapshot.ownGasCeiling)
 	if (why === undefined) return true
 	invalidateReview(why ?? undefined)
 	return false
+}
+
+/** The SNAPSHOT must be the one still on screen — not merely its plan, which the wizard caches across an account
+ *  switch, so a review re-entered under another account would carry the same plan object and let a confirm nobody
+ *  gave for it resume. */
+function reviewStands(snapshot: ReviewSnapshot): boolean {
+	return reviewed.value === snapshot && step.value === 2 && snapshot.account === (bridge.selectedAccount.value ?? "")
+}
+
+/** An Ethereum send's bridge check, before the permission screen and every prompt: a refusal stays on the review in
+ *  the send's place, and only a review still standing when the reads return may act on them. */
+async function bridgeChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
+	const refusal = await heldCheck(plan)
+	if (!reviewStands(snapshot)) return false
+	sendFlow.error.value = refusal
+	if (refusal === null) return true
+	// An earlier attempt's decline is not why this one stopped.
+	grantState.value = "idle"
+	return false
+}
+
+/** The check under the preflighting hold. Its caller must test the review only after this resolves: dropping the hold
+ *  lets a deferred receipt request replace the review, and that watcher runs before the caller resumes. */
+async function heldCheck(plan: SendPlan): Promise<string | null> {
+	preflighting.value = true
+	try {
+		return await sendFlow.check(plan)
+	} finally {
+		preflighting.value = false
+	}
 }
 
 /** A private exit's confirm re-reads the private gas its fee is paid from, exactly as a token-only
@@ -1609,8 +1637,7 @@ const deliveredPrefill = computed(() => {
 	const v = view.value
 	return v.kind === "outcome" && outcomeVariant(v.record, now.value) === "delivered" ? ethereumPrefillOf(v.record) : null
 })
-// Read from the bridge's L1 whatever chain the wallet is on: after a send from a source chain it is usually there.
-const bridgeL1 = () => readClientFor(NETWORK.l1ChainId)
+// After a send from a source chain the wallet usually sits there, so the continuation reads through `bridgeL1`.
 const continueFuel = useFuelQuote({ pub: bridgeL1 })
 const continueToken = shallowRef<ResolvedToken | null>(null)
 watch(

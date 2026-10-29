@@ -17,6 +17,7 @@ test("the all-workspace scripts select every workspace", () => {
 		"@unleashed/bridge-core",
 		"@unleashed/design",
 		"@unleashed/landing",
+		"@unleashed/legal",
 		"@unleashed/sdk",
 		"@unleashed/testnet-relayer",
 		"@unleashed/tools",
