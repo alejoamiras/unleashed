@@ -7,10 +7,31 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: approved by the orchestrator at a753635; implementing a1
+status: completed (PR #86)
 base: main f24e033
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
+
+## Outcome
+
+- **Status:** completed; delivered in PR #86 (one arc), awaiting the orchestrator's merge. Closes #75.
+- **Shipped:** `keptLogs` and `receiptOrNext` (`packages/bridge-core/src/kept-history.ts`), `logRetentionBlocks`
+  on `SOURCE_CHAINS[84532]` (PublicNode 3,000,000), the wiring in `readClientFor`, and ethPandaOps as the testnet
+  build's second Sepolia reader (A1, accepted). Tests: `kept-history.test.ts` (six cases and an `RPC_CAPS_LIVE`
+  check), the wiring case and a Sepolia `RPC_CAPS_LIVE` check in `useEthereumReader.test.ts`, the pins in
+  `source-chains.test.ts` and `network-targets.test.ts`. The mainnet target, CSP and legal pages are unchanged
+  (`verify:build-target mainnet`; `lessons/phase-1.md`).
+- **Changed in review:** planning added the receipt freshness line, the probe-failure rule, the `blockHash` and
+  `earliest` refusals, and the trust statement, and cut the retention to 3,000,000. Implementation round 1 was clean
+  (Codex). The Opus review pinned the last reader's not-found receipt and the `earliest` refusal, and it fixed four
+  comments. Round 2 was clean. Deviations are listed in D6.
+- **Dropped or rejected:** a range router (D1), an "unreadable" state (D2, D5), hopping on every `null` receipt
+  (D3), and a discovery-level test of the `not-sent` path (round-1 finding 3). Each has its reason in the ledger.
+- **Lessons:** none promoted. `lessons.md` is over its 8 KiB budget (8,365 bytes). The endpoint facts live in the
+  `source-chains.ts` and `network-targets.ts` comments, in `recon.md` and in `lessons/`.
+- **Known limits:** #87.
+- **Open items:** none. #78's band is now guarded, as the comment on #78 records.
+- **Seeds:** the `/goal` and `/loop` seeds at the end are retired. They are history, not instructions.
 
 # rpc-floor-1: read an old cross-chain record from an endpoint that keeps its history
 
