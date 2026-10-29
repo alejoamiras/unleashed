@@ -1100,8 +1100,8 @@ Arc a6, PR 2 (`git diff bc5e585..HEAD`):
   (61 tests) are green. The browser suite at retry 0 passed 44 of 44 in 3224 s. The before run, on PR 1's head, took
   3581 s and failed activity cell 40: both receipts showed, but one record lacked its claim hash, a cross-tab lost
   write under today's unlocked claim writer (likely; not traced).
-- **Rebased onto `main`** with #69's content (#62, #66, #70 and #72 had landed): the same gates green again, and the
-  browser suite at retry 0 passed 45 of 45 (#70 added a cell) in 3259 s.
+- **Rebased onto `main` after #69 merged** (#62, #66, #70, #72, #76 and #77 had landed too): the same gates green
+  again, the sandbox integration suite 61 of 61, and the browser suite at retry 0 45 of 45 (#70 added a cell) in 3197 s.
 - **The screenshot tour** reached all five states through real flows. Everything else it flagged is today's
   rendering:
   - the run template after fee-stop copy;
