@@ -66,7 +66,7 @@ describe("BridgePhaseRail", () => {
 		expect(sync.attributes("aria-current")).toBe("step")
 		expect(w.findAll('[aria-current="step"]')).toHaveLength(1)
 		expect(sync.get(".time").text()).toBe("0:05")
-		expect(sync.text()).not.toMatch(/usually 1-4 min/)
+		expect(sync.text()).not.toMatch(/usually ~1 min/)
 		expect(w.find('[role="progressbar"]').exists()).toBe(false)
 		expect(w.text()).not.toContain("102 / 103")
 		// Pending phases show their short estimate; the claim's is the signature it waits on, in words.

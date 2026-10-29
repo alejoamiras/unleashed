@@ -1,7 +1,7 @@
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { lifiBook } from "@unleashed/sdk/protocol"
 import { TESTNET_FILLER } from "@unleashed/bridge-core"
-import { testnetSwapperFuelProvider } from "@unleashed/sdk/internal"
+import { type FuelQuoteProvider, testnetSwapperFuelProvider } from "@unleashed/sdk/internal"
 import { type Address, type Hex, keccak256, toBytes } from "viem"
 import { vi } from "vitest"
 import { type CrossChainAsk, type CrossChainRoute, quoteCrossChainRoute, type RouteDeps } from "@/composables/useCrossChainRoute"
@@ -70,14 +70,26 @@ export function acrossApi(answer: "quote" | "error" = "quote") {
 
 const SWAPPER: Address = `0x${"5e".repeat(20)}`
 
-export type Venue = "swapper" | "reverts" | "down" | "answers-another-slice"
+/** `under-floor` prices like the live Sepolia swapper (32 FJ per USDC) against the testnet manifest's claim minimum. */
+export type Venue = "swapper" | "reverts" | "down" | "answers-another-slice" | "under-floor" | "zero-rate" | "pin-broken"
+
+export const TESTNET_MIN_FUEL_FJ = 29_773_418_555_864_000_000n
+
+/** A venue that prices the slice it was asked for but returns the swap for another amount, or one whose quote breaks
+ *  a pin. */
+function misbehaving(venue: Venue, p: FuelQuoteProvider): FuelQuoteProvider {
+	if (venue === "answers-another-slice") return { ...p, quote: (t, a) => p.quote(t, a + 1n) }
+	if (venue === "pin-broken") return { ...p, quote: async () => ({ ok: false, reason: "unsafe", field: "tool" }) }
+	return p
+}
 
 /** A fixed-rate swapper venue and a stub Across; the slice is a tenth of the delivery. */
 export function routeDeps(o: { venue?: Venue; across?: ReturnType<typeof acrossApi>; fixedAt?: number } = {}): RouteDeps {
 	const venue = o.venue ?? "swapper"
 	const quote = async (_: Address, amountIn: bigint) => {
 		if (venue === "reverts" || venue === "down") throw new Error(venue)
-		return amountIn * 10n ** 12n
+		if (venue === "zero-rate") return 0n
+		return amountIn * (venue === "under-floor" ? 32n : 1n) * 10n ** 12n
 	}
 	return {
 		bindings: { l1ChainId: SEPOLIA, router: ROUTER, feeAsset: FEE_ASSET, fuelSwapper: SWAPPER },
@@ -90,12 +102,9 @@ export function routeDeps(o: { venue?: Venue; across?: ReturnType<typeof acrossA
 				feeAsset: FEE_ASSET,
 				transactionId: lifiTxId,
 				slippageBps: 300,
-				minFuelFj: 1n,
+				minFuelFj: venue === "under-floor" ? TESTNET_MIN_FUEL_FJ : 1n,
 			})
-			// A venue that prices the slice it was asked for but returns the swap for another amount.
-			const answered =
-				venue === "answers-another-slice" ? { ...provider, quote: (t: Address, a: bigint) => provider.quote(t, a + 1n) } : provider
-			return { provider: answered, reverted: () => venue === "reverts" }
+			return { provider: misbehaving(venue, provider), reverted: () => venue === "reverts" }
 		},
 		slice: (_, delivered) => delivered / 10n,
 		random: Fr.random,
