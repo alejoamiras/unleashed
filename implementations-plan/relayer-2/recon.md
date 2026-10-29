@@ -1,7 +1,7 @@
 # relayer-2 recon
 
 Base: `main` at a111e8a. One Sonnet reuse sweep plus the driver's own reads and live read-only probes (PublicNode,
-`sepolia.base.org`). No open issue but #60 touches `packages/testnet-relayer`; #40 (send copy) is another lane's.
+`sepolia.base.org`). Scope: #60 and ask34 (a 15-second cadence, added by the orchestrator). No open issue but #60 touches `packages/testnet-relayer`; #40 (send copy) is another lane's.
 Closed known limits searched (`relayer`): #34–#39, all still accurate; #34 (a deposit missed past its deadline) and
 #36 (overlapping runs) are the ones this plan rests on.
 
@@ -37,6 +37,12 @@ Search trail for the absences: `grep -rnIE "firstBlockAfter|bisect|blockByTimest
   with 4,867 s left before its deadline.
 - The proposed scan, run read-only against PublicNode: a 39,001-block window, 301 blocks for the last minute,
   35 timestamp reads and 20 `getLogs` (2,000 blocks each), 56 source reads in 1.9 s.
+
+- ask34 facts. viem 2.57.1: the HTTP transport times out at 10 s and retries 3 times; `waitForTransactionReceipt`
+  waits up to 180 s, polling at the client's interval (4 s by default). `sendFill` awaits two receipts (approval,
+  fill), so a send lasts about two Sepolia inclusions. Cloudflare: six connections awaiting headers per invocation.
+  PublicNode publishes no rate limit (secondhand: per IP, varies by chain); from this host 220 reads in 3.7 s drew
+  no 429.
 
 ## Collision risks
 

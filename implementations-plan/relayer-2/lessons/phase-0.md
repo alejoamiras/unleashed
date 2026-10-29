@@ -13,3 +13,11 @@
 - Codex final pass (fresh session `01a188e8`): conditional approve. Its in-memory reproducer showed a scan abandoned by
   a timeout race keeps reading; accepted: refuse each source read past the deadline. Also accepted: budget wording in
   logical reads and HTTP attempts, a stronger timeout test, I2 qualified. Resumed: **approve**.
+- ORCHY-STEER added ask34 (15 s cadence). Codex audit of the revision (fresh session `01a188f9`): reject. It traced
+  two fill-path cases where "never overlap / never a second pending transaction" fails: a send stalled between
+  approval and fill meets the next run (known limit #36), and a 180 s receipt timeout revokes while the approval may
+  be pending. Both went to `OWNER-ASKS.md` §1 (ship A: accept as known limits). Accepted: a full rescan each pass
+  (no cross-pass state), the late gate and `pause` before each try, restock inside the minute. Resumed: conditional
+  approve (race `pause` to the cutoff, bound the restock, drop missed slots); resumed again: **approve**.
+- A send cannot be bounded from the relayer: `waitForTransactionReceipt` waits 180 s by default, and a timeout there
+  makes `sendFill` revoke while the approval may still be pending. Bound the start of a send, never its length.

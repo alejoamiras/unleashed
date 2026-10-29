@@ -6,3 +6,7 @@
 - 2026-10-29 Codex round 1: conditional approve, 5 findings accepted; plan revised (D7 destination clock, D8 scan deadline)
 - 2026-10-29 Codex final fresh pass: conditional approve, 4 findings accepted (per-read deadline, budget wording, stronger timeout test, I2)
 - 2026-10-29 Codex final resumed: approve; plan committed
+- 2026-10-29 ORCHY-STEER: scope add ask34 (15 s cadence, sequential passes per cron run, no overlap, pending check before every send; Delivers ask34); re-planning a1 before code
+- 2026-10-29 plan revised for ask34 (Phase 2: relayRun, passes, late gate, incremental scans); fresh Codex audit next
+- 2026-10-29 Codex ask34 audit: reject (fill-path cases); dispositions applied: OWNER-ASKS §1, per-try gate+pause, restock after first pass, full rescan per pass
+- 2026-10-29 Codex ask34 resumed twice: approve; plan committed; OWNER-ASKS §1 open (ships A)
