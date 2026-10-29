@@ -13,7 +13,7 @@
  * identity is read from the run's artifacts by `local-target-loader.ts` (Node) and `define`d into
  * the bundle as `__LOCAL_TARGET__`, so a testnet or mainnet build never carries it.
  */
-import type { SandboxLifiContracts } from "@unleashed/bridge-core"
+import type { SandboxLifiContracts } from "@unleashed/sdk/protocol"
 import {
 	MAINNET_L1_CHAIN_ID,
 	MAINNET_ROLLUP_VERSION,

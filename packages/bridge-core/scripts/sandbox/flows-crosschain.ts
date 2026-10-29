@@ -13,25 +13,26 @@ import { Gas } from "@aztec-labs/stdlib/gas"
 import { type Address, encodeFunctionData, erc20Abi, type Hex, keccak256, toHex, zeroHash } from "viem"
 import z from "zod"
 import { buildAcrossV4Deposit } from "../../src/across-v4"
-import { deriveTokenClaimSecret } from "../../src/claim-secret"
-import { type CrossChainDiscovery, type DepositedFacts, discoverCrossChain } from "../../src/crosschain-discovery"
-import { DEPOSIT_ROUTER_ABI } from "../../src/deposit-router-abi"
-import { predictedWorstMinFees, publicFeeJuicePayment } from "../../src/fee-juice"
-import { type FuelQuote, testnetSwapperFuelProvider } from "../../src/fuel-quote"
-import type { CrossChainDepositRecord, DepositFuelBlock, JournalTokenBlock } from "../../src/journal"
-import type { LifiSwapData } from "../../src/lifi-abi"
-import { LIFI_INTEGRATOR } from "../../src/lifi-api"
-import type { RouterIntent } from "../../src/lifi-decode"
-import type { ManifestToken } from "../../src/manifest-v2"
 import {
+	deriveTokenClaimSecret,
+	DEPOSIT_ROUTER_ABI,
+	predictedWorstMinFees,
+	publicFeeJuicePayment,
+	type LifiSwapData,
+	LIFI_INTEGRATOR,
+	type RouterIntent,
+	type ManifestToken,
 	deriveBridgeSecret,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_FUEL_CLAIM_GAS,
 	PUBLIC_FUEL_CLAIM_GAS,
 	privateFpcFeeLimit,
 	privateMintAndPayFee,
-} from "../../src/private-fuel"
-import type { SendResult } from "../../src/send-flow"
+} from "@unleashed/sdk/protocol"
+import { type CrossChainDiscovery, discoverCrossChain } from "../../src/crosschain-discovery"
+import { type DepositedFacts, type FuelQuote, testnetSwapperFuelProvider, type SendResult } from "@unleashed/sdk/internal"
+import type { CrossChainDepositRecord, DepositFuelBlock } from "../../src/journal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import type { FillDeps } from "../fill-testnet"
 import { waitForL1ToL2Message } from "../generation"
 import { evmArtifact } from "../script-artifacts"

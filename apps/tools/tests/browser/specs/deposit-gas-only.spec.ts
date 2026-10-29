@@ -1,6 +1,6 @@
 /** Gas deposits (cells 18–21): every route shape, public and private, and what it adds to; 18c sends
  *  the fee asset itself as token + gas. */
-import { PORTAL_FACTORY_ABI, PRIVATE_FUEL_CLAIM_GAS } from "@unleashed/bridge-core"
+import { PORTAL_FACTORY_ABI, PRIVATE_FUEL_CLAIM_GAS } from "@unleashed/sdk/protocol"
 import {
 	balanceOf,
 	fuelSwapperOf,

@@ -23,10 +23,17 @@ import { Gas } from "@aztec-labs/stdlib/gas"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { privateKeyToAccount } from "viem/accounts"
 import { postNodeRpc, readNodeRpcBody } from "../src/drpc-node"
+import {
+	predictedWorstMinFees,
+	FeeJuicePortalAbi,
+	feeJuiceDepositArgs,
+	parseFeeJuiceDeposit,
+	planPrivateFuelDeposit,
+	PRIVATE_FPC_ADDRESS,
+	deriveBridgeSecret,
+	privateMintAndPayFee,
+} from "@unleashed/sdk/protocol"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
-import { predictedWorstMinFees } from "../src/fee-juice"
-import { FeeJuicePortalAbi, feeJuiceDepositArgs, parseFeeJuiceDeposit, planPrivateFuelDeposit } from "../src/fuel"
-import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, privateMintAndPayFee } from "../src/private-fuel"
 import { resolveDeployerKeys } from "./deployer-keys"
 import { redactSecrets } from "./keyed-env"
 import { requirePinnedSigner } from "./live-intent"
@@ -133,7 +140,7 @@ async function main() {
 	console.log(`deposited ${dep.amount} FJ-wei to the FPC lane, leaf ${dep.leafIndex} (${mins()})`)
 
 	// 3. The carrier-less claim, fees re-priced per attempt (the stranded-static-cap lesson).
-	const { PrivateFPCContractArtifact } = await import("../src/private-fpc-artifact")
+	const { PrivateFPCContractArtifact } = await import("@unleashed/sdk/private-fpc-artifact")
 	const fpcC = await Contract.at(fpc, PrivateFPCContractArtifact as never, ewallet as never)
 	const fpcBalance = async (): Promise<bigint> => {
 		const r = (await fpcC.methods.balance_of(from).simulate({ from })) as { result?: bigint } | bigint

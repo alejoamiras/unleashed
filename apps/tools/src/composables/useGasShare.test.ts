@@ -1,4 +1,5 @@
-import { signedMinFuelOutput, type TokenState } from "@unleashed/bridge-core"
+import { signedMinFuelOutput } from "@unleashed/sdk/protocol"
+import type { TokenState } from "@unleashed/sdk/internal"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { type GasShareOutcome, type UseGasShareHandle, useGasShare } from "./useGasShare"
 

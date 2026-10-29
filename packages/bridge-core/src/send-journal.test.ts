@@ -5,13 +5,13 @@ import {
 	assetKindOf,
 	deriveSendDepositStage,
 	isSendRecord,
-	type JournalTokenBlock,
 	type KV,
 	loadJournal,
 	type SendDepositRecord,
 	type SendWithdrawRecord,
 	upsertRecord,
 } from "./journal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 
 const SEALER = "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d"
 const HUB = `0x${"ab".repeat(32)}`

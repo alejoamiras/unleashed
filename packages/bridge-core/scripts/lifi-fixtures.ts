@@ -30,9 +30,13 @@ import {
 	zeroHash,
 } from "viem"
 import { buildAcrossV4Deposit, encodeLifiReceiverMessage } from "../src/across-v4"
-import { type DEPOSIT_INTENT_COMPONENTS, DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { LIFI_SWAP_DATA_COMPONENTS, type LifiSwapData } from "../src/lifi-abi"
-import { LIFI_INTEGRATOR } from "../src/lifi-gas"
+import {
+	type DEPOSIT_INTENT_COMPONENTS,
+	DEPOSIT_ROUTER_ABI,
+	LIFI_SWAP_DATA_COMPONENTS,
+	type LifiSwapData,
+	LIFI_INTEGRATOR,
+} from "@unleashed/sdk/protocol"
 import { redactSecrets } from "./keyed-env"
 import { runKeyed } from "./keyed-run"
 import { MAINNET, recordMainnetQuotes } from "./lifi-fixtures-mainnet"

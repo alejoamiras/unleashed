@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import type { L1Ctx } from "../src/flows"
-import { type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import type { L1Ctx } from "@unleashed/sdk/internal"
+import { type ManifestV2, parseManifestV2 } from "@unleashed/sdk/protocol"
 import {
 	deployRouterOnly,
 	fuelBudgetsOf,

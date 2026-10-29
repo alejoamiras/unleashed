@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { type Address, type Hex, type PublicClient, pad, toHex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { describe, expect, it, vi } from "vitest"
-import { type AcrossRelayData, acrossRelayHash, FILLED_RELAY_TOPIC } from "../src/crosschain-discovery"
+import { type AcrossRelayData, acrossRelayHash, FILLED_RELAY_TOPIC } from "../src/across-relay"
 import {
 	BASE_SEPOLIA_RPC_DEFAULT,
 	connectFillRoute,

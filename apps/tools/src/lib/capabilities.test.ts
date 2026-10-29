@@ -8,7 +8,7 @@ const USDC = AztecAddress.fromStringUnsafe("0x0000000000000000000000000000000000
 const ETH = AztecAddress.fromStringUnsafe("0x0000000000000000000000000000000000000000000000000000000000000003")
 const SPONSORED_FPC = AztecAddress.fromStringUnsafe("0x0000000000000000000000000000000000000000000000000000000000000004")
 
-import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/sdk/protocol"
 
 describe("buildDripManifest", () => {
 	const m = buildDripManifest({

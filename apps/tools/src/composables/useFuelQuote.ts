@@ -3,7 +3,8 @@
  * manifest's fuel provider at one whole unit, which the gas share scales to the slice. The slice itself is quoted
  * again right before the signature (`sliceSwapData`), and the floor the user reviewed is the one signed.
  */
-import { type FuelProvider, type FuelQuoteReads, manifestFuelProvider, withFuelFloor } from "@unleashed/bridge-core"
+import type { FuelProvider } from "@unleashed/bridge-core"
+import { type FuelQuoteReads, manifestFuelProvider, withFuelFloor } from "@unleashed/sdk/internal"
 import { type Address, BaseError, ContractFunctionRevertedError, type Hex, type PublicClient } from "viem"
 import { type ComputedRef, computed, type Ref } from "vue"
 import { FUEL_ASSET, MANIFEST, SEND_GENERATION } from "@/contracts/bridge-generation"

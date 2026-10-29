@@ -2,7 +2,7 @@
  *  generation and the flows need, and the small write helpers every flow shares. */
 import { FeeAssetHandlerAbi, TestERC20Abi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, keccak256 } from "viem"
-import type { L1Ctx } from "../../src/flows"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import { evmArtifact } from "../script-artifacts"
 import { lc, type SpecKey, SPECS, SWAPPER_FJ_PER_WHOLE_TOKEN, type TokenSpec } from "./constants"
 import { type CanonicalName, readVendored } from "./refresh-canonical-bytecode"

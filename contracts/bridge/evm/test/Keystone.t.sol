@@ -10,7 +10,7 @@ import {Hash} from "@aztec/core/libraries/crypto/Hash.sol";
 ///   - the portal address: an OZ immutable-args clone at CREATE2(salt = bytes32(uint160(token)));
 ///   - the `register` content hash the factory sends through the Inbox;
 ///   - the public registration secret hash (Poseidon2, computed by Noir/TS, pinned here as a literal).
-/// The other legs: packages/bridge-core/src/{portal-address,register-hash}.test.ts and
+/// The other legs: packages/sdk/src/protocol/{portal-address,register-hash}.test.ts and
 /// contracts/bridge/aztec/keystone/src/main.nr. A drift in any leg strands deposits of that token.
 contract KeystoneTest is Test {
     address constant FACTORY = 0x3333333333333333333333333333333333333333;

@@ -5,7 +5,7 @@
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { type DepositFuelBlock, type DepositJournalRecord, assetKindOf } from "@unleashed/bridge-core"
-import { decideStandaloneFuelRecovery } from "@/lib/fuel-claim-state"
+import { decideStandaloneFuelRecovery } from "@unleashed/sdk/internal"
 import { safeAddressText } from "@/lib/token-display"
 import { humanizeWalletError } from "@/lib/wallet-errors"
 import { fuelReceiptStatus, patchFuel, sendStandaloneFjClaim } from "./deposit-flow"

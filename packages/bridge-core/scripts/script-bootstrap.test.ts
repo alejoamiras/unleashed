@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
-import type { FuelRouteBlock } from "../src/manifest-v2"
+import type { FuelRouteBlock } from "@unleashed/sdk/protocol"
 import {
 	loadManifestFromConfigArg,
 	loadManifestV2FromConfigArg,

@@ -3,15 +3,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { decodeFunctionData, type Hex, toFunctionSelector } from "viem"
 import { describe, expect, it } from "vitest"
-import {
-	decodeLzOptions,
-	decodeOftComposeMessage,
-	LzOptionsError,
-	START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR,
-	STARGATE_FACET_V2_ABI,
-	stargateFeeCeiling,
-	SWAP_AND_START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR,
-} from "./stargate"
+import { decodeLzOptions, decodeOftComposeMessage, LzOptionsError, STARGATE_FACET_V2_ABI, stargateFeeCeiling } from "./stargate"
+import { START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR, SWAP_AND_START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR } from "@unleashed/sdk/protocol"
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "contracts", "bridge", "evm", "test", "fixtures", "lifi")
 const readFixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8"))

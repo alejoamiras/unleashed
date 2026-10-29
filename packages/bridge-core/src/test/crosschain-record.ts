@@ -1,5 +1,6 @@
 import type { Address, Hex } from "viem"
-import type { CrossChainDepositRecord, CrossChainRoute, JournalTokenBlock } from "../journal"
+import type { CrossChainDepositRecord, CrossChainRoute } from "../journal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 
 /** A 32-byte word of one repeated byte. */
 export const word = (byte: string): Hex => `0x${byte.repeat(32)}`

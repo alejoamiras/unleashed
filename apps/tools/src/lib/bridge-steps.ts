@@ -8,6 +8,7 @@ import {
 	isCrossChainRecord,
 	isSendRecord,
 } from "@unleashed/bridge-core"
+import { SYNC_TARGET_MARGIN_BLOCKS } from "@unleashed/sdk/internal"
 import type { BridgeStep, RecordRuntime } from "@/composables/useBridgeJournal"
 import { crossChainLogWords, crossChainPhases } from "@/lib/crosschain-steps"
 import { safeDisplay, safeSentence } from "@/lib/token-display"
@@ -82,8 +83,7 @@ export interface BridgePhase {
 	unconfirmed?: boolean
 }
 
-/** L2 blocks between the deposit-time snapshot and presumed message arrival (raven-style pacing). */
-export const SYNC_TARGET_MARGIN_BLOCKS = 3
+export { SYNC_TARGET_MARGIN_BLOCKS }
 
 // Every attention fails the active phase: the rail is where the note + the fix-instruction live,
 // so a mismatch or stale state never renders as a calm "active" prompt.

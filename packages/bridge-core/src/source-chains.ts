@@ -3,7 +3,7 @@
  * Viem-free on purpose: the app maps these ids to its own chain objects in one file. A manifest only enables
  * sources; a chain this catalogue does not know is refused rather than offered with guessed metadata.
  */
-import type { ManifestV2 } from "./manifest-v2"
+import type { ManifestV2 } from "@unleashed/sdk/protocol"
 
 export interface SourceChain {
 	chainId: number

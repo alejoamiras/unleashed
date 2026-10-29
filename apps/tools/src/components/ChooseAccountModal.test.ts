@@ -22,7 +22,7 @@ vi.mock("@/contracts/deployments", () => ({
 	rebuildSignalInstance: vi.fn(async () => ({ address: { toString: () => "0x2" } })),
 	rebuildNoiseInstance: vi.fn(async () => ({ address: { toString: () => "0x3" } })),
 }))
-vi.mock("@unleashed/bridge-core/artifacts", () => ({
+vi.mock("@unleashed/sdk/artifacts", () => ({
 	bridgeProxyArtifact: { name: "BridgeProxy" },
 	tokenBridgeArtifact: { name: "TokenBridge" },
 }))

@@ -4,7 +4,7 @@
  * never shows a first-time path for a token that has none.
  */
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { hubBindingAt } from "@unleashed/bridge-core"
+import { hubBindingAt } from "@unleashed/sdk/internal"
 import { HUB } from "@/contracts/bridge-generation"
 import { NETWORK } from "@/lib/network"
 

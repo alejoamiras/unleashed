@@ -24,12 +24,9 @@ import { computeSiloedPrivateInitializationNullifier } from "@aztec-labs/stdlib/
 import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
-import { tokenBridgeHubArtifact } from "../src/artifacts"
-import { claimViaHub, hubAt, type HubClaimOutcome, type HubClaimParams } from "../src/hub-l2"
-import { deriveHubTokenInstance } from "../src/hub-token"
-import type { SendOpts } from "../src/hub-l2"
-import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
-import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
+import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
+import { claimViaHub, hubAt, type HubClaimOutcome, type HubClaimParams, type SendOpts } from "@unleashed/sdk/internal"
+import { deriveHubTokenInstance, type ManifestToken, type ManifestV2, PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
 import { type DeployerNetwork, resolveDeployerKeys } from "./deployer-keys"
 
 /** The manifest's hub record: address + the salt and constructor args it derives from. */

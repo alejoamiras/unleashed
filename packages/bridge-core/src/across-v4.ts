@@ -1,5 +1,5 @@
 import { type Address, encodeAbiParameters, encodeFunctionData, type Hex, pad, size, zeroAddress } from "viem"
-import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_RECEIVER_MESSAGE_PARAMS, type LifiBridgeData, type LifiSwapData } from "./lifi-abi"
+import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_RECEIVER_MESSAGE_PARAMS, type LifiBridgeData, type LifiSwapData } from "@unleashed/sdk/l1"
 
 /** `AcrossFacetV4.AcrossV4Data`, field for field. */
 export const ACROSS_V4_DATA_COMPONENTS = [
@@ -32,8 +32,6 @@ export const ACROSS_V4_FACET_ABI = [
 		outputs: [],
 	},
 ] as const
-
-export const START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR = "0xa1f1ce43"
 
 /** `AcrossFacetV4.AcrossV4Data` as viem encodes and decodes it. */
 export interface AcrossV4Data {

@@ -16,23 +16,18 @@ import {
 	acrossSuggestedFees,
 	bridgeFromCallerCall,
 	crossChainIntent,
-	deriveBridgeSecret,
-	deriveTokenClaimSecret,
-	type FuelProbe,
 	type FuelProvider,
-	type FuelQuoteProvider,
-	type LifiChainBook,
-	lifiBook,
 	type RailExpectation,
 	type RailTerms,
 	type RouteExpectation,
-	type RouterIntent,
 	type RouteTx,
 	selfBuiltMaxDeposit,
 	selfBuiltTerms,
 	TESTNET_FILLER,
 	verifyRoute,
 } from "@unleashed/bridge-core"
+import { deriveBridgeSecret, deriveTokenClaimSecret, type LifiChainBook, lifiBook, type RouterIntent } from "@unleashed/sdk/protocol"
+import type { FuelProbe, FuelQuoteProvider } from "@unleashed/sdk/internal"
 import type { Address, Hex } from "viem"
 import { type ComputedRef, computed, type Ref } from "vue"
 import { SEND_GENERATION } from "@/contracts/bridge-generation"

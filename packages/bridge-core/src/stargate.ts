@@ -1,5 +1,5 @@
 import { bytesToBigInt, bytesToHex, type Hex, hexToBytes, isHex } from "viem"
-import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_SWAP_DATA_COMPONENTS } from "./lifi-abi"
+import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_SWAP_DATA_COMPONENTS } from "@unleashed/sdk/l1"
 
 /** `IStargate.SendParam`, field for field. */
 export const STARGATE_SEND_PARAM_COMPONENTS = [
@@ -54,9 +54,6 @@ export const STARGATE_FACET_V2_ABI = [
 		outputs: [],
 	},
 ] as const
-
-export const SWAP_AND_START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR = "0xa6010a66"
-export const START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR = "0x14d53077"
 
 /** The pool and TokenMessaging reads a caller needs: the messaging fee to cap, and the pool behind an asset id. */
 export const STARGATE_POOL_ABI = [

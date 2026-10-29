@@ -1,4 +1,4 @@
-import { depositWitnessPermitTypedData } from "@unleashed/bridge-core"
+import { depositWitnessPermitTypedData } from "@unleashed/sdk/protocol"
 import { describe, expect, it, vi } from "vitest"
 import { TESTNET_L1_CHAIN_ID, TESTNET_WALLET_CHAIN_ID } from "./chain-constants"
 import { NETWORK, readChainOf, sourcesOf } from "./network"

@@ -9,14 +9,12 @@ import {
 	type SendDepositRecord,
 	type SendJournalRecord,
 	type SendWithdrawRecord,
-	PERMIT_DEADLINE_SECONDS,
-	type TokenState,
-	PORTAL_FACTORY_ABI,
 	assetKindOf,
 	isCrossChainRecord,
 	isSendRecord,
-	predictPortal,
 } from "@unleashed/bridge-core"
+import { PERMIT_DEADLINE_SECONDS, PORTAL_FACTORY_ABI, predictPortal } from "@unleashed/sdk/protocol"
+import { type TokenState, type OwnGasSource, decideOwnGasSource, forgetWalletFees } from "@unleashed/sdk/internal"
 import type { Address, PublicClient } from "viem"
 import { computed, onBeforeUnmount, onScopeDispose, ref, shallowRef, watch } from "vue"
 import { FUEL, HUB, HUB_TOKEN_ARTIFACT, SEND_GENERATION } from "@/contracts/bridge-generation"
@@ -73,7 +71,6 @@ import { NETWORK } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
 import { checksumAddress, safeDisplay } from "@/lib/token-display"
 import { accountOf } from "@/lib/record-policy"
-import { forgetWalletFees } from "@/lib/wallet-fee-budget"
 import { walletLabel } from "@/lib/wallet-name"
 import {
 	type AmountToken,
@@ -90,7 +87,6 @@ import {
 	type SendPlan,
 	tokenRemainder,
 } from "@/lib/send-model"
-import { type OwnGasSource, decideOwnGasSource } from "@/lib/fuel-claim-state"
 
 /** The rail's own etas, summed and rounded UP — the review must never undersell how long this takes. */
 const DEPOSIT_TAKES = "usually 3–8 min end to end"

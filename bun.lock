@@ -51,6 +51,7 @@
         "@nulo-sh/wallet-sdk-schema-patch": "0.3.0",
         "@unleashed/bridge-core": "workspace:*",
         "@unleashed/design": "workspace:*",
+        "@unleashed/sdk": "workspace:*",
         "viem": "^2.52.2",
         "vue": "^3.5.38",
         "zod": "^4.4.3",
@@ -89,6 +90,7 @@
         "@aztec-labs/wallets": "6.0.0",
         "@nulo-sh/resolve-asset": "0.3.0",
         "@nulo-sh/wallet-crypto": "0.3.0",
+        "@unleashed/sdk": "workspace:*",
         "viem": "2.57.1",
         "zod": "^4.4.3",
       },
@@ -115,11 +117,34 @@
         "vue": "^3.5.38",
       },
     },
+    "packages/sdk": {
+      "name": "@unleashed/sdk",
+      "version": "0.1.0",
+      "dependencies": {
+        "@alejoamiras/private-fee-juice": "6.0.0",
+        "@aztec-foundation/aztec-standards": "6.0.0",
+        "@aztec-foundation/l1-artifacts": "6.0.0",
+        "@aztec-labs/aztec.js": "6.0.0",
+        "@aztec-labs/constants": "6.0.0",
+        "@aztec-labs/ethereum": "6.0.0",
+        "@aztec-labs/foundation": "6.0.0",
+        "@aztec-labs/stdlib": "6.0.0",
+        "viem": "2.57.1",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@nulo-sh/resolve-asset": "0.3.0",
+        "@types/node": "^24.13.2",
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.9",
+      },
+    },
     "packages/testnet-relayer": {
       "name": "@unleashed/testnet-relayer",
       "version": "0.1.0",
       "dependencies": {
         "@unleashed/bridge-core": "workspace:*",
+        "@unleashed/sdk": "workspace:*",
         "viem": "2.57.1",
       },
       "devDependencies": {
@@ -713,6 +738,8 @@
     "@unleashed/design": ["@unleashed/design@workspace:packages/design"],
 
     "@unleashed/landing": ["@unleashed/landing@workspace:apps/landing"],
+
+    "@unleashed/sdk": ["@unleashed/sdk@workspace:packages/sdk"],
 
     "@unleashed/testnet-relayer": ["@unleashed/testnet-relayer@workspace:packages/testnet-relayer"],
 

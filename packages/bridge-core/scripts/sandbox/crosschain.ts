@@ -18,7 +18,7 @@ import {
 } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import type { CrossChainDiscoveryContext, DiscoveryChainReads, DiscoveryReads } from "../../src/crosschain-discovery"
-import type { L1Ctx } from "../../src/flows"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import { evmArtifact } from "../script-artifacts"
 import { createL1Clients } from "../script-bootstrap"
 import { CHAIN_ID, lc, PERMIT2, SOURCE_CHAIN_ID, SWAPPER_FJ_PER_WHOLE_TOKEN, sandboxChain, sandboxSourceChain, ZERO_L1 } from "./constants"

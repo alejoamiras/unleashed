@@ -3,7 +3,7 @@
  * `fjRegister` the extra a token's first claim pays for registering it. Both are worst cases over
  * the measured matrix plus a margin, so a quote sized from them survives a fee bump.
  */
-import type { ManifestV2 } from "../src/manifest-v2"
+import type { ManifestV2 } from "@unleashed/sdk/protocol"
 
 export type CalibrationShape = "claim_public" | "claim_private" | "transfer" | "register_and_claim_public" | "register_token"
 

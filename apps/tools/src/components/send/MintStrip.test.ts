@@ -27,7 +27,9 @@ const feeAsset = vi.hoisted(() => ({
 	mint: vi.fn(async () => null),
 }))
 
-vi.mock("@unleashed/bridge-core", () => ({ awaitL1Receipt: async () => ({ status: receiptStatus.value }) }))
+vi.mock("@unleashed/sdk/internal", () => ({
+	awaitL1Receipt: async () => ({ status: receiptStatus.value }),
+}))
 vi.mock("@/composables/useFeeAssetMint", async () => {
 	const { computed, ref } = await import("vue")
 	const minting = ref(false)

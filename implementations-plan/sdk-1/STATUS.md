@@ -25,3 +25,13 @@
 - 2026-10-28 a1 1.3 gate on the merged head: lint, typecheck:all, test:all, audit:tools, actionlint, ci-gating green; forge 172/172, halmos 18/18; test:integration 50/51, the failure a real bug (strict verify-l1 refused FuelOnlyGate's artifact, which records no immutables), fixed in 10e94ef, fuel-route file then 4/4; 1.3 ✓
 - 2026-10-28 a1 1.4 gate: doc-links 3/3; 1.4 ✓
 - 2026-10-28 Codex round 2 no new material finding; round 3 on the verifier fix no new material finding; loop closed at three rounds
+- 2026-10-28 a2 2.1 written: packages/sdk with protocol/ and execution/ moved by git mv, router-receipt extracted, progress/status deleted, every importer migrated (app, bridge-core, sandbox, browser suite, relayer via ./l1), CI filters and pins; lint, typecheck:all, test:all, actionlint, ci-gating, ABI pins green; test:integration running
+- 2026-10-29 a2 2.1 test:integration 51/51 (9 files) on bfb526d plus early 2.3 files; 2.1 ✓
+- 2026-10-29 a2 2.2-2.4 written: build and pack check; L1 leg (parseNetwork trust roots, quotes, deposits, events, errors); L2 leg (claimFuel, claimToken, capabilitiesFor, the claim fee ladder moved with FeeStop codes, the app on its copy table); lint, typecheck:all, test:all, pack:check, actionlint, ci-gating green; sdk-flows gas cells 5/5 in the sandbox (434 s)
+
+- 2026-10-29 a2 review round 1: Codex 2 High 3 Medium, Opus 3 High 1 Medium 4 Low; all fixed with tests except the mainnet guardian pin (D57, OWNER-ASKS §7, follow-ups) and three known limits filed closed (#43, #44, #45); packaging gains license, repository, LICENSE and an allow-listed pack-check environment
+- 2026-10-29 a2 review round 2: Codex 1 High 2 Medium, all fixed with tests (private hashless latch settled by nullifier, credit-paid registration latched, quotes deep-frozen) plus synchronous deposit refusals and a stale record in the token claim's ladder call
+- 2026-10-29 a2 review round 3: Codex no new material finding; loop converged
+- 2026-10-29 merged origin/main (#42, 1f5455f): three conflicts (deploy.ts imports, bridge-core exports, the canary's imports); #42's new scripts repointed at @unleashed/sdk/protocol and /internal; typecheck:all, lint, test:all green
+- 2026-10-29 a2 final gates on 02e139a: lint, typecheck:all, test:all, audit:tools, pack:check, actionlint, ci-gating green; test:integration 60/60 (600993d) with sdk-flows 9/9 on 0006a87 and deployer-funding + sdk-flows 10/10 on the merge; e2e:tools 78/78 (1.4 h; app tree identical to the head); 2.5 ✓
+- 2026-10-29 CI: the tools smoke suite (apps/tools test:e2e) failed 3 register-path cases on e80cc5b; its mocked hub now answers token_for; 28/28 locally, both build targets verified, relayer integration 6/6

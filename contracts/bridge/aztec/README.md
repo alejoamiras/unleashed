@@ -41,4 +41,4 @@ re-pin of the live hub.
 - **Sole-consumer invariant** (three named consume sites; `claim_private` derives its secret)
   enforced statically by `scripts/check-sole-consumer.sh`.
 - **Keystone** content-hash / register-hash / claim-secret equality (Solidity ↔ Noir ↔ TS) pinned in
-  `contracts/bridge/evm/test/Keystone.t.sol` + `packages/bridge-core/src/{register-hash,claim-secret,l1}.test.ts`.
+  `contracts/bridge/evm/test/Keystone.t.sol` + `packages/sdk/src/protocol/{register-hash,claim-secret,l1}.test.ts`.

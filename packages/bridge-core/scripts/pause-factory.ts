@@ -26,8 +26,7 @@ import {
 	parseAbi,
 } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import type { ManifestV2 } from "../src/manifest-v2"
+import { PORTAL_FACTORY_ABI, type ManifestV2 } from "@unleashed/sdk/protocol"
 import { runKeyed } from "./keyed-run"
 import { requirePinnedSigner } from "./live-intent"
 import { createL1Clients, loadManifestV2FromConfigArg, requireBridge, sepoliaChain } from "./script-bootstrap"

@@ -72,10 +72,11 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock("@/contracts/bridge-generation", async () => {
-	const core = await vi.importActual<typeof import("@unleashed/bridge-core")>("@unleashed/bridge-core")
+	const protocol = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
+	const internal = await vi.importActual<typeof import("@unleashed/sdk/internal")>("@unleashed/sdk/internal")
 	const { keccak256, stringToHex } = await import("viem")
 	const raw = (await import("../../../../packages/bridge-core/fixtures/sandbox-manifest.json")).default
-	const manifest = core.parseManifestV2(raw)
+	const manifest = protocol.parseManifestV2(raw)
 	// The same derivation the test body uses for `l2TokenOf` — poseidon cannot run here, and only
 	// the stability of the mapping matters to the wizard and the engine.
 	const derived = (erc20: string) => `0x00${keccak256(stringToHex(`l2:${erc20}`)).slice(4)}`
@@ -93,12 +94,12 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		FUEL_ASSET_HANDLER: undefined,
 		FUEL_MIN_FJ: BigInt(manifest.feeJuice.minFj),
 		PRIVATE_FPC: undefined,
-		SEND_GENERATION: core.sendGenerationOf(manifest, bridge),
+		SEND_GENERATION: internal.sendGenerationOf(manifest, bridge),
 		HUB: { toString: () => bridge.l2.hub.address },
 		TOKEN_CLASS_ID: bridge.l2.tokenClassId,
 		MANIFEST_TOKENS: bridge.tokens,
 		FUEL: fuel,
-		LEGACY_ROUTERS: core.legacyRoutersOf(bridge),
+		LEGACY_ROUTERS: internal.legacyRoutersOf(bridge),
 		HUB_ARTIFACT: {},
 		HUB_TOKEN_ARTIFACT: {},
 		rebuildHubInstance: async () => ({ address: { toString: () => bridge.l2.hub.address } }),
@@ -187,29 +188,39 @@ vi.mock("@/composables/useGasHeld", () => ({
 	}),
 }))
 
-vi.mock("@unleashed/bridge-core", async (orig) => {
-	const actual = await orig<typeof import("@unleashed/bridge-core")>()
-	return {
-		...actual,
-		deriveTokenClaimSecret: (salt: unknown) => salt,
-		deriveBridgeSecret: (salt: unknown) => salt,
-		loadTokenList: h.fn.loadTokenList,
-		runSend: h.fn.runSend,
-		claimViaHub: h.fn.claimViaHub,
-		exitViaHub: h.fn.exitViaHub,
-		preflightHubExit: h.fn.preflightHubExit,
-		hubAt: () => ({ methods: {} }),
-		hubTokenFor: async (_hub: unknown, erc20: string) => h.state.hubTokens.get(erc20.toLowerCase()),
-		hubBindingAt: async (_node: unknown, _hub: string, erc20: string) => h.state.hubTokens.get(erc20.toLowerCase()),
-		hubExitsPaused: async () => h.state.exitsPaused,
-		readRegistration: async (_pub: unknown, _factory: string, erc20: string) => h.state.registrations.get(erc20.toLowerCase()),
-		readErc20Metadata: async () => {
-			const raw = new TextEncoder().encode("WBTC")
-			return { name: "Wrapped BTC", symbol: "WBTC", decimals: 8, nameRaw: raw, symbolRaw: raw }
+vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
+	deriveTokenClaimSecret: (salt: unknown) => salt,
+	deriveBridgeSecret: (salt: unknown) => salt,
+	readErc20Metadata: async () => {
+		const raw = new TextEncoder().encode("WBTC")
+		return { name: "Wrapped BTC", symbol: "WBTC", decimals: 8, nameRaw: raw, symbolRaw: raw }
+	},
+	readErc20Balances: async (_pub: unknown, _owner: string, tokens: readonly string[]) => new Map(tokens.map((t) => [t, 10n ** 12n])),
+}))
+vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/bridge-core")>()),
+	loadTokenList: h.fn.loadTokenList,
+}))
+vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
+	runSend: h.fn.runSend,
+	claimViaHub: h.fn.claimViaHub,
+	exitViaHub: h.fn.exitViaHub,
+	preflightHubExit: h.fn.preflightHubExit,
+	// The SDK's claim probe calls its own `hubTokenFor`, past the mock below, so the hub answers it from the same state.
+	hubAt: () => ({
+		methods: {
+			token_for: (erc20: { toString(): string }) => ({
+				simulate: async () => ({ result: h.state.hubTokens.get(erc20.toString().toLowerCase()) ?? `0x${"0".repeat(64)}` }),
+			}),
 		},
-		readErc20Balances: async (_pub: unknown, _owner: string, tokens: readonly string[]) => new Map(tokens.map((t) => [t, 10n ** 12n])),
-	}
-})
+	}),
+	hubTokenFor: async (_hub: unknown, erc20: string) => h.state.hubTokens.get(erc20.toLowerCase()),
+	hubBindingAt: async (_node: unknown, _hub: string, erc20: string) => h.state.hubTokens.get(erc20.toLowerCase()),
+	hubExitsPaused: async () => h.state.exitsPaused,
+	readRegistration: async (_pub: unknown, _factory: string, erc20: string) => h.state.registrations.get(erc20.toLowerCase()),
+}))
 
 // Only the four boundaries that need a live wallet or the recovery crypto; the rest of the module
 // (the stop-interaction shape, the fingerprint) stays real.
@@ -235,7 +246,8 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { type SendDepositRecord, predictPortal } from "@unleashed/bridge-core"
+import type { SendDepositRecord } from "@unleashed/bridge-core"
+import { predictPortal } from "@unleashed/sdk/protocol"
 import { type Hex, keccak256, stringToHex } from "viem"
 import listFixture from "./fixtures/token-list.json"
 

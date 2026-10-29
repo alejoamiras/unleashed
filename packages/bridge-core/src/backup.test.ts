@@ -8,7 +8,8 @@ import {
 	validateAnyBackupRecord,
 	validateBackupRecord,
 } from "./backup"
-import type { DepositJournalRecord, JournalTokenBlock, SendDepositRecord, SendWithdrawRecord, WithdrawJournalRecord } from "./journal"
+import type { DepositJournalRecord, SendDepositRecord, SendWithdrawRecord, WithdrawJournalRecord } from "./journal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 
 const SEALER = "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d"
 const DEPLOY = { chainId: 11155111, portal: "0xportal", bridge: "0xbridge" }

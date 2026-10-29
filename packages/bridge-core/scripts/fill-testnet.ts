@@ -21,7 +21,7 @@ import {
 	fillSourceDeposit,
 	SEPOLIA_RPC_DEFAULT,
 } from "../src/across-fill"
-import { lifiBook } from "../src/lifi-addresses"
+import { lifiBook } from "@unleashed/sdk/protocol"
 import { runKeyed } from "./keyed-run"
 import { PLAN_PINNED_CANARY_SIGNERS } from "./live-intent"
 import { createL1Clients, createL1PublicClient } from "./script-bootstrap"

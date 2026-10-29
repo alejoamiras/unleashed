@@ -33,27 +33,28 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Address, PublicClient } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import { type BridgeBlock, type ManifestV2, parseManifestV2, parseManifestV2Strict } from "../src/manifest-v2"
-import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
+import {
+	CANONICAL_PERMIT2,
+	DEPOSIT_ROUTER_ABI,
+	MAINNET_L1,
+	PORTAL_FACTORY_ABI,
+	type BridgeBlock,
+	type ManifestV2,
+	parseManifestV2,
+	parseManifestV2Strict,
+	PRIVATE_FPC_ADDRESS,
+	PRIVATE_FPC_SALT,
+	walletChainIdOf,
+} from "@unleashed/sdk/protocol"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
-import { legacyRoutersOf } from "../src/send-generation"
+import { legacyRoutersOf } from "@unleashed/sdk/internal"
 import { type DeployIdentity, type DeployStep, readDeployJournal } from "./deploy-manifest"
 import { git, resolveBin, run } from "./run"
 import { aztecPin } from "./sandbox/local-network"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
-import {
-	CANONICAL_PERMIT2,
-	FACTORY_CONSTANTS_ABI,
-	FUEL_SWAPPER_ABI,
-	manifestL1Chain,
-	ROUTER_CONSTANTS_ABI,
-	sourceRpcUrl,
-} from "./script-l1"
+import { FACTORY_CONSTANTS_ABI, FUEL_SWAPPER_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI, sourceRpcUrl } from "./script-l1"
 import { deriveHubInstance } from "./script-l2"
 import { verifyL1Manifest } from "./verify-l1"
-import { walletChainIdOf } from "../src/wallet-chain-id"
 import { postNodeRpc, readNodeRpcBody } from "../src/drpc-node"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
@@ -127,7 +128,7 @@ export const MAINNET_CAPS: typeof CAPS = {
 
 /** Aztec's registry on Ethereum mainnet. Every rollup it registered stays listed and older ones still take deposits,
  *  so a fuel route's portal must belong to the rollup `getCanonicalRollup()` names. */
-export const MAINNET_REGISTRY = "0x35b22e09ee0390539439e24f06da43d83f90e298"
+export const MAINNET_REGISTRY = MAINNET_L1.registry
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..")
@@ -313,7 +314,7 @@ function requireL1Rpc(net: IntentNetwork): string {
 }
 
 const descriptorSha256 = (net: IntentNetwork): string =>
-	JSON.parse(readFileSync(join(here, "..", "src", net.descriptor), "utf8")).artifactSha256
+	JSON.parse(readFileSync(join(here, "..", "..", "sdk", "src", "protocol", net.descriptor), "utf8")).artifactSha256
 
 /** A file entry matches exactly; only an entry ending in `/` matches by prefix — `deployments.json.ts`
  *  is not `deployments.json`. The reset baseline sits in an allowlisted lessons dir but is a trust

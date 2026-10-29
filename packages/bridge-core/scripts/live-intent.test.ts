@@ -2,7 +2,7 @@ import { inspect } from "node:util"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { TESTNET_FILLER } from "../src/across-self-built"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
-import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
+import type { ManifestToken, ManifestV2 } from "@unleashed/sdk/protocol"
 import { mainnetPlaceholderManifest } from "../test/fixtures/frozen-manifests"
 import type { DeployStep } from "./deploy-manifest"
 import { preLifiTestnetManifest } from "./lifi-canary-fixture"
@@ -23,7 +23,7 @@ import {
 	requirePinnedCanarySigner,
 	routerOnlyScopeOf,
 } from "./live-intent"
-import { CANONICAL_PERMIT2 } from "./script-l1"
+import { CANONICAL_PERMIT2 } from "@unleashed/sdk/protocol"
 
 const pinned = {
 	rollup: "0x1f435a7f2da358caf887a470faeee7d5d5f4efba",

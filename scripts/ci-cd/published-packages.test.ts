@@ -17,6 +17,7 @@ const CONSUMERS: Record<string, string[]> = {
 		"@nulo-sh/wallet-sdk-schema-patch",
 	],
 	"packages/bridge-core": ["@nulo-sh/resolve-asset", "@nulo-sh/wallet-crypto"],
+	"packages/sdk": ["@nulo-sh/resolve-asset"],
 }
 const PEERS: Record<string, string[]> = {
 	"@nulo-sh/resolve-asset": [],
