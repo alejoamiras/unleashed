@@ -21,6 +21,13 @@ export interface SourceChain {
 	 * limit. A reader splits a wider range into requests within it (`cappedLogs`).
 	 */
 	maxLogBlocks?: Readonly<Record<string, number>>
+	/**
+	 * Per URL of `rpcUrls`, how many of the latest blocks the endpoint answers `eth_getLogs` completely for, set at or
+	 * below the measured retention. Older, it may answer short or empty without an error, so a reader refuses such a
+	 * range before sending it and asks the next URL (`keptLogs`). Absent: the endpoint keeps all logs, or refuses the
+	 * ones it does not.
+	 */
+	logRetentionBlocks?: Readonly<Record<string, number>>
 }
 
 const SEPOLIA = 11_155_111
@@ -34,10 +41,13 @@ export const SOURCE_CHAINS: Readonly<Record<number, SourceChain>> = {
 		l1ChainId: SEPOLIA,
 		rpcUrls: ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"],
 		// As measured: PublicNode refuses `to − from > 50,000` (-32701) and answers of over 20,000 logs (-32602); the
-		// official endpoint refuses `to − from > 200` (-32614). PublicNode keeps logs and receipts for about the last
-		// 11 days of blocks; for the half-million blocks before that it answers `[]` and `null` without an error, and
-		// it refuses older ranges (4444).
+		// official endpoint refuses `to − from > 200` (-32614).
 		maxLogBlocks: { "https://base-sepolia-rpc.publicnode.com": 50_000, "https://sepolia.base.org": 200 },
+		// As measured at head ≈ 51,950,000: PublicNode keeps logs complete from block 47,000,000, answers `[]` for the
+		// half-million blocks before it and refuses older ones (4444); it answers receipts below 47,000,000 `null`. The
+		// boundaries did not move with the head, so they may advance in steps: 3,000,000 keeps a wide margin. The
+		// official endpoint serves logs and receipts far older; both refuse blocks below 46,500,000.
+		logRetentionBlocks: { "https://base-sepolia-rpc.publicnode.com": 3_000_000 },
 	},
 	8453: { chainId: 8453, name: "Base", nativeSymbol: "ETH", l1ChainId: ETHEREUM, rpcUrls: [] },
 	42161: { chainId: 42161, name: "Arbitrum One", nativeSymbol: "ETH", l1ChainId: ETHEREUM, rpcUrls: [] },

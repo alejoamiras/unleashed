@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: planned, awaiting approval (final Codex pass: approve)
+status: approved by the orchestrator at a753635; implementing a1
 base: main f24e033
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -22,8 +22,8 @@ resolves. PublicNode Base Sepolia answers older logs and receipts as empty. Each
 not keep, natively or through a local guard, and viem's existing fallback asks the next endpoint. Sepolia gains a
 second keyless reader that keeps full history.
 
-**Requirements.** #75 → a1 (`Closes #75`). Lane asks (`askN`): none. Plan Asks A1 and A3 need recorded acceptance
-before implementation starts. **UI impact.** Recorded owner decisions: "(none)". No copy, layout, state or format
+**Requirements.** #75 → a1 (`Closes #75`). Lane asks (`askN`): none. Plan Asks A1 and A3: accepted by the
+orchestrator at approval (recorded at each). **UI impact.** Recorded owner decisions: "(none)". No copy, layout, state or format
 changes; an old record reaches the outcome screens that already exist.
 
 ## Outcome & Quality Bar
@@ -82,11 +82,17 @@ trusted to report what they hold honestly, as today (Security).
   Sepolia reader. It widens two boundaries. Trust: an old record's Ethereum verdict rests on ethPandaOps' answers,
   as a recent one rests on PublicNode's. Privacy: when PublicNode refuses or fails, testnet browsers send
   ethPandaOps their IP, transaction hashes and log topics (secret hashes included). The Privacy Policy covers
-  mainnet only, so no legal text changes. Working assumption: accepted, as a technical dependency choice.
+  mainnet only, so no legal text changes. **Accepted by the orchestrator:** "`rpc.sepolia.ethpandaops.io` becomes
+  the second keyless Sepolia reader on testnet. It may decide old Sepolia verdicts, and testnet browsers send it
+  their IP, tx hashes and log topics when PublicNode refuses or fails. The data is public chain data, and it is the
+  same class PublicNode already receives. Mainnet, the legal pages and the mainnet bundle stay untouched (prove it
+  with the build-target check)."
 - A2: File D5's residual as a closed `known-limit` issue at close-out. Working assumption: yes.
 - A3 (needs the orchestrator's explicit acceptance at approval): do not run `e2e:tools` locally, an exception to the
   bridge-flow gate. The local target reads one URL per chain with no catalogue entry, so no wrapper applies and its
-  reads are unchanged; CI's `tools-e2e-status` runs the suite on the PR. Working assumption: accepted.
+  reads are unchanged; CI's `tools-e2e-status` runs the suite on the PR. **Accepted by the orchestrator:** "`bun run
+  e2e:tools` is not run locally, because the sandbox reader composition is provably unchanged. CI's
+  `tools-e2e-status` must be green before you report."
 
 ## Architecture & Implementation
 
