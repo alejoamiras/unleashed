@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: at the approval gate (final Codex verdict: approve); a2 waits for the ask30 sign-off
+status: approved; a1 implemented and looped, PR open; a2 waits for page 10 and a1's merge
 base: main e1d1c4c
 budget: "recon: 1 Sonnet explorer; audit: Codex gpt-6.1-sol at high plus one Opus Plan critique, then a fresh Codex pass; code-review: off"
 ---
@@ -117,7 +117,7 @@ Good enough: one browser step for P9-01; a2 changes strings only, on the testnet
 
 - ask30 → a2, once signed. P9-01, P9-02 → a1. Issues: none. #65 is out of scope.
 
-## Phase P1 (arc a1): P9-01 and P9-02
+## Phase P1 (arc a1): P9-01 and P9-02 ✓
 
 Files: `composables/useSend.ts`, `components/send/SendWizard.vue`, their tests, `tests/browser/specs/deposit-crosschain.spec.ts`.
 
@@ -195,6 +195,13 @@ exists; `git status` shows no `zz-*` spec and no `network.ts` change.
   a regression with its control. §5 now says the exit's retry does not re-request the grant. Resumed on the
   revision: one wording fix (wallet recovery only when a delivery reaches Ethereum), then **approve**.
 - Detail: `lessons/phase-0.md`.
+- a1 Codex fix loop (gpt-6.1-sol, high): round 1, **no material findings**; nits taken (cell 53's lapsed terms at
+  both confirms, two comments trimmed). Opus beside round 1: two low findings, both fixed (the held-check test now
+  opens a newer review and fails without `reviewStands`; the no-reader path logs its code). Round 2 verified the fix
+  commit: **no material findings**. Converged in 2 rounds. Detail: `lessons/phase-1.md`.
+- a1 deviations: the shots use the sandbox build's own chain labels (no display-only `network.ts` edit), since the
+  a1 surfaces are the sentence and its absence; cell 53's before time was measured by running main's cell 53 against
+  this build on the same sandbox.
 
 ## Delivery
 
