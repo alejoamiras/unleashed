@@ -234,6 +234,7 @@ type SourceEntry = ReturnType<typeof sourceTokenOf>
 function useDestToken(deps: CrossChainSendDeps, entry: ComputedRef<SourceEntry>) {
 	const selection = (deps.selection ?? useTokenSelection)({
 		pub: () => readClientFor(NETWORK.l1ChainId),
+		balanceReader: () => readClientFor(NETWORK.l1ChainId),
 		l1Account: () => undefined,
 		readBinding: readHubBinding,
 		l2Account: () => undefined,
