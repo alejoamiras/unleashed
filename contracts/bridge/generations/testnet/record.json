@@ -1,0 +1,320 @@
+{
+	"schema": 1,
+	"network": "testnet",
+	"l1ChainId": 11155111,
+	"evm": {
+		"DepositRouter": {
+			"address": "0x6e5566894908e945a12245f9810b4055c4a1035b",
+			"artifactSha256": "b6a4cb269fdfc28c9c3b18e32537b9937bcc01ba58aa036846f4df2aab0ee65e",
+			"pin": {
+				"length": 13398,
+				"trailerStart": 13345,
+				"immutables": [
+					[
+						{
+							"start": 669,
+							"length": 32
+						},
+						{
+							"start": 8928,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 1521,
+							"length": 32
+						},
+						{
+							"start": 9669,
+							"length": 32
+						},
+						{
+							"start": 11013,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 1793,
+							"length": 32
+						},
+						{
+							"start": 11368,
+							"length": 32
+						},
+						{
+							"start": 11628,
+							"length": 32
+						},
+						{
+							"start": 11669,
+							"length": 32
+						},
+						{
+							"start": 11782,
+							"length": 32
+						},
+						{
+							"start": 11893,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 1928,
+							"length": 32
+						},
+						{
+							"start": 6051,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 2223,
+							"length": 32
+						},
+						{
+							"start": 7454,
+							"length": 32
+						},
+						{
+							"start": 8764,
+							"length": 32
+						},
+						{
+							"start": 8887,
+							"length": 32
+						},
+						{
+							"start": 11306,
+							"length": 32
+						}
+					]
+				],
+				"hash": "0x11b38d9b732b43e73cacef72fd3c4f09ed3a8483a494027f73faeb0bc47becd8"
+			},
+			"build": {
+				"commit": "b8c2289fc9f986e5e3fa35d609695b87c767dea5",
+				"tag": null
+			}
+		},
+		"PortalFactory": {
+			"address": "0x2509411e06a3b9512eca3d9f2668afd7821b7817",
+			"artifactSha256": "9a5c0c6b4e4eea682db6ec693808d143c8813dfa0fa1f099df8eb2eb6eba9e16",
+			"pin": {
+				"length": 9738,
+				"trailerStart": 9685,
+				"immutables": [
+					[
+						{
+							"start": 369,
+							"length": 32
+						},
+						{
+							"start": 4911,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 1294,
+							"length": 32
+						},
+						{
+							"start": 4874,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 2100,
+							"length": 32
+						},
+						{
+							"start": 4825,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 2464,
+							"length": 32
+						},
+						{
+							"start": 2665,
+							"length": 32
+						},
+						{
+							"start": 4654,
+							"length": 32
+						}
+					]
+				],
+				"hash": "0xc92441d467a11e14a847e0724fdb1623fce08e45fb10ae95a17995388df05d4d"
+			},
+			"build": {
+				"commit": "b8c2289fc9f986e5e3fa35d609695b87c767dea5",
+				"tag": null
+			}
+		},
+		"TokenPortalImpl": {
+			"address": "0x43462651c21c66c9f473c8c47462667b8cbf9f1e",
+			"artifactSha256": "32483c88bf2501970fe5c8ccc045b73fb40f67f3823afadbea457282818c9f9d",
+			"pin": {
+				"length": 7259,
+				"trailerStart": 7206,
+				"immutables": [
+					[
+						{
+							"start": 209,
+							"length": 32
+						},
+						{
+							"start": 2262,
+							"length": 32
+						},
+						{
+							"start": 3710,
+							"length": 32
+						},
+						{
+							"start": 4642,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 335,
+							"length": 32
+						},
+						{
+							"start": 3935,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 762,
+							"length": 32
+						},
+						{
+							"start": 5209,
+							"length": 32
+						},
+						{
+							"start": 6424,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 897,
+							"length": 32
+						},
+						{
+							"start": 2226,
+							"length": 32
+						},
+						{
+							"start": 3673,
+							"length": 32
+						},
+						{
+							"start": 4606,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 1507,
+							"length": 32
+						},
+						{
+							"start": 2404,
+							"length": 32
+						},
+						{
+							"start": 4782,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 2891,
+							"length": 32
+						}
+					]
+				],
+				"hash": "0xb02bb5f50865160c6ad38990c53facd6000b958c5e2c0d98af6552daff802ea1"
+			},
+			"build": {
+				"commit": "b8c2289fc9f986e5e3fa35d609695b87c767dea5",
+				"tag": null
+			}
+		},
+		"TestnetFuelSwapper": {
+			"address": "0x2b2244a4d36ba117a273b0b5a810daa0b84c86ab",
+			"artifactSha256": "52bd020706e6812c0db54abcb2f41d027e8c321d8c582329f590996b68a67fe9",
+			"pin": {
+				"length": 5688,
+				"trailerStart": 5635,
+				"immutables": [
+					[
+						{
+							"start": 1385,
+							"length": 32
+						},
+						{
+							"start": 2324,
+							"length": 32
+						},
+						{
+							"start": 2496,
+							"length": 32
+						},
+						{
+							"start": 4681,
+							"length": 32
+						},
+						{
+							"start": 4922,
+							"length": 32
+						}
+					],
+					[
+						{
+							"start": 1670,
+							"length": 32
+						},
+						{
+							"start": 4411,
+							"length": 32
+						},
+						{
+							"start": 4483,
+							"length": 32
+						}
+					]
+				],
+				"hash": "0xddec0798ec9640a6931a68e60acfe17ae8dcf490cc1c892800df3d7418aae9eb"
+			},
+			"build": {
+				"commit": "b8c2289fc9f986e5e3fa35d609695b87c767dea5",
+				"tag": null
+			}
+		}
+	},
+	"aztec": {
+		"TokenBridgeHub": {
+			"address": "0x1d500beb91a75ccd2e5376d14980b0cabd494fe3397e710faddc371376de7530",
+			"classId": "0x2132a9de52d748417fb251b0924154633658534d6cf806bd9c3d79554d632abe",
+			"artifactSha256": "d7e3be3c0b51718cddb0a28e9a9a7e163d5d88c7f120b3daecc013532bfe328a",
+			"build": {
+				"commit": "b8c2289fc9f986e5e3fa35d609695b87c767dea5",
+				"tag": null
+			}
+		}
+	}
+}
