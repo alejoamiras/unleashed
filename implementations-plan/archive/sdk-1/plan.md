@@ -1096,7 +1096,7 @@ Arc a6, PR 2 (`git diff bc5e585..HEAD`):
   - Only an unsent record skipped the unseal on an explicit watch-only run: such a run is no longer interactive.
   - The gas-timeout test stored no hash: it now keeps the sent hash and hands it to the retry.
 - **Round 3, Codex: APPROVE.** No new findings; it checked the restart's cancellation and cleanup paths.
-- **Gates on the final code (e3feba5).** `audit:tools`, `test:all`, the jsdom e2e and the sandbox integration suite
+- **Gates on the final code, before the rebase.** `audit:tools`, `test:all`, the jsdom e2e and the sandbox integration suite
   (61 tests) are green. The browser suite at retry 0 passed 44 of 44 in 3224 s. The before run, on PR 1's head, took
   3581 s and failed activity cell 40: both receipts showed, but one record lacked its claim hash, a cross-tab lost
   write under today's unlocked claim writer (likely; not traced).
