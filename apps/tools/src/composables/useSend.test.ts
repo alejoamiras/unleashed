@@ -849,14 +849,14 @@ describe("useSend", () => {
 	const PINNED = { readContract: async () => false, getChainId: async () => 31337 }
 	it.each([
 		{ name: "a pause it reads", gate: paused, network: undefined, want: DEPOSITS_PAUSED },
-		{ name: "a node that does not answer", gate: undefined, network: () => new Error("fetch failed"), want: null },
+		{ name: "a node that does not answer", gate: undefined, network: () => new Error("fetch failed"), want: BRIDGE_UNCHECKED },
 		{
 			name: "contracts that are not this release's",
 			gate: undefined,
 			network: () => new BridgeError("invalid-network", "the deployed contracts are not this release's network: x", "none", "never"),
-			want: null,
+			want: BRIDGE_UNCHECKED,
 		},
-	])("the cross-chain check refuses only a pause: $name", async ({ gate, network, want }) => {
+	])("the cross-chain check refuses $name in this app's words", async ({ gate, network, want }) => {
 		h.pinned.value = PINNED
 		if (network)
 			h.bridgeNetwork.mockImplementation(async () => {
@@ -878,8 +878,8 @@ describe("useSend", () => {
 		expect(h.assertDepositsOpen.mock.calls[0]).toEqual([net, expect.objectContaining({ l1: PINNED }), "gas"])
 	})
 
-	it("a build with no pinned Ethereum reader reads nothing for the cross-chain check", async () => {
-		expect(await useSend().checkCrossChain(plan())).toBeNull()
+	it("a build with no pinned Ethereum reader cannot check a cross-chain send, and reads nothing through the wallet", async () => {
+		expect(await useSend().checkCrossChain(plan())).toBe(BRIDGE_UNCHECKED)
 		expect(h.bridgeNetwork).not.toHaveBeenCalled()
 		expect(h.assertDepositsOpen).not.toHaveBeenCalled()
 	})

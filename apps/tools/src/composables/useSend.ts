@@ -433,7 +433,7 @@ export interface SendComposable {
 	/** Reads the bridge's trust roots and the route's pause, with no prompt: null when `plan` may be sent, else the
 	 *  sentence to show. */
 	check(plan: SendPlan): Promise<string | null>
-	/** A cross-chain send's pause check, with no prompt: the sentence when the route reads as paused, else null. */
+	/** A cross-chain send's pause check, with no prompt: null when the route reads open, else the sentence to show. */
 	checkCrossChain(plan: SendPlan): Promise<string | null>
 	stage: Ref<SendStage | null>
 	busy: Ref<boolean>
@@ -829,13 +829,13 @@ async function bridgeRefusal(plan: SendPlan, l1: SendDeps["l1"]): Promise<string
 
 /**
  * A cross-chain confirm's pause check, through the build's pinned Ethereum reader: the wallet sits on the source
- * chain. Only a pause it reads refuses; any other failure lets the send go unchecked.
+ * chain. It fails closed: a check that cannot be made is a bridge this app could not check.
  */
 async function crossChainPauseRefusal(plan: SendPlan): Promise<string | null> {
 	const l1 = readClientFor(NETWORK.l1ChainId)
 	if (!l1) {
-		log("cross-chain pause check", { code: "no-reader" })
-		return null
+		log("cross-chain pause check refused the send", { code: "no-reader" })
+		return BRIDGE_UNCHECKED
 	}
 	const reads: Reads = { l1, aztecNode: appNode() }
 	try {
@@ -843,8 +843,8 @@ async function crossChainPauseRefusal(plan: SendPlan): Promise<string | null> {
 		return null
 	} catch (e) {
 		const code = isBridgeError(e) ? e.code : "read-failed"
-		log("cross-chain pause check", { code })
-		return code === "paused" ? DEPOSITS_PAUSED : null
+		log("cross-chain pause check refused the send", { code })
+		return code === "paused" ? DEPOSITS_PAUSED : BRIDGE_UNCHECKED
 	}
 }
 

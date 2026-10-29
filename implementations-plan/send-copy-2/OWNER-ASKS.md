@@ -26,6 +26,8 @@ send behaves the same today.
 
 **Recommendation.** B. The Ethereum send already does this, and a mismatch can strand the money.
 
+**Signed: P10-01 B** (page 10). Ships in a1.
+
 ## §1 Review (mock: `design/review.png`)
 
 | Id | When it shows | Before | After |

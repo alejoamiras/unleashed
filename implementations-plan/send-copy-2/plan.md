@@ -25,10 +25,12 @@ waits for the sign-off; a1 does not. Mainnet copy is unchanged. Issues: none.
   shows on the cross-chain review in the error line (`sendReviewError`) when the check reads the route as paused.
   Sign and send holds while the check reads, as it does on the Ethereum send.
 - **P9-02 Option B**: "A fresh review starts blank: every send error clears when you come back to the review."
+- **P10-01 Option B** (page 10, folded into a1): a Base Sepolia send whose pause check cannot be made stops before
+  any wallet prompt with the Ethereum send's sentence: "This app could not check the bridge on this network. Nothing
+  was sent."
 - **ask30**: the direction is recorded; no string is signed. a2 builds only the entries of `OWNER-ASKS.md` §1–§3 the
-  owner signs, with their before and after shots. Nothing else a user sees changes. §0 asks how a check that fails
-  should behave; a1 ships today's behaviour for it (the send goes). §5 asks about an exit's decline from selection,
-  which stays (D4).
+  owner signs, with their before and after shots. Nothing else a user sees changes. §0 is signed as P10-01 B and
+  ships in a1. §5 (an exit's decline from selection stays, D4) is signed as P10-05 A.
 
 ## Outcome & Quality Bar
 
@@ -44,7 +46,8 @@ Good enough: one browser step for P9-01; a2 changes strings only, on the testnet
 - **P9-01 check.** `useSend` gains `checkCrossChain(plan): Promise<string | null>`, beside `check`. It reads through
   `readClientFor(NETWORK.l1ChainId)` and `appNode()`, because a cross-chain review's wallet is on the source chain.
   It runs `assertDepositsOpen(await bridgeNetwork(reads), reads, plan.intent)`. A `paused` refusal returns
-  `DEPOSITS_PAUSED`. A missing reader, a thrown read or any other refusal returns null, logged by code only (D2). The
+  `DEPOSITS_PAUSED`. A missing reader, a thrown read or any other refusal returns `BRIDGE_UNCHECKED`, logged by code
+  only (D2, as P10-01 B decided). The
   router refuses every leg on `FACTORY.depositsPaused()`, which is the flag `assertDepositsOpen` reads (recon).
 - **P9-01 wizard.** `heldCheck` takes the check to run. `preflight` runs `crossChainChecked` for a cross-chain review,
   where `bridgeChecked` runs for an Ethereum send. `crossChainChecked` runs the held check, then `reviewStands`, then
@@ -72,12 +75,11 @@ Good enough: one browser step for P9-01; a2 changes strings only, on the testnet
   rule in `lessons.md`), never the wallet's transport. A false "open" answer leaves today's outcome: if the delivery
   reaches Ethereum while deposits are paused, its deposit reverts and it recovers to the user's Ethereum wallet. A
   false "paused" answer stops a send with nothing spent.
-- Fail-open (D2) keeps today's exposure, since today the cross-chain path has no check, but it does not make a send
-  safe. A node outage lets a paused route's send go; a delivery whose deposit then reverts recovers to the user's
-  Ethereum wallet. A manifest mismatch lets a send go into contracts whose frozen pointers name another rollup, so
-  its deposit may be unclaimable (`TokenPortalImpl.sol` freezes `INBOX` and `ROLLUP_VERSION`; plausible, unverified
-  end to end). The Ethereum send refuses both today. §0 puts this to the owner. The session cache holds verified network data, not a transport: whichever check runs first builds it, and
-  each later check still reads the pause through its own client. The pause target comes from the manifest.
+- The check fails closed (P10-01 B), as the Ethereum send's does: a node outage or a manifest mismatch stops the
+  send with nothing spent. Before P10-01 the planned fail-open would have let a mismatch send into contracts whose
+  frozen `INBOX` and `ROLLUP_VERSION` name another rollup; that path is now closed. The session cache holds
+  verified network data, not a transport: whichever check runs first builds it, and each later check still reads
+  the pause through its own client. The pause target comes from the manifest.
 - A read that hangs holds the cross-chain review's buttons, as it already does on the Ethereum send (the node client
   has no timeout). No timeout is added: that is a recovery policy (§0 names it).
 - No new dependency, credential, persistence, contract change or crypto. No raw RPC text reaches the screen or log.
@@ -109,13 +111,13 @@ Good enough: one browser step for P9-01; a2 changes strings only, on the testnet
 
 ### Asks (working assumption in force)
 
-- A1 (`OWNER-ASKS.md` §0): a check that fails (outage or mismatch) lets the send go, as today.
+- A1 (`OWNER-ASKS.md` §0): resolved by P10-01 B; a check that cannot be made refuses.
 - A3 (`OWNER-ASKS.md` §5): an exit's decline from token selection stays after Back then Next.
 - A2: a2 builds only signed entries; S2 ships in a2 only if gas-floor-1 leaves that line alone.
 
 ## Disposition
 
-- ask30 → a2, once signed. P9-01, P9-02 → a1. Issues: none. #65 is out of scope.
+- ask30 → a2, once signed. P9-01, P9-02, P10-01 → a1. Issues: none. #65 is out of scope.
 
 ## Phase P1 (arc a1): P9-01 and P9-02 ✓
 
@@ -123,8 +125,8 @@ Files: `composables/useSend.ts`, `components/send/SendWizard.vue`, their tests, 
 
 1. Add `checkCrossChain`; export nothing else new. Add `heldCheck(run)`, `crossChainChecked` and the `enterReview` resets.
 2. `useSend.test.ts`: `checkCrossChain` over a paused route (DEPOSITS_PAUSED), a thrown read, an `invalid-network`
-   refusal, no reader (null each) and a pass (null). Assert the reads use the pinned reader and never the wallet's
-   `publicClient`, with a pass as the control.
+   refusal, no reader (`BRIDGE_UNCHECKED` each, P10-01 B) and a pass (null). Assert the reads use the pinned
+   reader and never the wallet's `publicClient`, with a pass as the control.
 3. `SendWizard.test.ts` (its `useSend` mock gains `checkCrossChain`):
    - a paused cross-chain confirm shows the sentence; `contractAccount` and `xcSend` are not called; a pass sends,
      and the check received the review's plan;
@@ -136,10 +138,11 @@ Files: `composables/useSend.ts`, `components/send/SendWizard.vue`, their tests, 
      the same failure on the review that sent it shows (control).
 4. Browser: cell 53 first confirms on a paused route, inside its own `try/finally` that unpauses. It asserts the
    sentence, zero `eth_sendTransaction` and no record. Then it confirms the same review (rebuilt first if it shows
-   expired) and runs as today. Failure mode: with fail-open, a misread in the real build passes silently, and only
-   the real pinned reader and node can prove the refusal. Estimate +15 s; record the measured time.
+   expired) and runs as today. Failure mode: a misread in the real build (the wrong chain's client) never shows the
+   paused sentence, and only the real pinned reader and node can prove the refusal. Estimate +15 s; record the measured time.
 5. Shots for the PR, by P2 step 3's method, light and dark: the cross-chain review with the paused sentence, and the
-   same review after Back then Next. Save to `design/a1-*.png`.
+   same review after Back then Next, and the review refusing a check that cannot be made (P10-01 B). Save to
+   `design/a1-*.png`.
 
 **Gate**: `bun run lint && bun run typecheck:all && bun run test:all && bun run --cwd apps/tools test:e2e && bun run audit:tools`
 exit 0, then `bun run e2e:tools -- specs/deposit-crosschain.spec.ts specs/l1-wallet.spec.ts specs/recovery.spec.ts` at
@@ -167,7 +170,9 @@ exists; `git status` shows no `zz-*` spec and no `network.ts` change.
 
 - D1 the cross-chain check is a `useSend` method on the pinned reader, called in the held preflight. Rejected:
   (a)–(c) above.
-- D2 only a read `paused` refuses; anything else lets the send go (today's behaviour), pending §0.
+- D2 a read `paused` refuses with P9-01's sentence; any other failure refuses with `BRIDGE_UNCHECKED` (P10-01 B,
+  signed after the plan's approval and folded into a1 on the orchestrator's note; it supersedes the fail-open the
+  plan first shipped).
 - D3 the sentence lives in `xcError`, so P9-02 already covers it.
 - D4 P9-02 clears what a send attempt wrote; an exit's selection-time grant outcome is not one.
 - D5 one browser step, in cell 53, not a new cell: same setup, about +15 s, serial shard.
@@ -206,8 +211,8 @@ exists; `git status` shows no `zz-*` spec and no `network.ts` change.
 ## Delivery
 
 - a1 = P1 on `worktree-send-copy-2`, which holds the plan commit. Merge `origin/main` first. PR title:
-  `feat(tools): check the pause before a cross-chain send and start every review blank`. Body: what and why, P9-01 B
-  and P9-02 B quoted by id and text, the gates with outcomes, cell 53's wall-clock before and after, the `a1-*`
+  `feat(tools): check the pause before a cross-chain send and start every review blank`. Body: what and why, P9-01 B,
+  P9-02 B and P10-01 B quoted by id and text, the gates with outcomes, cell 53's wall-clock before and after, the `a1-*`
   shots by name (the orchestrator attaches them). It delivers no ask, so its body names none.
 - a2 = P2, same branch after `git merge origin/main`. PR title: `feat(tools): plainer testnet cross-chain send copy`.
   Body: the signed ask30 strings quoted by id and text, `Delivers ask30`, the shots by name, the gates.

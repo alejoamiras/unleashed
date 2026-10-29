@@ -10,3 +10,6 @@
 - 2026-10-29 a1 Codex loop: round 1 no material findings (nits taken); Opus two lows fixed; round 2 no material findings.
 - 2026-10-29 a1 after shots taken (design/a1-*.png, light and dark); merged origin/main 228fbc9; final-head gates next.
 - 2026-10-29 a1 final head 8c38307: lint, typecheck:all, test:all, test:e2e, audit:tools exit 0; browser 14 passed at retry 0 (18.2 min; cell 53 1.4 min).
+- 2026-10-29 ORCHY-STEER: page 10 signed. P10-01 B folds into a1 (a cross-chain pause check that cannot be made refuses with BRIDGE_UNCHECKED); P10-02..05 A go to a2 after a1 merges; a2 not started here.
+- 2026-10-29 a1 merged-head 836cfe4 gates: lint, typecheck, test:all (tools 1711), test:e2e, audit:tools exit 0; browser 15 passed at retry 0 (19.3 min; cell 53 1.4 min).
+- 2026-10-29 a1 P10-01 B folded: the cross-chain check fails closed with BRIDGE_UNCHECKED (no reader, a thrown read, any non-paused refusal); unit tests updated; plan, OWNER-ASKS §0 and ledger record it.
