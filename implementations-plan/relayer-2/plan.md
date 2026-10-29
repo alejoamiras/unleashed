@@ -244,6 +244,7 @@ for four passes a minute and no `failed` naming the window.
 | Codex fix loop 1 (`01a1890f`) | 2 low | the run's comments say it starts nothing after its end, not that it ends (an admitted send is awaited); two narrating comments deleted | none |
 | Opus diff review | 8 low or nit | a pass starts only at a slot (D10); an in-flight read refused at the deadline (D8); `late` for a run with no pass; the live test two blocks below the head; a failed-first-pass worker test; §1 case 1 widened; D5 corrected; wording | a guard for finite deadlines over 2³¹ − 1 ms (no caller); the lagging-backend retry ships as known limit 4 (gas only) |
 | Codex fix loop 2 (resumed) | 1 low | the schedule comment and D10 say "after the first pass": a late first pass starts at once | none |
+| Codex fix loop 3 (resumed) | **no findings** | the wording verified; the control-flow diff rechecked, no regression | none |
 
 ## Seeds
 

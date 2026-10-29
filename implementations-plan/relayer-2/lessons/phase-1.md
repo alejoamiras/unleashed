@@ -23,3 +23,4 @@
   first pass, which starts at once; the comment and D10 now say "after the first pass". Its traces: no pass is
   admitted with under 5 s left (53,000 ms admissible, 53,001 not), no overlap, no unhandled rejection from the
   post-read refusal, and a nonnegative `late` delay.
+- Codex fix loop round 3 (resumed): **no findings**; converged in three rounds.
