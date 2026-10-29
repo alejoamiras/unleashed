@@ -956,8 +956,7 @@ function enterReview(): void {
 	step.value = 2
 }
 
-/** A fresh review starts blank: what an earlier attempt said is not about this one. An exit's decline comes from
- *  picking the token, not from a send, and stands until the token is picked again. */
+/** An exit's decline comes from picking the token, not from a send: it stands until the token is picked again. */
 function clearSendErrors(): void {
 	sendFlow.error.value = null
 	exitFlow.error.value = null
@@ -1215,8 +1214,6 @@ async function bridgeChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<
 	return false
 }
 
-/** A cross-chain send's pause check, before any prompt on the source chain: a pause it reads stays on the review in
- *  the send's place, and only a review still standing when the reads return may act on them. */
 async function crossChainChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
 	const refusal = await heldCheck(() => sendFlow.checkCrossChain(plan))
 	if (!reviewStands(snapshot)) return false

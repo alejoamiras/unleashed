@@ -833,7 +833,10 @@ async function bridgeRefusal(plan: SendPlan, l1: SendDeps["l1"]): Promise<string
  */
 async function crossChainPauseRefusal(plan: SendPlan): Promise<string | null> {
 	const l1 = readClientFor(NETWORK.l1ChainId)
-	if (!l1) return null
+	if (!l1) {
+		log("cross-chain pause check", { code: "no-reader" })
+		return null
+	}
 	const reads: Reads = { l1, aztecNode: appNode() }
 	try {
 		await assertDepositsOpen(await bridgeNetwork(reads), reads, plan.intent)

@@ -55,6 +55,15 @@ async function openCrossChainReview(page: Page, actor: { address: string }, plan
 	await reviewCrossChain(page, plan)
 }
 
+/** A review held past the 60 s route TTL shows Rebuild in Sign's place: rebuilt, it can be confirmed again. */
+async function liveTerms(page: Page) {
+	const confirm = page.locator(`${tid(TESTIDS.sendReviewConfirm)}:enabled`)
+	const rebuild = page.locator(tid(TESTIDS.sendXcRefresh))
+	await expect(confirm.or(rebuild).first()).toBeVisible()
+	if (await rebuild.isVisible()) await rebuild.click()
+	await expect(confirm).toBeVisible()
+}
+
 async function sendFromSource(page: Page, actor: { address: string }, plan: CrossChainPlan) {
 	await openCrossChainReview(page, actor, plan)
 	await signOnSource(page, plan.srcChainId)
@@ -258,7 +267,8 @@ test("cell 53 — deposits paused at the confirm: refused on the review before a
 	const signatures = l1.signatures
 	await writeL1(sandbox.clients.l1, factory, SET_PAUSED_ABI, "setPaused", [true, false])
 	try {
-		await page.locator(`${tid(TESTIDS.sendReviewConfirm)}:enabled`).click()
+		await liveTerms(page)
+		await page.locator(tid(TESTIDS.sendReviewConfirm)).click()
 		await expect(page.locator(tid(TESTIDS.sendReviewError))).toHaveText(
 			"Deposits on this route are paused right now. Nothing was sent.",
 		)
@@ -268,9 +278,8 @@ test("cell 53 — deposits paused at the confirm: refused on the review before a
 	} finally {
 		await writeL1(sandbox.clients.l1, factory, SET_PAUSED_ABI, "setPaused", [false, false])
 	}
-	// Unpaused, the same review sends; its terms are rebuilt first if they lapsed meanwhile.
-	const rebuild = page.locator(tid(TESTIDS.sendXcRefresh))
-	if (await rebuild.isVisible()) await rebuild.click()
+	// Unpaused, the same review sends.
+	await liveTerms(page)
 	await confirmReview(page)
 	const sent = await bridging(page)
 	await writeL1(sandbox.clients.l1, factory, SET_PAUSED_ABI, "setPaused", [true, false])

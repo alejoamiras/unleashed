@@ -143,8 +143,8 @@ const xcRequote = vi.fn()
 const xcSend = vi.fn(async (..._args: unknown[]): Promise<unknown> => ({ id: "xc-1" }))
 const xcDispose = vi.fn()
 const XC_ROUTE = { minReceived: 4_510_000n }
-const xcQuote = (at = Date.now()) => ({
-	ask: { srcChainId: XC_SOURCE, user: L1_ADDRESS, intent: "token", isPrivate: false },
+const xcQuote = (at = Date.now(), intent = "token") => ({
+	ask: { srcChainId: XC_SOURCE, user: L1_ADDRESS, intent, isPrivate: false },
 	outcome: { kind: "route" },
 	at,
 })
@@ -491,13 +491,13 @@ async function atReview(w: Awaited<ReturnType<typeof wizard>>, amount = "1") {
 }
 
 /** The same walk from the source row, with the route answered `quotedAt`. */
-async function atCrossChainReview(w: Awaited<ReturnType<typeof wizard>>, quotedAt = Date.now()) {
+async function atCrossChainReview(w: Awaited<ReturnType<typeof wizard>>, quotedAt = Date.now(), intent = "token") {
 	w.findComponent({ name: "TokenStep" }).vm.$emit("select", SOURCE_ROW)
 	await flushPromises()
 	const amount = w.findComponent({ name: "AmountStep" })
 	amount.vm.$emit("update:amount", "5")
 	amount.vm.$emit("update:valid", true)
-	xcQuoted.value = xcQuote(quotedAt)
+	xcQuoted.value = xcQuote(quotedAt, intent)
 	await flushPromises()
 	amount.vm.$emit("next")
 	await flushPromises()
@@ -2071,28 +2071,34 @@ describe("SendWizard", () => {
 	it.each([
 		{ name: "passes", answer: null },
 		{ name: "refuses", answer: "Deposits on this route are paused right now. Nothing was sent." },
-	])("a cross-chain pause check that $name after the account switched sends nothing and shows nothing", async ({ answer }) => {
-		let release = (): void => {}
-		checkXcFn.mockImplementation(
-			() =>
-				new Promise((resolve) => {
-					release = () => resolve(answer)
-				}),
-		)
-		const w = await wizard()
-		const review = await atCrossChainReview(w)
-		l1ChainId.value = XC_SOURCE
-		await flushPromises()
-		review.vm.$emit("confirm")
-		await flushPromises()
-		selectedAccount.value = `0x${"20".repeat(32)}`
-		await flushPromises()
-		release()
-		await flushPromises()
-		expect(xcSend).not.toHaveBeenCalled()
-		expect(contractAccount).not.toHaveBeenCalled()
-		expect(w.findComponent({ name: "CrossChainReview" }).exists()).toBe(false)
-	})
+	])(
+		"a cross-chain pause check that $name after the account switched sends nothing and leaves the next review blank",
+		async ({ answer }) => {
+			let release = (): void => {}
+			checkXcFn.mockImplementation(
+				() =>
+					new Promise((resolve) => {
+						release = () => resolve(answer)
+					}),
+			)
+			const w = await wizard()
+			// Gas-only: its confirm has no gas re-read, so the check is the only wait before signing.
+			const review = await atCrossChainReview(w, Date.now(), "gas")
+			l1ChainId.value = XC_SOURCE
+			await flushPromises()
+			review.vm.$emit("confirm")
+			await flushPromises()
+			selectedAccount.value = `0x${"20".repeat(32)}`
+			await flushPromises()
+			w.findComponent({ name: "AmountStep" }).vm.$emit("next")
+			await flushPromises()
+			release()
+			await flushPromises()
+			expect(xcSend).not.toHaveBeenCalled()
+			expect(contractAccount).not.toHaveBeenCalled()
+			expect(w.findComponent({ name: "CrossChainReview" }).props("error")).toBeNull()
+		},
+	)
 
 	it("a cross-chain send that fails says why on its own review, never on a newer one opened after backgrounding it", async () => {
 		xcSend.mockResolvedValueOnce({ error: "Rejected in your wallet." })
