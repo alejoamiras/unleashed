@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: audited (final fresh Codex pass: approve); awaiting the orchestrator's approval
+status: implemented; Codex fix loop converged in 2 rounds
 base: main 1f5455f
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -211,6 +211,10 @@ verified and fixed; each new test fails with its fix reverted.
 | O2 | The guard missed a hand-built `lb.drpc.live` URL (demonstrated against the rule) | fixed: rule (1) also matches the keyed host and an `env.DRPC_API_KEY` read |
 | O3 | An error escaping `main` (a background rejection) prints raw (plausible; no SDK path found) | fixed locally: `runKeyed` routes `unhandledRejection` and `uncaughtException` through the same redacted exit |
 | O4 | A test comment gave a wrong reason | fixed: the name is written literally |
+
+**Implementation round 2 (resumed Codex): no material finding.** The fixes verified by probe (no key prefix in the
+debug path; escaped errors print once, redacted; success, exit hooks and SIGTERM unchanged; the verifier case makes
+no external request; the guard matches only the two allowed files). One Low comment nit, fixed. Converged in 2 rounds.
 
 ## Delivery
 

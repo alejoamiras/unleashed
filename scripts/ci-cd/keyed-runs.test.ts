@@ -11,7 +11,6 @@ import { KEYED_ENV } from "../../packages/bridge-core/scripts/keyed-env"
  * names, never values.
  */
 const ROOT = join(import.meta.dir, "..", "..")
-// The composer, the keyed host, or the key itself read from the environment.
 const COMPOSER = /\brequireDrpcNodeUrl\b|lb\.drpc\.(?:live|org)|\benv\.DRPC_API_KEY\b/
 const ALLOWED_COMPOSERS = ["packages/bridge-core/src/drpc-node.ts", "packages/bridge-core/scripts/keyed-run.ts"]
 const KEYED_SUFFIX = /_(?:KEY|SECRET|SECRET_[A-Z]+|RPC|RPC_URL|TOKEN)$/

@@ -9,3 +9,4 @@
 - Codex (gpt-6.1-sol, high, fresh): 1 Medium, reproduced with a local batch JSON-RPC server at `LOG_LEVEL=debug`
   (a first probe answering a batch with a single object never reached the inspected line). Opus review: 4 findings,
   all verified. Fixed in two commits; controls run for C1 and O3.
+- Round 2 (resumed): no material finding; one Low comment nit fixed. Converged.
