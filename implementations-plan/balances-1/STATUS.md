@@ -1,0 +1,6 @@
+- 2026-10-29 phase 0.75: adopted worktree balances-1 (branch worktree-balances-1, base a111e8a); recon started (1 Sonnet explorer)
+- 2026-10-29 recon done: recon.md written; Multicall3 and the keyless Sepolia RPC checked live
+- 2026-10-29 plan drafted (light); Codex audit started (gpt-6.1-sol, high)
+- 2026-10-29 Codex audit: conditional approve; 5 findings, 3 adopted, D2 and D3 rejected with reasons; final fresh pass next
+- 2026-10-29 final fresh Codex pass: conditional approve (D2 enforced via app adapter, doc fixes); adopted; verification round: approve
+- 2026-10-29 plan committed on worktree-balances-1; auto-continue: no OWNER-ASKS entry, Codex approved
