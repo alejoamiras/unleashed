@@ -463,6 +463,9 @@ wall-clock before and after in the PR body.
   `useBridgeJournal.test.ts` case to its new home.
 - Validation gate: `bun run audit:tools`; the browser suite (recovery, registration-retry, fee-states, spike, exits and
   activity at retry 0); the sandbox integration suite. Layers: unit, integration, e2e.
+- **Deviation (D67).** The premise did not hold: the SDK's claim entries order the claim differently from the app's
+  engine in eight ways a person would notice (`OWNER-ASKS.md` §10). a4 ships the app's engine unchanged, two SDK
+  fixes the comparison found (D68, D69) and the claim's prompt events (D70); the port waits for §10.
 
 ### Arc a5: the publish setup
 
@@ -676,6 +679,25 @@ Each row: the decision, its source, the rejected view with its reason.
   entry, which the sandbox's stand-in Diamond (`TestnetFuelSwapper`) does not speak; `fixtures/lifi-quote.ts` keeps
   the recording's venue, identity and swap leg and re-encodes them as the single-swap call. A `lifiQuote` option turns
   the answer on per file, so every other file still fails on a request to li.quest.
+
+- **D67 a4 keeps the app's claim engine and asks the owner (option C).** Codex: C; a claim plan of app-only
+  switches (option A) is a second claim policy inside the code that protects funds, and splitting the claim into
+  steps the app composes moves its invariants onto the caller. Opus: C, plus the SDK fixes and events below; asking
+  first and porting once is cheaper on either answer. Decided C. Seventeen gaps, eight of them visible (§10). The
+  plan's 4.1 also had two defects: the card's "Claim your gas" has no SDK entry (`claimFuel` refuses a token + gas
+  record, `claimToken` returns a completed one untouched), and `persist` = `patchRecord` writes the whole record over
+  other writers (the card's gas claim, discovery) and drops a schema-4 record. A port needs a guarded field-delta
+  writer and a schema-3 view of a cross-chain record.
+- **D68 Gas a claimed-elsewhere token left is claimed, private gas included.** `claimToken` settled a private token +
+  gas record whose token another submitter claimed with its gas unclaimed; the app prunes completed records after a
+  week, and the sealed salt with them. The leftover claim now runs for private records as private credit; without the
+  salt it settles with `gasLeft` `missing-salt` (D54).
+- **D69 A gas leg's leaves are its leaf, its message key and the Fee Juice it carries.** A token + gas record holding
+  only its token leaf skipped the receipt read, paid from held gas and settled with its gas unclaimed.
+- **D70 The claim reports its prompts.** `registration-requested` and `claim-requested` come right before the Aztec
+  wallet is asked, so an integrator can say "confirm in your wallet" as the app does (ask5).
+- **D71 A resumed claim hash is not re-verified against its message.** A writer of the caller's storage who can plant
+  a landed hash can delete the record outright; the app keeps its own check.
 
 ## Audit verdicts
 

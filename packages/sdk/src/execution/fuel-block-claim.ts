@@ -100,6 +100,7 @@ async function buildClaim(leg: ClaimLeg): Promise<FuelClaimInteraction> {
 async function sendClaim(leg: ClaimLeg, interaction: FuelClaimInteraction): Promise<FuelLanding> {
 	const attemptAt = Date.now()
 	await patchFuel(leg, { claimAttempt: true, claimAttemptAt: attemptAt, setupInsufficiency: false })
+	leg.emit({ type: "claim-requested" })
 	let txHash: string
 	try {
 		txHash = (await interaction.send()).txHash

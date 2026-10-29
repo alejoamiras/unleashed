@@ -174,11 +174,12 @@ function scriptOf(events: TransferEvent[]): string {
 
 /** A claim's fixed script. Arrival readings come once per change in the chain's progress, and a claim reads as
  *  proposed only when a receipt poll lands between proposal and checkpoint: both vary with timing, nothing else does. */
-const CLAIM_SCRIPT = /^(arrival )*claimable claim-sent (claim-proposed )?settled$/
+const CLAIM_SCRIPT = /^(arrival )*claimable claim-requested claim-sent (claim-proposed )?settled$/
 /** A record that lost its deposit's hash and leaves reports the leaves it recovered before anything else. */
-const RESUMED_CLAIM_SCRIPT = /^deposit-confirmed (arrival )*claimable claim-sent (claim-proposed )?settled$/
+const RESUMED_CLAIM_SCRIPT = /^deposit-confirmed (arrival )*claimable claim-requested claim-sent (claim-proposed )?settled$/
 /** A private first claim registers the token in a transaction of its own, reported once its hash is stored. */
-const REGISTERING_CLAIM_SCRIPT = /^(arrival )*claimable registration-sent claim-sent (claim-proposed )?settled$/
+const REGISTERING_CLAIM_SCRIPT =
+	/^(arrival )*claimable registration-requested registration-sent claim-requested claim-sent (claim-proposed )?settled$/
 
 // ─── Deposits and claims through the public entries ──────────────────────────
 

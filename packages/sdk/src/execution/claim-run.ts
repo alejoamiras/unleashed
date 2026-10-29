@@ -232,7 +232,10 @@ function leavesPatch(record: DepositRecord, res: Partial<SendResult>): { patch: 
 	return { patch, leaves }
 }
 
-const hasLeaves = (rec: DepositRecord) => (rec.intent === "gas" ? !!rec.fuel?.leafIndex : !!rec.leafIndex)
+/** A gas leg is claimable only with its leaf, its message key and the exact Fee Juice its message carries. */
+const fuelLeaves = (fuel: DepositRecord["fuel"]) => !!fuel?.leafIndex && !!fuel.messageHash && fuel.received !== undefined
+const hasLeaves = (rec: DepositRecord) =>
+	rec.intent === "gas" ? fuelLeaves(rec.fuel) : !!rec.leafIndex && (rec.fuel === undefined || fuelLeaves(rec.fuel))
 
 /** A record that crashed before its receipt was read takes its leaves from the mined deposit. */
 async function recoverLeaves(leg: ClaimLeg): Promise<void> {

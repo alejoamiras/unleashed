@@ -184,3 +184,34 @@ plan's D40). A correctly deployed network never shows either difference:
 
 Options: **A (recommended)** keep both, and give the first this app's own sentence: "This app could not check the
 bridge on this network. Nothing was sent."; **B** keep both as they read now.
+
+## §10 The app's claims on the SDK's claim behaviour
+
+**What ships now.** The app claims exactly as today. Its claim engine already runs on the SDK's building blocks (the
+fee choice, the arrival checks, the hub claim, the deposit search), but it keeps its own order of steps, and the
+SDK's `claimToken`/`claimFuel` order them differently in ways a person would notice. a4 ships two SDK fixes for
+integrators (bridged gas its own claims could leave unclaimed) and leaves the app's claim engine as it is until you
+choose.
+
+If the app ran its claims through the SDK's entries, a person would notice:
+
+1. A claim that cannot pay its fee says so as soon as the claim starts, instead of after the crossing finishes.
+2. A token someone else claimed first: the app claims your bridged gas on its own (one wallet prompt), public or
+   private, instead of leaving the card open with "press Claim your gas" or "keep it".
+3. Gas left over when a claim paid from gas you already held: claimed after the token claim lands, not right after it
+   is sent; if that gas claim fails for a while, the card stays open with the error instead of completing.
+4. A claim the network dropped while you were away is sent again (a wallet prompt) instead of the card saying "The
+   claim was dropped — claim again from this card."
+5. Fewer progress lines: no "verifying" step for a claim found on reload, no "node unreachable — retrying", no block
+   count bar while the message crosses, and a retry shows the crossing again for a moment.
+6. A deposit found after a reload waits up to about 12 minutes for its Ethereum confirmation instead of saying
+   "retry in a minute".
+7. A claim interrupted while your wallet prompt was open waits up to 15 minutes ("an earlier claim may still land")
+   instead of asking again, which avoids paying a second fee.
+8. Before the first claim prompt the app checks the bridge and the wallet's network, with the sentences of decision
+   page 7 (P7-02).
+
+Options: **A (recommended)** run the app's claims through the SDK and accept 1–8, with two things the SDK gains for
+every integrator first: a resume that only watches and never prompts (the app resumes on page load), and the "claim
+without gas" choice the card offers today. **B** keep today's behaviour and teach the SDK the app's ways as
+app-only switches: about seven of them inside the code that protects funds. **C** keep the app's engine as it is.

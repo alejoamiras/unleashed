@@ -129,12 +129,15 @@ async function resumeRegistration(leg: ClaimLeg, bound: boolean): Promise<void> 
 	throw new BridgeError("claim-not-visible", `the registration ${txHash} has not reached the wallet yet`, SUBMITTED, "after-wait")
 }
 
-/** A public claim paid from held gas leaves its bridged Fee Juice unspent. The message's nullifier says whether any
- *  landed transaction spent it; if none did, it is claimed on its own, resumably, before the record settles, so no
- *  completed record strands gas. */
+/** A claim paid from held gas, or a token another submitter claimed, leaves the bridged Fee Juice unspent. The
+ *  message's nullifier says whether any landed transaction spent it; if none did, it is claimed on its own (public Fee
+ *  Juice, or private credit at the PrivateFPC), resumably, before the record settles, so no completed record strands
+ *  gas. */
 async function claimLeftoverFuel(leg: ClaimLeg): Promise<void> {
 	const fuel = leg.record.fuel
-	if (leg.record.isPrivate || !fuel?.leafIndex || fuel.consumed || fuel.standaloneClaimed) return
+	if (!fuel?.leafIndex || fuel.consumed || fuel.standaloneClaimed) return
+	// A private message is spent with the claimer-bound derivation of its salt, which only the caller holds.
+	if (leg.record.isPrivate && !leg.run.secrets?.fuelSalt && !fuel.bridgeSecretSalt) throw new FeeStopError("missing-salt")
 	const state = await fuelNullifierState(leg)
 	if (state === "nullified") return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
 	if (state !== "live")
@@ -224,6 +227,7 @@ function hubSeams(leg: ClaimLeg, fee: OptsFee) {
 			if (fee.fuelOnRegister) fee.onAttempt?.()
 			else persistClaim(leg, { claimAttempt: true, claimAttemptAt: Date.now() })
 			await leg.persisted
+			leg.emit({ type: "registration-requested" })
 		},
 		onRegistered: async (txHash: string) => {
 			registeredHere = true
@@ -235,6 +239,7 @@ function hubSeams(leg: ClaimLeg, fee: OptsFee) {
 		onClaimSend: async () => {
 			if (!fuelOnRegistration()) fee.onAttempt?.()
 			await persistClaim(leg, { claimAttempt: true, claimAttemptAt: Date.now() })
+			leg.emit({ type: "claim-requested" })
 		},
 	}
 	return { seams, fuelOnRegistration }
@@ -316,9 +321,10 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 /**
  * Claims a token deposit made by `depositToken` for the account the deposit names, registering the token on its first
  * claim. Persists through `run.persist` before every wallet prompt and before every event that names a new fact; a
- * private claim needs `run.secrets.claimSalt`, and its gas `run.secrets.fuelSalt`. A public claim that paid from held
- * gas also claims the gas it bridged before it settles. Throws `BridgeError`: `fee-stop` (with its `stop`) when no fee
- * source can pay now, `claim-not-visible` when an earlier send may still land.
+ * private claim needs `run.secrets.claimSalt`, and its gas `run.secrets.fuelSalt`. Gas the claim left unspent (it paid
+ * from held gas, or another submitter claimed the token) is claimed on its own before the record settles. Throws
+ * `BridgeError`: `fee-stop` (with its `stop`) when no fee source can pay now, `claim-not-visible` when an earlier send
+ * may still land.
  */
 export async function claimToken(net: Network, r: Reads, aztec: AztecSigner, rec: DepositRecord, run: ClaimOptions): Promise<ClaimOutcome> {
 	const leg = await openClaim(net, r, aztec, rec, run, "token")
