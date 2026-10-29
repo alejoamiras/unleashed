@@ -13,7 +13,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
 import { Contract } from "@aztec-labs/aztec.js/contracts"
-import { Fr } from "@aztec-labs/aztec.js/fields"
+import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { OutboxContract } from "@aztec-labs/ethereum/contracts"
@@ -30,6 +30,7 @@ import {
 	hubTokenFor,
 	isOutboxMessageConsumed,
 	preflightHubExit,
+	randomField,
 	clampGas,
 	walletMaxFees,
 } from "@unleashed/sdk/internal"
@@ -549,7 +550,7 @@ async function performExit(plan: ExitPlan, d: ExitDeps, approvedCeiling?: bigint
 			fromAddr: AztecAddress.fromStringUnsafe(from),
 			plan,
 			approvedCeiling,
-			nonce: Fr.random(),
+			nonce: randomField(),
 			sendOpts: buildExitSendOpts(AztecAddress.fromStringUnsafe(from)),
 			token: await Contract.at(AztecAddress.fromStringUnsafe(plan.token.l2Token), TokenContractArtifact, aztec as never),
 		}
