@@ -38,14 +38,41 @@ vi.mock("../src/execution/factory-registry.ts", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../src/execution/factory-registry.ts")>()),
 	readRegistration: async () => ({ ...fixture.token, registerKey: REGISTER_KEY, registerIndex: 7n }),
 }))
-const fuelSends = vi.hoisted(() => ({ count: 0, stop: undefined as string | undefined }))
+/** Overrides the token message's nullifier reading; undefined reads the fake node. */
+const tokenMessage = vi.hoisted(() => ({ state: undefined as string | undefined }))
+vi.mock("../src/execution/message-nullifier.ts", async (importOriginal) => {
+	const real = await importOriginal<typeof import("../src/execution/message-nullifier.ts")>()
+	return {
+		...real,
+		hubMessageState: (...args: Parameters<typeof real.hubMessageState>) =>
+			tokenMessage.state ? Promise.resolve(tokenMessage.state) : real.hubMessageState(...args),
+	}
+})
+vi.mock("../src/execution/send-flow.ts", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../src/execution/send-flow.ts")>()),
+	readSendInbox: async () => "0x0000000000000000000000000000000000000001",
+	readSendReceiptLeaves: async () => ({
+		tokenLeafIndex: 3n,
+		tokenMessageHashHex: `0x${"03".repeat(32)}`,
+		fuelLeafIndex: 4n,
+		fuelMessageHashHex: `0x${"04".repeat(32)}`,
+		fuelReceived: 5n * 10n ** 18n,
+	}),
+}))
+/** Every gas claim the SDK builds: how it is paid, and with which salt and fee contract. */
+const fuelSends = vi.hoisted(() => ({
+	count: 0,
+	stop: undefined as string | undefined,
+	built: [] as { isPrivate: boolean; salt?: string; fpc: string }[],
+}))
 vi.mock("../src/execution/fuel-claim.ts", async (importOriginal) => {
 	const real = await importOriginal<typeof import("../src/execution/fuel-claim.ts")>()
 	const { feeStopInteraction } = await import("../src/execution/fee-stop.ts")
 	return {
 		...real,
-		buildFuelClaimInteraction: async () =>
-			fuelSends.stop
+		buildFuelClaimInteraction: async (rec: { isPrivate: boolean }, deps: { resolvedSalt?: string; privateFpc: string }) => {
+			fuelSends.built.push({ isPrivate: rec.isPrivate, salt: deps.resolvedSalt, fpc: deps.privateFpc })
+			return fuelSends.stop
 				? feeStopInteraction(fuelSends.stop as never)
 				: {
 						simulate: async () => ({}),
@@ -53,7 +80,8 @@ vi.mock("../src/execution/fuel-claim.ts", async (importOriginal) => {
 							fuelSends.count++
 							return { txHash: FUEL_HASH }
 						},
-					},
+					}
+		},
 	}
 })
 vi.mock("../src/execution/wallet-fee-budget.ts", async (importOriginal) => ({
@@ -74,8 +102,10 @@ beforeAll(async () => {
 afterEach(() => {
 	vi.useRealTimers()
 	hub.bound = true
+	tokenMessage.state = undefined
 	fuelSends.count = 0
 	fuelSends.stop = undefined
+	fuelSends.built = []
 })
 
 /** A testnet whose node answers the arrival gates at once, the receipts the test names per transaction, and the
@@ -215,7 +245,7 @@ describe("claimToken", () => {
 		const rec = recorder()
 		const out = await claimToken(net, r, aztec, tokenRecord(net), rec.run)
 		expect([out.via, out.txHash, send.mock.calls.length]).toEqual(["claim", CLAIM_HASH, 1])
-		expect(rec.types()).toEqual(["claimable", "claim-sent", "settled"])
+		expect(rec.types()).toEqual(["claimable", "claim-requested", "claim-sent", "settled"])
 		expect(rec.heldBefore("claim-sent")?.claimTxHash).toBe(CLAIM_HASH)
 		expect(rec.heldBefore("settled")?.completedAt).toBeDefined()
 	})
@@ -246,7 +276,14 @@ describe("claimToken", () => {
 		await drive(run)
 		const cleared = rec.entries.findIndex((e) => "persisted" in e && e.persisted.registerTxHash === undefined)
 		expect([cleared >= 0, send.mock.calls.length]).toEqual([true, 1])
-		expect(rec.types()).toEqual(["claimable", "registration-sent", "claim-sent", "settled"])
+		expect(rec.types()).toEqual([
+			"claimable",
+			"registration-requested",
+			"registration-sent",
+			"claim-requested",
+			"claim-sent",
+			"settled",
+		])
 		expect(rec.heldBefore("registration-sent")?.registerTxHash).toBe(REGISTER_HASH)
 	})
 
@@ -375,6 +412,56 @@ describe("claimToken", () => {
 		const e = await failure(claimToken(net, r, aztec, tokenRecord(net, { isPrivate: true }), refusing))
 		expect([e.code, e.retry, prompts.length]).toEqual(["persist-failed", "safe", 0])
 	})
+
+	it("a private token another submitter claimed has its gas claimed as private credit before it settles; without the gas salt it stays open", async () => {
+		const { net, r, aztec } = await setup()
+		const send = claims()
+		tokenMessage.state = "nullified"
+		const fuel = { ...publicFuel(), secret: undefined, fpc: net.privateFpc }
+		const record = () => tokenRecord(net, { intent: "token+gas", isPrivate: true, fuel } as Partial<DepositRecord>)
+		const rec = recorder()
+		const fuelSalt = Fr.random()
+		const out = await claimToken(net, r, aztec, record(), { ...rec.run, secrets: { claimSalt: Fr.random(), fuelSalt } })
+		expect([out.via, out.gasLeft, send.mock.calls.length, fuelSends.count]).toEqual(["claimed-elsewhere", undefined, 0, 1])
+		expect(fuelSends.built).toEqual([{ isPrivate: true, salt: fuelSalt.toString(), fpc: net.privateFpc }])
+		expect(rec.types()).toEqual(["claim-requested", "claim-sent", "settled"])
+		expect(rec.heldBefore("settled")).toMatchObject({ claimedByOther: true, fuel: { consumed: true, claimTxHash: FUEL_HASH } })
+
+		const open = recorder()
+		const e = await failure(claimToken(net, r, aztec, record(), { ...open.run, secrets: { claimSalt: Fr.random() } }))
+		expect([e.code, e.retry, fuelSends.count, open.types()]).toEqual(["invalid-request", "safe", 1, []])
+		expect(e.message).toMatch(/the tokens landed; their bridged gas is not claimed yet/)
+	})
+
+	it("a private claim its own gas paid, resumed without secrets, settles with its gas spent", async () => {
+		const { net, r, aztec } = await setup()
+		const send = claims()
+		const fuel = { ...publicFuel(), secret: undefined, fpc: net.privateFpc, claimAttempt: true, claimTxHash: CLAIM_HASH }
+		const record = tokenRecord(net, { intent: "token+gas", isPrivate: true, fuel, claimTxHash: CLAIM_HASH } as Partial<DepositRecord>)
+		const rec = recorder()
+		const out = await claimToken(net, r, aztec, record, rec.run)
+		expect([out.via, out.gasLeft, send.mock.calls.length, fuelSends.count]).toEqual(["claim", undefined, 0, 0])
+		expect(rec.heldBefore("settled")?.fuel?.consumed).toBe(true)
+	})
+
+	it.each(["leafIndex", "messageHash", "received"] as const)(
+		"a token + gas record holding its token leaf but no gas %s reads the receipt, so its gas is claimed before it settles",
+		async (missing) => {
+			const { net, r, aztec } = await setup()
+			claims()
+			const rec = recorder()
+			const { [missing]: _, ...unread } = publicFuel()
+			await claimToken(net, r, aztec, tokenRecord(net, { intent: "token+gas", fuel: unread } as Partial<DepositRecord>), rec.run)
+			expect(rec.types()[0]).toBe("deposit-confirmed")
+			expect(rec.heldBefore("deposit-confirmed")?.fuel).toMatchObject({
+				leafIndex: "4",
+				messageHash: `0x${"04".repeat(32)}`,
+				received: (5n * 10n ** 18n).toString(),
+			})
+			expect(fuelSends.count).toBe(1)
+			expect(rec.heldBefore("settled")?.fuel?.consumed).toBe(true)
+		},
+	)
 
 	it("a token claim latched without its hash refuses while it may still land, with nothing sent", async () => {
 		const { net, r, aztec } = await setup()

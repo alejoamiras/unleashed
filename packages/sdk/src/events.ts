@@ -17,6 +17,10 @@ export type TransferEventBody =
 	| { type: "deposit-confirmed"; leaves: Leaves }
 	| { type: "arrival"; stage: "counting" | "unfolded" | "wallet-sync"; blocksLeft?: number; checkpointsLeft?: number }
 	| { type: "claimable" }
+	/** The Aztec wallet is asked next: for the token's first registration, or for the claim (once per attempt, even
+	 *  when a lost registration race sends the plain claim instead). */
+	| { type: "registration-requested" }
+	| { type: "claim-requested" }
 	| { type: "registration-sent"; txHash: string }
 	| { type: "claim-sent"; txHash: string; payer: "fuel" | "fpc-credit" | "own-gas" }
 	| { type: "claim-proposed"; txHash: string }

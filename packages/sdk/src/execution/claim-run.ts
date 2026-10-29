@@ -49,8 +49,8 @@ export interface ClaimOutcome {
 	record: DepositRecord
 	via: "claim" | "claimed-elsewhere"
 	txHash?: string
-	/** A public token + gas claim settled while its bridged gas could not pay for a claim of its own: the tokens
-	 *  landed, and this says why the Fee Juice message stays unclaimed. */
+	/** A token + gas claim settled while no retry could claim its bridged gas: the tokens landed, and this says why
+	 *  the Fee Juice message stays unclaimed. */
 	gasLeft?: BridgeError
 }
 
@@ -232,7 +232,10 @@ function leavesPatch(record: DepositRecord, res: Partial<SendResult>): { patch: 
 	return { patch, leaves }
 }
 
-const hasLeaves = (rec: DepositRecord) => (rec.intent === "gas" ? !!rec.fuel?.leafIndex : !!rec.leafIndex)
+/** A gas leg is claimable only with its leaf, its message key and the exact Fee Juice its message carries. */
+const fuelLeaves = (fuel: DepositRecord["fuel"]) => !!fuel?.leafIndex && !!fuel.messageHash && fuel.received !== undefined
+const hasLeaves = (rec: DepositRecord) =>
+	rec.intent === "gas" ? fuelLeaves(rec.fuel) : !!rec.leafIndex && (rec.fuel === undefined || fuelLeaves(rec.fuel))
 
 /** A record that crashed before its receipt was read takes its leaves from the mined deposit. */
 async function recoverLeaves(leg: ClaimLeg): Promise<void> {

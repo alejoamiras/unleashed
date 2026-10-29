@@ -169,7 +169,7 @@ describe("claimFuel", () => {
 		const { entries, run, types } = recorder()
 		const out = await claimFuel(net, r, aztec, gasRecord(net), run)
 		expect([out.via, out.txHash, calls.send]).toEqual(["claim", CLAIM_HASH, 1])
-		expect(types()).toEqual(["claimable", "claim-sent", "settled"])
+		expect(types()).toEqual(["claimable", "claim-requested", "claim-sent", "settled"])
 		const heldBefore = (type: string) => {
 			const i = entries.findIndex((e) => "event" in e && e.event.type === type)
 			return entries
@@ -230,7 +230,7 @@ describe("claimFuel", () => {
 		const rec = recorder()
 		const lost = gasRecord(net, { depositTxHash: undefined, leafIndex: undefined }, { leafIndex: undefined, messageHash: undefined })
 		await claimFuel(net, r, aztec, lost, rec.run)
-		expect(rec.types()).toEqual(["deposit-confirmed", "claimable", "claim-sent", "settled"])
+		expect(rec.types()).toEqual(["deposit-confirmed", "claimable", "claim-requested", "claim-sent", "settled"])
 		const confirmedAt = rec.entries.findIndex((e) => "event" in e && e.event.type === "deposit-confirmed")
 		const held = rec.entries
 			.slice(0, confirmedAt)
