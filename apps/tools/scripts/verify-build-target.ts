@@ -9,11 +9,12 @@
  * (UNLEASHED_SANDBOX_ARTIFACTS), exactly as the build read them.
  */
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { loadLocalRunFromEnv } from "../src/lib/local-target-loader"
 import { TARGETS, type ToolsTarget, type ToolsTargetKey } from "../src/lib/network-targets"
+import { legalDistProblems } from "./legal-dist"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const appRoot = join(here, "..")
@@ -57,10 +58,17 @@ const headers = readFileSync(join(dist, "_headers"), "utf8")
 const connectSrc = /connect-src ([^;\n]*)/.exec(headers)?.[1]?.trim()
 if (connectSrc !== target.cspConnectSrc) problems.push(`_headers connect-src="${connectSrc}" != the target's "${target.cspConnectSrc}"`)
 
+const texts = new Map(
+	readdirSync(dist, { recursive: true, encoding: "utf8" })
+		.filter((f) => /\.(js|html|css)$/.test(f))
+		.map((f) => [f, readFileSync(join(dist, f), "utf8")] as const),
+)
+problems.push(...legalDistProblems(key, texts))
+
 if (problems.length > 0) {
 	console.error(`✗ build-target verification FAILED for ${key}:\n  ${problems.join("\n  ")}`)
 	process.exit(1)
 }
 console.log(
-	`✓ ${dist}/build.json matches target ${key} (chainId ${build.chainId}; ${target.manifestFile} digest verified; connect-src ${connectSrc})`,
+	`✓ ${dist}/build.json matches target ${key} (chainId ${build.chainId}; ${target.manifestFile} digest verified; connect-src ${connectSrc}; legal links ${key === "mainnet" ? "present" : "absent"})`,
 )
