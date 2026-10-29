@@ -24,3 +24,4 @@
 - 2026-10-29 a2 build: orchestrator approved the plan (677d992); owner signed decision page 11 (P11-01 to P11-07, each Option A), recorded in OWNER-ASKS.md and ledger D18; merged origin/main 6462a67 (no conflict).
 - 2026-10-29 a2 P7 gate: lint pass, typecheck:all pass, apps/tools test pass (128 files, 1712 tests).
 - 2026-10-29 a2 P8 gate: lint pass, typecheck:all pass, apps/tools test pass (130 files, 1727 tests; bridge-generation.test.ts timed out once at load 65 and passed alone), packages/legal test pass, both tools builds + verify:build-target pass, build:landing pass. Deviation D19: gate testids in src/legal/testids.ts.
+- 2026-10-29 a2 P9: Codex code loop converged in 2 rounds (round 2: no material findings); Opus review applied; mainnet dev-server run 56/56 checks at 1280/390 light/dark, no console errors; 32 after shots match the signed mocks; server reaped by pgid, port released.

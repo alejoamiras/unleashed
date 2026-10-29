@@ -559,6 +559,11 @@ round 1. It checked every G1, G2 and G4 string byte for byte and the layout agai
 | 4 | Disabling the focused button sends focus to the body, so a keyboard retry needs Shift+Tab | fixed: focus returns to the button after a failure unless the user moved it; a unit case and a browser check (Enter to refuse, Enter to accept) |
 | 5 | `-32002` is EIP-1474, not EIP-1193; a test helper's comment; the dist rule's chunk comment; a redundant catch comment; a test title | fixed |
 
+**a2 code, Codex round 2** (resumed, the fix diff): **no material findings**; it reran its dist-rule
+reproducer and checked the held check, the focus return (safe after unmount) and the removed guard. One
+optional nit (a test comment it read as narration) kept: it says what the assertion proves. Converged in 2
+rounds.
+
 ## Post-implementation
 
 The repository has no Post-implementation standard; the steps are here.
