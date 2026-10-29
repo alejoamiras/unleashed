@@ -23,9 +23,10 @@
  * lives under one key only.
  */
 
-import type { JournalTokenBlock } from "@unleashed/sdk"
+import { claimRetired, type DepositRecord, type JournalTokenBlock } from "@unleashed/sdk"
 import type { Address, Hex } from "viem"
 import { validateAnyBackupRecord, validateCrossChainRecord } from "./backup"
+import { claimView, sameClaimIdentity } from "./claim-view"
 
 export interface KV {
 	getItem(key: string): string | null
@@ -157,6 +158,10 @@ export interface DepositJournalRecord extends JournalBase {
 	 *  event. The 5.0 readiness gate polls `getL1ToL2MessageCheckpoint` on this before simulating the claim. */
 	messageHash?: string
 	claimTxHash?: string
+	/** Latched before the token claim's wallet call, with its time: a claim sent without its hash stored is waited
+	 *  on until its message's nullifier or its age settles it. */
+	claimAttempt?: boolean
+	claimAttemptAt?: number
 	/** The token message was consumed by another submitter (a relayer, another tab): proven by the
 	 *  message's own nullifier, so the tokens arrived without a claim of ours. Recorded as its own fact
 	 *  — there is no `claimTxHash` to show. */
@@ -439,13 +444,13 @@ export function quarantineInvalid(kv: KV): number {
 }
 
 /**
- * True when nothing in the record is still needed: an Ethereum-origin record once it carries
- * `completedAt`; a cross-chain record only once it was deposited and claimed with no outcome and no
+ * True when nothing in the record is still needed: an Ethereum-origin record once the SDK's
+ * `claimRetired` says so; a cross-chain record only once it was deposited and claimed with no outcome and no
  * extra deposit. An outcome record keeps its secret until the user dismisses it, so a read RPC lying
  * about an outcome can mislabel a record but never delete it.
  */
 export function isRetirable(rec: AnyJournalRecord): boolean {
-	if (!rec.completedAt) return false
+	if (!claimRetired(rec)) return false
 	if (!isCrossChainRecord(rec)) return true
 	return rec.leafIndex !== undefined && rec.route.outcome === undefined && !rec.route.extraDeposits?.length
 }
@@ -558,6 +563,110 @@ export function patchRecordWhen<R extends AnyJournalRecord = BridgeJournalRecord
 	found.records[found.index] = next
 	writeLane(kv, found.lane, found.records)
 	return next
+}
+
+/** Why `patchRecordDelta` wrote nothing: the record is gone, it no longer holds the claim's deposit, or another
+ *  writer moved a field the claim changed to a third value. */
+export class RecordDeltaRefused extends Error {
+	constructor(
+		readonly reason: "missing" | "identity" | "conflict",
+		readonly field?: string,
+	) {
+		super(
+			field
+				? `The record's ${field} changed under the claim.`
+				: `The claim's record is ${reason === "missing" ? "gone" : "another deposit"}.`,
+		)
+		this.name = "RecordDeltaRefused"
+	}
+}
+
+type Fields = Record<string, unknown>
+
+/** Never written by a delta: identity a claim does not change, `updatedAt`, and the stored-only fields a view lacks
+ *  or carries untouched (a view's `schema` is 3 whatever the stored one is). */
+const DELTA_SKIPPED: ReadonlySet<string> = new Set([
+	"id",
+	"direction",
+	"schema",
+	"intent",
+	"updatedAt",
+	"route",
+	"sealedEnvelope",
+	"sealerL1",
+	"blocked",
+	"assetKind",
+])
+
+/** Compared and written field by field, so a claim's write to one field of a block keeps another writer's write to
+ *  another. */
+const DELTA_BLOCKS = ["fuel", "token"] as const
+
+const sameValue = (a: unknown, b: unknown): boolean =>
+	a === b || (typeof a === "object" && typeof b === "object" && a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b))
+
+const isFields = (v: unknown): v is Fields => typeof v === "object" && v !== null && !Array.isArray(v)
+
+/** The fields `next` changed from `base`. Each must still hold `base`'s value in `stored`, or already `next`'s. */
+function fieldDelta(base: Fields, next: Fields, stored: Fields, skip: ReadonlySet<string>, path: string): Fields {
+	const delta: Fields = {}
+	for (const k of new Set([...Object.keys(base), ...Object.keys(next)])) {
+		if (skip.has(k) || sameValue(base[k], next[k])) continue
+		if (!sameValue(stored[k], base[k]) && !sameValue(stored[k], next[k])) throw new RecordDeltaRefused("conflict", `${path}${k}`)
+		delta[k] = next[k]
+	}
+	return delta
+}
+
+function applyDelta(target: Fields, delta: Fields): Fields {
+	const out = { ...target }
+	for (const [k, v] of Object.entries(delta)) {
+		if (v === undefined) delete out[k]
+		else out[k] = v
+	}
+	return out
+}
+
+const NO_BLOCK_SKIP: ReadonlySet<string> = new Set()
+
+/** A nested block's delta applied to the stored block: `undefined` when the claim did not change it, `null` when the
+ *  block goes. */
+function blockAfterDelta(key: string, base: unknown, next: unknown, stored: unknown): Fields | null | undefined {
+	if (isFields(base) && isFields(next)) {
+		const delta = fieldDelta(base, next, isFields(stored) ? stored : {}, NO_BLOCK_SKIP, `${key}.`)
+		return Object.keys(delta).length === 0 ? undefined : applyDelta(isFields(stored) ? stored : {}, delta)
+	}
+	if (sameValue(base, next)) return undefined
+	if (!sameValue(stored, base) && !sameValue(stored, next)) throw new RecordDeltaRefused("conflict", key)
+	return isFields(next) ? next : null
+}
+
+/**
+ * Write the fields a claim changed from `base` to `next` onto the stored record, in its own lane and shape. One
+ * synchronous load, guard and write: a compare-and-set only among writers that hold the journal lock. `base` and
+ * `next` are claim views (`claimView`); `fuel` and `token` are compared field by field, and a field `next` clears is
+ * deleted. Throws `RecordDeltaRefused`, writing nothing, when the record is gone, when its view no longer has `base`'s
+ * claim identity, or when a changed field holds neither `base`'s value nor `next`'s. Returns the stored record.
+ */
+export function patchRecordDelta(kv: KV, id: string, base: DepositRecord, next: DepositRecord): AnyJournalRecord {
+	const found = locate(kv, id)
+	if (!found) throw new RecordDeltaRefused("missing")
+	const stored = found.records[found.index]
+	const view = claimView(stored)
+	if (!view || !sameClaimIdentity(view, base)) throw new RecordDeltaRefused("identity")
+	const [b, n, v] = [base, next, view] as unknown as Fields[]
+	const top = fieldDelta(b, n, v, new Set([...DELTA_SKIPPED, ...DELTA_BLOCKS]), "")
+	const blocks: Fields = {}
+	for (const key of DELTA_BLOCKS) {
+		const block = blockAfterDelta(key, b[key], n[key], v[key])
+		if (block !== undefined) blocks[key] = block ?? undefined
+	}
+	if (Object.keys(top).length === 0 && Object.keys(blocks).length === 0) return stored
+	const updated = { ...applyDelta(stored as unknown as Fields, { ...top, ...blocks }), updatedAt: Date.now() } as AnyJournalRecord
+	assertStorable(found.lane, updated)
+	found.records[found.index] = updated
+	writeLane(kv, found.lane, found.records)
+	return updated
 }
 
 /** Replace a record under a NEW id (the provisional-withdraw → exitTxHash upgrade). Either id is

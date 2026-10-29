@@ -5,6 +5,7 @@
 
 export * from "./drpc-node"
 export * from "./journal"
+export * from "./claim-view"
 export * from "./recovery-crypto"
 export * from "./relay-claim"
 export * from "./seal-trust"
