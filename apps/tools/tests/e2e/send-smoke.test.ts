@@ -208,7 +208,14 @@ vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	claimViaHub: h.fn.claimViaHub,
 	exitViaHub: h.fn.exitViaHub,
 	preflightHubExit: h.fn.preflightHubExit,
-	hubAt: () => ({ methods: {} }),
+	// The SDK's claim probe calls its own `hubTokenFor`, past the mock below, so the hub answers it from the same state.
+	hubAt: () => ({
+		methods: {
+			token_for: (erc20: { toString(): string }) => ({
+				simulate: async () => ({ result: h.state.hubTokens.get(erc20.toString().toLowerCase()) ?? `0x${"0".repeat(64)}` }),
+			}),
+		},
+	}),
 	hubTokenFor: async (_hub: unknown, erc20: string) => h.state.hubTokens.get(erc20.toLowerCase()),
 	hubBindingAt: async (_node: unknown, _hub: string, erc20: string) => h.state.hubTokens.get(erc20.toLowerCase()),
 	hubExitsPaused: async () => h.state.exitsPaused,

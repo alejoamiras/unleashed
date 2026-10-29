@@ -42,3 +42,6 @@
   ladder's own tests mock it away; pass `leg.record` at the point of use.
 - **Review round 2: a Promise-returning function that is not `async` throws synchronously.** Its guards ran before the
   first `await`, so a refusal escaped `.catch`; the test caught it only because `expect(fn()).rejects` needs a promise.
+- **CI: the tools build job runs `apps/tools test:e2e`, a jsdom smoke suite no local gate covered.** Its hub mock
+  stubbed `hubTokenFor` at the SDK's entry, which the SDK's own `probeHubClaim` never reaches; the mocked hub now
+  answers `token_for` itself. Run `bun run --cwd apps/tools test:e2e` with the gates whenever a seam moves into the SDK.
