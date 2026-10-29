@@ -6,11 +6,18 @@
 import { ICONS, type PixelIconName } from "@unleashed/design/core/icons.ts"
 import { MARK_INK, MARK_SIGNAL } from "@unleashed/design/core/mark.ts"
 import { COPY, EXPERIMENTS, type Experiment, LINKS, SCREEN_PLACEMENT, TAG_LABELS, type TagKind } from "./content.ts"
+import { LEGAL_PAGES } from "./legal-pages.ts"
 
 const ESCAPES: Readonly<Record<string, string>> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }
 
 export function esc(value: string): string {
 	return value.replace(/[&<>"']/g, (ch) => ESCAPES[ch])
+}
+
+/** `html` with its one `slot` replaced by `value`, taken literally: a string replacement would expand `$&` and its kin. */
+export function fillSlot(html: string, slot: string, value: string): string {
+	if (!html.includes(slot)) throw new Error(`no ${slot} to fill`)
+	return html.replace(slot, () => value)
 }
 
 export function icon(name: PixelIconName, size: 12 | 24): string {
@@ -25,7 +32,8 @@ export function mark(): string {
 
 const lockup = (cls = "lockup") => `<span class="${cls}">${mark()}<span class="wordmark">${esc(COPY.brand)}</span></span>`
 
-const link = (cls: string, href: string, body: string) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(href)}">${body}</a>`
+/** Only `href` is escaped here: `cls` and `body` must already be trusted HTML. */
+export const link = (cls: string, href: string, body: string) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(href)}">${body}</a>`
 
 function nav(): string {
 	const links = COPY.navLinks.map((l) => link("txt ul-notch", l.href, esc(l.label))).join("")
@@ -89,13 +97,14 @@ function caveat(): string {
 	].join("")
 }
 
-/** The Pause button ships hidden: main.ts reveals it once it can honour it. */
-function footer(): string {
+/** With motion, a Pause button ships hidden: main.ts reveals it once it can honour it. */
+export function footer(motion: boolean): string {
+	const legal = LEGAL_PAGES.map((page) => link("", page.path, esc(page.doc.title))).join("")
 	const facts = COPY.footer.facts.map((fact) => `<span>${esc(fact)}</span>`).join("")
-	const pause = `<button type="button" class="btn quiet sm ul-notch" data-motion hidden>${esc(COPY.pause)}</button>`
-	return `<footer class="l-foot ul-notch">${lockup()}${link("", LINKS.source, esc(COPY.footer.source))}${facts}${pause}</footer>`
+	const pause = motion ? `<button type="button" class="btn quiet sm ul-notch" data-motion hidden>${esc(COPY.pause)}</button>` : ""
+	return `<footer class="l-foot ul-notch">${lockup()}${link("", LINKS.source, esc(COPY.footer.source))}${legal}${facts}${pause}</footer>`
 }
 
 export function renderBody(): string {
-	return `<div class="land" id="land"><div class="land-in">${nav()}<main class="land-main">${hero()}${experiments()}${caveat()}</main>${footer()}</div></div>`
+	return `<div class="land" id="land"><div class="land-in">${nav()}<main class="land-main">${hero()}${experiments()}${caveat()}</main>${footer(true)}</div></div>`
 }
