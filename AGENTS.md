@@ -151,7 +151,9 @@ templates), or in local `.env` files that git ignores; an agent never creates on
 CI. The Aztec node needs no key in the browser: the testnet bundle calls dRPC's keyless public
 endpoint. Scripts compose their node URL from `DRPC_API_KEY`, the owner's shared, IP-restricted dRPC
 CLI key, which exists only in 1Password and reaches a run only as a keyed run; no script prints that
-URL or writes it to a file, and no dRPC key is ever committed (`scripts/ci-cd/node-keys.test.ts`). On
+URL or writes it to a file, and no dRPC key is ever committed (`scripts/ci-cd/node-keys.test.ts`). A
+keyed script takes the URL from `keyedNodeUrl` and runs its entry through `runKeyed`, which redacts every
+keyed value from the SDK's logs and the run's failure (`scripts/ci-cd/keyed-runs.test.ts`). On
 a leak, disable the key in dRPC, mint a new one and replace the 1Password field. Security reports go
 through GitHub's private advisories ([`SECURITY.md`](SECURITY.md)).
 

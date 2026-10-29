@@ -150,7 +150,7 @@ finds `DRPC_API_KEY` and the three source-RPC names.
 - **Gate:** Phase 1's commands, then `cd packages/bridge-core && bun --bun vitest run`. Pass: exit 0, and
   `bun run lint` reports no complexity regression. Layers: lint, typecheck, unit, integration (local server).
 
-### Phase 3: the CI guard and the docs
+### Phase 3: the CI guard and the docs ✓
 
 1. Write `scripts/ci-cd/keyed-runs.test.ts`: the two rules above, each with a synthetic self-test (a direct call, an
    alias import, a clean file; an unlisted keyed name) and its tree control.
