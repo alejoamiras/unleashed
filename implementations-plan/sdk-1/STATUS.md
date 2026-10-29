@@ -56,3 +56,4 @@
 - 2026-10-29 a5 review round 2: Codex 1 High (a mined revert is not final: keep the record until it is), 1 Moderate (submission names the transfer; claim preflight none is the exception); fixed in README, errors.ts TSDoc, resume example
 - 2026-10-29 a5 review round 3: Codex no new material finding; loop converged in 3 rounds
 - 2026-10-29 a5 final gates on HEAD: lint, typecheck:all, test:all, lint:actions, test:ci-gating (50), pack:check green; audit:tools hit the known 5 s load timeout in bridge-generation.test.ts (load average 95), green alone and on the rerun
+- 2026-10-29 a6 plan amendment: Arc a6 (6.1–6.3), D74–D87; Codex APPROVE after 4 rounds, Opus APPROVE WITH CHANGES folded in; §10 answered by ask26, no out-of-budget difference reachable (D86)

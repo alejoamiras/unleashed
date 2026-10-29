@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: approved; the owner answered OWNER-ASKS §1–§6; a1 in progress
+status: approved; the owner answered OWNER-ASKS §1–§7 and §10 (ask26); a6 in progress
 base: main fb90e366
 budget: "recon: 3 Sonnet explorers; drafts: driver + Codex + Opus 5.5; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -28,8 +28,9 @@ with no token portals. ask3 wires the keyless li.quest client in through the SDK
 
 | Item | Delivered by | Note |
 |---|---|---|
-| ask5 | a1 (mainnet fuel route), a2 (SDK + interface), a3 + a4 (app on the SDK), a5 (publish setup) | The interface and the npm name wait for the owner (`OWNER-ASKS.md` §1–§2). |
+| ask5 | a1 (mainnet fuel route), a2 (SDK + interface), a3 + a4 + a6 (app on the SDK), a5 (publish setup) | The interface and the npm name wait for the owner (`OWNER-ASKS.md` §1–§2). |
 | ask3 | a3 | Mainnet traffic needs the owner's deploy and promotion of the fuel route, and a mainnet app (mainnet-1). |
+| ask26 | a6 | The SDK's claims gain the card's events, a watch-only resume, the Ethereum wait status and the claim-without-gas choice; then the app's claims run on them. |
 | Issues | none | No open issue; closed known limits searched (`bridge`, `fuel`, `sdk`, `lifi`): only #27, unrelated. |
 
 ## UI impact
@@ -43,6 +44,8 @@ must look and behave exactly as today, proven by the full browser suite; any vis
 - a3: none on the shipped builds. The LI.FI-venue cells run a test-only local variant; the testnet and mainnet
   bundles keep their CSP and behaviour (`verify:build-target` proves it).
 - a4: none. a5: none.
+- a6: §10's items 1, 2, 3, 7 and 8 (ask26, P7-02's sentence), and the private claimed-by-other line that item 2
+  replaces; every other state as today (D86).
 
 ## Outcome & Quality Bar
 
@@ -168,6 +171,7 @@ The full sketch is `OWNER-ASKS.md` §1. Its contracts, which every arc after a1 
   new fact. Private salts travel only in `secrets`, never in the record or an event.
 - `TransferEvent = { id, seq } & (prepared | approval | signature-requested | deposit-sent | deposit-confirmed |
   arrival | claimable | registration-sent | claim-sent | claim-proposed | settled)`; `seq` strictly increases per run.
+  a6 adds `deposit-recovery`, `claim-waiting`, `claim-verifying` and `claim-landed` (Arc a6).
 - `DepositRecord`: the protocol fields the app's schema-3 record already stores, with the same names; the app's record
   type becomes `DepositRecord & AppFields`, so stored records resume with no migration.
 - `BridgeError { code; submission: "none" | "submitted" | "unknown"; retry: "safe" | "after-wait" | "never" }`.
@@ -480,6 +484,149 @@ wall-clock before and after in the PR body.
   examples typecheck in `typecheck:all`. Layers: lint, package. The owner configures the trusted publisher and runs
   the first publish.
 
+### Arc a6: the SDK's claims show what the card shows, then the app's claims run on them
+
+The owner answered §10 with ask26: *"Before the app's claims move onto the SDK, the SDK's claim entries gain, for every
+integrator, what the app's claim card shows today: its progress events, a resume that watches and never prompts, a
+status for the Ethereum confirmation wait, and the claim-without-gas choice. The SDK keeps its safer behaviours (the
+early fee check, claiming gas a claimed-elsewhere token left, no second fee after an interrupted prompt). Then the
+app's claims run on the SDK."* The card's whole visible budget is §10's items 1, 2, 3, 7 and 8, item 8 with P7-02's
+sentence (*"This app could not check the bridge on this network. Nothing was sent."*). Every other state shows what it
+shows today. A difference the port cannot avoid would be an `OWNER-ASKS.md` entry that holds 6.3 until answered; the
+panel found none that is reachable (D86).
+
+Two PRs: 6.1 and 6.2 change the SDK and the journal and leave the app's behaviour as it is; 6.3 ports the claims and
+carries the close-out.
+
+**Phase 6.1: the SDK's claim entries (PR 1).**
+- Events. All additive except `arrival`, `claim-requested` and `claim-sent`, which change before the first publish:
+  - `deposit-recovery`: `searching` before a hash-less record's search, `reading` (txHash) before the receipt read,
+    `waiting` (txHash) when a direct read finds the deposit unmined; the signal is checked before the run waits (the
+    Ethereum confirmation status).
+  - `arrival`: `counting` carries `block`, the L2 block read; the checkpoint count never rises within one call and
+    reports `checkpointsLeft: 0` when the gate passes; `wallet-sync` comes before every simulate with `counted` (a gate
+    waited), not only after a refusal.
+  - `claim-requested`, `claim-sent` and the new `claim-waiting` carry `leg: "token" | "gas"`, since a token claim can
+    claim its leftover gas in the same call. `claim-waiting` comes before every receipt read of a watched hash with
+    `poll` (from 1 per hash) and `unreachable` (consecutive failed reads), and again with the same `poll` as soon as a
+    read changes that count, recovery to 0 included; the signal is checked before each read.
+  - `claim-verifying` (txHash, `checking` | `wallet-sync`): a resumed claim's success being checked (D74).
+  - `claim-landed` (`via`, txHash?): the token claim landed, before any leftover gas claim (D84).
+- Behaviour: D74 (a resumed success settles on its message's nullifier), D75 (`claim-dropped`, never a send again in
+  the same call), D76 (`ClaimOptions.watchOnly`), D77 (`claimedByOther` persisted as read), D78 (`withoutGas`, and
+  `claimFuel` on a token + gas record's gas), D79 (a gas-only claim's hash), D80 (`deposit-not-found` names its
+  search's result), D81 (`claimRetired`, the one retirement rule), D85 (an invalid message refuses before any fee),
+  D87 (deposit facts are searched for only when the leaves are missing).
+- Tests, in the existing claim suites with a scripted node and wallet:
+  - each event's order and payload on a fresh claim, a resumed one and a recovered deposit; `claim-waiting` numbers
+    each hash's polls from 1, and an abort before a read stops the watch with nothing settled;
+  - a resumed token claim that dropped or reverted throws with its hash cleared and nothing sent; a gas-only record
+    holding only its fuel block's hash (the write the engine interrupted) stops on an included or pending receipt as
+    today and claims again on a dropped one;
+  - the first failed receipt read and the recovery are reported by that same poll;
+  - `watchOnly` throws `needs-prompt` before any fee read on an unsent record and after `claim-landed` before the
+    leftover gas, sending nothing;
+  - a resumed success with a live nullifier keeps watching until the nullifier shows, across re-entries, an invalid
+    one throws `message-invalid`; a fresh claim
+    whose message reads invalid refuses before the ladder (an unregistered token whose probe would pass);
+  - `withoutGas` pays from held gas and settles with the gas open; `claimFuel` then claims it on a completed record
+    and on an unfinished `claimedByOther` one, and refuses an unsettled one;
+  - `claimedByOther` is written before the leftover gas prompt and dropped on a live reading;
+  - a record with its leaves but no deposit hash claims without a search; `claimRetired` on each record shape.
+- README event and error tables; `examples/resume.ts` resumes on load with `watchOnly`.
+- Validation gate: `bun run lint`, `bun run typecheck:all`, `bun run test:all`, `bun run --cwd packages/sdk
+  pack:check`, the sandbox integration suite. Layers: unit, integration.
+
+**Phase 6.2: the journal's claim writer and record views (PR 1).**
+- `claim-view.ts` (bridge-core): `claimView(rec): DepositRecord | undefined`. Schema 3 as stored; schema 4 without
+  `route`, as schema 3; schema 2 with `assetKind: "fee-juice"` and a fuel block as intent `gas`, without
+  `assetKind`. Anything else is undefined (D86).
+- `packages/bridge-core/src/journal.ts` `patchRecordDelta(kv, id, base, next)`: one load, guard and write, on the
+  stored record's own lane and shape. It refuses (throws, writes nothing) when the record is missing, when the stored
+  record's view no longer has `base`'s claim identity (today's `CLAIM_SNAPSHOT_FIELDS` and the fuel block's secret
+  hash, leaf and message hash, compared view to view so schema 2 and 4 records compare as their views), or when a
+  field `next` changed from `base` holds neither `base`'s value nor `next`'s (top level, and field by field inside
+  `fuel` and `token`). `updatedAt` is never compared. Fields the view lacks (`route`, `sealedEnvelope`, `sealerL1`,
+  `blocked`, `assetKind`, `schema`) never enter a delta.
+- The storage unit is the whole journal array, so the guard is a compare-and-set only between writers that hold
+  `locks.journal`. The claim's writes take it, and so do the writers that change a record while it is being claimed:
+  discovery's patch and its reseal (`crosschain-watch.ts`), the card's `reconcileFuelConsumed`, and `discard`. The
+  send flow's writes, which precede a record's claim, stay as they are (D82).
+- `isRetirable` (journal pruning) and `resumeActionFor` call `claimRetired`; `isRetirable` keeps its cross-chain
+  outcome rule on top. `backup.ts` validates the top-level `claimAttempt` (boolean) and `claimAttemptAt` (finite
+  number), as it does the fuel block's.
+- Tests: the first persist of a schema 2, 3 and 4 record writes; a write whose changed field, or whose claim identity,
+  another writer moved between read and write refuses, and one that finds `next`'s value already stored writes; the
+  claim writer interleaved with discovery and with a discard over the in-memory locks loses neither's write; a delta
+  leaves `route`, `sealedEnvelope` and a discovery patch intact; a cleared field is deleted; a malformed imported latch
+  is refused.
+- Validation gate: base commands; `bun run test:all`. Layer: unit.
+
+**Phase 6.3: the app's claims on the SDK (PR 2, with the close-out).**
+- `useBridgeJournal.ts` keeps what is not the claim's: `claimTarget`, the malformed-hash and recipient guards, the
+  token-block check and wallet grant (`prepareSendLane`), the unseal and its secret cache, the record lock and its
+  release between receipt rounds, the generation, the resume selection, the claimed-by-other revalidation's stop,
+  completion's side effects and the card's runtime. The run calls `claimToken` (`claimFuel` for intent `gas`) on
+  `claimView(rec)` with:
+  - the network from `bridgeNetwork()`. On a record with no claim sent, a refusal shows P7-02's sentence (item 8). On
+    a record whose claim was sent, a node that does not answer narrates today's "node unreachable — retrying (n)"
+    and the check runs again on the next poll; a mismatch shows its own message under today's template, as an
+    unexpected failure does today;
+  - the session wallet behind a decorator: `simulateTx` through `retryOnUnregistered` (today's quiet
+    re-registration) and `sendTx` on the `aztec` lane (one prompt at a time across records); the SDK gains nothing
+    for either;
+  - `secrets` from the claim material (`claimSalt` from the sealed secret, `fuelSalt` from the envelope's salt); a
+    run without material (a private record not unsealed) calls the SDK only to watch a sent claim, as today;
+  - `watchOnly` when the run resumes a record this session did not start (today's prompt-free waits: a sent claim, a
+    `claimedByOther` marker), and first on a click on a marked record: a marker the chain contradicts is dropped and
+    the run stops, as today; one it confirms goes on to the leftover gas (item 2). A receipt round's re-entry keeps
+    the mode of the run it continues;
+  - `withoutGas` when the card's "Claim without fuel" was pressed (`fuelOverrideActive`);
+  - `signal`: an abort on the record's generation bump, on a cross-chain record's deposit moving (the run restarts
+    from the new facts, as today), on `deposit-recovery: waiting` (today's "retry in a minute"), and at the end of
+    each receipt round (the wait after a hash's 45th poll): the run releases the record lock and re-enters as today,
+    and the tenth round of a hash shows today's soft-cap note;
+  - `persist`: `patchRecordDelta` under `locks.journal`, its base the record the SDK last persisted.
+- `claim-narration.ts` (new) maps events to today's exact `step`/`stepDetail`, and outcomes to today's attention and
+  note:
+  - `deposit-recovery` searching / reading → `depositing` "looking for the deposit on Ethereum" / "checking the
+    Ethereum deposit"; waiting → "waiting for the Ethereum confirmation", then the abort's note "The Ethereum deposit
+    isn't confirmed yet — retry in a minute."
+  - `arrival` → `syncing`: block and checkpoint counts and `syncBlock`, "waiting for the message to reach the L2",
+    the two wallet-sync lines; on a record already claimable this session every arrival event maps to `sending`
+    "checking the message".
+  - `registration-requested`, `registration-sent`, `claim-requested` → today's hub-claim lines; `claim-sent` and
+    `claim-waiting` → `confirming` "the claim is processing on Aztec" or "node unreachable — retrying (n)";
+    `claim-proposed` → the landed dot; `claim-verifying` → today's two `verifying` lines, silent for a claim this
+    process sent.
+  - Control outcomes first: a round's, a generation's or a move's abort → today's re-entry or silent stop;
+    `persist-failed` from a guard → a quiet stop, as today's snapshot guards; `needs-prompt` → no attention, except
+    after `claim-landed`, where it is item 3's open card with today's gas sentence.
+  - Then: `fee-stop` → `FEE_STOP_COPY[stop]` (item 1); `claim-dropped`, `claim-reverted`, `message-invalid`,
+    `receipt-mismatch`, `deposit-not-found` (by `search`) and the gates' `message-timeout` → today's sentences and
+    attentions; `claim-not-visible` for a latched claim or a sent registration → the SDK's sentence under today's
+    template (item 7); any failure after `claim-landed` → "…Your tokens are unaffected — retry the gas claim from
+    this card." (item 3); every other code (`user-rejected`, `deposit-reverted`, `read-failed`, `registration-*`) →
+    its cause's message, humanized, under today's template, as the engine shows the underlying throw today.
+- The card: "Claim your gas" runs `claimFuel` under the record lock (D78), so it never races the claim's own
+  leftover gas claim, and on an unfinished `claimedByOther` record then finishes the record with a `watchOnly` claim,
+  as today. The private claimed-by-other line becomes "…Your private gas is still in this record — press Claim to
+  claim it.": item 2 names the "keep it" it replaces. A deployment-matching fee-juice record with no fuel block keeps
+  today's `no-claimable-fuel` note.
+- Removed: the engine's deposit-leg recovery, nullifier probes, gates, send and receipt classification,
+  claimed-by-other completion; `launchStandaloneFuelClaim` and `claimFuelStandalone`; the hub and Fee Juice claim
+  builders in `useSend.ts` and `deposit-flow.ts` and the journal deps only they used. Withdraw keeps its own.
+- Tests: `claim-narration.test.ts` (every event and outcome to today's exact attention, step and note);
+  `persisted-records.test.ts` (fixtures of schema 2 fee-juice, 3 and 4 records at each stage, a gas-only record left
+  with only its fuel hash, a record with leaves but no deposit hash, resume through the view with no migration); the
+  engine's suites re-pointed, the PR body mapping each removed case to its new home; the card's gas claim against a
+  running claim. No new browser scenario: the touched specs already drive every changed card state.
+- After-shots of each card state that changes: the early fee-stop, a claimed-elsewhere token's gas claim and the new
+  private line, the leftover gas claim and its failure, the latched-attempt wait, the trust-check refusal.
+- Validation gate: `bun run audit:tools`; `bun run test:all`; the browser suite at retry 0 (recovery,
+  registration-retry, fee-states, spike, exits, activity, l1-wallet, accounts, deposit-crosschain), wall-clock before
+  and after; the sandbox integration suite. Layers: unit, integration, e2e.
+
 ## Decision ledger
 
 Each row: the decision, its source, the rejected view with its reason.
@@ -706,6 +853,74 @@ Each row: the decision, its source, the rejected view with its reason.
   the pack job keeps no credential.
 - **D73 `pr-quick` gates `pack:check` on the SDK and every file its tarball stages from outside it.** The filter is
   derived from `stage.ts`'s `ASSETS` and `DOCUMENTS` by `behavior-gating.test.ts`; `publish-sdk.test.ts` pins D22.
+- **D74 A resumed claim's success settles on its message's nullifier (reverses D71).** The card says "verifying" for a
+  claim it did not send, and a landed receipt that is not this record's claim (a backup's stale hash, two tabs, a hand
+  edit) must not complete it; D71's argument covers an attacker who can write storage, not these. A live nullifier
+  keeps the watch going on its own budget (`claim-verifying: wallet-sync`); an invalid one is `message-invalid`; an
+  unknown one (no salt at hand, a failed read) settles, as the app's engine does. A claim the call itself sent is not
+  re-checked. The receipt and the nullifier are separate reads with no shared snapshot, and the app re-enters its own
+  claims each receipt round, so its own claim is verified too where today's engine trusts it: a node whose nullifier
+  state trails its receipts holds completion back, silently, until the nullifier shows. A node that stays behind past
+  the round budget, where the card would show today's soft-cap note instead of completing, is a broken node: a closed
+  `known-limit` issue.
+- **D75 A dropped claim clears its hash and throws `claim-dropped`, resumed or sent.** Retry "safe"; the next call
+  claims again. A resume that sent again asked the wallet for a claim nobody started in this session (§10 item 4).
+- **D76 `ClaimOptions.watchOnly` never asks the wallet.** It recovers deposit facts, watches a sent claim, waits out a
+  latched one and reads the nullifiers; where the call would next price a fee or prompt (an unsent claim, the leftover
+  gas after a landing) it throws `needs-prompt` (retry "safe") with nothing sent. A page that resumes records on load
+  passes it.
+- **D77 `claimedByOther` is persisted as read.** Set as soon as the token's nullifier says another submitter spent the
+  message, before the leftover gas claim; cleared when a later read says live. A record whose gas claim then fails
+  still says who claimed its tokens, and a resume finds it.
+- **D78 `withoutGas`, and `claimFuel` on a token + gas record's gas.** `withoutGas` pays a public claim from the
+  account's held gas (the ladder's `userOverride`, the card's "Claim without fuel") and settles without claiming the
+  bridged gas; the private ladder ignores it, as today. `claimFuel` claims a token + gas record's bridged gas (public
+  Fee Juice, or private credit) once its tokens are done: `completedAt`, or a `claimedByOther` marker. It checks the
+  chain, the recipient and the network's fuel route, never the token's registration or the hub, so a blocked or
+  distrusted token record still recovers its gas, as the card's "Claim your gas" does today; it writes only the fuel
+  block and never completes the record. Before the tokens are done it refuses: the token claim may pay with that gas.
+- **D79 A gas-only claim in flight is its top-level hash.** A send writes it there and in the fuel block, and a drop
+  clears both. A fuel block hash with no top-level one (today's engine latches the fuel hash first and clears only the
+  top level when a claim drops) is read by its receipt as today's ladder reads it (`priorFuelClaimStop`): included is
+  the `fuel-already-claimed` stop, pending or unread the `fuel-claim-pending` stop, dropped is cleared and claimed
+  again. A latched attempt with no hash at all is settled as D55 settles one. A token + gas record's gas leg is its
+  fuel block's hash; a reverted token claim leaves that gas to the ladder, whose receipt read marks a setup that spent
+  it consumed. A gas-only claim is a carrier-less transaction with no app phase and no teardown, so it is included only
+  when its setup claimed the Fee Juice: it cannot revert after that.
+- **D80 `deposit-not-found` names its search's result** (`search: "none" | "ambiguous" | "incomplete"`), as `fee-stop`
+  names its stop: discarding the record and trying later are different answers.
+- **D81 `claimRetired(record)` is the one retirement rule.** Whether a record is complete and its claim material may be
+  dropped; today's rule, unchanged: `completedAt` is set. `settledAlready`, journal pruning (`isRetirable` keeps its
+  cross-chain outcome rule on top), the engine's claim target, its resume selection and its secret-cache drop read it.
+  A completed record whose gas is open still offers "Claim your gas" until it is pruned, as today; that is the rule's
+  next change.
+- **D82 The port.** Two PRs: the SDK and the journal writer first, with no app behaviour change, then the port. The app
+  keeps what is not the claim's (guards, unseal, locks, generation, resume selection, completion side effects,
+  runtime) and maps events and outcomes to today's exact lines. `persist` is a field delta guarded on the claim's
+  identity under the journal lock, which every writer that changes a record during its claim now takes (discovery and
+  its reseal, the card's consumed flag, discard). The send flow's writes stay unlocked: they precede the claim, and
+  the whole-array exposure they share with every unlocked writer across tabs is today's documented limit
+  (`journal-locks.ts`), filed as an issue. Receipt watching stays in today's rounds, so the record lock is released
+  between rounds as today. The session's quiet re-registration and its one-prompt-at-a-time lane wrap the wallet the
+  SDK gets, not the SDK.
+- **D83 The app aborts at the Ethereum confirmation wait.** `deposit-recovery: waiting` lets an integrator show the
+  wait; the app aborts there and keeps today's "retry in a minute" (§10 item 6 is outside the budget).
+- **D84 `claim-landed` comes before the leftover gas claim.** Every error after it is the gas leg's, whatever step
+  failed (pricing, the nullifier read, the send), so a caller can say the tokens are safe.
+- **D85 A message that reads invalid refuses before any fee.** The token nullifier read already runs before the ladder;
+  "invalid" now throws `message-invalid` there, as the app's engine stops before building the claim.
+- **D86 No difference outside the budget is reachable, so 6.3 waits for no answer.** Checked against the tree: a gas-only
+  claim cannot revert after its setup, and a record holding only its fuel hash keeps today's receipt reading (D79);
+  today's engine latches a gas-only claim's fuel hash before its top-level one, so a reloaded gas-only claim already
+  completes without the wallet's simulate (`priorFuelClaimStop`) and the SDK's node read changes no line; no legacy token record can hold open gas on a card (none could complete since trunk's first
+  commit, and completed records are pruned after a week); the private claimed-by-other line is the "keep it" that item 2
+  replaces; a sent registration the wallet does not show yet is waited out instead of registered again, which is item
+  7's "a wait instead of a second prompt", with no second fee; D74's held-back completion shows no line, short of a
+  broken node. A difference found
+  while building stops 6.3 for an `OWNER-ASKS.md` entry.
+- **D87 Deposit facts are searched for only when the leaves are missing.** A record holding its leaves but no deposit
+  hash claims, as today's engine does; the search and the receipt read run only for a record that cannot claim
+  without them.
 
 ## Audit verdicts
 
@@ -787,6 +1002,29 @@ Arc a4, the implementation (`git diff 556af41..HEAD`):
   hash-equality shortcut matches only a landed claim that paid with the gas (a registration's hash, a cleared or
   hashless claim cannot match); a missing salt is caller input, so retry "safe". Converged.
 
+Arc a6, the plan amendment (both legs read the tree):
+
+- **Round 1, Codex: APPROVE WITH CHANGES, 4 High, 6 Medium.** A field CAS alone lets stale evidence complete a record
+  (guard the claim identity, never `updatedAt`); the writer is atomic only under `locks.journal`, which discovery
+  skipped; `claimFuel` on a token + gas record must not need the token's registration or `completedAt`; a fresh
+  invalid message must refuse before the ladder (D85); one 30-minute watch inside the record lock is visible
+  (rounds kept); a contradicted marker stops today; the gas-only hash windows are reachable; SDK wording must not reach
+  notes; the `aztec` prompt lane; the top-level latch's validation.
+- **Opus 5.5 (beside it): APPROVE WITH CHANGES, 4 Medium, 6 Low.** P7-02's "Nothing was sent." on a sent claim's
+  resume; "Claim your gas" racing the leftover gas claim (record lock); re-entries keep their mode, and `needs-prompt`
+  after a landing is item 3's open card; a CAS that finds `next` already stored writes; deposit facts searched only
+  without leaves (D87); no SDK call without material for a marked private record; the private line is item 2's;
+  legacy shapes; `resumeActionFor` reads `claimRetired`.
+- **Round 2, Codex: APPROVE WITH CHANGES, 3 High, 3 Medium.** Owner entries must hold 6.3, not ship beside it (D86 now
+  finds none reachable); the identity guard compares views; locking extended to discovery's reseal, the card's
+  consumed flag and discard, the send flow left as today's documented limit (accepted); per-poll `claim-waiting`; the
+  same-poll verification claim was unproven; control outcomes map first; the registration wait is item 7's.
+- **Round 3, Codex: APPROVE WITH CHANGES, 1 High, 2 Medium.** A fuel-hash-only gas-only record keeps today's receipt
+  reading (D79); D74's delay is unbounded on a lagging node (a closed `known-limit` issue, reopened by observed
+  receipt/nullifier divergence through the watch budget on a healthy supported endpoint); the first unreachable read
+  is reported by its own poll.
+- **Round 4, Codex: APPROVE.**
+
 Arc a5, the implementation (`git diff 54de731..HEAD`):
 
 - **Round 1, Codex: the publish pipeline is sound; 4 Moderate, all in the docs.** bb.js fetches its WebAssembly from a
@@ -810,7 +1048,7 @@ Arc a5, the implementation (`git diff 54de731..HEAD`):
 
 ## Delivery
 
-Five sequential PRs against `main`, no stacking. a1 works on `worktree-sdk-1` (it carries this plan); each later arc
+Seven sequential PRs against `main`, no stacking (a6 ships two). a1 works on `worktree-sdk-1` (it carries this plan); each later arc
 starts after the previous one merged: `git fetch origin main && git checkout -b sdk-1-a<n> origin/main && bun install`.
 `code_review: off`. PR bodies: what changed and why, the gates with outcomes, the browser wall-clock before and after,
 `Delivers ask3` (a3) and `Delivers ask5` (a5, once the SDK ships end to end). Merge order: relayer-1, then sdk-1; each
@@ -823,7 +1061,9 @@ waits for the owner, so parallel lanes are not recommended.
 | a2 | 2.1–2.5 | the owner's interface answer, a1 merged | the SDK (ask5) |
 | a3 | 3.1–3.2 | a2 | ask3; the send lanes (ask5) |
 | a4 | 4.1 | a3 | the claim lanes (ask5) |
-| a5 | 5.1 + close-out | a4 | publish setup (ask5) |
+| a5 | 5.1 | a4 | publish setup (ask5) |
+| a6 PR 1 | 6.1–6.2 | a5, ask26 | the SDK's claims for every integrator (ask26) |
+| a6 PR 2 | 6.3 + close-out | a6 PR 1 | the app's claims on the SDK (ask5, ask26) |
 
 ## Post-implementation
 
@@ -845,7 +1085,7 @@ Per arc, after its last phase gate passes:
    persistent state, a lifecycle, a protocol, a recovery policy or a public contract is a plan change: stop.
 2. **Delivery.** Run the arc's gates once more on the final head; push; `gh pr create` with the body above; `gh pr
    checks <n> --watch` once, bounded; a known flake gets one rerun.
-3. **Close-out** (a5's PR, final commits): the `## Outcome` block after the front matter (date, status, shipped with PR
+3. **Close-out** (a6's second PR, final commits): the `## Outcome` block after the front matter (date, status, shipped with PR
    numbers, dropped and why, `Known limits:`, `Open items:`, the seeds retired); promote generalizable lessons into
    `implementations-plan/lessons.md` (dedupe, retire, date-stamp); file open work as GitHub issues (a suspected
    exploitable weakness as a private draft advisory; a known limit as a closed `known-limit` issue); merge `origin/main`
