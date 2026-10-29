@@ -176,10 +176,8 @@ export interface WithdrawJournalRecord extends JournalBase {
 	exitTxHash?: string
 	exitBlock?: number
 	consumeTxHash?: string
-	/** The Outbox says this exit's message is already consumed while THIS app never sent a finish
-	 *  transaction: the message names its L1 recipient, so a relayer that got there first released
-	 *  the funds to the same address. Terminal — there is nothing left to consume, and retrying
-	 *  forever is the only other outcome. */
+	/** Written by earlier builds when an exit completed with no finish transaction of this app's; no build
+	 *  writes it now. Kept so stored records and backups that carry it still parse. */
 	consumedByOther?: boolean
 	/** The Aztec account that sent the exit, recorded when the record is built. Display-only; never
 	 *  read by a claim, exit or recovery path. Absent on records written before the field existed. */

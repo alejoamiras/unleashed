@@ -2,11 +2,17 @@
  * The L2→L1 withdraw consumption the frontend drives and the sandbox smoke proves, and the connected
  * L1 context every flow takes. Deposits live in `send-flow.ts`. Framework-agnostic (no Vue).
  */
+import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { waitForProven } from "@aztec-labs/aztec.js/contracts"
+import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
+import { EthAddress } from "@aztec-labs/foundation/eth-address"
+import { computeL2ToL1MessageHash } from "@aztec-labs/stdlib/hash"
 import { computeL2ToL1MembershipWitness, getL2ToL1MessageLeafId } from "@aztec-labs/stdlib/messaging"
 import { OutboxContract } from "@aztec-labs/ethereum/contracts"
 import type { Abi, Account, Address, Hex, PublicClient, WalletClient } from "viem"
+import { withdrawContentHash } from "../protocol/content-hash.ts"
+import { PORTAL_IMPL_CONSTANTS_ABI } from "../protocol/factory-abi.ts"
 
 /** The connected L1 surface the flows need (a viem wallet + public client + account). */
 export interface L1Ctx {
@@ -76,22 +82,58 @@ export async function consumeWithdrawal(
 	return { consumeTxHash }
 }
 
+const ZERO_L1 = `0x${"0".repeat(40)}`
+
+/** The facts an exit's L2→L1 message commits to: the hub that sent it, the token portal it names, the withdraw's
+ *  recipient and amount, and the rollup it was sent on. */
+export interface WithdrawMessageFacts {
+	hub: string
+	portal: string
+	recipientL1: string
+	amount: bigint
+	chainId: number
+	rollupVersion: number
+}
+
+/** The L2→L1 message an exit's burn emits. The portal's `withdraw` takes no caller (`withCaller = false`), so the
+ *  content binds the zero address there. The hash carries no nonce: two exits with the same facts share it. */
+export async function withdrawMessageHash(m: WithdrawMessageFacts): Promise<string> {
+	const content = await withdrawContentHash(m.recipientL1, m.amount, ZERO_L1)
+	return computeL2ToL1MessageHash({
+		l2Sender: AztecAddress.fromStringUnsafe(m.hub),
+		l1Recipient: EthAddress.fromString(m.portal),
+		content: Fr.fromString(content),
+		rollupVersion: new Fr(m.rollupVersion),
+		chainId: new Fr(m.chainId),
+	}).toString()
+}
+
 /**
- * Whether the Outbox has ALREADY consumed this exit's L2→L1 message. The message names its L1
- * recipient, so anyone may finish it and the funds still land where the burn said — which is why a
- * failed consume must ask this before it retries: a message someone else finished can never be
- * consumed again, and a caller that keeps trying reports a permanent failure over a completed exit.
+ * Whether the Outbox the token portal is bound to has consumed `expected.messageHash` at the position the node
+ * reports for this exit. The Outbox is read from the portal on L1, never from the node, and a transaction whose
+ * first message is not the expected one reads as not consumed.
  *
- * Unknowable answers read as NOT consumed (a missing effect, an unproven epoch): a false "already
- * done" would mark an exit complete whose funds are still sitting in the Outbox.
+ * `true` cannot tell this exit from an identical one (same hub, portal, recipient and amount), whose consumed
+ * position a node may report instead: never complete a record from it. Unknowable answers (a missing effect, an
+ * unproven epoch) read as `false`.
  */
-export async function isOutboxMessageConsumed(l1: L1Ctx, node: AztecNodeClient, exitReceipt: { txHash: unknown }): Promise<boolean> {
+export async function isOutboxMessageConsumed(
+	l1: L1Ctx,
+	node: AztecNodeClient,
+	exitReceipt: { txHash: unknown },
+	expected: { portal: Address; messageHash: string },
+): Promise<boolean> {
+	const message = Fr.fromString(expected.messageHash)
 	const eff = await node.getTxEffect(exitReceipt.txHash as never)
-	const messageHash = eff?.data.l2ToL1Msgs[0]
-	if (!messageHash) return false
-	const { l1ContractAddresses } = await node.getNodeInfo()
-	const outbox = new OutboxContract(l1.pub as never, l1ContractAddresses.outboxAddress)
-	const wit = await computeL2ToL1MembershipWitness(node, outbox, messageHash, exitReceipt.txHash as never, 0)
+	const reported = eff?.data.l2ToL1Msgs[0]
+	if (!reported?.equals(message)) return false
+	const outboxAddress = (await l1.pub.readContract({
+		address: expected.portal,
+		abi: PORTAL_IMPL_CONSTANTS_ABI,
+		functionName: "OUTBOX",
+	})) as Address
+	const outbox = new OutboxContract(l1.pub as never, outboxAddress)
+	const wit = await computeL2ToL1MembershipWitness(node, outbox, message, exitReceipt.txHash as never, 0)
 	if (!wit) return false
 	return outbox.hasMessageBeenConsumedAtEpoch(wit.epochNumber, getL2ToL1MessageLeafId(wit))
 }

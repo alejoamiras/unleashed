@@ -486,7 +486,7 @@ describe("useHubExit", () => {
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
 
-	it("a consume that fails on an already-consumed message completes the record instead of retrying", async () => {
+	it("a failed finish leaves the exit open with its error, even when the Outbox reports its message consumed", async () => {
 		h.consumeWithdrawal.mockImplementation(async () => {
 			throw new Error("execution reverted: Outbox__AlreadyNullified")
 		})
@@ -494,19 +494,9 @@ describe("useHubExit", () => {
 		const exit = useHubExit()
 		const id = await exit.exit(plan())
 		const rec = recordOf(id) as SendWithdrawRecord
-		expect(rec.consumedByOther).toBe(true)
-		expect(rec.completedAt).toBe(999)
+		expect(rec.completedAt).toBeUndefined()
+		expect(rec.consumedByOther).toBeUndefined()
 		expect(rec.consumeTxHash).toBeUndefined()
-		expect(useBridgeJournal().runtime.value[id]?.attention).toBeUndefined()
-	})
-
-	it("a consume failure on a message NOBODY consumed still surfaces as the failure it is", async () => {
-		h.consumeWithdrawal.mockImplementation(async () => {
-			throw new Error("execution reverted: nonsense")
-		})
-		const exit = useHubExit()
-		const id = await exit.exit(plan())
-		expect(recordOf(id)?.completedAt).toBeUndefined()
 		expect(useBridgeJournal().runtime.value[id]?.attention).toBe("error")
 	})
 

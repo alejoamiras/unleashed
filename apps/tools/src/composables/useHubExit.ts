@@ -28,7 +28,6 @@ import {
 	hubAt,
 	hubExitsPaused,
 	hubTokenFor,
-	isOutboxMessageConsumed,
 	preflightHubExit,
 	randomField,
 	clampGas,
@@ -56,7 +55,6 @@ import type { ExitPlan } from "@/lib/send-model"
 import { normalizeError } from "@/lib/errors"
 import { humanizeWalletError, isUserRejection } from "@/lib/wallet-errors"
 import {
-	type ConsumeOutcome,
 	addRecord,
 	connectJournalDeps,
 	discard,
@@ -239,23 +237,11 @@ async function awaitExitBlock(node: AztecNode, rec: SendWithdrawRecord, onProgre
 	return receipt
 }
 
-/** A consume can fail because the message is already gone: `callerOnL1` is the zero address, so ANY
- *  caller may finish this exit, and one that got there first left nothing to send. The Outbox is
- *  asked directly rather than the revert text, which is not ours to depend on; an unreadable answer
- *  is a NO, so the original failure surfaces as itself instead of a false completion. */
-async function consumedElsewhere(l1: L1Ctx, node: AztecNode, receipt: { txHash: unknown }): Promise<boolean> {
-	try {
-		return await isOutboxMessageConsumed(l1, node as never, receipt)
-	} catch {
-		return false
-	}
-}
-
 async function runSendConsume(
 	l1: ReturnType<typeof useL1Wallet>,
 	rec: SendWithdrawRecord,
 	onProgress: ExitProgress,
-): Promise<ConsumeOutcome> {
+): Promise<{ consumeTxHash: string }> {
 	const wallet = l1.ensureWalletClient()
 	const account = l1.address.value
 	if (!wallet || !account) throw new Error("Connect your Ethereum wallet to finish the withdraw.")
@@ -268,6 +254,8 @@ async function runSendConsume(
 			.catch(() => {})
 	}, 5000)
 	const ctx = { pub: l1.publicClient, wallet, account } as unknown as L1Ctx
+	// A failed consume surfaces as itself even when its message reads as spent: the Outbox answers only for the
+	// position the node reports, which an identical exit shares.
 	try {
 		// The consume runs against THIS token's clone: one portal per ERC-20, and a message from
 		// one clone can never be finished on another.
@@ -279,9 +267,6 @@ async function runSendConsume(
 			provenTimeoutSec: PROVEN_TIMEOUT_SEC,
 			onSent: (hash) => updateRecord(rec.id, { consumeTxHash: hash }),
 		})
-	} catch (e) {
-		if (await consumedElsewhere(ctx, node, receipt)) return { consumedByOther: true }
-		throw e
 	} finally {
 		clearInterval(pollTimer)
 	}
