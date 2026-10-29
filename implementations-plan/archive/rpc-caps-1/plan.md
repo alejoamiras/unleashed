@@ -26,9 +26,8 @@ budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 - **Lessons:** none promoted, because `lessons.md` is at its budget (8,188 bytes). The endpoint facts live in
   `source-chains.ts`'s comment and `recon.md`. The note on viem stubs lives in `lessons/phase-1.md`.
 - **Known limits:** #78.
-- **Open items:** none. Reported to the orchestrator for other lanes: the relayer's `CHUNK_BLOCKS` comment
-  (relayer-2), and PublicNode Sepolia's log retention of about 1.7 days, which keeps older cross-chain records
-  `incomplete`.
+- **Open items:** none. Reported to the orchestrator for triage: PublicNode Sepolia's log retention of about 1.7
+  days keeps older cross-chain records `incomplete`.
 - **Seeds:** the `/goal` and `/loop` seeds at the end are retired. They are history, not instructions.
 
 # rpc-caps-1: keep every log query within its endpoint's measured cap

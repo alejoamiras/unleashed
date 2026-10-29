@@ -33,3 +33,10 @@
   material Low (no remainder range) and 3 Low. Fixed in c4924b8. New mutations, each restored: a loop that drops the
   last partial part fails test 1; a split that drops `address` fails tests 1 and 2.
 - Round 2 (resumed Codex): clean. Converged in 2 rounds.
+
+## After delivery
+
+- Orchestrator steer: main moved (#70, #72, #66) and PR #77 conflicted. Merged `origin/main` (no rebase). Two conflicts:
+  the imports of `useEthereumReader.ts`, where main added the balance reader (union kept), and one line of
+  `archive/index.md` (both lines kept). Gates rerun on the merged head: lint, typecheck:all, test:all, audit:tools
+  (1,701 tests) and `RPC_CAPS_LIVE`, all green. relayer-2 had already corrected the relayer's chunk comment.
