@@ -28,16 +28,20 @@ export async function feeJuiceFor(wallet: Wallet, node?: Pick<AztecNode, "getNod
 }
 
 /**
- * Deposits `plan` into the Fee Juice portal after approving exactly its amount. `onBroadcast` receives the
- * deposit's hash before its receipt, so an interrupted wait still leaves the operator something to look up.
+ * Deposits `plan` into the Fee Juice portal after approving exactly its amount. With `firstNonce` the writes take
+ * consecutive nonces from it, so a run that decided on a stale read collides with what another run already sent and
+ * fails instead of depositing a second time. `onBroadcast` receives the deposit's hash before its receipt, so an
+ * interrupted wait still leaves the operator something to look up.
  *
- * @throws when either transaction reverts, or the portal's event names another amount.
+ * @throws when a transaction reverts, or the portal's event names another amount.
  */
 export async function depositFeeJuicePublic(
 	l1: L1Ctx,
-	p: { asset: Address; portal: Address; plan: FuelDepositPlan; onBroadcast?: (hash: Hex) => void },
+	p: { asset: Address; portal: Address; plan: FuelDepositPlan; firstNonce?: number; onBroadcast?: (hash: Hex) => void },
 ): Promise<FuelDepositReceipt> {
-	await approveExact(l1, p.asset, p.portal, p.plan.amount)
+	let next = p.firstNonce ?? 0
+	const nonce = p.firstNonce === undefined ? undefined : () => next++
+	await approveExact(l1, p.asset, p.portal, p.plan.amount, nonce)
 	const hash = await l1.wallet.writeContract({
 		address: p.portal,
 		abi: FeeJuicePortalAbi,
@@ -45,6 +49,7 @@ export async function depositFeeJuicePublic(
 		args: feeJuiceDepositArgs(p.plan),
 		account: l1.account,
 		chain: l1.wallet.chain,
+		...(nonce ? { nonce: nonce() } : {}),
 	} as never)
 	p.onBroadcast?.(hash)
 	const receipt = await l1.pub.waitForTransactionReceipt({ hash })
@@ -117,8 +122,8 @@ export async function claimFeeJuiceSelfPaid(p: {
 
 /**
  * Deploys `manager`'s account in a transaction that pays its fee from `claim`: aztec.js routes the claim through the
- * account's own entrypoint while the multicall entrypoint runs its constructor. The only way to start an account on
- * a network without a sponsor. The deposit's message must already be consumable.
+ * account's own entrypoint while the multicall entrypoint runs its constructor. The deposit's message must already be
+ * consumable.
  *
  * @returns the fee the transaction was charged.
  */

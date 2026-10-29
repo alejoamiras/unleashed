@@ -2,7 +2,8 @@
  * Fee Juice for a deployer that has no sponsor and no other source of it: an L1 deposit into the canonical portal,
  * claimed on L2. L1 is the only ledger. Each funding is a `DepositToAztecPublic` to the deployer, sent by the pinned
  * funding key straight to the portal, under a secret derived from the deployer's seed, so a re-run finds every
- * funding it made, resumes one it never claimed and never pays twice, with nothing stored locally.
+ * funding it made and resumes one it never claimed, with nothing stored locally. The funding key's nonce keeps two
+ * runs from both funding one shortfall: a decision binds it (`drip-deploy.ts`).
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
@@ -44,6 +45,11 @@ export function requireMainnetDripFunder(): Address {
 const PORTAL_FIRST_BLOCKS: Readonly<Record<string, bigint>> = {
 	"0x534361be805ca30bdb6404ec5e6cdaffb3e9f3b3": 26_160_102n,
 }
+
+/** How far below the head a mainnet scan stops. A load-balanced RPC can answer the head from one backend and the
+ *  logs from a lagging one; a funding that lagging backend has not indexed would be neither counted against the
+ *  cap nor claimed, while the funder's nonce already shows it mined. The nonce check covers the blocks above. */
+export const MAINNET_SCAN_CONFIRMATIONS = 12n
 
 export function scanStartFor(portal: Address): bigint {
 	const block = PORTAL_FIRST_BLOCKS[portal.toLowerCase()]
@@ -225,10 +231,13 @@ export function decideFunding(s: FundingState): FundingDecision {
 	if (!eq(s.signer, s.funder)) throw new Error(`signer ${s.signer} is not the pinned funding key ${s.funder} — STOP`)
 	if (s.nonceAtScan !== s.nonceNow) {
 		throw new Error(
-			`the funding key has ${s.nonceNow - s.nonceAtScan} transaction(s) since the scan; wait for them to land, then re-run — STOP`,
+			`the funding key has ${s.nonceNow - s.nonceAtScan} transaction(s) newer than the scanned block; wait a few minutes, then re-run — STOP`,
 		)
 	}
-	if (s.fund < s.claimFee) throw new Error(`--fund ${fj(s.fund)} is below its own claim's maximum fee ${fj(s.claimFee)} — STOP`)
+	// A claim whose fee limit outgrows it stalls every later run until fees fall, so it starts with twice the room.
+	if (s.fund < 2n * s.claimFee) {
+		throw new Error(`--fund ${fj(s.fund)} is below twice its own claim's maximum fee ${fj(s.claimFee)} — STOP`)
+	}
 	if (s.accountInitialized && s.balance + s.fund - s.claimFee < s.nextFee) {
 		throw new Error(`--fund ${fj(s.fund)} leaves less than the next send's maximum fee ${fj(s.nextFee)} after its claim — STOP`)
 	}

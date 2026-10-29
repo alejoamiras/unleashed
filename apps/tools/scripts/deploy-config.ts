@@ -45,7 +45,8 @@ export function nodeUrlFor(network: Network): string {
 	return requireDrpcNodeUrl(network, process.env)
 }
 
-/** What a mainnet run may spend: `--cap` bounds every funding together and has no default. */
+/** What a mainnet run may spend: `--cap` bounds every funding from the funding key to this deployer, together,
+ *  and has no default. */
 export interface Funding {
 	readonly fund?: bigint
 	readonly cap?: bigint
@@ -62,7 +63,9 @@ export function fundingOf(network: Network, flag: (name: string) => string | und
 		if (fund !== undefined || cap !== undefined) throw new Error("--fund and --cap apply to mainnet only")
 		return {}
 	}
-	if (cap === undefined && !dryRun) throw new Error("a mainnet run needs --cap <AZTEC>, the most every funding together may reach")
+	if (cap === undefined && !dryRun) {
+		throw new Error("a mainnet run needs --cap <AZTEC>, the most every funding to this deployer may reach together")
+	}
 	return {
 		...(fund === undefined ? {} : { fund: parseFj(fund, "--fund") }),
 		...(cap === undefined ? {} : { cap: parseFj(cap, "--cap") }),
@@ -77,8 +80,14 @@ export interface DeployerKeys {
 	readonly signingKey: GrumpkinScalar
 }
 
-function frFromHexReduce(hex: string): Fr {
-	return Fr.fromBufferReduce(Buffer.from(hex.replace(/^0x/, "").padStart(64, "0"), "hex"))
+/** `Buffer.from(_, "hex")` stops at the first non-hex character, so a malformed value would quietly reduce to a
+ *  short or zero field and derive an account anyone can rebuild: the shape is checked first, and errors never
+ *  echo the value. */
+function hexField(name: string, value: string, digits: { min: number; max: number }): Fr {
+	if (!new RegExp(`^(0x)?[0-9a-fA-F]{${digits.min},${digits.max}}$`).test(value)) {
+		throw new Error(`${name} must be ${digits.min === digits.max ? digits.max : `1–${digits.max}`} hex digits`)
+	}
+	return Fr.fromBufferReduce(Buffer.from(value.replace(/^0x/, "").padStart(64, "0"), "hex"))
 }
 
 /**
@@ -92,8 +101,9 @@ export async function resolveDeployerKeys(network: Network, env: Record<string, 
 	if (hexSecret && hexSalt) {
 		// An Ethereum secp256k1 key can exceed the BN254 field modulus - reduce instead of
 		// throwing (deterministic: the same input always derives the same account).
-		const seed = frFromHexReduce(hexSecret)
-		return { seed, salt: frFromHexReduce(hexSalt), ...(await deriveNuloAccountKeys(seed)) }
+		const seed = hexField("DEPLOYER_SECRET_KEY", hexSecret, { min: network === "mainnet" ? 64 : 1, max: 64 })
+		if (seed.isZero()) throw new Error("DEPLOYER_SECRET_KEY reduces to zero")
+		return { seed, salt: hexField("DEPLOYER_SALT", hexSalt, { min: 1, max: 64 }), ...(await deriveNuloAccountKeys(seed)) }
 	}
 	if (network === "mainnet") throw new Error("mainnet takes DEPLOYER_SECRET_KEY + DEPLOYER_SALT only")
 	const utf8 = env.DEPLOYER_SECRET
@@ -105,6 +115,18 @@ export async function resolveDeployerKeys(network: Network, env: Record<string, 
 		"Provide either DEPLOYER_SECRET_KEY+DEPLOYER_SALT (hex Frs, reuses an existing account) " +
 			"or DEPLOYER_SECRET (≥32-char utf8 string, derives a fresh account).",
 	)
+}
+
+/** The keyed run's values: the node and L1 URLs embed provider keys, and the transports put the URL in their
+ *  error text. */
+const SECRET_ENV = ["DRPC_API_KEY", "ETH_RPC_URL", "FUNDING_PRIVATE_KEY", "DEPLOYER_SECRET_KEY", "DEPLOYER_SECRET"] as const
+
+/** `text` with every keyed-run value replaced by its name, so a failure can be printed whole. */
+export function redactSecrets(text: string, env: Record<string, string | undefined> = process.env): string {
+	return SECRET_ENV.reduce((out, name) => {
+		const value = env[name]
+		return value ? out.replaceAll(value, `<${name}>`) : out
+	}, text)
 }
 
 // ── Schemas matching src/contracts/deployments.ts ──────────────────────────
@@ -119,8 +141,8 @@ interface TokenDeploymentRecord {
 		readonly symbol: FaucetSymbol
 		readonly decimals: number
 		readonly minter: string
-		/** 5.0.1 standards Token: constructor_with_minter's 5th parameter. ZERO = no
-		 *  authorization contract; REQUIRED for the rebuild to derive the address. */
+		/** constructor_with_minter's 5th parameter: ZERO means no authorization contract. The rebuild needs it
+		 *  to derive the address. */
 		readonly authContract: string
 	}
 }

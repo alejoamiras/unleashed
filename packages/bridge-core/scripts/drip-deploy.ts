@@ -31,6 +31,7 @@ import {
 	fj,
 	fundingSecret,
 	isClaimed,
+	MAINNET_SCAN_CONFIRMATIONS,
 	matchFundings,
 	requireMainnetDripFunder,
 	scanFundings,
@@ -145,6 +146,8 @@ export interface SelfFundedDeployOptions {
 	funder: Address
 	/** No funding can be older than this block. */
 	scanFrom: bigint
+	/** The scan stops this many blocks below the head; a funder transaction above it makes the run wait. */
+	confirmations: bigint
 	node: AztecNode
 	wallet: Wallet
 	deployer: {
@@ -159,7 +162,7 @@ export interface SelfFundedDeployOptions {
 	catalog: readonly CatalogEntry[]
 	/** What a new funding deposits; without it a shortfall stops the run. */
 	fund?: bigint
-	/** The most every authenticated funding together may reach, this one included. */
+	/** The most every authenticated funding from `funder` to this deployer may reach together, this one included. */
 	cap: bigint
 	log: (line: string) => void
 	/** Runs after a funding lands on L1, and after its claim lands on L2. */
@@ -181,6 +184,12 @@ async function sendGasOf(o: SelfFundedDeployOptions, s: EntryStatus): Promise<Se
 		skipInstancePublication: s.published,
 	})
 	if (!sim.gasUsed) throw new Error(`${s.entry.label}: the simulation reported no gas — STOP`)
+	const used = sim.gasUsed.totalGas
+	const max = (await o.node.getNodeInfo()).txsLimits.gas
+	// Only the padding may be clamped: a limit below the simulated use would be proven and then revert.
+	if (used.l2Gas > max.l2Gas || used.daGas > max.daGas) {
+		throw new Error(`${s.entry.label}: needs ${used.l2Gas} L2 / ${used.daGas} DA gas, above the node's per-transaction limit — STOP`)
+	}
 	const pad = (g: Gas) => ({ daGas: Math.ceil(g.daGas * 1.1), l2Gas: Math.ceil(g.l2Gas * 1.1) })
 	const [gasLimits, teardownGasLimits, maxFeesPerGas] = await Promise.all([
 		admittedLimits(o.node, pad(sim.gasUsed.totalGas)),
@@ -190,11 +199,13 @@ async function sendGasOf(o: SelfFundedDeployOptions, s: EntryStatus): Promise<Se
 	return { gasLimits, teardownGasLimits, maxFeesPerGas }
 }
 
-/** Scans L1 up to one block, whose nonce for the funder tells a deposit still in flight, then decides; a new
- *  funding is deposited here. */
+/** The scan is a snapshot at one block. The funder's nonce there refuses a decision while any of its transactions
+ *  is newer, and binds the new funding's writes, so a second run deciding on the same snapshot cannot fund again. */
 async function settleFunding(o: SelfFundedDeployOptions, next: EntryStatus, accountInitialized: boolean): Promise<readonly Claimable[]> {
 	const address = o.deployer.address
-	const scannedAt = await o.l1.pub.getBlockNumber()
+	// Uncached: viem reuses a block number for seconds, and an older one would show the funder's last mined
+	// transaction as still in flight.
+	const scannedAt = (await o.l1.pub.getBlockNumber({ cacheTime: 0 })) - o.confirmations
 	const fundings = await scanFundings(o.l1.pub, {
 		portal: o.portal,
 		recipient: address.toString(),
@@ -235,6 +246,7 @@ async function settleFunding(o: SelfFundedDeployOptions, next: EntryStatus, acco
 		asset: o.asset,
 		portal: o.portal,
 		plan,
+		firstNonce: nonceAtScan,
 		onBroadcast: (hash) => o.log(`funding #${n}: deposit broadcast ${hash}`),
 	})
 	await o.onStage?.("deposited")
@@ -356,6 +368,7 @@ export async function deployDripCatalogOnMainnet(o: MainnetDripDeployOptions): P
 		asset: o.manifest.feeJuice.asset as Address,
 		funder,
 		scanFrom: scanStartFor(portal),
+		confirmations: MAINNET_SCAN_CONFIRMATIONS,
 		node: createNode(o.nodeUrl),
 		wallet: o.wallet,
 		deployer: o.deployer,

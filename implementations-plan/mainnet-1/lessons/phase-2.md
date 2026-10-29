@@ -20,3 +20,11 @@
   asserted no deposit and work left, rather than an unchanged balance. Second run green, 59 s on an attached
   sandbox. On mainnet the classes are unpublished, so the first sends there also publish them, which only aztec.js's
   own class check exercises.
+- **viem caches the block number.** `getBlockNumber()` reuses its answer for about 4 s, so the full suite's first
+  run read the funder's nonce at a block before its own mint and refused as "in flight". The scan reads it with
+  `cacheTime: 0`.
+- **Codex round 1 and the Opus review.** Both verified and fixed as § Audit verdicts records. The 2× claim headroom
+  moved the bootstrap to twice the claim-and-deploy limit; the catalog still runs short (the Dripper and SIGNAL
+  deploy, NOISE stops), so the top-up and resume steps are unchanged. The margin's refusal runs with the chain's
+  whole height as the margin, so the L1 blocks the sequencer mines during the run cannot carry the scanned block
+  past the funder's transactions. Green on an attached sandbox, 66 s.

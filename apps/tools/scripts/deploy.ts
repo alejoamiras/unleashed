@@ -5,8 +5,8 @@
  *   testnet, local-network: DEPLOYER_SECRET_KEY + DEPLOYER_SALT (or DEPLOYER_SECRET); fees from the
  *     sponsored FPC. Live testnet is a keyed run on testnet-faucet.env.example.
  *   mainnet: DEPLOYER_SECRET_KEY + DEPLOYER_SALT only. No sponsor exists, so the deployer pays every fee
- *     from Fee Juice the pinned funding key deposits on L1 (`--fund <AZTEC>`) within `--cap <AZTEC>`, which
- *     every live mainnet run requires. A keyed run on mainnet-faucet.env.example; re-run the same command
+ *     from Fee Juice the pinned funding key deposits on L1 (`--fund <AZTEC>`) within `--cap <AZTEC>`, the most every
+ *     funding to this deployer may reach together, which every live mainnet run requires. A keyed run on mainnet-faucet.env.example; re-run the same command
  *     until it reports the catalog initialized.
  *
  * Flags:
@@ -27,6 +27,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { inspect } from "node:util"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { getContractInstanceFromInstantiationParams, type InteractionFeeOptions } from "@aztec-labs/aztec.js/contracts"
 import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee"
@@ -49,6 +50,7 @@ import {
 	getDeploymentConfig,
 	type Network,
 	nodeUrlFor,
+	redactSecrets,
 	resolveDeployerKeys,
 } from "./deploy-config.js"
 
@@ -195,7 +197,7 @@ async function run(): Promise<void> {
 const isDirectInvocation = import.meta.url === `file://${process.argv[1]}`
 if (isDirectInvocation) {
 	run().catch((err: unknown) => {
-		logger.error("Deploy failed:", err)
+		logger.error(`Deploy failed: ${redactSecrets(inspect(err, { depth: 8 }))}`)
 		process.exit(1)
 	})
 }

@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { FAUCET_TOKENS, requireDrpcNodeUrl } from "@unleashed/bridge-core"
 import { dripCatalog } from "@unleashed/bridge-core/drip-deploy"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { buildDeploymentJson, fundingOf, getDeploymentConfig, nodeUrlFor, resolveDeployerKeys } from "./deploy-config"
+import { buildDeploymentJson, fundingOf, getDeploymentConfig, nodeUrlFor, redactSecrets, resolveDeployerKeys } from "./deploy-config"
 
 describe("getDeploymentConfig", () => {
 	it("deploys the faucet catalog", () => {
@@ -70,5 +70,32 @@ describe("resolveDeployerKeys", () => {
 		await expect(resolveDeployerKeys("testnet", passphrase)).resolves.toBeDefined()
 		const pair = { DEPLOYER_SECRET_KEY: `0x${"ab".repeat(32)}`, DEPLOYER_SALT: "0x01" }
 		await expect(resolveDeployerKeys("mainnet", pair)).resolves.toBeDefined()
+	})
+
+	it.each([
+		["a non-hex key", { DEPLOYER_SECRET_KEY: "not-hex-key", DEPLOYER_SALT: "0x01" }, /DEPLOYER_SECRET_KEY must be 64/],
+		[
+			"a key cut short by a stray character",
+			{ DEPLOYER_SECRET_KEY: `0x01garbage${"ab".repeat(27)}`, DEPLOYER_SALT: "0x01" },
+			/must be 64/,
+		],
+		["a short key", { DEPLOYER_SECRET_KEY: "0xabcd", DEPLOYER_SALT: "0x01" }, /must be 64/],
+		["a zero key", { DEPLOYER_SECRET_KEY: `0x${"0".repeat(64)}`, DEPLOYER_SALT: "0x01" }, /reduces to zero/],
+		["a non-hex salt", { DEPLOYER_SECRET_KEY: `0x${"ab".repeat(32)}`, DEPLOYER_SALT: "oops" }, /DEPLOYER_SALT must be/],
+	])("refuses %s on mainnet without echoing it", async (_, env, message) => {
+		const err = await resolveDeployerKeys("mainnet", env).catch((e: Error) => e)
+		expect(err).toBeInstanceOf(Error)
+		expect((err as Error).message).toMatch(message)
+		expect((err as Error).message).not.toContain(env.DEPLOYER_SECRET_KEY.slice(2, 10))
+	})
+})
+
+describe("redactSecrets", () => {
+	it("names each keyed-run value instead of printing it, the dRPC key inside a composed URL included", () => {
+		const env = { DRPC_API_KEY: "sentinel_Key-0123456789", ETH_RPC_URL: "https://l1.example/v2/sentinel-l1" }
+		const node = requireDrpcNodeUrl("mainnet", env)
+		const out = redactSecrets(`Error fetching from host ${node}: HTTP request failed. URL: ${env.ETH_RPC_URL}`, env)
+		expect(out.includes(env.DRPC_API_KEY) || out.includes("sentinel-l1")).toBe(false)
+		expect(out).toContain("<ETH_RPC_URL>")
 	})
 })

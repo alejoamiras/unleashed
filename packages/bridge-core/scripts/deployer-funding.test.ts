@@ -13,6 +13,7 @@ import {
 	type FundingState,
 	fundingSecret,
 	matchFundings,
+	scanFundings,
 	scanStartFor,
 } from "./deployer-funding"
 import { MAINNET_REGISTRY, type NodeIdentity } from "./live-intent"
@@ -53,6 +54,26 @@ describe("authenticFunding", () => {
 		["calldata naming another amount", log(), tx({ input: depositInput(RECIPIENT, 99n, SECRET_HASH) })],
 	])("refuses %s", (_, l, t) => {
 		expect(authenticFunding(l, t, scope)).toBeUndefined()
+	})
+})
+
+describe("scanFundings", () => {
+	it("covers every block once in windows a free RPC plan accepts", async () => {
+		const windows: Array<[bigint, bigint]> = []
+		const pub = {
+			getContractEvents: vi.fn(async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => {
+				windows.push([fromBlock, toBlock])
+				return fromBlock === 20_005n ? [log()] : []
+			}),
+			getTransaction: vi.fn(async () => tx()),
+		}
+		const found = await scanFundings(pub as never, { ...scope, fromBlock: 5n, toBlock: 25_004n })
+		expect(windows).toEqual([
+			[5n, 10_004n],
+			[10_005n, 20_004n],
+			[20_005n, 25_004n],
+		])
+		expect(found.map((f) => f.leafIndex)).toEqual([7n])
 	})
 })
 
@@ -107,8 +128,8 @@ describe("decideFunding", () => {
 	it.each([
 		["no --fund", { fund: undefined }, /re-run with --fund/],
 		["another signer", { signer: STRANGER }, /not the pinned funding key/],
-		["a nonce that moved since the scan", { nonceNow: 5 }, /since the scan/],
-		["an amount below its own claim's fee", { fund: 9n }, /below its own claim/],
+		["a nonce that moved since the scanned block", { nonceNow: 5 }, /newer than the scanned block/],
+		["an amount below twice its own claim's fee", { fund: 19n }, /below twice its own claim/],
 		["an amount above the cap", { fund: 1_001n }, /exceeds --cap/],
 		["an amount that, with what is funded, passes the cap", { funded: 950n }, /exceeds --cap/],
 	])("refuses %s", (_, over, message) => {

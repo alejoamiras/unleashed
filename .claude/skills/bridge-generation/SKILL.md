@@ -631,9 +631,11 @@ the catalog is initialized. No state is kept between runs.
   refuses a portal without one.
 - The owner has created `Keyed-Runs/Unleashed-Mainnet-Drip` (`apps/tools/mainnet-faucet.env.example` lists its
   fields): a fresh deployer pair and a fresh funding key, both used for nothing else, the funding key holding the
-  budget in AZTEC plus the ETH for two transactions per funding. Its address is pinned in `MAINNET_DRIP_FUNDER`
+  budget in AZTEC plus the ETH for up to three transactions per funding (an allowance reset, the approval, the
+  deposit). Its address is pinned in `MAINNET_DRIP_FUNDER`
   by a reviewed commit on `main`; every mainnet run refuses while it is `null`.
-- The owner names the cap (`--cap`, in AZTEC) and gives the go in writing. No cap lives in code.
+- The owner names the cap (`--cap`, in AZTEC) and gives the go in writing. No cap lives in code. The cap counts
+  every funding from the funding key to this deployer, so a new deployer pair starts a new count.
 
 **Steps** (from the repository root):
 1. **Dry run.** `bun run --cwd apps/tools deploy:mainnet:dry` talks to no node and needs no key. It must print
@@ -646,16 +648,18 @@ the catalog is initialized. No state is kept between runs.
    Before anything is sent it authenticates the node against `mainnet-bridge.json` and the version, and proves on
    L1 that the pinned registry's canonical rollup names the portal and the portal pays the manifest's asset. It
    then reads what is left (the account's and each contract's initialization nullifier, the public Fee Juice
-   balance) and scans the portal's deposits to the deployer from the portal's first block, counting only those the
-   funding key sent straight to the portal. A deposit it never claimed is claimed and no other is made; otherwise it
+   balance) and scans the portal's deposits to the deployer from the portal's first block to 12 blocks below the
+   head, counting only those the funding key sent straight to the portal. A deposit it never claimed is claimed and no other is made; otherwise it
    deposits `--fund` only when the account is not deployed or the balance is below the next send's maximum fee.
+   A funding must be at least twice its own claim's maximum fee.
    Each send prints its fee, and the deposit prints its hash as it is broadcast.
 
    | Stops with | Means | Do |
    |---|---|---|
    | `re-run with --fund` | the balance cannot pay the next send, whose maximum fee it names | re-run with `--fund` at least that plus the claim's fee |
-   | `transaction(s) since the scan` | a deposit from the funding key is still in flight | wait for it to land, re-run |
-   | `exceeds --cap` | every funding together would pass the cap | the owner raises the cap or stops |
+   | `newer than the scanned block` | the funding key sent a transaction in the last 12 blocks, or one is pending | wait a few minutes, re-run |
+   | `below twice its own claim` | `--fund` is too small to claim safely | re-run with a larger `--fund` |
+   | `exceeds --cap` | every funding to this deployer together would pass the cap | the owner raises the cap or stops |
    | `below its own fee limit` | fees rose past what a funding can pay for its own claim | wait for fees to fall, re-run (known limit) |
 3. **Readback.** `cmp` the written file against `apps/tools/src/contracts/deployments.json` (identical), then
    `bun run --cwd apps/tools verify:deployments`, and `node_getContract` for each of the three addresses on the

@@ -1,4 +1,3 @@
-import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { getFeeJuiceBalance } from "@aztec-labs/aztec.js/utils"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
@@ -8,6 +7,7 @@ import { FAUCET_TOKENS } from "../../src/faucet-catalog"
 import { fundingSecret, isClaimed, matchFundings, scanFundings } from "../../scripts/deployer-funding"
 import { catalogStatus, dripCatalog, isInitialized, type SelfFundedDeployOptions, runSelfFundedDeploy } from "../../scripts/drip-deploy"
 import { ACCOUNT_CLAIM_DEPLOY_GAS, feeLimitOf, selfPaidClaimGas } from "../../scripts/fee-juice-l2"
+import { createL2Wallet } from "../../scripts/script-bootstrap"
 import { mintFeeAsset } from "../../scripts/sandbox/l1"
 import { l2CtxFor } from "../../scripts/sandbox/l2"
 import { INTEGRATION, sandbox } from "./sandbox"
@@ -25,51 +25,55 @@ describe.skipIf(!INTEGRATION)("the self-funded Drip deploy", () => {
 		const portal = clients.deployment.feeJuicePortal as Address
 		const asset = clients.deployment.feeJuice as Address
 		const seed = Fr.random()
+		const salt = Fr.random()
 		const { signingKey, secretKey } = await deriveNuloAccountKeys(seed)
-		const manager = await (
-			l2.wallet as unknown as {
-				createSchnorrAccount: (
-					s: unknown,
-					salt: Fr,
-					k: unknown,
-				) => Promise<
-					SelfFundedDeployOptions["deployer"]["manager"] & {
-						getAccount: () => Promise<{ getAddress: () => AztecAddress }>
-					}
-				>
-			}
-		).createSchnorrAccount(secretKey, Fr.random(), signingKey)
-		const address = (await manager.getAccount()).getAddress()
+		// Each run gets its own wallet, as a new process would: everything a re-run resumes from is on chain.
+		const freshProcess = async () => {
+			const wallet = await createL2Wallet({ nodeUrl: clients.handle.nodeUrl, proverEnabled: false, sandboxKeysOnly: true })
+			const manager = await wallet.createSchnorrAccount(secretKey, salt, signingKey)
+			return { wallet, manager, address: (await manager.getAccount()).getAddress() }
+		}
+		const setup = await freshProcess()
+		const { address, manager } = setup
+		await setup.wallet.stop()
 		const catalog = await dripCatalog({ dripperSalt: freshSalt(), tokens: FAUCET_TOKENS.map((t) => ({ ...t, salt: freshSalt() })) })
 		const scanFrom = await l1.pub.getBlockNumber()
-		// The account's own deploy and little more, so the catalog runs short before it is done.
-		const bootstrap = (feeLimitOf(await selfPaidClaimGas(l2.node, ACCOUNT_CLAIM_DEPLOY_GAS)) * 105n) / 100n
+		// The least a first funding may be, so the catalog runs short before it is done.
+		const bootstrap = feeLimitOf(await selfPaidClaimGas(l2.node, ACCOUNT_CLAIM_DEPLOY_GAS)) * 2n
 		const topUp = bootstrap * 1000n
 		await mintFeeAsset(l1, asset, funder, bootstrap + topUp)
 
-		const run = (o: Partial<SelfFundedDeployOptions> = {}) =>
-			runSelfFundedDeploy({
-				l1,
-				portal,
-				asset,
-				funder,
-				scanFrom,
-				node: l2.node,
-				wallet: l2.wallet,
-				deployer: { address, seed, manager },
-				catalog,
-				cap: bootstrap + topUp,
-				log: (line) => console.log(`  [drip-deploy] ${line}`),
-				forceBlock: l2CtxFor(l2, l2.relayer).forceBlock,
-				...o,
-			})
+		const run = async (o: Partial<SelfFundedDeployOptions> = {}) => {
+			const p = await freshProcess()
+			try {
+				await runSelfFundedDeploy({
+					l1,
+					portal,
+					asset,
+					funder,
+					scanFrom,
+					// Anvil serves every read from one chain, so no log lags the head.
+					confirmations: 0n,
+					node: l2.node,
+					wallet: p.wallet,
+					deployer: { address, seed, manager: p.manager },
+					catalog,
+					cap: bootstrap + topUp,
+					log: (line) => console.log(`  [drip-deploy] ${line}`),
+					forceBlock: l2CtxFor(l2, l2.relayer).forceBlock,
+					...o,
+				})
+			} finally {
+				await p.wallet.stop()
+			}
+		}
 		const fundings = async () => {
 			const found = await scanFundings(l1.pub, {
 				portal,
 				recipient: address.toString(),
 				funder,
 				fromBlock: scanFrom,
-				toBlock: await l1.pub.getBlockNumber(),
+				toBlock: await l1.pub.getBlockNumber({ cacheTime: 0 }),
 			})
 			return (await matchFundings(found, seed)).matched
 		}
@@ -100,6 +104,12 @@ describe.skipIf(!INTEGRATION)("the self-funded Drip deploy", () => {
 			(await catalogStatus(l2.node, catalog)).some((s) => !s.initialized),
 			"work left at a short balance",
 		).toBe(true)
+
+		// A scan stopping below the funder's own transactions sees its nonce move and waits instead of funding. The
+		// whole height as the margin keeps the scanned block below them while the sequencer mines more.
+		const head = await l1.pub.getBlockNumber({ cacheTime: 0 })
+		await expect(run({ fund: topUp, confirmations: head })).rejects.toThrow(/newer than the scanned block/)
+		expect((await quiet()).nonce).toBe(nonce)
 
 		await run({ fund: topUp })
 		const all = await fundings()

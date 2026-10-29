@@ -424,6 +424,26 @@ that sends nothing. The five fixes above held.
 
 **Final pass, second verification (same session): approve.** No remaining finding or regression.
 
+**a2 implementation, Codex round 1 (`gpt-6.1-sol`, high): reject, 2 High, 1 Low; all verified and accepted.**
+
+| # | Finding (label) | Disposition |
+|---|---|---|
+| 1 | High: two runs deciding on one snapshot both fund the shortfall (plausible) | the funding's writes take consecutive nonces from the scanned block's, so the second collides |
+| 2 | High: a malformed hex key reduces to a short or zero seed (demonstrated) | the hex shape is checked and a zero seed refused; no error echoes the value |
+| 3 | Low: two comments claim more than the code does (verified) | reworded |
+
+**a2 implementation, Opus 5.5 review beside round 1: 1 Medium, 5 Low, three test gaps.**
+
+| # | Finding (label) | Disposition |
+|---|---|---|
+| 1 | Medium: the keyed URLs reach a failure's text (verified: the node client's errors name the host) | the run's failure is printed with every keyed-run value replaced by its name |
+| 2 | Low: a lagging log backend hides a funding from the cap and the claim (plausible) | the mainnet scan stops 12 blocks below the head; a funder transaction above it makes the run wait |
+| 3 | Low: a funding barely above its claim's fee stalls every run once fees rise (plausible) | a funding must be twice its claim's fee |
+| 4 | Low: an undeployed account holding Fee Juice from elsewhere is funded again (needs a deposit the run did not make) | known limit: the extra funding lands in the deployer's balance |
+| 5 | Low: a send whose simulated gas passes the node's limit is clamped below its use (verified) | refused before proving |
+| 6 | Low: the cap counts the fundings to one deployer (verified) | documented: a new deployer pair starts a new count |
+| — | Untested: the null pin, the scan's windows, the scan wiring | unit tests for the first two; the integration test runs the margin's refusal |
+
 ## Delivery
 
 One PR per arc against `main`, no stacking. a1 builds on `worktree-mainnet-1` (it carries this plan); every other arc:

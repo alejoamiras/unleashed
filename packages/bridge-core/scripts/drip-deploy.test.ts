@@ -2,7 +2,14 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { catalogStatus, deployEntry, dripCatalog, runSelfFundedDeploy, type SelfFundedDeployOptions } from "./drip-deploy"
+import {
+	catalogStatus,
+	deployDripCatalogOnMainnet,
+	deployEntry,
+	dripCatalog,
+	runSelfFundedDeploy,
+	type SelfFundedDeployOptions,
+} from "./drip-deploy"
 
 /** Any read or write on this L1 fails the test: a finished catalog must never reach it. */
 const untouchableL1 = new Proxy(
@@ -32,6 +39,7 @@ describe("the Drip catalog deploy", () => {
 			asset: "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
 			funder: `0x${"f1".repeat(20)}`,
 			scanFrom: 0n,
+			confirmations: 0n,
 			node: nodeWhere(true, true),
 			wallet: new Proxy({}, { get: (_, k) => () => Promise.reject(new Error(`touched the wallet: ${String(k)}`)) }) as never,
 			deployer: {
@@ -48,6 +56,26 @@ describe("the Drip catalog deploy", () => {
 			log,
 		})
 		expect(log).toHaveBeenCalledWith(expect.stringMatching(/nothing to send/))
+	})
+
+	it("refuses a mainnet run before any network call while no funding key is pinned", async () => {
+		const fetch = vi.spyOn(globalThis, "fetch")
+		await expect(
+			deployDripCatalogOnMainnet({
+				nodeUrl: "http://127.0.0.1:1",
+				l1RpcUrl: "http://127.0.0.1:1",
+				funderKey: `0x${"ab".repeat(32)}`,
+				manifest: {} as never,
+				rollupVersion: 0,
+				wallet: {} as never,
+				deployer: {} as never,
+				catalog: [],
+				fund: 1n,
+				cap: 1n,
+				log: vi.fn(),
+			}),
+		).rejects.toThrow(/no pinned Drip funding key/)
+		expect(fetch).not.toHaveBeenCalled()
 	})
 
 	it("initializes a published instance without publishing it again", async () => {

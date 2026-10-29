@@ -20,7 +20,7 @@ import { FeeAssetHandlerAbi } from "@aztec-foundation/l1-artifacts"
 import { privateKeyToAccount } from "viem/accounts"
 import { FeeJuicePortalAbi, planPublicFuelDeposit } from "../src/fuel"
 import { ERC20_MIN_ABI } from "./script-l1"
-import { claimFeeJuiceSelfPaid, depositFeeJuicePublic, feeJuiceFor } from "./fee-juice-l2"
+import { claimAndDeployAccount, claimFeeJuiceSelfPaid, depositFeeJuicePublic, feeJuiceFor } from "./fee-juice-l2"
 import { waitForL1ToL2Message } from "./generation"
 import { deployAccountIfAbsent, freshSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { createL1Clients, createL2Wallet, createNode, loadManifestV2FromConfigArg, sepoliaChain, stopwatch } from "./script-bootstrap"
@@ -131,7 +131,8 @@ async function main() {
 	// --fresh-selfpay: SKIP the sponsored account deploy so the self-pay claim is the account's FIRST
 	// tx and carries initialization (ctor + instance publication) - the mainnet persona (no sponsor
 	// exists there). Measures the gas shape the steady-state calibration excludes.
-	if (process.argv.includes("--fresh-selfpay")) {
+	const freshSelfPay = process.argv.includes("--fresh-selfpay")
+	if (freshSelfPay) {
 		console.log("FRESH-SELFPAY mode: skipping the sponsored account deploy - the claim must carry init")
 	} else {
 		await deployAccountIfAbsent({
@@ -156,14 +157,12 @@ async function main() {
 		const r = (await feeJuice.methods.balance_of_public(from).simulate({ from })) as { result?: bigint } | bigint
 		return typeof r === "bigint" ? r : (r.result ?? 0n)
 	}
-	const fjBefore = await fjBalance()
+	// An undeployed account cannot simulate; a fresh one holds nothing.
+	const fjBefore = freshSelfPay ? 0n : await fjBalance()
 	await waitForL1ToL2Message(node, deposit.key, { timeoutMs: 30 * 60_000 })
-	await claimFeeJuiceSelfPaid({
-		wallet: ewallet as never,
-		node,
-		from,
-		claim: { claimAmount: deposit.amount, claimSecret: plan.secret, messageLeafIndex: deposit.leafIndex },
-	})
+	const claim = { claimAmount: deposit.amount, claimSecret: plan.secret, messageLeafIndex: deposit.leafIndex }
+	if (freshSelfPay) await claimAndDeployAccount({ node, manager: manager as never, from, claim })
+	else await claimFeeJuiceSelfPaid({ wallet: ewallet as never, node, from, claim })
 
 	// SELF-PAY: the claim paid this tx's fee FROM the deposit, so the NET gain is deposit − max_gas_cost
 	// (NOT the full deposit). Assert a positive balance landed strictly below the deposit — the mainnet shape.
