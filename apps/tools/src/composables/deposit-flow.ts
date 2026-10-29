@@ -1,7 +1,6 @@
 /**
- * The send lane's claim side, wired to the app: the SDK's fee ladder bound to the journal, the app's
- * node and the wallet's balance reads, with every stop it raises put back into the words the app
- * has always shown. Plus the L1 legs a send performs before its claim. State stays OWNED by the
+ * The app's side of a send around the SDK: the seal before its first transaction, the Fee Juice balance reads its
+ * fee choices make, and the journal-bound fuel helpers the card's gas actions use. State stays OWNED by the
  * composable layer: `sealKeys` and the wallet singletons are passed in explicitly.
  */
 
@@ -17,30 +16,16 @@ import {
 	sealDepositRecord,
 } from "@unleashed/bridge-core"
 import {
-	type FeeLadderEnv,
 	type FeeLadderStore,
-	FeeStopError,
-	type FuelClaimRetry,
-	type HubClaimContext,
-	type HubClaimLatches as LadderLatches,
-	type PollBudget,
 	type RecoveryL1Client,
-	type SendGeneration,
-	type SendOpts,
 	type StoredRecord,
-	buildFeeJuiceClaim,
 	fuelReceiptStatus as fuelReceiptStatusOn,
 	patchFuel as patchFuelOn,
 	readFeeJuiceOrNull as readFeeJuiceOrNullOn,
-	recoverDepositLeg as recoverDepositLegOn,
-	resolveHubClaimSendOpts as resolveHubClaimSendOptsOn,
-	sendStandaloneFjClaim as sendStandaloneFjClaimOn,
 } from "@unleashed/sdk/internal"
 import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
 import { NETWORK } from "@/lib/network"
-import { FUEL, FUEL_MIN_FJ, LEGACY_ROUTERS } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"
-import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
 import { cacheSecret, currentRecord, runOnLane, setRecordStep, updateRecord, updateRecordWhen } from "./useBridgeJournal"
 import { readBalance } from "./useTokenBalance"
 
@@ -60,42 +45,7 @@ export function providerFingerprint(): string {
 	return "injected"
 }
 
-/** A claim-side simulate/send pair — the journal engine's interaction contract. */
-export interface ClaimInteraction {
-	simulate: () => Promise<unknown>
-	send: () => Promise<{ txHash: string }>
-}
-
-/** A fail-stop {simulate, send} pair that surfaces `why`. `sendWhy` preserves the historical
- *  wait-stop shape, whose send threw a shorter message. */
-export function failStopInteraction(why: string, sendWhy: string = why): ClaimInteraction {
-	return {
-		simulate: async () => {
-			throw new Error(why)
-		},
-		send: async () => {
-			throw new Error(sendWhy)
-		},
-	}
-}
-
-// ── the SDK's fee ladder, bound to the app ───────────────────────────────────
-
-/** A claim-side stop in the app's words; any other failure passes through unchanged. */
-async function worded<T>(op: () => Promise<T>): Promise<T> {
-	try {
-		return await op()
-	} catch (e) {
-		throw e instanceof FeeStopError ? new Error(FEE_STOP_COPY[e.stop]) : e
-	}
-}
-
-const wordedInteraction = (claim: ClaimInteraction): ClaimInteraction => ({
-	simulate: () => worded(() => claim.simulate()),
-	send: () => worded(() => claim.send()),
-})
-
-/** The journal as the ladder's store: every read is the PERSISTED record, every guarded write one synchronous load. */
+/** The journal as the fuel helpers' store: every read is the PERSISTED record, every guarded write one synchronous load. */
 const journalStore: FeeLadderStore = {
 	current: (id) => currentRecord(id) as StoredRecord | undefined,
 	mergeWhen: (id, when, patch) =>
@@ -106,17 +56,6 @@ const journalStore: FeeLadderStore = {
 		) !== undefined,
 	merge: (id, patch) => updateRecord(id, patch as Partial<BridgeJournalRecord>),
 }
-
-const ladderEnv = (): FeeLadderEnv => ({
-	records: journalStore,
-	node: appNode(),
-	privateFpc: PRIVATE_FPC_ADDRESS,
-	fuel: FUEL,
-	minFloorFj: FUEL_MIN_FJ,
-	readPublicFeeJuice: readPublicFeeJuiceBalance,
-	readPrivateFeeJuice: readPrivateFeeJuiceBalance,
-	log,
-})
 
 /** Merge explicit fields into the record's PERSISTED fuel block; `false` when the record is gone or
  *  now holds another deposit's fuel block (the write is refused). */
@@ -130,17 +69,6 @@ export function patchFuel(
 }
 
 export const fuelReceiptStatus = (txHash: string) => fuelReceiptStatusOn({ node: appNode() }, txHash)
-
-/** The standalone self-paid Fee Juice claim, inclusion-gated (`sendStandaloneFjClaim` in the SDK). */
-export function sendStandaloneFjClaim(
-	aztec: unknown,
-	recipientAddr: AztecAddress,
-	fuel: FuelBlock,
-	id: string,
-	budget: PollBudget = {},
-): Promise<void> {
-	return worded(() => sendStandaloneFjClaimOn(ladderEnv(), aztec, recipientAddr, fuel, id, budget))
-}
 
 /** Read the account's PUBLIC Fee Juice balance - what a wallet that routes a dApp-named payer can pay
  *  a claim from. Uses the FeeJuice contract's `balance_of_public` via the connected wallet (scoped
@@ -163,39 +91,6 @@ export async function readPrivateFeeJuiceBalance(aztec: unknown, recipient: Azte
 /** A Fee Juice balance with a read FAILURE as `null` (≠ a real zero), so a fee-source decision can FAIL CLOSED. */
 export const readFeeJuiceOrNull = (label: string, read: () => Promise<bigint>): Promise<bigint | null> =>
 	readFeeJuiceOrNullOn({ log }, label, read)
-
-/** Deposit-leg recovery from the recorded `depositTxHash` alone (`recoverDepositLeg` in the SDK). */
-export function recoverDepositLeg(
-	rec: DepositJournalRecord | SendDepositRecord,
-	publicClient: RecoveryL1Client,
-	generation?: SendGeneration,
-	legacyRouters: readonly `0x${string}`[] = LEGACY_ROUTERS,
-): Promise<"pending" | "recovered"> {
-	return worded(() => recoverDepositLegOn({ records: journalStore, log }, rec, publicClient, generation, legacyRouters))
-}
-
-/** A gas-only bridge claims Fee Juice directly: no token leg, its own fee ladder (`buildFeeJuiceClaim` in the SDK). */
-export async function buildFeeJuiceClaimDep(
-	rec: DepositJournalRecord,
-	secretHex: string,
-	envelope: { salt?: string } | undefined,
-	aztec: unknown,
-	retry?: FuelClaimRetry,
-): Promise<ClaimInteraction> {
-	return wordedInteraction(await worded(() => buildFeeJuiceClaim(ladderEnv(), rec, secretHex, envelope, aztec, retry)))
-}
-
-type HubClaimLatches = Omit<LadderLatches, "standalone"> & { standalone?: FuelBlock }
-
-export type HubClaimFee = ({ kind: "stop"; why: string; sendWhy?: string } | { kind: "opts"; opts: SendOpts }) & Partial<HubClaimLatches>
-
-/** The send options a hub claim carries (`resolveHubClaimSendOpts` in the SDK), its stop in the app's words. */
-export async function resolveHubClaimSendOpts(ctx: HubClaimContext): Promise<HubClaimFee> {
-	const fee = await resolveHubClaimSendOptsOn(ladderEnv(), ctx)
-	// The ladder hands back the record's own fuel block, which the journal types more narrowly.
-	if (fee.kind !== "stop") return fee as HubClaimFee
-	return { kind: "stop", why: FEE_STOP_COPY[fee.stop], ...(fee.sendStop ? { sendWhy: FEE_STOP_COPY[fee.sendStop] } : {}) }
-}
 
 // ── the L1 legs a send performs before its claim ─────────────────────────────
 
