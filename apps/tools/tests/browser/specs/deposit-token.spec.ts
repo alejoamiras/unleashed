@@ -10,7 +10,7 @@ import {
 	fuelSwapperOf,
 	setFuelRate,
 } from "@unleashed/bridge-core/sandbox"
-import { ownGasTxs } from "@unleashed/bridge-core"
+import { ownGasTxs } from "@unleashed/sdk/protocol"
 import { TESTIDS } from "../../../src/lib/testids"
 import { type ActorHandle, expect, test } from "../fixtures/test"
 import { connectAztec, tid } from "../pages/connect"

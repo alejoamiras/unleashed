@@ -1,6 +1,7 @@
 /** The app's bridge journal, read from the page's storage: the exact figures a send recorded. */
 import { TxHash } from "@aztec-labs/aztec.js/tx"
-import { DEPOSIT_ROUTER_ABI, JOURNAL_KEY_PREFIX } from "@unleashed/bridge-core"
+import { DEPOSIT_ROUTER_ABI } from "@unleashed/sdk/protocol"
+import { JOURNAL_KEY_PREFIX } from "@unleashed/bridge-core"
 import type { Page } from "@playwright/test"
 import { decodeFunctionData } from "viem"
 

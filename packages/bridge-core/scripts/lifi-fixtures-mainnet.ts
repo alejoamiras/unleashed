@@ -6,9 +6,13 @@
  */
 
 import { type Address, encodeFunctionData, getAddress, type Hex, keccak256, slice, toHex } from "viem"
-import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { LIFI_DENY_EXCHANGES, LIFI_INTEGRATOR, LIFI_TO_CONTRACT_GAS_LIMIT } from "../src/lifi-gas"
-import privateFpcMainnet from "../src/private-fpc-canonical-mainnet.json" with { type: "json" }
+import {
+	DEPOSIT_ROUTER_ABI,
+	manifestPrivateFpc,
+	LIFI_DENY_EXCHANGES,
+	LIFI_INTEGRATOR,
+	LIFI_TO_CONTRACT_GAS_LIMIT,
+} from "@unleashed/sdk/protocol"
 
 const LI_QUEST = "https://li.quest/v1"
 const QUOTE_TIMEOUT_MS = 30_000
@@ -24,7 +28,7 @@ export const MAINNET = {
 		receiverStargateV2: "0xB539B40793171211DCA8834da044fC14bCe64BDC",
 		spokePool: "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5",
 		registry: "0x35b22e09Ee0390539439E24f06Da43D83f90e298",
-		feeJuicePortal: "0xaf73dd51d1eb8a079bb097f39c832cdd00ac691c",
+		feeJuicePortal: "0x534361be805ca30bdb6404ec5e6cdaffb3e9f3b3",
 		aztec: "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
 		usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
 		weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
@@ -133,7 +137,7 @@ function worstIntent(token: Address, slice: bigint, minFuelOutput: bigint) {
 		tokenSecretHash: TOKEN_SECRET_HASH,
 		isPrivate: true,
 		fuelSlice: slice,
-		fuelRecipient: privateFpcMainnet.expectedAddress as Hex,
+		fuelRecipient: manifestPrivateFpc(1).address as Hex,
 		fuelSecretHash: FUEL_SECRET_HASH,
 		minFuelOutput,
 	}

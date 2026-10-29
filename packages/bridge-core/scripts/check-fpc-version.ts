@@ -1,7 +1,7 @@
 /**
  * Fail-closed PrivateFPC gate: reconcile the live network, the installed fee-payment artifact, and
- * the per-network canonical descriptor (`src/private-fpc-canonical.json` for testnet,
- * `src/private-fpc-canonical-mainnet.json` for Alpha/mainnet — selected by the LIVE node's identity,
+ * the per-network canonical descriptor (the SDK's `private-fpc-canonical.json` for testnet,
+ * `private-fpc-canonical-mainnet.json` for Alpha/mainnet — selected by the LIVE node's identity,
  * never a flag) before ANY fund-moving private-fuel step. The FPC address is bytecode +
  * @aztec-version + salt specific — depositing real Fee Juice to an address derived from the wrong
  * artifact is an UNRECOVERABLE loss.
@@ -44,8 +44,9 @@ import { AztecAddress } from "@aztec-labs/stdlib/aztec-address"
 import { getContractClassFromArtifact, getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract"
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
 
-import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
-import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
+import { postNodeRpc, readNodeRpcBody } from "../src/drpc-node"
+import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 type GateNetwork = "testnet" | "mainnet"
 
@@ -106,7 +107,7 @@ type LiveNodeInfo = { nodeVersion: string; l1ChainId: number; rollupVersion: num
  *  flag, so an operator pointing at the wrong node can't pick the wrong pins. No match = STOP. */
 function selectDescriptor(here: string, info: LiveNodeInfo): FpcDescriptor {
 	const descriptors = ["private-fpc-canonical.json", "private-fpc-canonical-mainnet.json"].map(
-		(f) => JSON.parse(readFileSync(join(here, "..", "src", f), "utf8")) as FpcDescriptor,
+		(f) => JSON.parse(readFileSync(join(here, "..", "..", "sdk", "src", "protocol", f), "utf8")) as FpcDescriptor,
 	)
 	const descriptor = descriptors.find((d) => d.network.l1ChainId === info.l1ChainId && d.network.rollupVersion === info.rollupVersion)
 	if (!descriptor) {
@@ -122,7 +123,7 @@ function selectDescriptor(here: string, info: LiveNodeInfo): FpcDescriptor {
 /** The gate as an importable function: it throws on any RED, so a fund-moving script awaits it
  *  inline before its first broadcast and cannot skip it. The CLI at the bottom wraps it. */
 export async function runFpcGate(network: GateNetwork = "testnet"): Promise<void> {
-	const nodeUrl = requireDrpcNodeUrl(network, process.env)
+	const nodeUrl = keyedNodeUrl(network)
 	const here = fileURLToPath(new URL(".", import.meta.url))
 	const pkg = JSON.parse(readFileSync(resolvePackageFile("@alejoamiras/private-fee-juice", "package.json"), "utf8"))
 	const artifactBytes = readFileSync(resolvePackageFile("@alejoamiras/private-fee-juice", "target/private_contract-PrivateFPC.json"))
@@ -266,8 +267,8 @@ async function assertLiveClass(nodeUrl: string, artifactBytes: Buffer): Promise<
 /** True only when this file is the process entrypoint (not when imported). */
 const isMain = process.argv[1] ? fileURLToPath(import.meta.url) === resolve(process.argv[1]) : false
 if (isMain) {
-	runFpcGate(parseNetwork(process.argv.slice(2))).catch((err) => {
-		console.error("\n✗ gate errored (treat as RED — an RPC failure is never absence):", err instanceof Error ? err.message : err)
-		process.exit(1)
-	})
+	runKeyed(
+		() => runFpcGate(parseNetwork(process.argv.slice(2))),
+		(err) => `\n✗ gate errored (treat as RED — an RPC failure is never absence): ${err instanceof Error ? err.message : err}`,
+	)
 }

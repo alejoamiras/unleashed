@@ -2,15 +2,20 @@ import { inspect } from "node:util"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { TESTNET_FILLER } from "../src/across-self-built"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
-import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
+import type { ManifestToken, ManifestV2 } from "@unleashed/sdk/protocol"
+import { mainnetPlaceholderManifest } from "../test/fixtures/frozen-manifests"
 import type { DeployStep } from "./deploy-manifest"
 import { preLifiTestnetManifest } from "./lifi-canary-fixture"
 import {
+	assertFuelRouteJournal,
+	assertFuelRouteScope,
 	assertL1Pins,
+	assertMainnetIdentity,
 	assertNoSourceDrift,
 	assertRouterOnlyJournal,
 	assertRouterOnlyScope,
 	authenticatedNode,
+	MAINNET_REGISTRY,
 	isAllowlistedPath,
 	type NodeIdentity,
 	PLAN_PINNED_CANARY_SIGNERS,
@@ -18,6 +23,7 @@ import {
 	requirePinnedCanarySigner,
 	routerOnlyScopeOf,
 } from "./live-intent"
+import { CANONICAL_PERMIT2 } from "@unleashed/sdk/protocol"
 
 const pinned = {
 	rollup: "0x1f435a7f2da358caf887a470faeee7d5d5f4efba",
@@ -120,8 +126,104 @@ describe("router-only intent", () => {
 			if (canary) expect(deploySigners).not.toContain(canary.toLowerCase())
 	})
 
-	it("names the pinned testnet canary as the exclusive relayer of every testnet send", () => {
-		expect(TESTNET_FILLER).toBe(PLAN_PINNED_CANARY_SIGNERS.testnet)
+	it("names a dedicated relayer, neither the canary nor a deploy signer, as the exclusive relayer of every testnet send", () => {
+		const others = [...Object.values(PLAN_PINNED_CANARY_SIGNERS), ...Object.values(PLAN_PINNED_L1_SIGNERS)]
+		expect(others.map((a) => a?.toLowerCase())).not.toContain(TESTNET_FILLER.toLowerCase())
+	})
+})
+
+describe("mainnet fuel-route intent", () => {
+	const live = mainnetPlaceholderManifest()
+	const signer = PLAN_PINNED_L1_SIGNERS.mainnet as string
+	const STRANGER = `0x${"5a".repeat(20)}`
+	const mainnetNode = (over: Partial<NodeIdentity> = {}, l1: Record<string, string> = {}): NodeIdentity => ({
+		nodeVersion: "6.0.0",
+		l1ChainId: 1,
+		rollupVersion: 2070860440,
+		...over,
+		l1ContractAddresses: {
+			rollupAddress: "0xe37a2663cc9c119ba41572c40fab0bbb23a5402f",
+			registryAddress: MAINNET_REGISTRY,
+			feeJuicePortalAddress: live.feeJuice.portal,
+			feeJuiceAddress: live.feeJuice.asset,
+			...l1,
+		},
+	})
+
+	it("authenticates the node against the committed mainnet manifest and the pinned registry", () => {
+		expect(() => assertMainnetIdentity(mainnetNode(), live)).not.toThrow()
+		// The 5.0.1 rollup the registry still lists: another wallet chain id.
+		expect(() => assertMainnetIdentity(mainnetNode({ rollupVersion: 4248422647 }), live)).toThrow(/walletChainId/)
+		expect(() => assertMainnetIdentity(mainnetNode({ l1ChainId: 11155111 }), live)).toThrow(/l1ChainId/)
+		expect(() => assertMainnetIdentity(mainnetNode({}, { registryAddress: STRANGER }), live)).toThrow(/registry/)
+		expect(() => assertMainnetIdentity(mainnetNode({}, { feeJuicePortalAddress: STRANGER }), live)).toThrow(/feeJuicePortal/)
+	})
+
+	it("pins no fee-asset handler where the node claims none, and refuses one the pin lacks", () => {
+		const pins = {
+			rollup: "0xe37a2663cc9c119ba41572c40fab0bbb23a5402f",
+			feeJuicePortal: live.feeJuice.portal,
+			feeJuice: live.feeJuice.asset,
+			registry: MAINNET_REGISTRY,
+		}
+		expect(() => assertL1Pins(mainnetNode(), pins, "intent")).not.toThrow()
+		expect(() => assertL1Pins(mainnetNode({}, { feeAssetHandlerAddress: STRANGER }), pins, "intent")).toThrow(/feeAssetHandler/)
+	})
+
+	it("accepts a candidate that only adds a calibrated route its signer guards, through the pinned registry and Permit2", () => {
+		const route = {
+			depositRouter: `0x${"d1".repeat(20)}`,
+			gate: `0x${"6a".repeat(20)}`,
+			guardian: signer,
+			registry: MAINNET_REGISTRY,
+			permit2: CANONICAL_PERMIT2,
+			fuel: { slippageBps: 100, minFuelFj: "1000", fjPerTx: "40" },
+		}
+		const candidate = (over: object = {}, m: Partial<ManifestV2> = {}): ManifestV2 => ({
+			...live,
+			...m,
+			fuelRoute: { ...route, ...over },
+		})
+		expect(() => assertFuelRouteScope(signer, candidate(), live)).not.toThrow()
+		expect(() => assertFuelRouteScope(signer, live, live)).toThrow(/names no fuelRoute/)
+		expect(() => assertFuelRouteScope(signer, candidate({}, { walletChainId: 4248422646 }), live)).toThrow(/beyond adding fuelRoute/)
+		expect(() => assertFuelRouteScope(signer, candidate({ guardian: STRANGER }), live)).toThrow(/guardian/)
+		expect(() => assertFuelRouteScope(signer, candidate({ registry: STRANGER }), live)).toThrow(/registry/)
+		expect(() => assertFuelRouteScope(signer, candidate({ permit2: STRANGER }), live)).toThrow(/permit2/)
+		expect(() => assertFuelRouteScope(signer, candidate({ fuel: { ...route.fuel, fjPerTx: "0" } }), live)).toThrow(/calibrate/)
+		expect(() => assertFuelRouteScope(signer, candidate({ fuel: { ...route.fuel, minFuelFj: "0" } }), live)).toThrow(/minFuelFj/)
+	})
+
+	it("allows only the gate, the router and the candidate in the journal after build, and its stamp only at its start", () => {
+		const scope = { journal: { path: "j", steps: 2 } }
+		const before = Array.from({ length: 2 }, (): DeployStep => ({ kind: "candidate-written", path: "x" }))
+		const identity = {
+			l1ChainId: 1,
+			rollupVersion: 2070860440,
+			deployer: signer.toLowerCase(),
+			registry: MAINNET_REGISTRY,
+			feeJuicePortal: live.feeJuice.portal,
+		}
+		const tx = `0x${"ab".repeat(32)}`
+		const deployed = (kind: "fuel-gate-deployed" | "deposit-router-deployed" | "fuel-swapper-deployed"): DeployStep => ({
+			kind,
+			address: STRANGER,
+			txHash: tx,
+			creationCodeHash: tx,
+			constructorArgs: [signer],
+		})
+		const route = [deployed("fuel-gate-deployed"), deployed("deposit-router-deployed")]
+		const ok = [...before, ...route]
+		expect(() => assertFuelRouteJournal(scope, ok, identity)).not.toThrow()
+		expect(() => assertFuelRouteJournal(scope, [...ok, deployed("fuel-swapper-deployed")], identity)).toThrow(/outside this fuel-route/)
+		expect(() => assertFuelRouteJournal(scope, before.slice(1), identity)).toThrow(/rewritten/)
+
+		// The first route: the journal did not exist at build, and the conductor stamps it before the gate.
+		const fresh = { journal: { path: "j", steps: 0 } }
+		const stamp: DeployStep = { kind: "identity", ...identity, deployer: signer }
+		expect(() => assertFuelRouteJournal(fresh, [stamp, ...route], identity)).not.toThrow()
+		expect(() => assertFuelRouteJournal(fresh, [{ ...stamp, deployer: STRANGER }, ...route], identity)).toThrow(/deployer/)
+		expect(() => assertFuelRouteJournal(scope, [...ok, stamp], identity)).toThrow(/stamped again/)
 	})
 })
 

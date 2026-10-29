@@ -7,6 +7,7 @@
  */
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
+import { runKeyed } from "./keyed-run"
 import { PLAN_PINNED_L1_SIGNERS } from "./live-intent"
 import { evmArtifact } from "./script-artifacts"
 import { createL1Clients, sepoliaChain } from "./script-bootstrap"
@@ -67,7 +68,4 @@ async function main(): Promise<void> {
 	console.log(`\nSEED_TOKENS=${seeds.join(",")}`)
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

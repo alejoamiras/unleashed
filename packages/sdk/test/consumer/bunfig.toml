@@ -1,0 +1,13 @@
+# The pack check's consumer: a project outside the workspace that installs the SDK's peers from
+# the registry. pack-check.ts installs a scratch copy of this directory frozen with install
+# scripts off, then unpacks the tarball into its node_modules/@unleashed/sdk; the tarball never
+# enters this lockfile, so an SDK change cannot break the frozen install.
+
+[install]
+# Hoisted, so the unpacked package resolves the peers the way an npm install lays them out.
+linker = "hoisted"
+
+# The repository's 7-day gate (root bunfig.toml) with its standing exemptions. A frozen install
+# does not re-gate locked versions; `bun scripts/pack-check.ts --relock` resolves anew and does.
+minimumReleaseAge = 604800
+minimumReleaseAgeExcludes = ["@alejoamiras/private-fee-juice", "@nulo-sh/resolve-asset", "@nulo-sh/wallet-crypto", "@nulo-sh/wallet-sdk-schema-patch"]

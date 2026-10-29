@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** Services */
-import { awaitL1Receipt } from "@unleashed/bridge-core"
+import { awaitL1Receipt } from "@unleashed/sdk/internal"
 import { BusyPixels, Tag } from "@unleashed/design"
 import { computed, ref } from "vue"
 

@@ -6,10 +6,15 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import type { Abi, Address } from "viem"
-import { depositWitness, hashDepositWitness } from "../src/l1"
-import { lifiBook } from "../src/lifi-addresses"
-import type { RouterIntent } from "../src/lifi-decode"
-import { type ManifestToken, type ManifestV2, parseManifestV2 } from "../src/manifest-v2"
+import {
+	depositWitness,
+	hashDepositWitness,
+	lifiBook,
+	type RouterIntent,
+	type ManifestToken,
+	type ManifestV2,
+	parseManifestV2,
+} from "@unleashed/sdk/protocol"
 import type { AcrossClient } from "../src/across-api"
 import type { ChainReads } from "./lifi-canary-run"
 

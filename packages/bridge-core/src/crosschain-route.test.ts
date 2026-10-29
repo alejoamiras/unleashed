@@ -5,9 +5,9 @@ import { type Address, type Hex, zeroHash } from "viem"
 import { describe, expect, it } from "vitest"
 import { TESTNET_FILLER } from "./across-self-built"
 import { acrossMessageOf, acrossRouteTx, bridgeFromCallerCall, crossChainIntent } from "./crosschain-route"
-import { testnetSwapperFuelProvider, withFuelFloor } from "./fuel-quote"
+import { testnetSwapperFuelProvider, withFuelFloor } from "@unleashed/sdk/internal"
 import { type RouteExpectation, verifyRoute } from "./lifi-decode"
-import { PRIVATE_FPC_ADDRESS } from "./private-fuel"
+import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "contracts", "bridge", "evm", "test", "fixtures", "lifi")
 const rail = JSON.parse(readFileSync(join(FIXTURES, "testnet-rail.json"), "utf8"))

@@ -34,18 +34,17 @@ import {
 	TransactionNotFoundError,
 	TransactionReceiptNotFoundError,
 } from "viem"
-import { tokenBridgeHubArtifact } from "../src/artifacts"
-import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import { type Registration, readRegistration } from "../src/factory-registry"
-import type { L1Ctx } from "../src/flows"
-import { hubTokenFor } from "../src/hub-l2"
-import { deriveHubTokenInstance } from "../src/hub-token"
-import { l1ToL2MessageReadiness } from "../src/l1-to-l2-readiness"
-import type { SendOpts } from "../src/hub-l2"
-import type { ManifestToken } from "../src/manifest-v2"
-import { fromWord } from "../src/register-hash"
-import { sendGasLimit } from "../src/send-flow"
+import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
+import { DEPOSIT_ROUTER_ABI, PORTAL_FACTORY_ABI, deriveHubTokenInstance, type ManifestToken, fromWord } from "@unleashed/sdk/protocol"
+import {
+	type Registration,
+	readRegistration,
+	type L1Ctx,
+	hubTokenFor,
+	l1ToL2MessageReadiness,
+	type SendOpts,
+	sendGasLimit,
+} from "@unleashed/sdk/internal"
 import type { DeployJournal, DeployStep, DeployStepKind } from "./deploy-manifest"
 import { evmArtifact } from "./script-artifacts"
 import { FUEL_SWAPPER_ABI, ROUTER_CONSTANTS_ABI } from "./script-l1"
@@ -495,19 +494,20 @@ export async function preCreateToken(
 	return token
 }
 
-// ─── DepositRouter + TestnetFuelSwapper ──────────────────────────────────────
+// ─── DepositRouter, TestnetFuelSwapper, FuelOnlyGate ─────────────────────────
 
 const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000"
 
-export type AdoptableKind = "fuel-swapper-deployed" | "deposit-router-deployed"
+export type AdoptableKind = "fuel-swapper-deployed" | "deposit-router-deployed" | "fuel-gate-deployed"
 type AdoptableStep = Extract<DeployStep, { kind: AdoptableKind }>
 
 const ADOPTABLE_CONTRACT: Readonly<Record<AdoptableKind, string>> = {
 	"fuel-swapper-deployed": "TestnetFuelSwapper",
 	"deposit-router-deployed": "DepositRouter",
+	"fuel-gate-deployed": "FuelOnlyGate",
 }
 
-/** A contract the router-only arc deployed or adopted. */
+/** A contract the router-only arc or the fuel route deployed or adopted. */
 export interface AdoptableDeploy {
 	address: Address
 	/** No transaction was sent: an identical journalled contract with code on chain was reused. */
@@ -632,6 +632,11 @@ export function depositRouterArgs(a: DepositRouterArgs): Address[] {
 
 export function deployDepositRouter(l1: L1Ctx, journal: DeployJournal, a: DepositRouterArgs): Promise<AdoptableDeploy> {
 	return deployOrAdopt(l1, journal, "deposit-router-deployed", depositRouterArgs(a))
+}
+
+/** `FuelOnlyGate`: the router's factory where no token portal exists; `owner` alone can pause it. */
+export function deployFuelOnlyGate(l1: L1Ctx, journal: DeployJournal, owner: Address): Promise<AdoptableDeploy> {
+	return deployOrAdopt(l1, journal, "fuel-gate-deployed", [owner])
 }
 
 export interface RouterBindings extends DepositRouterArgs {

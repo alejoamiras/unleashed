@@ -2,7 +2,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type ContractArtifact, loadContractArtifact } from "@aztec-labs/stdlib/abi"
-import { PRIVATE_FPC_SALT } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
 
 type PrivateFpcInstance = Awaited<ReturnType<typeof getContractInstanceFromInstantiationParams>>
 
@@ -22,7 +22,7 @@ let cached: { instance: PrivateFpcInstance; artifact: ContractArtifact } | null 
  */
 export async function getPrivateFpc(): Promise<{ instance: PrivateFpcInstance; artifact: ContractArtifact }> {
 	if (cached) return cached
-	const { PrivateFPCContractArtifact } = await import("@unleashed/bridge-core/private-fpc-artifact")
+	const { PrivateFPCContractArtifact } = await import("@unleashed/sdk/private-fpc-artifact")
 	const artifact = loadContractArtifact(PrivateFPCContractArtifact as never)
 	const instance = await getContractInstanceFromInstantiationParams(artifact, {
 		salt: Fr.fromHexString(PRIVATE_FPC_SALT),

@@ -1,6 +1,6 @@
 import { getAddress } from "viem"
 import { describe, expect, it } from "vitest"
-import type { ManifestV2 } from "../src/manifest-v2"
+import type { ManifestV2 } from "@unleashed/sdk/protocol"
 import { planPause } from "./pause-factory"
 
 const FACTORY = "0x00000000000000000000000000000000000fac70"

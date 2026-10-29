@@ -3,7 +3,8 @@
  * fills it as the exclusive filler those terms name, LI.FI's compiled receiver and Executor run it into the deposit
  * router, and the app finds it by discovery alone. Every amount stays under the fixed terms' cap of 8 whole tokens.
  */
-import { DEPOSIT_ROUTER_ABI, FILLED_RELAY_TOPIC, TESTNET_FILLER } from "@unleashed/bridge-core"
+import { DEPOSIT_ROUTER_ABI } from "@unleashed/sdk/protocol"
+import { FILLED_RELAY_TOPIC, TESTNET_FILLER } from "@unleashed/bridge-core"
 import { balanceOf, erc20BalanceOf, mint, SET_PAUSED_ABI, SPOKE_POOL_ABI, writeL1 } from "@unleashed/bridge-core/sandbox"
 import { type Address, decodeFunctionData, encodeFunctionData, erc20Abi, getAddress, type Hex, maxUint256, pad, zeroHash } from "viem"
 import type { Page } from "@playwright/test"

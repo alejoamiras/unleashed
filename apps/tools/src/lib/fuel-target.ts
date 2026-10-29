@@ -9,7 +9,7 @@
  * router emits fuelRecipient indexed). Extracted so the mapping is testable in isolation
  * from the orchestration that consumes it.
  */
-import { PRIVATE_FPC_ADDRESS } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
 
 export function fuelRecipientFor(isPrivate: boolean, recipient: string): `0x${string}` {
 	return (isPrivate ? PRIVATE_FPC_ADDRESS : recipient) as `0x${string}`

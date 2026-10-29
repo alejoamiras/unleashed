@@ -15,11 +15,8 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Abi, Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { ERC20_ABI } from "../src/erc20"
-import { TOKEN_PORTAL_ABI } from "../src/factory-abi"
-import { consumeWithdrawal, type L1Ctx } from "../src/flows"
-import { exitViaHub, preflightHubExit } from "../src/hub-l2"
-import { runSend } from "../src/send-flow"
+import { ERC20_ABI, TOKEN_PORTAL_ABI } from "@unleashed/sdk/protocol"
+import { consumeWithdrawal, type L1Ctx, exitViaHub, preflightHubExit, runSend } from "@unleashed/sdk/internal"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
 import {
@@ -40,7 +37,7 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -193,7 +190,7 @@ async function runWithdrawLeg(
 
 async function main() {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 
 	const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 	const { wallet, pub } = createL1Clients({ chain: sepolia, rpcUrl: SEPOLIA_RPC, account })
@@ -230,7 +227,4 @@ async function main() {
 	await runWithdrawLeg(l1, { ewallet, hub, token, from, sendOpts }, node, mins)
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

@@ -1,0 +1,94 @@
+name: Publish SDK
+
+# Publishes @unleashed/sdk to npm through trusted publishing, by hand from `main`. A dispatch from another branch packs
+# and checks without publishing. The job that holds the OIDC token checks out nothing and installs nothing: it uploads
+# exactly the tarball the pack job tested, by digest. Pinned by scripts/ci-cd/publish-sdk.test.ts.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: publish-sdk
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    name: Pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      tarball: ${{ steps.digest.outputs.tarball }}
+      sha256: ${{ steps.digest.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Unit tests in every workspace
+        run: bun run test:all
+
+      - name: Stage, pack, and install the tarball as an npm consumer
+        run: bun run --cwd packages/sdk pack:check --out "$RUNNER_TEMP/sdk-tarball"
+
+      - name: Digest
+        id: digest
+        working-directory: ${{ runner.temp }}/sdk-tarball
+        run: |
+          shopt -s nullglob
+          tarballs=(*.tgz)
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::expected one tarball, found ${#tarballs[@]}"
+            exit 1
+          fi
+          tarball="${tarballs[0]}"
+          sha256sum "$tarball" > "$tarball.sha256"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cut -d' ' -f1 "$tarball.sha256")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-tarball
+          path: ${{ runner.temp }}/sdk-tarball/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish
+    needs: pack
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Restricted to `main` in the repository's settings, and named in npm's trusted-publisher entry: a run from any other
+    # ref gets no token npm accepts.
+    environment: npm-publish
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sdk-tarball
+          path: sdk-tarball
+
+      # The digest travels as a job output, not in the artifact, so a swapped artifact cannot carry its own.
+      - name: Check the digest
+        working-directory: sdk-tarball
+        env:
+          TARBALL: ${{ needs.pack.outputs.tarball }}
+          SHA256: ${{ needs.pack.outputs.sha256 }}
+        run: echo "$SHA256  $TARBALL" | sha256sum --check --strict
+
+      # Trusted publishing needs npm 11.5.1 or later, which Node 24.5 and later bundle.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Publish
+        working-directory: sdk-tarball
+        env:
+          TARBALL: ${{ needs.pack.outputs.tarball }}
+        run: npm publish "./$TARBALL" --provenance --access public --ignore-scripts

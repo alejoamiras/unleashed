@@ -13,9 +13,9 @@
 		"resolveJsonModule": true,
 		"strict": true,
 		"noEmit": true,
+		"allowImportingTsExtensions": true,
 		"esModuleInterop": true,
 		"isolatedModules": true,
-		"allowImportingTsExtensions": true,
 		"skipLibCheck": true
 	},
 	"include": ["package.json", "vite.config.ts", "scripts/**/*.ts", "src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "tests/**/*.ts"],

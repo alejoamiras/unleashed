@@ -1,13 +1,11 @@
-import { FUEL_SWAP_SELECTORS } from "@unleashed/bridge-core"
-import { type Address, BaseError, ContractFunctionRevertedError, type PublicClient, size, slice } from "viem"
+import { type Address, BaseError, ContractFunctionRevertedError, type PublicClient } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NO_GAS_ROUTE } from "@/lib/send-model"
-import { GAS_QUOTE_MOVED, sliceSwapData, useFuelQuote } from "./useFuelQuote"
+import { useFuelQuote } from "./useFuelQuote"
 
 const FEE_ASSET = "0x0000000000000000000000000000000000000005" as Address
 const TOKEN = "0x00000000000000000000000000000000000000aa" as Address
 const OTHER = "0x00000000000000000000000000000000000000bb" as Address
-const ROUTER = "0x00000000000000000000000000000000000000d1"
 const SWAPPER = "0x00000000000000000000000000000000000000d2"
 
 const h = vi.hoisted(() => ({ routed: { value: true } }))
@@ -152,39 +150,5 @@ describe("useFuelQuote", () => {
 		await vi.advanceTimersByTimeAsync(0)
 		expect(q.quoted.value).toBeNull()
 		expect(q.loading.value).toBe(false)
-	})
-})
-
-describe("sliceSwapData", () => {
-	beforeEach(() => {
-		h.routed.value = true
-	})
-
-	const MIN_AMOUNT_OUT = (data: `0x${string}`) => BigInt(slice(data, 132, 164))
-
-	it("quotes the exact slice and signs the floor the user reviewed", async () => {
-		const { client, readContract } = swapperClient(40n * WHOLE)
-		const data = await sliceSwapData(client, TOKEN, { fuelAmount: 3n * WHOLE, minFuelOutput: 110n * WHOLE })
-		expect(readContract.mock.calls[0][0].args).toEqual([TOKEN, 3n * WHOLE])
-		expect(FUEL_SWAP_SELECTORS).toContain(slice(data, 0, 4))
-		expect(size(data)).toBeGreaterThan(164)
-		expect(MIN_AMOUNT_OUT(data)).toBe(110n * WHOLE)
-		// The receiver word names the router: the swap pays the router, never anyone else.
-		expect(slice(data, 100, 132).toLowerCase()).toBe(`0x${"0".repeat(24)}${ROUTER.slice(2)}`)
-	})
-
-	it("refuses when the venue now quotes under the reviewed floor, and when it cannot quote at all", async () => {
-		const moved = swapperClient(40n * WHOLE).client
-		await expect(sliceSwapData(moved, TOKEN, { fuelAmount: 3n * WHOLE, minFuelOutput: 121n * WHOLE })).rejects.toThrow(GAS_QUOTE_MOVED)
-		const down = swapperClient("down").client
-		await expect(sliceSwapData(down, TOKEN, { fuelAmount: WHOLE, minFuelOutput: 1n })).rejects.toThrow(GAS_QUOTE_MOVED)
-	})
-
-	it("needs no swap for the fee asset, and refuses gas where no venue exists", async () => {
-		const { client, readContract } = swapperClient(1n)
-		await expect(sliceSwapData(client, FEE_ASSET, { fuelAmount: WHOLE, minFuelOutput: WHOLE })).resolves.toBe("0x")
-		h.routed.value = false
-		await expect(sliceSwapData(client, TOKEN, { fuelAmount: WHOLE, minFuelOutput: 1n })).rejects.toThrow(NO_GAS_ROUTE)
-		expect(readContract).not.toHaveBeenCalled()
 	})
 })

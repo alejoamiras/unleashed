@@ -1,5 +1,6 @@
-import type { DepositJournalRecord, JournalTokenBlock } from "@unleashed/bridge-core"
-import { feeJuiceAddress, predictPortal, recoveryKeyFromSignature, recoveryKeyMessage, sealBridgeBackup } from "@unleashed/bridge-core"
+import { type DepositJournalRecord, recoveryKeyFromSignature, recoveryKeyMessage, sealBridgeBackup } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
 

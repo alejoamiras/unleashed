@@ -11,9 +11,8 @@
 import { readDeployJournal, openDeployJournal, type DeployJournal, writeCandidateAtomically } from "./deploy-manifest"
 import type { Address } from "viem"
 import z from "zod"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import type { L1Ctx } from "../src/flows"
-import { type BridgeBlock, evmHexAddress, type ManifestV2, routingSchema } from "../src/manifest-v2"
+import { PORTAL_FACTORY_ABI, type BridgeBlock, evmHexAddress, type ManifestV2, routingSchema } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import {
 	type AdoptableDeploy,
 	assertBindings,
@@ -236,6 +235,25 @@ async function topUpInventory(
 	return calls
 }
 
+/** Deploys (or adopts) the swapper, reads its bindings back, sets each rate it lacks and tops its inventory up to the
+ *  floor for `minFuelFj`. */
+export async function provisionFuelSwapper(
+	l1: L1Ctx,
+	journal: DeployJournal,
+	args: FuelSwapperArgs,
+	rates: Readonly<Record<string, bigint>>,
+	minFuelFj: string,
+): Promise<AdoptableDeploy> {
+	const fuelSwapper = await deployFuelSwapper(l1, journal, args)
+	assertBindings("swapper", await readFuelSwapperBindings(l1, fuelSwapper.address), {
+		...args,
+		feeAssetHandler: fuelSwapperArgs(args)[1],
+	})
+	await setRates(l1, fuelSwapper.address, rates)
+	await topUpInventory(l1, fuelSwapper.address, args.feeAsset, args.feeAssetHandler, swapperInventoryFloor(minFuelFj))
+	return fuelSwapper
+}
+
 /**
  * Deploys (or adopts) the swapper, sets its rates and inventory, deploys (or adopts) the router bound to it and the
  * base's factory, reads both back, and writes the candidate. Throws before any write when the base disagrees with
@@ -253,20 +271,7 @@ export async function deployRouterOnly(o: RouterOnlyOptions): Promise<RouterOnly
 	})
 	await assertGeneration(o.l1, b, journal)
 
-	const swapperArgs = swapperArgsOf(o, b)
-	const fuelSwapper = await deployFuelSwapper(o.l1, journal, swapperArgs)
-	assertBindings("swapper", await readFuelSwapperBindings(o.l1, fuelSwapper.address), {
-		...swapperArgs,
-		feeAssetHandler: fuelSwapperArgs(swapperArgs)[1],
-	})
-	await setRates(o.l1, fuelSwapper.address, o.rates)
-	await topUpInventory(
-		o.l1,
-		fuelSwapper.address,
-		swapperArgs.feeAsset,
-		swapperArgs.feeAssetHandler,
-		swapperInventoryFloor(fuel.minFuelFj),
-	)
+	const fuelSwapper = await provisionFuelSwapper(o.l1, journal, swapperArgsOf(o, b), o.rates, fuel.minFuelFj)
 
 	const routerArgs = routerArgsOf(o, b, fuelSwapper.address)
 	const depositRouter = await deployDepositRouter(o.l1, journal, routerArgs)

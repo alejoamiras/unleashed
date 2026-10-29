@@ -4,16 +4,15 @@
  */
 import {
 	type DepositJournalRecord,
-	type JournalTokenBlock,
 	type KV,
 	patchRecord as kvPatchRecord,
 	type SendDepositRecord,
 	type SendWithdrawRecord,
-	feeJuiceAddress,
-	predictPortal,
 	recoveryKeyFromSignature,
 	sealDepositEnvelope,
 } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@/contracts/bridge-generation", () => ({ FUEL_PORTAL: "0xfd05ee8687d4ca828ba3d26ef04b80dd1348e5bd" }))
@@ -151,7 +150,7 @@ async function _sealEnvelopeFor(rec: DepositJournalRecord, over: Partial<{ recip
 }
 
 import { SYNC_TARGET_MARGIN_BLOCKS } from "@/lib/bridge-steps"
-import { RECEIPT_RECORD_MISMATCH_MSG } from "@/lib/fuel-claim-state"
+import { RECEIPT_RECORD_MISMATCH_MSG } from "@unleashed/sdk/internal"
 
 describe("journal engine — stage pins", () => {
 	let kv: KV

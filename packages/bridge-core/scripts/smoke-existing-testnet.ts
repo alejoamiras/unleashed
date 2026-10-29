@@ -16,12 +16,8 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { ERC20_ABI } from "../src/erc20"
-import type { L1Ctx } from "../src/flows"
-import { hubExitsPaused, hubTokenFor } from "../src/hub-l2"
-import type { SendOpts } from "../src/hub-l2"
-import type { ManifestToken } from "../src/manifest-v2"
-import { runSend, type SendGeneration } from "../src/send-flow"
+import { ERC20_ABI, type ManifestToken } from "@unleashed/sdk/protocol"
+import { type L1Ctx, hubExitsPaused, hubTokenFor, type SendOpts, runSend, type SendGeneration } from "@unleashed/sdk/internal"
 import { sendGenerationOf } from "./script-send"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
@@ -42,7 +38,7 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -192,7 +188,7 @@ async function assertExitsOpen(lane: Lane): Promise<void> {
 
 async function main(): Promise<void> {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 	const tokens = BRIDGE.tokens.slice(0, 2)
 	if (tokens.length < 2) throw new Error("the candidate carries fewer than two tokens — the smoke exists to prove the hub serves several")
 
@@ -237,7 +233,4 @@ async function main(): Promise<void> {
 	console.log("   Safe to promote the candidate manifest.")
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

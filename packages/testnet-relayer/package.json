@@ -1,0 +1,23 @@
+{
+	"name": "@unleashed/testnet-relayer",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun --bun vitest run",
+		"test:integration": "RELAYER_INTEGRATION=1 bun --bun vitest run --config vitest.integration.config.ts",
+		"worker:deploy": "wrangler deploy"
+	},
+	"dependencies": {
+		"@unleashed/bridge-core": "workspace:*",
+		"@unleashed/sdk": "workspace:*",
+		"viem": "2.57.1"
+	},
+	"devDependencies": {
+		"@types/node": "^24.13.2",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9",
+		"wrangler": "4.129.1"
+	}
+}

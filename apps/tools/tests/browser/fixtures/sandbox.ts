@@ -4,7 +4,7 @@
  * the browser ever hears their seeds, so a fixture can fund an account the UI has not shown yet.
  */
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
-import type { ManifestToken, ManifestV2 } from "@unleashed/bridge-core"
+import type { ManifestToken, ManifestV2 } from "@unleashed/sdk/protocol"
 import {
 	type Actor,
 	buildContext,

@@ -2,11 +2,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
+import type { FuelRouteBlock } from "@unleashed/sdk/protocol"
 import {
 	loadManifestFromConfigArg,
 	loadManifestV2FromConfigArg,
 	mainnetChain,
 	requireBridge,
+	requireRoute,
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
@@ -112,6 +114,9 @@ describe("loadManifestFromConfigArg", () => {
 		const m = loadManifestV2FromConfigArg(["x", "y", "--config", placeholder], { mode: "required" })
 		expect(m.bridge).toBeNull()
 		expect(() => requireBridge(m)).toThrow(/mainnet.*placeholder/)
+		expect(() => requireRoute(m)).toThrow(/mainnet.*neither a bridge nor a fuel route/)
+		const fuelRoute = { gate: `0x${"3".repeat(40)}` } as unknown as FuelRouteBlock
+		expect(requireRoute({ ...m, fuelRoute })).toEqual({ fuelRoute })
 		const v1 = write("v1.json", { network: "testnet", l1: { usdc: "0x" } })
 		expect(() => loadManifestV2FromConfigArg(["x", "y", "--config", v1], { mode: "required" })).toThrow()
 	})

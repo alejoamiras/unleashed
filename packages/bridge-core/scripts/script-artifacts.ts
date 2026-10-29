@@ -1,7 +1,7 @@
 /**
  * Foundry (EVM) artifact loaders for the operator scripts, resolved from the repo's committed
  * layout relative to THIS module — every script consumer sees the same `contracts/bridge/evm/out`
- * regardless of its own location. L2 (nargo) artifacts come from `../src/artifacts` instead;
+ * regardless of its own location. L2 (nargo) artifacts come from `@unleashed/sdk/artifacts` instead;
  * these are the L1 side only.
  */
 import { readFileSync } from "node:fs"

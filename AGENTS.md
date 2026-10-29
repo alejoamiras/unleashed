@@ -8,6 +8,7 @@ the map; this file is the ruleset. `CLAUDE.md` imports it.
 - The README of the package you touch: [`apps/tools`](apps/tools/README.md),
   [`apps/landing`](apps/landing/README.md), [`packages/bridge-core`](packages/bridge-core/README.md), [`packages/design`](packages/design/README.md),
   [`packages/legal`](packages/legal/README.md),
+  [`packages/testnet-relayer`](packages/testnet-relayer/README.md),
   [`contracts/bridge/evm`](contracts/bridge/evm/README.md), [`contracts/bridge/aztec`](contracts/bridge/aztec/README.md).
 - [`apps/tools/tests/browser/README.md`](apps/tools/tests/browser/README.md) before touching the
   browser suite: the parallel-safe runner, the fixtures, the egress rule.
@@ -34,7 +35,7 @@ repositories share exactly four facts, each with one owner:
 | Fact | Owner | Mirror | How it moves |
 |---|---|---|---|
 | Bridged-token L2 addresses | here: `apps/tools/public/*-bridge.json`, `tokens[].l2Token` | the wallet's default tokens and price map | The wallet mirrors a promoted generation by hand, as its own UI decision. It mirrors nothing today. |
-| PrivateFPC salt and canonical address | here: [`packages/bridge-core/src/private-fpc-canonical.json`](packages/bridge-core/src/private-fpc-canonical.json) | the wallet's `protocol-fpcs.ts`, pinned by its own test | A re-pin here is announced to the wallet's repository. Neither repository deploys the testnet FPC: the app and the wallet each register the instance locally, so on a reset network the wallet's private fee path waits for no deploy. |
+| PrivateFPC salt and canonical address | here: [`packages/sdk/src/protocol/private-fpc-canonical.json`](packages/sdk/src/protocol/private-fpc-canonical.json) | the wallet's `protocol-fpcs.ts`, pinned by its own test | A re-pin here is announced to the wallet's repository. Neither repository deploys the testnet FPC: the app and the wallet each register the instance locally, so on a reset network the wallet's private fee path waits for no deploy. |
 | The Aztec line (`@aztec-labs/*`, `@aztec-foundation/*`) | the wallet's repository, which publishes the shared packages | the exact pins here | The wallet publishes new versions of the three packages on the new line first; [`scripts/ci-cd/published-packages.test.ts`](scripts/ci-cd/published-packages.test.ts) holds every peer to this repository's pin, so a bump here cannot land before they exist. |
 | Chain identity (chainId, rollup version) | each repository, independently | none | [`apps/tools/src/lib/chain-constants.ts`](apps/tools/src/lib/chain-constants.ts) here; the wallet keeps its own copy. |
 
@@ -136,6 +137,13 @@ Privacy Policy at `/terms` and `/privacy`, outside the app's login wall; merging
 `www.unleashed.systems`, are also attached in the dashboard. A deploy is checked against a reference
 build of the same commit: [`apps/landing/README.md`](apps/landing/README.md) § Hosting.
 
+The testnet relayer is a fourth Worker, `unleashed-testnet-relayer` (`packages/testnet-relayer/wrangler.jsonc`),
+deployed the same way from the root directory `packages/testnet-relayer`. It runs from a cron trigger alone, with no
+route and no `workers.dev` URL, and refuses any chain but Base Sepolia and Sepolia. Its signing key is a Worker secret
+the owner sets in the dashboard: a dedicated key with a small float, never the canary's. An optional second secret,
+a Restricted Access Circle key, lets it request one faucet drip a day.
+[`packages/testnet-relayer/README.md`](packages/testnet-relayer/README.md) has the owner's runbook.
+
 ## Security
 
 Treat every change as attack surface. The bridge moves real funds on mainnet: a derivation, a
@@ -146,7 +154,9 @@ templates), or in local `.env` files that git ignores; an agent never creates on
 CI. The Aztec node needs no key in the browser: the testnet bundle calls dRPC's keyless public
 endpoint. Scripts compose their node URL from `DRPC_API_KEY`, the owner's shared, IP-restricted dRPC
 CLI key, which exists only in 1Password and reaches a run only as a keyed run; no script prints that
-URL or writes it to a file, and no dRPC key is ever committed (`scripts/ci-cd/node-keys.test.ts`). On
+URL or writes it to a file, and no dRPC key is ever committed (`scripts/ci-cd/node-keys.test.ts`). A
+keyed script takes the URL from `keyedNodeUrl` and runs its entry through `runKeyed`, which redacts every
+keyed value from the SDK's logs and the run's failure (`scripts/ci-cd/keyed-runs.test.ts`). On
 a leak, disable the key in dRPC, mint a new one and replace the 1Password field. Security reports go
 through GitHub's private advisories ([`SECURITY.md`](SECURITY.md)).
 
@@ -189,8 +199,12 @@ committed file.
 | Contracts | the contract READMEs' build and test commands; CI runs them in `bridge-contracts.yml` |
 
 CI: `pr-quick.yml` (`quality-status`: commitlint, lint and typecheck, unit tests, both builds with
-`verify:build-target`, and the landing's build and browser smoke on the landing graph), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
+`verify:build-target`, the landing's build and browser smoke on the landing graph, and the SDK's
+`pack:check` on the SDK's), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
 graph or the `e2e:tools` label), `bridge-contracts.yml` (`bridge-contracts-status`: Foundry, halmos,
 Noir, TXE, the sandbox integration suite), `actionlint.yml`. Every PR workflow opens with a
 `changes` paths-filter job; `workflow_dispatch` bypasses it. A PR run restores only its own caches
 and main's, so `warm-caches.yml` saves main's copies whenever a push to main can move a cache key.
+`publish-sdk.yml` publishes `@unleashed/sdk`, by hand from `main` only: one job tests and packs, and
+the job that alone holds npm's OIDC token checks out and installs nothing
+([`packages/sdk/README.md`](packages/sdk/README.md) § Releasing).

@@ -4,7 +4,17 @@
  * Node, not jsdom: the private legs derive real claim material through bb.js poseidon, which does
  * not run under jsdom.
  */
-import type { JournalTokenBlock, Registration, SendResult } from "@unleashed/bridge-core"
+import {
+	BridgeError,
+	type DepositRecord,
+	type DepositSecrets,
+	type JournalTokenBlock,
+	type RunOptions,
+	type TransferEvent,
+	type TransferEventBody,
+} from "@unleashed/sdk"
+import type { DepositPlan, Registration } from "@unleashed/sdk/internal"
+import { WaitForTransactionReceiptTimeoutError } from "viem"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GasLegPlan, ResolvedToken, SendPlan } from "@/lib/send-model"
 
@@ -39,12 +49,9 @@ const h = vi.hoisted(() => ({
 	wallet: { value: {} as unknown },
 	address: { value: "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d" as string | null },
 	signTypedData: vi.fn(async () => "0xsig"),
-	/** The swap bytes the slice is quoted to at send time; a throw is a venue that moved under the reviewed floor. */
-	sliceSwapData: vi.fn(async (_pub: unknown, _token: string, _gas: unknown) => "0x5eed" as `0x${string}`),
 	signMessage: vi.fn(async () => `0x${"a".repeat(130)}`),
-	writeContract: vi.fn(async () => "0xl1tx"),
+	writeContract: vi.fn(async (_call: { functionName: string }) => "0xl1tx"),
 	chainId: { value: 31337 } as { value: number },
-	ensurePermit2Approval: vi.fn(async (_permit2: string, _needed: bigint, _recordId: string) => {}),
 	readRegistration: vi.fn(async () => undefined as Registration | undefined),
 	sealPrivateRecord: vi.fn(async (_ctx: Record<string, unknown>) => {}),
 	/** Opt-in per case: run the REAL seal (and its real envelope) after the spy records the call. */
@@ -53,16 +60,18 @@ const h = vi.hoisted(() => ({
 	/** What the hub answers for the token's binding; undefined = it does not know the token yet. */
 	hubToken: { value: undefined as string | undefined },
 	sendStandaloneFjClaim: vi.fn(async (_aztec: unknown, _to: unknown, _fuel: unknown, _id: string) => {}),
-	runSend: vi.fn(),
+	depositL1: vi.fn(),
+	bridgeNetwork: vi.fn(),
 	rebuiltL2Token: { value: "" as string },
 }))
 
 vi.mock("@/contracts/bridge-generation", async () => {
 	const { readFileSync } = await import("node:fs")
 	const { fileURLToPath } = await import("node:url")
-	const core = await vi.importActual<typeof import("@unleashed/bridge-core")>("@unleashed/bridge-core")
+	const protocol = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
+	const internal = await vi.importActual<typeof import("@unleashed/sdk/internal")>("@unleashed/sdk/internal")
 	const path = fileURLToPath(new URL("../../../../packages/bridge-core/fixtures/sandbox-manifest.json", import.meta.url))
-	const manifest = core.parseManifestV2(JSON.parse(readFileSync(path, "utf8")))
+	const manifest = protocol.parseManifestV2(JSON.parse(readFileSync(path, "utf8")))
 	const bridge = manifest.bridge as NonNullable<typeof manifest.bridge>
 	h.rebuiltL2Token.value = bridge.tokens[0].l2Token
 	return {
@@ -71,13 +80,14 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		MANIFEST_CHAIN: { l1ChainId: manifest.l1ChainId, walletChainId: manifest.walletChainId },
 		IS_PLACEHOLDER: false,
 		MANIFEST_TOKENS: bridge.tokens,
-		SEND_GENERATION: core.sendGenerationOf(manifest, bridge),
+		SEND_GENERATION: internal.sendGenerationOf(manifest, bridge),
 		HUB: { toString: () => bridge.l2.hub.address },
 		TOKEN_CLASS_ID: bridge.l2.tokenClassId,
 		FUEL_PORTAL: manifest.feeJuice.portal,
 		FUEL_ASSET: manifest.feeJuice.asset,
 		FUEL_MIN_FJ: BigInt(manifest.feeJuice.minFj),
 		rebuildHubTokenInstance: async () => ({ address: { toString: () => h.rebuiltL2Token.value } }),
+		bridgeNetwork: (reads: unknown) => h.bridgeNetwork(reads),
 	}
 })
 
@@ -102,7 +112,6 @@ vi.mock("@/composables/useWalletConnection", async (importOriginal) => {
 	}
 })
 
-vi.mock("./useFuelQuote", () => ({ sliceSwapData: h.sliceSwapData }))
 // No pinned Ethereum reader by default, so every Ethereum read goes through the mocked wallet below.
 vi.mock("./useEthereumReader", async (orig) => ({
 	...(await orig<typeof import("./useEthereumReader")>()),
@@ -149,7 +158,6 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 	return {
 		...actual,
 		buildFeeJuiceClaimDep: async () => ({ simulate: async () => ({}), send: async () => ({ txHash: "0xfjclaim" }) }),
-		ensurePermit2Approval: h.ensurePermit2Approval,
 		recoverDepositLeg: async () => "recovered" as const,
 		resolveHubClaimSendOpts: h.resolveHubClaimSendOpts,
 		sendStandaloneFjClaim: h.sendStandaloneFjClaim,
@@ -160,10 +168,11 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 	}
 })
 
-vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/bridge-core")>()),
-	runSend: h.runSend,
+vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
+	depositL1: h.depositL1,
 	claimViaHub: async () => ({ path: "claim", claimTxHash: "0xhubclaim" }),
+	probeHubClaim: async () => ({}),
 	hubAt: () => ({ methods: {} }),
 	hubTokenFor: async () => h.hubToken.value,
 	readRegistration: h.readRegistration,
@@ -175,26 +184,17 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import {
 	type DepositJournalRecord,
 	type SendDepositRecord,
-	PRIVATE_FPC_ADDRESS,
-	deriveBridgeSecret,
-	deriveTokenClaimSecret,
+	isProvisionalRecordId,
 	openDepositEnvelope,
-	predictPortal,
 	recoveryKeyFromSignature,
 	validateAnyBackupRecord,
 } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
 import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
-import {
-	__resetJournalForTests,
-	addRecord,
-	connectJournalDeps,
-	runDepositClaim,
-	setRecordStep,
-	updateRecord,
-	useBridgeJournal,
-} from "./useBridgeJournal"
-import { __resetSendDepsForTests, useSend, validateTokenBlock } from "./useSend"
+import { __resetJournalForTests, addRecord, connectJournalDeps, runDepositClaim, useBridgeJournal } from "./useBridgeJournal"
+import { GAS_QUOTE_MOVED } from "./useFuelQuote"
+import { __resetSendDepsForTests, previewBlock, useSend, validateTokenBlock } from "./useSend"
 import { useOpsInFlight } from "./useOpsInFlight"
 
 /** What the mocked hub derives before a case points it somewhere else. */
@@ -242,7 +242,7 @@ const plan = (over: Partial<SendPlan> = {}): SendPlan => ({
 })
 
 /** The read-back the router's receipt produces; `l2Token` defaults to the wizard's prediction. */
-function readBack(over: Partial<SendResult["token"]> = {}) {
+function readBack(over: Partial<JournalTokenBlock> = {}) {
 	return {
 		erc20: ERC20,
 		portal: PORTAL,
@@ -260,65 +260,146 @@ function readBack(over: Partial<SendResult["token"]> = {}) {
 /** A real field element: the hub claim parses the public claim value, so it can't be a word. */
 const PUBLIC_SECRET = `0x${"07".repeat(32)}`
 
-interface FakeParams {
-	isPrivate: boolean
-	claimSalt?: Fr
-	intent: string
-	aztecRecipient: string
-	gas?: { fuelSecret?: Fr }
+interface FakeWallet {
+	writeContract(call: { functionName: string }): Promise<`0x${string}`>
+	signTypedData(args: unknown): Promise<`0x${string}`>
 }
 
-interface FakeRecovery {
-	onSecrets?: (s: Record<string, unknown>) => void
-	onSent?: (h: string) => void
-	onConfirmed?: (r: unknown) => void
+interface Fake {
+	/** The block the receipt reads back; the wizard's prediction by default. */
+	token?: ReturnType<typeof readBack>
+	/** Permit2's allowance is short: the approval is sent, journaled and waited on. */
+	approve?: boolean
+	/** Runs once the approval has waited a round. */
+	afterApproval?: () => void
+	/** Thrown once the deposit's hash is journaled. */
+	afterSend?: unknown
+	/** The receipt never comes: the run waits on its signal past the app's receipt wait, under fake timers. */
+	slowReceipt?: boolean
 }
 
-/** Mirrors the real derivation: a private leg's committed hash is over the recipient-bound secret,
- *  so the id the app pre-computed and the one the witness carries must agree. */
-async function fakeSecrets(p: FakeParams) {
-	const isToken = p.intent !== "gas"
-	const salt = p.claimSalt
-	const tokenHash = salt
-		? (await computeSecretHash(deriveTokenClaimSecret(salt, AztecAddress.fromStringUnsafe(p.aztecRecipient)))).toString()
-		: "0xtokenhash"
-	// A private gas leg carries an INJECTED secret (the FPC re-derives it); a public one is random
-	// inside runSend. Mirrored here, or the id the app precomputed and the witness's would disagree.
-	const fuelSecret = p.gas?.fuelSecret
+/** The SDK's error for a wallet call, as `depositL1` wraps it: EIP-1193's 4001 is a refusal, anything else keeps the
+ *  wallet's error as its cause. */
+async function sdkCall<T>(call: () => Promise<T>, code: "approval-failed" | "invalid-request" | "deposit-reverted"): Promise<T> {
+	try {
+		return await call()
+	} catch (e) {
+		if ((e as { code?: unknown }).code === 4001) throw new BridgeError("user-rejected", "refused", "none", "safe", { cause: e })
+		throw new BridgeError(code, "failed", code === "invalid-request" ? "none" : "unknown", "safe", { cause: e })
+	}
+}
+
+/** A private leg's salts, and the hashes its claims will check. Private hashes are the real derivations, so the id
+ *  the app seals under is the one the witness would commit to; a public leg's are stand-ins. */
+async function plannedHashes(p: DepositPlan): Promise<{ tokenHash?: string; fuelHash?: string; secrets: DepositSecrets }> {
+	const recipient = AztecAddress.fromStringUnsafe(p.recipient)
+	const claimSalt = p.isPrivate && p.intent !== "gas" ? Fr.random() : undefined
+	const fuelSalt = p.isPrivate && p.gas ? Fr.random() : undefined
+	const hashOf = async (secret: Fr) => (await computeSecretHash(secret)).toString()
+	const tokenHash = claimSalt ? await hashOf(deriveTokenClaimSecret(claimSalt, recipient)) : "0xtokenhash"
+	const fuelHash = fuelSalt ? await hashOf(deriveBridgeSecret(fuelSalt, recipient)) : "0xfuelhash"
 	return {
-		tokenClaimValueHex: isToken ? (salt?.toString() ?? PUBLIC_SECRET) : undefined,
-		tokenSecretHashHex: isToken ? tokenHash : undefined,
-		fuelSecretHex: p.gas ? (fuelSecret?.toString() ?? "0xfuelsecret") : undefined,
-		fuelSecretHashHex: p.gas ? (fuelSecret ? (await computeSecretHash(fuelSecret)).toString() : "0xfuelhash") : undefined,
+		...(p.intent === "gas" ? {} : { tokenHash }),
+		...(p.gas ? { fuelHash } : {}),
+		secrets: { ...(claimSalt ? { claimSalt } : {}), ...(fuelSalt ? { fuelSalt } : {}) },
+	}
+}
+
+/** The record `depositL1` opens with: a public leg's claim material in it, a private leg's salts beside it. */
+async function plannedRecord(p: DepositPlan): Promise<{ record: DepositRecord; secrets: DepositSecrets }> {
+	const { tokenHash, fuelHash, secrets } = await plannedHashes(p)
+	const id = (tokenHash ?? fuelHash) as string
+	const fuel = p.gas && {
+		amount: p.gas.fuelAmount.toString(),
+		...(secrets.fuelSalt ? { fpc: PRIVATE_FPC_ADDRESS } : { secret: "0xfuelsecret" }),
+		secretHashHex: fuelHash as string,
+		minOutput: p.gas.minFuelOutput.toString(),
+	}
+	const base = {
+		schema: 3 as const,
+		id,
+		direction: "deposit" as const,
 		isPrivate: p.isPrivate,
+		amount: (p.amount - (p.intent === "gas" ? 0n : (p.gas?.fuelAmount ?? 0n))).toString(),
+		createdAt: 1,
+		updatedAt: 1,
+		chainId: 31337,
+		portal: p.tokenBlock?.portal ?? FUEL_PORTAL,
+		bridge: `0x${"b".repeat(64)}`,
+		recipient: p.recipient,
+		sender: L1_ACCOUNT,
+		...(!p.isPrivate && tokenHash ? { secret: PUBLIC_SECRET } : {}),
+		secretHashHex: id,
+		...(fuel ? { fuel } : {}),
+		...(p.registers ? { registers: true as const } : {}),
+	}
+	const record: DepositRecord =
+		p.intent === "gas" ? { ...base, intent: "gas" } : { ...base, intent: p.intent, token: p.tokenBlock as JournalTokenBlock }
+	return { record, secrets }
+}
+
+/** What the SDK persists once the receipt is in: leaves, the frozen token, and an L2 block this lane never journals. */
+const confirmedFacts = (p: DepositPlan, rec: DepositRecord, token = readBack()): Partial<DepositRecord> => ({
+	...(p.intent === "gas" ? {} : { leafIndex: "7", messageHash: "0xtokenkey", token, portal: token.portal }),
+	...(rec.fuel ? { fuel: { ...rec.fuel, leafIndex: "8", messageHash: "0xfuelkey", received: "5" } } : {}),
+	depositL2Block: 100,
+})
+
+/** `depositL1` as the app meets it: the record persisted before the first prompt and again with every fact, the
+ *  wallet's own prompts in the SDK's order, and each event after the fact it names. */
+function fakeDeposit(o: Fake = {}) {
+	return async (_net: unknown, _r: unknown, wallet: FakeWallet, p: DepositPlan, run: RunOptions): Promise<DepositRecord> => {
+		const { record, secrets } = await plannedRecord(p)
+		let rec = record
+		let seq = 0
+		const emit = (body: TransferEventBody) => run.onEvent?.({ id: rec.id, seq: seq++, ...body } as TransferEvent)
+		// The caller's refusal comes back as the SDK's `persist-failed`, the refusal its cause.
+		const persist = async (patch: Partial<DepositRecord>, submission: "none" | "submitted" = "none") => {
+			rec = { ...rec, ...patch } as DepositRecord
+			try {
+				await run.persist(rec, secrets)
+			} catch (e) {
+				throw new BridgeError("persist-failed", "the caller's storage refused the record", submission, "safe", { cause: e })
+			}
+		}
+		await persist({})
+		emit({ type: "prepared" })
+		if (o.approve) {
+			emit({ type: "approval", status: "requested" })
+			const hash = await sdkCall(() => wallet.writeContract({ functionName: "approve" }), "approval-failed")
+			await persist({ approveTxHash: hash })
+			emit({ type: "approval", status: "sent", txHash: hash })
+			emit({ type: "approval", status: "waiting", txHash: hash, round: 1 })
+			o.afterApproval?.()
+			emit({ type: "approval", status: "confirmed", txHash: hash })
+		}
+		emit({ type: "signature-requested" })
+		await sdkCall(() => wallet.signTypedData({}), "invalid-request")
+		const txHash = await sdkCall(() => wallet.writeContract({ functionName: "bridgeWithPermit" }), "deposit-reverted")
+		await persist({ depositTxHash: txHash }, "submitted")
+		if (o.slowReceipt) return waitPastReceipt(run, () => emit({ type: "deposit-sent", txHash }))
+		emit({ type: "deposit-sent", txHash })
+		if (o.afterSend) throw o.afterSend
+		await persist(confirmedFacts(p, rec, o.token), "submitted")
+		emit({ type: "deposit-confirmed", leaves: {} })
+		return rec
 	}
 }
 
-function fakeResult(p: FakeParams, token?: ReturnType<typeof readBack>) {
-	const isToken = p.intent !== "gas"
-	return {
-		txHash: "0xl1tx",
-		tokenLeafIndex: isToken ? 7n : undefined,
-		tokenMessageHashHex: isToken ? "0xtokenkey" : undefined,
-		fuelLeafIndex: p.gas ? 8n : undefined,
-		fuelMessageHashHex: p.gas ? "0xfuelkey" : undefined,
-		fuelReceived: p.gas ? 5n : undefined,
-		token: isToken ? (token ?? readBack()) : undefined,
+/** The receipt wait the app bounds: a tick short of its limit the run still waits, at the limit the app's signal
+ *  stops it, and the SDK reports the stop with the signal's reason as its cause. */
+function waitPastReceipt(run: RunOptions, sent: () => void): never {
+	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+	try {
+		sent()
+		vi.advanceTimersByTime(179_999)
+		expect(run.signal?.aborted, "still waiting a tick before viem's default").toBe(false)
+		vi.advanceTimersByTime(1)
+	} finally {
+		vi.useRealTimers()
 	}
-}
-
-/** A runSend fake that drives the recovery hooks in the real order. */
-function fakeRunSend(opts: { token?: ReturnType<typeof readBack>; throwAfterSend?: boolean } = {}) {
-	return async (_l1: unknown, _gen: unknown, p: FakeParams, onStage?: (s: string) => void, recovery?: FakeRecovery) => {
-		recovery?.onSecrets?.(await fakeSecrets(p))
-		onStage?.("signing")
-		recovery?.onSent?.("0xl1tx")
-		if (opts.throwAfterSend) throw new Error("bridge() REVERTED (0xl1tx) — no funds moved; inspect the tx and retry")
-		const res = fakeResult(p, opts.token)
-		recovery?.onConfirmed?.(res)
-		onStage?.("done")
-		return res
-	}
+	const stopped = new BridgeError("aborted", "the caller stopped waiting", "submitted", "after-wait", { cause: run.signal?.reason })
+	throw new BridgeError("aborted", "the deposit is not confirmed yet", "submitted", "never", { cause: stopped })
 }
 
 const recordOf = (id: string) => useBridgeJournal().records.value.find((r) => r.id === id) as SendDepositRecord | undefined
@@ -381,11 +462,12 @@ describe("useSend", () => {
 		h.rebuiltL2Token.value = MANIFEST_L2_TOKEN
 		h.ensureGranted.mockImplementation(async () => "granted")
 		h.isGranted.mockImplementation(() => true)
-		h.ensurePermit2Approval.mockImplementation(async () => {})
 		h.signMessage.mockImplementation(async () => SEAL_SIG)
 		h.resolveHubClaimSendOpts.mockImplementation(async () => ({ kind: "opts", opts: {} }))
-		h.runSend.mockImplementation(fakeRunSend())
-		h.sliceSwapData.mockImplementation(async () => "0x5eed")
+		h.depositL1.mockImplementation(fakeDeposit())
+		h.bridgeNetwork.mockImplementation(async () => ({}))
+		h.signTypedData.mockImplementation(async () => "0xsig")
+		h.writeContract.mockImplementation(async () => "0xl1tx")
 	})
 
 	it("a grant that THROWS is a reported failure, not an escaping exception - no send, no record", async () => {
@@ -394,7 +476,7 @@ describe("useSend", () => {
 		})
 		const send = useSend()
 		await expect(send.send(plan())).resolves.toBe("")
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(send.error.value).toContain("wallet unreachable")
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
@@ -404,7 +486,7 @@ describe("useSend", () => {
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
 		expect(h.ensureGranted).toHaveBeenCalled()
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(send.error.value).toMatch(/still setting up the app's contracts/)
 	})
 
@@ -421,10 +503,10 @@ describe("useSend", () => {
 		const send = useSend()
 		const sent = send.send(plan())
 		await flushMicrotasks()
-		expect(h.runSend, "nothing is signed while the contracts are registering").not.toHaveBeenCalled()
+		expect(h.depositL1, "nothing is signed while the contracts are registering").not.toHaveBeenCalled()
 		land()
 		expect(await sent).not.toBe("")
-		expect(h.runSend).toHaveBeenCalled()
+		expect(h.depositL1).toHaveBeenCalled()
 		expect(send.error.value).toBeNull()
 	})
 
@@ -444,7 +526,7 @@ describe("useSend", () => {
 		await flushMicrotasks()
 		land()
 		expect(await sent).toBe("")
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(send.error.value).toBe("The wallet could not register the app's contracts.")
 	})
 
@@ -463,9 +545,8 @@ describe("useSend", () => {
 		await flushMicrotasks()
 		land()
 		expect(await sent).toBe("")
-		expect(h.ensurePermit2Approval).not.toHaveBeenCalled()
 		expect(h.signTypedData).not.toHaveBeenCalled()
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(send.error.value).toMatch(/didn't grant access to this token/)
 	})
 
@@ -487,9 +568,8 @@ describe("useSend", () => {
 			expect(useOpsInFlight().busy.value, "the operation hold is released").toBe(false)
 			settle()
 			await vi.runAllTimersAsync()
-			expect(h.ensurePermit2Approval).not.toHaveBeenCalled()
 			expect(h.signTypedData).not.toHaveBeenCalled()
-			expect(h.runSend, "nothing is sent, before or after the late settle").not.toHaveBeenCalled()
+			expect(h.depositL1, "nothing is sent, before or after the late settle").not.toHaveBeenCalled()
 			expect(send.error.value).toBe(PROMPTS_STALLED)
 		} finally {
 			vi.useRealTimers()
@@ -501,22 +581,21 @@ describe("useSend", () => {
 		h.error.value = { message: "Alpha-testnet is not responding. Try again." }
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(send.error.value).toBe("Alpha-testnet is not responding. Try again.")
 	})
 
 	it("proceeds when connected and contracts are ready", async () => {
 		const send = useSend()
 		await send.send(plan())
-		expect(h.runSend).toHaveBeenCalled()
+		expect(h.depositL1).toHaveBeenCalled()
 	})
 
 	it("a DECLINED grant cancels before anything is signed - no approval, no send, no record", async () => {
 		h.ensureGranted.mockImplementation(async () => "declined")
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
-		expect(h.runSend).not.toHaveBeenCalled()
-		expect(h.ensurePermit2Approval).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(h.signTypedData).not.toHaveBeenCalled()
 		expect(send.error.value).toMatch(/didn't grant/)
 		expect(useBridgeJournal().records.value).toHaveLength(0)
@@ -527,7 +606,7 @@ describe("useSend", () => {
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
 		expect(h.ensureGranted).not.toHaveBeenCalled()
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(send.error.value).toMatch(/on chain 1/)
 	})
 
@@ -535,7 +614,7 @@ describe("useSend", () => {
 		h.ensureGranted.mockImplementation(async () => "stale")
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(send.error.value).toMatch(/selection changed/)
 	})
 
@@ -549,22 +628,23 @@ describe("useSend", () => {
 		expect(rec?.token?.erc20).toBe(ERC20)
 		expect(rec?.depositTxHash).toBe("0xl1tx")
 		expect(rec?.leafIndex).toBe("7")
+		// The SDK's L2 block would start a countdown this lane has never narrated.
+		expect(rec?.depositL2Block).toBeUndefined()
 		expect(send.stage.value).toBe("done")
 	})
 
-	it("a private token send seals its salt and persists the record BEFORE the signature", async () => {
+	it("a private token send seals the salt its id commits to BEFORE the signature", async () => {
 		const send = useSend()
 		const order: string[] = []
 		h.sealPrivateRecord.mockImplementation(async () => {
 			order.push("seal")
 		})
-		h.runSend.mockImplementation(async (...args: unknown[]) => {
-			order.push("runSend")
-			return fakeRunSend()(...(args as Parameters<ReturnType<typeof fakeRunSend>>))
+		h.signTypedData.mockImplementation(async () => {
+			order.push("sign")
+			return "0xsig"
 		})
 		const id = await send.send(plan({ isPrivate: true }))
-		expect(order).toEqual(["seal", "runSend"])
-		// The id is the L1-committed hash of the DERIVED secret, known before anything was signed.
+		expect(order).toEqual(["seal", "sign"])
 		expect(id).toMatch(/^0x[0-9a-f]{64}$/)
 		const rec = recordOf(id)
 		expect(rec?.isPrivate).toBe(true)
@@ -572,36 +652,32 @@ describe("useSend", () => {
 		const sealed = h.sealPrivateRecord.mock.calls[0][0] as { binding: { portal: string; bridge: string }; secretStr: string }
 		expect(sealed.binding.portal).toBe(PORTAL)
 		expect(sealed.binding.bridge).not.toBe(PORTAL)
-		// The salt handed to runSend is the one that was sealed.
-		const params = h.runSend.mock.calls[0][2] as { claimSalt: { toString(): string } }
-		expect(params.claimSalt.toString()).toBe(sealed.secretStr)
+		const committed = deriveTokenClaimSecret(Fr.fromString(sealed.secretStr), AztecAddress.fromStringUnsafe(RECIPIENT))
+		expect((await computeSecretHash(committed)).toString()).toBe(id)
 	})
 
-	it("token+gas passes the gas leg through, swapped at the slice quoted at send time, and journals its fuel facts", async () => {
+	it("token+gas hands the SDK the reviewed slice and floor, and journals its fuel facts", async () => {
 		const send = useSend()
 		const id = await send.send(plan({ intent: "token+gas", gas: gasLeg }))
-		const params = h.runSend.mock.calls[0][2] as { gas?: { fuelAmount: bigint; minFuelOutput: bigint; swapData: string } }
-		expect(params.gas?.fuelAmount).toBe(1_000_000n)
-		expect(params.gas?.minFuelOutput).toBe(4n)
-		expect(params.gas?.swapData).toBe("0x5eed")
-		expect(h.sliceSwapData).toHaveBeenCalledWith(expect.anything(), ERC20, gasLeg)
+		const reviewed = h.depositL1.mock.calls[0][3] as DepositPlan
+		expect(reviewed.gas).toEqual({ fuelAmount: 1_000_000n, minFuelOutput: 4n })
+		expect(reviewed.amount).toBe(100_000_000n)
 		const rec = recordOf(id)
 		// The record's amount is the TOKEN claim: the total minus the slice the swap took.
 		expect(rec?.amount).toBe("99000000")
 		expect(rec?.fuel?.leafIndex).toBe("8")
 		expect(rec?.fuel?.received).toBe("5")
+		expect(rec?.fuel?.secret).toBe("0xfuelsecret")
 	})
 
 	it("a gas slice the venue no longer prices at the reviewed floor stops before anything is sealed, signed or journaled", async () => {
-		h.sliceSwapData.mockImplementation(async () => {
-			throw new Error("The gas price moved since you reviewed this send")
+		h.depositL1.mockImplementation(async () => {
+			throw new BridgeError("quote-moved", "the gas price moved under the reviewed floor; quote again", "none", "safe")
 		})
 		const send = useSend()
 		await expect(send.send(plan({ isPrivate: true, intent: "token+gas", gas: gasLeg }))).resolves.toBe("")
-		expect(send.error.value).toMatch(/gas price moved/)
+		expect(send.error.value).toBe(GAS_QUOTE_MOVED)
 		expect(h.sealPrivateRecord).not.toHaveBeenCalled()
-		expect(h.ensurePermit2Approval).not.toHaveBeenCalled()
-		expect(h.runSend).not.toHaveBeenCalled()
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
 
@@ -654,7 +730,7 @@ describe("useSend", () => {
 
 	it("a read-back naming another L2 token rewrites the block and re-raises the grant", async () => {
 		const rewritten = readBack({ l2Token: `0x${"d".repeat(64)}`, symbolWord: `0x${"9".repeat(64)}` })
-		h.runSend.mockImplementation(fakeRunSend({ token: rewritten }))
+		h.depositL1.mockImplementation(fakeDeposit({ token: rewritten }))
 		const send = useSend()
 		const id = await send.send(plan())
 		expect(recordOf(id)?.token?.l2Token).toBe(rewritten.l2Token)
@@ -669,28 +745,38 @@ describe("useSend", () => {
 		expect(h.ensureGranted).toHaveBeenCalledTimes(1)
 	})
 
-	it("the deposit hash is journaled the moment it exists, before the receipt is confirmed", async () => {
-		let hashAtSend: string | undefined
-		h.runSend.mockImplementation(async (...args: unknown[]) => {
-			const recovery = args[4] as { onSecrets?: (s: Record<string, unknown>) => void; onSent?: (h: string) => void }
-			recovery.onSecrets?.({ tokenClaimValueHex: "0xs", tokenSecretHashHex: "0xtokenhash", isPrivate: false })
-			recovery.onSent?.("0xl1tx")
-			hashAtSend = recordOf("0xtokenhash")?.depositTxHash
-			throw new Error("network died right after the broadcast")
-		})
+	it("the deposit hash is journaled the moment it exists, and a failure after it keeps the row", async () => {
+		const lost = new Error("network died right after the broadcast")
+		h.depositL1.mockImplementation(
+			fakeDeposit({
+				afterSend: new BridgeError("read-failed", "the Inbox could not be read", "submitted", "never", { cause: lost }),
+			}),
+		)
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
-		expect(hashAtSend).toBe("0xl1tx")
+		expect(send.error.value).toBe(lost.message)
 		// The record survives the failure, so the leg is recoverable from its hash.
 		expect(recordOf("0xtokenhash")?.depositTxHash).toBe("0xl1tx")
+		expect(useBridgeJournal().runtime.value["0xtokenhash"]?.note).toBe(lost.message)
 	})
 
-	it("a reverted L1 receipt surfaces as the send's error and leaves the record in place", async () => {
-		h.runSend.mockImplementation(fakeRunSend({ throwAfterSend: true }))
+	it("a reverted L1 receipt surfaces in today's words and leaves the record in place", async () => {
+		const reverted = new Error("The Ethereum transaction 0xl1tx reverted on-chain.")
+		h.depositL1.mockImplementation(
+			fakeDeposit({ afterSend: new BridgeError("deposit-reverted", "reverted", "submitted", "safe", { cause: reverted }) }),
+		)
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
-		expect(send.error.value).toMatch(/REVERTED/)
+		expect(send.error.value).toBe("bridgeWithPermit() REVERTED (0xl1tx) — no funds moved; inspect the tx and retry")
 		expect(recordOf("0xtokenhash")).toBeDefined()
+	})
+
+	it("gives up on the deposit's receipt where viem's default wait did, and keeps the row with its hash", async () => {
+		h.depositL1.mockImplementation(fakeDeposit({ slowReceipt: true }))
+		const send = useSend()
+		expect(await send.send(plan())).toBe("")
+		expect(send.error.value).toBe(new WaitForTransactionReceiptTimeoutError({ hash: "0xl1tx" }).message)
+		expect(recordOf("0xtokenhash")?.depositTxHash).toBe("0xl1tx")
 	})
 
 	it("refuses without a connected wallet on either side, signing nothing", async () => {
@@ -702,13 +788,21 @@ describe("useSend", () => {
 		h.selectedAccount.value = null
 		expect(await send.send(plan())).toBe("")
 		expect(send.error.value).toMatch(/Aztec wallet/)
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
 	})
 
-	it("the Permit2 approval is scoped to the plan's own token", async () => {
-		const send = useSend()
-		await send.send(plan())
-		expect(h.ensurePermit2Approval).toHaveBeenCalledWith(expect.any(String), 100_000_000n, expect.any(String), expect.anything(), ERC20)
+	it("hands the SDK the reviewed plan, leaving a paused route to the router as before", async () => {
+		await useSend().send(plan())
+		expect(h.depositL1.mock.calls[0][3]).toEqual({
+			intent: "token",
+			token: ERC20,
+			amount: 100_000_000n,
+			recipient: RECIPIENT,
+			isPrivate: false,
+			tokenBlock: previewBlock(plan()),
+			registers: true,
+			pauseCheck: false,
+		})
 	})
 
 	it("dispose releases the grant and voids the epoch a late completion would be matched against", async () => {
@@ -818,51 +912,75 @@ describe("useSend", () => {
 		expect(JSON.parse(localStorage.getItem("unleashed-bridge:journal:quarantine") as string).records).toHaveLength(2)
 	})
 
-	it("a public first send opens its record BEFORE the approval, so the approve narrates into a real row", async () => {
-		const approvedInto: string[] = []
-		h.ensurePermit2Approval.mockImplementation(async (_permit2: string, _needed: bigint, recordId: string) => {
-			approvedInto.push(recordId)
-			// The two channels the real approval narrates through.
-			setRecordStep(recordId, "approving", "first time only: approve Permit2 in your Ethereum wallet")
-			updateRecord(recordId, { approveTxHash: "0xapprove" })
+	it("a public first send narrates its approval into a provisional row that the signature names", async () => {
+		const seen: { id: string; detail?: string; sender?: string }[] = []
+		const only = () => {
+			const [row] = useBridgeJournal().records.value as SendDepositRecord[]
+			return { id: row.id, detail: useBridgeJournal().runtime.value[row.id]?.stepDetail, sender: row.sender }
+		}
+		h.writeContract.mockImplementation(async (call: { functionName: string }) => {
+			if (call.functionName !== "approve") return "0xl1tx"
+			seen.push(only())
+			return "0xapprove"
 		})
-		const send = useSend()
-		const id = await send.send(plan())
-
-		expect(approvedInto[0]).not.toBe("")
-		expect(useBridgeJournal().runtime.value[""]).toBeUndefined()
-		// The row the approval wrote into is the one the deposit ends up keyed by - one record, and
-		// the approve transaction is still on it after the claim hash renames it.
-		expect(useBridgeJournal().records.value).toHaveLength(1)
-		expect(recordOf(id)?.approveTxHash).toBe("0xapprove")
-		expect(id).toBe("0xtokenhash")
-	})
-
-	it("records the signing L1 account as the sender on the opened row and again after the rekey", async () => {
-		const opened: (string | undefined)[] = []
-		h.ensurePermit2Approval.mockImplementation(async (_permit2: string, _needed: bigint, recordId: string) => {
-			opened.push(recordOf(recordId)?.sender)
-		})
+		h.depositL1.mockImplementation(fakeDeposit({ approve: true, afterApproval: () => seen.push(only()) }))
 		const id = await useSend().send(plan())
 
-		expect(opened).toEqual([L1_ACCOUNT])
+		expect(seen.map((r) => r.detail)).toEqual([
+			"first time only: approve Permit2 in your Ethereum wallet",
+			"still waiting for the approval (round 1)",
+		])
+		expect(seen.every((r) => isProvisionalRecordId(r.id) && r.sender === L1_ACCOUNT)).toBe(true)
+		// One record: the approve transaction is still on it after the claim hash renames it.
+		expect(useBridgeJournal().records.value).toHaveLength(1)
 		expect(id).toBe("0xtokenhash")
+		expect(recordOf(id)?.approveTxHash).toBe("0xapprove")
 		expect(recordOf(id)?.sender).toBe(L1_ACCOUNT)
 	})
 
 	it("an approval the user rejects leaves no half-started row behind", async () => {
-		h.ensurePermit2Approval.mockImplementation(async () => {
-			throw new Error("User rejected the request")
+		h.writeContract.mockImplementation(async () => {
+			throw Object.assign(new Error("User rejected the request."), { code: 4001 })
 		})
+		h.depositL1.mockImplementation(fakeDeposit({ approve: true }))
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
+		expect(send.error.value).toBe("Rejected in wallet.")
 		expect(useBridgeJournal().records.value).toHaveLength(0)
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.signTypedData).not.toHaveBeenCalled()
+	})
+
+	it("an approval that fails for another reason leaves a public send no row, and keeps a private send's sealed row", async () => {
+		h.writeContract.mockImplementation(async () => {
+			throw new Error("HTTP request failed: fetch failed")
+		})
+		h.depositL1.mockImplementation(fakeDeposit({ approve: true }))
+		const send = useSend()
+		expect(await send.send(plan())).toBe("")
+		expect(send.error.value).toMatch(/fetch failed/)
+		expect(useBridgeJournal().records.value).toHaveLength(0)
+
+		expect(await send.send(plan({ isPrivate: true }))).toBe("")
+		const [kept] = useBridgeJournal().records.value
+		expect(kept?.isPrivate).toBe(true)
+		expect(useBridgeJournal().runtime.value[kept.id]?.attention).toBe("error")
+		expect(useBridgeJournal().runtime.value[kept.id]?.note).toMatch(/fetch failed/)
+	})
+
+	it("a private send whose seal the user refuses leaves no row and hears the refusal", async () => {
+		h.realSeal.on = true
+		h.signMessage.mockImplementation(async () => {
+			throw new Error("User rejected the request.")
+		})
+		const send = useSend()
+		expect(await send.send(plan({ isPrivate: true }))).toBe("")
+		expect(send.error.value).toBe("Rejected in wallet.")
+		expect(useBridgeJournal().records.value).toHaveLength(0)
+		expect(h.signTypedData).not.toHaveBeenCalled()
 	})
 
 	it("a witness the user refuses discards the row the send had already named, and the review hears the refusal", async () => {
-		h.runSend.mockImplementation(async (_l1: unknown, _gen: unknown, p: FakeParams, _s?: unknown, recovery?: FakeRecovery) => {
-			recovery?.onSecrets?.(await fakeSecrets(p))
+		h.signTypedData.mockImplementation(async () => {
 			throw Object.assign(new Error("User rejected the request.\n\nDetails: MetaMask Tx Signature: User denied"), { code: 4001 })
 		})
 		const send = useSend()
@@ -871,37 +989,30 @@ describe("useSend", () => {
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
 
-	it("a failure the chain may hold keeps the named row and names it on the rail", async () => {
-		h.runSend.mockImplementation(async (_l1: unknown, _gen: unknown, p: FakeParams, _s?: unknown, recovery?: FakeRecovery) => {
-			recovery?.onSecrets?.(await fakeSecrets(p))
+	it("a failure the chain may hold keeps the named row, with its approval, and names it on the rail", async () => {
+		h.writeContract.mockImplementation(async (call: { functionName: string }) => {
+			if (call.functionName === "approve") return "0xapprove"
 			throw new Error("HTTP request failed: fetch failed")
 		})
+		h.depositL1.mockImplementation(fakeDeposit({ approve: true }))
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
 		expect(send.error.value).toMatch(/fetch failed/)
-		expect(recordOf("0xtokenhash")).toBeDefined()
+		expect(recordOf("0xtokenhash")?.approveTxHash).toBe("0xapprove")
 		expect(useBridgeJournal().runtime.value["0xtokenhash"]?.attention).toBe("error")
 		expect(useBridgeJournal().runtime.value["0xtokenhash"]?.note).toMatch(/fetch failed/)
 	})
 
-	it("a stale-anchor envelope from the send shows the chain-desync copy at the display seam", async () => {
-		h.runSend.mockImplementation(async (_l1: unknown, _gen: unknown, p: FakeParams, _s?: unknown, recovery?: FakeRecovery) => {
-			recovery?.onSecrets?.(await fakeSecrets(p))
-			throw new Error(JSON.stringify({ code: -32602, message: "x", data: { walletErrorCode: "PXE_STALE_ANCHOR" } }))
+	it.each([
+		["PXE_STALE_ANCHOR", "Your wallet's view of the network was behind. Try again."],
+		["CONTRACT_NOT_REGISTERED", "Couldn't register the app's contracts with your wallet. Reconnect."],
+	])("a %s envelope from the send shows its copy at the display seam", async (code, copy) => {
+		h.writeContract.mockImplementation(async () => {
+			throw new Error(JSON.stringify({ code: -32602, message: "x", data: { walletErrorCode: code } }))
 		})
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
-		expect(send.error.value).toBe("Your wallet's view of the network was behind. Try again.")
-	})
-
-	it("a contract-not-registered envelope from the send shows its copy at the display seam", async () => {
-		h.runSend.mockImplementation(async (_l1: unknown, _gen: unknown, p: FakeParams, _s?: unknown, recovery?: FakeRecovery) => {
-			recovery?.onSecrets?.(await fakeSecrets(p))
-			throw new Error(JSON.stringify({ code: -32602, message: "x", data: { walletErrorCode: "CONTRACT_NOT_REGISTERED" } }))
-		})
-		const send = useSend()
-		expect(await send.send(plan())).toBe("")
-		expect(send.error.value).toBe("Couldn't register the app's contracts with your wallet. Reconnect.")
+		expect(send.error.value).toBe(copy)
 	})
 
 	it("an L1 wallet on another chain refuses before the approval, so nothing is signed and no row survives", async () => {
@@ -909,8 +1020,18 @@ describe("useSend", () => {
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
 		expect(send.error.value).toMatch(/on chain 1/)
-		expect(h.ensurePermit2Approval).not.toHaveBeenCalled()
-		expect(h.runSend).not.toHaveBeenCalled()
+		expect(h.depositL1).not.toHaveBeenCalled()
+		expect(useBridgeJournal().records.value).toHaveLength(0)
+	})
+
+	it("a node whose Ethereum reads disagree with the manifest refuses before any prompt, in this app's words", async () => {
+		h.bridgeNetwork.mockImplementation(async () => {
+			throw new BridgeError("wrong-chain", "the Ethereum reads are on chain 1, not 31337", "none", "safe")
+		})
+		const send = useSend()
+		expect(await send.send(plan())).toBe("")
+		expect(send.error.value).toMatch(/Your Ethereum wallet is on chain 1, but this bridge lives on chain 31337/)
+		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
 

@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { PRIVATE_FPC_ADDRESS, parseManifestV2 } from "@unleashed/bridge-core"
+import { PRIVATE_FPC_ADDRESS, parseManifestV2 } from "@unleashed/sdk/protocol"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -27,8 +27,9 @@ const descriptorFor = (network: string) =>
 				"..",
 				"..",
 				"packages",
-				"bridge-core",
+				"sdk",
 				"src",
+				"protocol",
 				`private-fpc-canonical${network === "mainnet" ? "-mainnet" : ""}.json`,
 			),
 			"utf8",
@@ -96,7 +97,7 @@ describe("the sandbox generation", () => {
 describe("the shipped manifests", () => {
 	it.each([
 		["testnet-bridge.json", "testnet", 11155111, 685146337],
-		["mainnet-bridge.json", "mainnet", 1, 4248422646],
+		["mainnet-bridge.json", "mainnet", 1, 2070860441],
 	])("%s is a valid v2 manifest for its own chain", (file, network, l1ChainId, walletChainId) => {
 		const m = parseManifestV2(JSON.parse(readFileSync(join(PUBLIC_DIR, file as string), "utf8")))
 		expect(m.network).toBe(network)

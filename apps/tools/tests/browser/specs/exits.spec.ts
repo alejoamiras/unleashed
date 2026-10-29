@@ -11,7 +11,7 @@ import {
 	readHandle,
 	writeL1,
 } from "@unleashed/bridge-core/sandbox"
-import { PRIVATE_HUB_EXIT_GAS } from "@unleashed/bridge-core"
+import { PRIVATE_HUB_EXIT_GAS } from "@unleashed/sdk/protocol"
 import { parseAbi } from "viem"
 import { trimAddress } from "../../../src/lib/format"
 import { TESTIDS } from "../../../src/lib/testids"
@@ -33,7 +33,7 @@ const SET_PAUSED_ABI = parseAbi(["function setPaused(bool deposits, bool withdra
 /** An actor holding USDC on L2, deposited through the harness (the sponsor pays that scaffolding). */
 async function holding(
 	actor: ActorHandle,
-	sandbox: { tokens: { usdc: import("@unleashed/bridge-core").ManifestToken } },
+	sandbox: { tokens: { usdc: import("@unleashed/sdk/protocol").ManifestToken } },
 	kind: "public" | "private",
 ) {
 	const { usdc } = sandbox.tokens

@@ -20,14 +20,14 @@ import {
 	privateFpcFeeLimit,
 	proposeGasShare,
 	signedMinFuelOutput,
-	type TokenState,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/protocol"
+import { type TokenState, clampGas, walletMaxFees } from "@unleashed/sdk/internal"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { ref, type Ref } from "vue"
 import { FUEL } from "@/contracts/bridge-generation"
+import { appNode } from "@/lib/aztec-node"
 import { NETWORK } from "@/lib/network"
 import { MAX_TX_TARGET, NO_GAS_ROUTE } from "@/lib/send-model"
-import { clampGas, walletMaxFees } from "@/lib/wallet-fee-budget"
 
 /** Enough for a first session on L2 without over-diverting the deposit. */
 const DEFAULT_TX_TARGET = 20
@@ -130,7 +130,7 @@ export function useGasShare(deps: GasShareDeps = {}): UseGasShareHandle {
 	function readMaxFees(): Promise<MaxFees> {
 		const aztec = deps.aztec?.()
 		const account = deps.account?.()
-		if (aztec && account) return walletMaxFees(aztec, AztecAddress.fromStringUnsafe(account), PRIVATE_HUB_CLAIM_GAS)
+		if (aztec && account) return walletMaxFees(appNode(), aztec, AztecAddress.fromStringUnsafe(account), PRIVATE_HUB_CLAIM_GAS)
 		return predictedWorstMinFees(createAztecNodeClient(NETWORK.nodeUrl))
 	}
 
@@ -176,7 +176,7 @@ export function useGasShare(deps: GasShareDeps = {}): UseGasShareHandle {
 	function feeLimitOf(txs: readonly HubGas[]): bigint | null {
 		const maxFees = priced()
 		if (!maxFees) return null
-		return txs.reduce((sum, gas) => sum + privateFpcFeeLimit(clampGas(gas), maxFees), 0n)
+		return txs.reduce((sum, gas) => sum + privateFpcFeeLimit(clampGas(appNode(), gas), maxFees), 0n)
 	}
 
 	function ceilingsFor(state: TokenState): bigint | null {

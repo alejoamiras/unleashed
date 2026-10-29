@@ -18,12 +18,19 @@ import {
 	zeroHash,
 } from "viem"
 import { describe, expect, it } from "vitest"
-import { ACROSS_V4_FACET_ABI, buildAcrossV4Deposit, START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR } from "./across-v4"
-import { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
-import { LIFI_RECEIVER_MESSAGE_PARAMS, type LifiSwapData, SWAP_TOKENS_MULTIPLE_V3_ABI, SWAP_TOKENS_SINGLE_V3_ABI } from "./lifi-abi"
-import { lifiBook } from "./lifi-addresses"
+import { ACROSS_V4_FACET_ABI, buildAcrossV4Deposit } from "./across-v4"
+import {
+	START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR,
+	DEPOSIT_ROUTER_ABI,
+	LIFI_RECEIVER_MESSAGE_PARAMS,
+	type LifiSwapData,
+	SWAP_TOKENS_MULTIPLE_V3_ABI,
+	SWAP_TOKENS_SINGLE_V3_ABI,
+	lifiBook,
+} from "@unleashed/sdk/protocol"
 import {
 	acrossDepositFor,
+	decodeRouterMessage,
 	FEE_FORWARDER_ABI,
 	type FieldPolicyKind,
 	type RouteExpectation,
@@ -504,5 +511,29 @@ describe("lifi-decode: every single-field mutation", () => {
 		expect(leaves.map((l) => l.path)).toEqual(expect.arrayContaining(["message.receiver", "router.intent.fuelSlice", ...nested]))
 		expect(leaves.some((l) => fuel.includes(l.path))).toBe(true)
 		expect(leaves.flatMap((leaf) => judgeLeaf(m, leaf))).toEqual([])
+	})
+})
+
+describe("lifi-decode: decodeRouterMessage", () => {
+	it("decodes a recorded message's one step and router call, and refuses two steps or a non-canonical encoding", () => {
+		const v = rail.router.variants.public
+		const decoded = decodeRouterMessage(v.message)
+		expect(decoded).toMatchObject({
+			ok: true,
+			decoded: {
+				message: { transactionId: v.transactionId },
+				router: { intent: { token: v.intent.token, aztecRecipient: v.intent.aztecRecipient } },
+			},
+		})
+
+		const [txId, steps, receiver] = decodeAbiParameters(LIFI_RECEIVER_MESSAGE_PARAMS, v.message)
+		const fieldOf = (bytes: Hex) => {
+			const r = decodeRouterMessage(bytes)
+			return r.ok ? undefined : r.field
+		}
+		expect(fieldOf(encodeAbiParameters(LIFI_RECEIVER_MESSAGE_PARAMS, [txId, [steps[0], steps[0]], receiver]))).toBe(
+			"message.swapData.length",
+		)
+		expect(fieldOf(`${v.message as Hex}00`)).toBe("message")
 	})
 })

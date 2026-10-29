@@ -3,9 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { deriveHubTokenInstance } from "../src/hub-token"
-import type { ManifestV2 } from "../src/manifest-v2"
-import { predictPortal } from "../src/portal-address"
+import { deriveHubTokenInstance, type ManifestV2, predictPortal } from "@unleashed/sdk/protocol"
 import { openDeployJournal, readCandidate, readDeployJournal, writeCandidateAtomically } from "./deploy-manifest"
 
 let dir: string

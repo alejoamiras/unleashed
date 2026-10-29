@@ -21,9 +21,8 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { publicFeeJuicePayment } from "../src/fee-juice"
-import type { L1Ctx } from "../src/flows"
-import { runSend } from "../src/send-flow"
+import { publicFeeJuicePayment } from "@unleashed/sdk/protocol"
+import { type L1Ctx, runSend } from "@unleashed/sdk/internal"
 import { feeJuiceFor } from "./fee-juice-l2"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
@@ -45,7 +44,7 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -129,7 +128,7 @@ async function buildL2Leg(nodeUrl: string, mins: () => string): Promise<L2Leg> {
 
 async function main() {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 
 	const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 	const { wallet, pub } = createL1Clients({ chain: sepolia, rpcUrl: SEPOLIA_RPC, account })
@@ -210,7 +209,4 @@ async function main() {
 	console.log(`   ${TOKEN.displaySymbol} balance ${tokenBal}, FJ gained ${fjAfter - fjBefore}. Safe to promote.`)
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

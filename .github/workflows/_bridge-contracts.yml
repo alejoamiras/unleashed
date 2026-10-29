@@ -83,6 +83,7 @@ jobs:
           2 FormalFactoryTest
           2 FormalCloneTest
           11 FormalDepositRouterTest
+          3 FormalFuelOnlyGateTest
           EXPECTED
 
           # A name listed twice is proved by two contracts, so it must pass twice: one passing
@@ -93,6 +94,9 @@ jobs:
           check_fromCaller_conservesReceived
           check_fromCaller_pullsOnlyFromCaller
           check_fuelOnly_noTokenLeg
+          check_gate_pausedRefusesFuelOnly
+          check_gate_refusesEveryTokenLeg
+          check_gate_setDepositsPaused_revertsForNonOwner
           check_noStandingApproval
           check_partialFeeAssetNeverIntoFeeJuicePortal
           check_permit_conservesUserFunds
@@ -113,8 +117,8 @@ jobs:
           done < <(sort proofs.want | uniq -c)
 
           summaries=$(grep -c '^Symbolic test result: ' halmos.clean || true)
-          if [ "$summaries" -ne 3 ]; then
-            echo "::error::expected 3 proof contracts to run, saw ${summaries}"
+          if [ "$summaries" -ne 4 ]; then
+            echo "::error::expected 4 proof contracts to run, saw ${summaries}"
             fail=1
           fi
           if grep -qE '^Symbolic test result: [0-9]+ passed; [1-9]' halmos.clean; then
@@ -123,16 +127,21 @@ jobs:
           fi
           exit "$fail"
 
-      # The hand-written ABI consts bridge-core ships to the browser are pinned against the forge
-      # artifacts by vitest — which the unit-test job runs WITHOUT artifacts (it skips). This is the
-      # one place both exist.
-      - name: ABI pins (bridge-core ↔ forge artifacts)
+      # The hand-written ABI consts and the runtime code pins the SDK ships are pinned against the
+      # forge artifacts by vitest — which the unit-test job runs WITHOUT artifacts (it skips). This is
+      # the one place both exist.
+      - name: ABI and code pins (SDK ↔ forge artifacts)
         run: |
           # The pin suites skip when the artifacts are absent; here that would be a silent pass.
-          test -f contracts/bridge/evm/out/PortalFactory.sol/PortalFactory.json
-          test -f contracts/bridge/evm/out/TokenPortalImpl.sol/TokenPortalImpl.json
-          test -f contracts/bridge/evm/out/DepositRouter.sol/DepositRouter.json
-          bun run --cwd packages/bridge-core test -- factory-abi deposit-router-abi
+          for c in PortalFactory TokenPortalImpl DepositRouter FuelOnlyGate TestnetFuelSwapper; do
+            test -f "contracts/bridge/evm/out/$c.sol/$c.json"
+          done
+          bun run --cwd packages/sdk test -- factory-abi deposit-router-abi code-pins
+
+      # The testnet relayer's run against two anvils, the pool and USDC mocks from the build above placed at
+      # their real testnet addresses. It boots and reaps its own anvils.
+      - name: testnet relayer on two anvils
+        run: bun run --cwd packages/testnet-relayer test:integration
 
   noir:
     name: nargo test (keystone)

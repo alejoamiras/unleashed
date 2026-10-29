@@ -5,6 +5,7 @@
  *
  *   bun scripts/deploy-generation.ts deploy --rates <rates.json> [--routing <routing.json>] [--dry-run]
  *   bun scripts/deploy-generation.ts deploy --router-only --rates <rates.json> [--config <base>] [--routing <routing.json>] [--dry-run]
+ *   bun scripts/deploy-generation.ts deploy --fuel-route --fuel <fuel.json> [--config <base>] [--dry-run]
  *   bun scripts/deploy-generation.ts pre-create --config <candidate> --token <erc20> [--no-register]
  *   bun scripts/deploy-generation.ts calibrate  --config <candidate> --samples <fees.json>
  *
@@ -15,6 +16,11 @@
  * (`{ "<erc20>": "<fee-asset units per whole token>" }`). `--router-only` is L1-only (no L2 account,
  * no proofs): a new DepositRouter and TestnetFuelSwapper for the current generation, `--config`
  * (default: the live manifest) as the base of the candidate it writes.
+ *
+ * `--fuel-route` is Ethereum mainnet's: a FuelOnlyGate and a DepositRouter swapping through LI.FI's Diamond, L1 only,
+ * as a keyed run on mainnet-l1.env.example (PRIVATE_KEY, the pinned mainnet signer; ETH_RPC_URL; DRPC_API_KEY).
+ * `--fuel` names the route's `{ slippageBps, minFuelFj, fjPerTx }`; `--config` (default: the live mainnet manifest)
+ * is the placeholder the candidate extends.
  */
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -23,12 +29,20 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import type { L1Ctx } from "../src/flows"
-import { type BridgeBlock, type ManifestToken, type ManifestV2, manifestToken, parseManifestV2 } from "../src/manifest-v2"
-import { PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
-import { walletChainIdOf } from "../src/wallet-chain-id"
+import {
+	manifestPrivateFpc,
+	type BridgeBlock,
+	fuelRouteSchema,
+	type ManifestToken,
+	type ManifestV2,
+	manifestToken,
+	parseManifestV2,
+	walletChainIdOf,
+} from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 import { openDeployJournal, readCandidate, writeCandidateAtomically } from "./deploy-manifest"
+import { deployFuelRoute, type FuelRouteOptions, planFuelRoute } from "./fuel-route"
 import { deployGeneration, type GenerationRecord, type L2Ctx, preCreateToken } from "./generation"
 import {
 	DEFAULT_CROSS_CHAIN_SLIPPAGE_BPS,
@@ -39,30 +53,42 @@ import {
 	type RouterOnlyNetwork,
 	type RouterOnlyOptions,
 } from "./generation-router"
-import { authenticatedNode, type NodeIdentity, PLAN_PINNED_L1_SIGNERS } from "./live-intent"
+import {
+	authenticatedMainnetNode,
+	authenticatedNode,
+	MAINNET_JOURNAL,
+	MAINNET_REGISTRY,
+	type NodeIdentity,
+	PLAN_PINNED_L1_SIGNERS,
+} from "./live-intent"
 import {
 	createL1Clients,
 	createL2Wallet,
 	createNode,
 	loadManifestV2FromConfigArg,
+	mainnetChain,
 	requireBridge,
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
+import { CANONICAL_PERMIT2 } from "@unleashed/sdk/protocol"
 import { deployAccountIfAbsent, deployerSchnorrAccount, sponsoredFpcFee } from "./script-l2"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(here, "..", "..", "..", "apps", "tools", "public")
 const CANDIDATE_PATH = join(PUBLIC_DIR, "testnet-bridge.candidate.json")
 const LIVE_PATH = join(PUBLIC_DIR, "testnet-bridge.json")
 const JOURNAL_PATH = join(here, "..", "deploy-journal", "testnet-generation.jsonl")
+const REPO_ROOT = join(here, "..", "..", "..")
+const MAINNET_LIVE_PATH = join(PUBLIC_DIR, "mainnet-bridge.json")
+const MAINNET_CANDIDATE = "apps/tools/public/mainnet-bridge.candidate.json"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
 
 /** Sepolia's canonical Permit2. */
-const SEPOLIA_PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3"
+const SEPOLIA_PERMIT2 = CANONICAL_PERMIT2
 const SLIPPAGE_BPS = 300
 // 4× the worst PrivateFPC ceiling the validator measured over three live private claims on the
 // testnet fee schedule (7.44 FJ); a one-sample run may only ever raise it.
@@ -71,12 +97,13 @@ const MIN_FJ = "16000000000000000000"
 
 const lc = (v: string) => v.toLowerCase() as Address
 
-function requireSigner(): ReturnType<typeof privateKeyToAccount> {
-	if (!PRIVATE_KEY) throw new Error("PRIVATE_KEY is required (packages/bridge-core/.env) — STOP")
+/** The env's signer, refused unless it is `network`'s pinned one, before any node or L1 read. */
+function requireSigner(network: "testnet" | "mainnet" = "testnet"): ReturnType<typeof privateKeyToAccount> {
+	if (!PRIVATE_KEY) throw new Error(`PRIVATE_KEY is required: run this through its ${network} keyed-run template — STOP`)
 	const account = privateKeyToAccount(PRIVATE_KEY)
-	const pinned = PLAN_PINNED_L1_SIGNERS.testnet
+	const pinned = PLAN_PINNED_L1_SIGNERS[network]
 	if (!pinned || account.address.toLowerCase() !== pinned.toLowerCase()) {
-		throw new Error(`L1 deployer ${account.address} != pinned testnet signer ${pinned} — wrong key; STOP`)
+		throw new Error(`L1 deployer ${account.address} != pinned ${network} signer ${pinned} — wrong key; STOP`)
 	}
 	return account
 }
@@ -85,7 +112,7 @@ function requireSigner(): ReturnType<typeof privateKeyToAccount> {
  *  sponsored-fee-spending transaction, and nothing but an actual generation needs it on chain. */
 async function connect(mins: () => string, opts: { deployAccount: boolean }): Promise<{ l1: L1Ctx; l2: L2Ctx; addrs: NodeL1 }> {
 	const account = requireSigner()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 	// Before any account exists: the registry and portal read here become the generation's immutables.
 	const info = await authenticatedNode(nodeUrl)
 	const chain = sepoliaChain(SEPOLIA_RPC)
@@ -176,16 +203,6 @@ function priorFuelBudgets(): FuelBudgets {
 	}
 }
 
-/** The canonical PrivateFPC the manifest advertises: the pinned address with the descriptor's
- *  version + artifact digest, so a reader can tell which FPC generation the fuel lane pays through. */
-function privateFpcBlock(): NonNullable<ManifestV2["privateFpc"]> {
-	const descriptor = JSON.parse(readFileSync(join(here, "..", "src", "private-fpc-canonical.json"), "utf8")) as {
-		aztecVersion: string
-		artifactSha256: string
-	}
-	return { address: PRIVATE_FPC_ADDRESS, version: descriptor.aztecVersion, artifactDigest: descriptor.artifactSha256 }
-}
-
 function generationBase(gen: GenerationRecord, addrs: NodeL1, tokens: ManifestToken[]): ManifestV2 {
 	const bridge: BridgeBlock = { l1: { ...gen.l1, fuel: priorFuelBudgets() }, l2: gen.l2, tokens }
 	return {
@@ -200,7 +217,7 @@ function generationBase(gen: GenerationRecord, addrs: NodeL1, tokens: ManifestTo
 			...(addrs.feeAssetHandler ? { feeAssetHandler: addrs.feeAssetHandler } : {}),
 			minFj: MIN_FJ,
 		},
-		privateFpc: privateFpcBlock(),
+		privateFpc: manifestPrivateFpc(addrs.l1ChainId),
 		privateClaimMode: "salt-v2",
 	}
 }
@@ -283,7 +300,7 @@ async function commandRouterOnly(): Promise<void> {
 	const mins = stopwatch()
 	const rates = ratesArg()
 	const account = requireSigner()
-	const info = await authenticatedNode(requireDrpcNodeUrl("testnet", process.env))
+	const info = await authenticatedNode(keyedNodeUrl("testnet"))
 	const l1: L1Ctx = { ...createL1Clients({ chain: sepoliaChain(SEPOLIA_RPC), rpcUrl: SEPOLIA_RPC, account }), account }
 	const options: RouterOnlyOptions = {
 		l1,
@@ -306,6 +323,45 @@ async function commandRouterOnly(): Promise<void> {
 	console.log(
 		"   candidate written to apps/tools/public/testnet-bridge.candidate.json; next: pre-create, verify:l1 --strict, the smokes.",
 	)
+}
+
+/** Ethereum mainnet's fuel-only route: a gate and a router beside the live placeholder. L1 only. */
+async function commandFuelRoute(): Promise<void> {
+	const mins = stopwatch()
+	const fuelPath = argValue("--fuel")
+	if (!fuelPath) throw new Error('deploy --fuel-route needs --fuel <fuel.json> ({ "slippageBps", "minFuelFj", "fjPerTx" })')
+	const fuel = fuelRouteSchema.shape.fuel.parse(readJson(fuelPath))
+	const rpcUrl = process.env.ETH_RPC_URL
+	if (!rpcUrl) throw new Error("ETH_RPC_URL is required: run this through mainnet-l1.env.example — STOP")
+	const account = requireSigner("mainnet")
+	const base = loadManifestV2FromConfigArg(process.argv, { mode: "fallback", fallbackPath: MAINNET_LIVE_PATH })
+	const info = await authenticatedMainnetNode(keyedNodeUrl("mainnet"), base)
+	const l1: L1Ctx = { ...createL1Clients({ chain: mainnetChain(rpcUrl), rpcUrl, account }), account }
+	const options: FuelRouteOptions = {
+		l1,
+		network: {
+			l1ChainId: info.l1ChainId,
+			rollupVersion: info.rollupVersion,
+			registry: lc(MAINNET_REGISTRY),
+			feeJuicePortal: lc(base.feeJuice.portal),
+			feeJuice: lc(base.feeJuice.asset),
+			permit2: lc(CANONICAL_PERMIT2),
+		},
+		journalPath: join(REPO_ROOT, MAINNET_JOURNAL),
+		base,
+		fuel,
+		candidatePath: join(REPO_ROOT, MAINNET_CANDIDATE),
+	}
+	if (process.argv.includes("--dry-run")) {
+		for (const line of await planFuelRoute(options)) console.log(`dry run: ${line}`)
+		return
+	}
+	const { gate, depositRouter } = await deployFuelRoute(options)
+	// Repo-relative: the journal is the route's record and must not carry a machine's layout.
+	openDeployJournal(options.journalPath).append({ kind: "candidate-written", path: MAINNET_CANDIDATE })
+	const how = (d: { adopted: boolean }) => (d.adopted ? "adopted" : "deployed")
+	console.log(`\n✅ gate ${gate.address} (${how(gate)}), router ${depositRouter.address} (${how(depositRouter)}) (${mins()})`)
+	console.log(`   candidate written to ${MAINNET_CANDIDATE}; next: verify:l1 --strict, the canary, calibrate, live-intent verify.`)
 }
 
 /** Adds one token to an existing generation's candidate: portal clone and hub registration. */
@@ -346,13 +402,11 @@ function commandCalibrate(): void {
 async function main(): Promise<void> {
 	const command = process.argv[2]
 	if (command === "deploy" && process.argv.includes("--router-only")) return commandRouterOnly()
+	if (command === "deploy" && process.argv.includes("--fuel-route")) return commandFuelRoute()
 	if (command === "deploy") return commandDeploy()
 	if (command === "pre-create") return commandPreCreate()
 	if (command === "calibrate") return commandCalibrate()
 	throw new Error("usage: deploy-generation.ts <deploy|pre-create|calibrate> [flags] — see the header")
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

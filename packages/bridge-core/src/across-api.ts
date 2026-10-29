@@ -6,7 +6,7 @@
  */
 import { type Address, type Hex, isAddress } from "viem"
 import z from "zod"
-import { cappedFetchJson } from "./capped-fetch"
+import { cappedFetchJson } from "@unleashed/sdk/protocol"
 
 /** Across's testnet API; a sandbox serves the same paths from its own base. */
 export const ACROSS_TESTNET_API = "https://testnet.across.to/api"

@@ -3,13 +3,12 @@
  * the operator-only factory/router constants the app's ABIs omit, and the portal preflight every gate
  * runs before it trusts a generation.
  */
-import { type Abi, type Account, type Address, type Chain, defineChain, encodeFunctionData, type Hex, type WalletClient } from "viem"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import type { L1Ctx } from "../src/flows"
-import { ensurePermit2Allowance } from "../src/l1"
-import { predictPortal } from "../src/portal-address"
+import { type Abi, type Address, type Chain, defineChain, type Hex } from "viem"
+import { PORTAL_FACTORY_ABI, ensurePermit2Allowance, predictPortal } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import { sourceChain } from "../src/source-chains"
-import { retried } from "./retried"
+import { retried } from "../src/retried"
+import { redactSecrets } from "./keyed-env"
 
 /** Minimal ERC20 surface the scripts touch. A superset per consumer is harmless — viem only
  *  encodes the functions actually called. */
@@ -49,16 +48,6 @@ export const FACTORY_CONSTANTS_ABI = [
 	{ type: "function", name: "ROLLUP_VERSION", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const
 
-/** The implementation's frozen pointers. A clone has no storage and no initializer, so these are the
- *  whole of what every token's portal delegates into — read them on the implementation itself. */
-export const PORTAL_IMPL_CONSTANTS_ABI = [
-	{ type: "function", name: "FACTORY", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "INBOX", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "OUTBOX", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "ROLLUP_VERSION", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-	{ type: "function", name: "L2_HUB", stateMutability: "view", inputs: [], outputs: [{ type: "bytes32" }] },
-] as const
-
 /** `TestnetFuelSwapper`'s operator surface. */
 export const FUEL_SWAPPER_ABI = [
 	{ type: "function", name: "FEE_ASSET", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
@@ -72,6 +61,13 @@ export const FUEL_SWAPPER_ABI = [
 		inputs: [{ type: "address" }, { type: "uint256" }],
 		outputs: [],
 	},
+] as const
+
+/** `FuelOnlyGate`'s operator surface: its owner alone pauses every send through the router bound to it. */
+export const FUEL_GATE_ABI = [
+	{ type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "pendingOwner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "depositsPaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
 ] as const
 
 /** Aztec's testnet fee-asset faucet: permissionless, `mintAmount()` per call. */
@@ -105,100 +101,32 @@ export function sourceRpcUrl(chainId: number, env: Readonly<Record<string, strin
 export async function sendL1(
 	l1: L1Ctx,
 	call: { address: Address; abi: Abi; functionName: string; args: readonly unknown[] },
+	nonce?: number,
 ): Promise<Hex> {
-	const hash = await l1.wallet.writeContract({ ...call, account: l1.account, chain: l1.wallet.chain } as never)
+	const hash = await l1.wallet.writeContract({
+		...call,
+		account: l1.account,
+		chain: l1.wallet.chain,
+		...(nonce === undefined ? {} : { nonce }),
+	} as never)
 	const receipt = await l1.pub.waitForTransactionReceipt({ hash })
 	if (receipt.status !== "success") throw new Error(`${call.functionName} on ${call.address} REVERTED (${hash}) — STOP`)
 	return hash
 }
 
-/** The explicit gas terms a bounded send carries. */
-export interface GasTerms {
-	gas: bigint
-	maxFeePerGas: bigint
-	maxPriorityFeePerGas: bigint
-}
-
-/** One send, as the node estimates it. */
-export interface SendRequest {
-	account: Address
-	to?: Address
-	data: Hex
-	value?: bigint
-	/** A gas limit the caller already chose; the terms keep it instead of estimating. */
-	gas?: bigint
-}
-
-export type GasTermsFor = (request: SendRequest) => Promise<GasTerms>
-
-/** The pricing reads a bounded send needs (a viem public client's shape). */
-export interface GasPricing {
-	estimateGas(args: SendRequest): Promise<bigint>
-	estimateFeesPerGas(): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }>
-}
-
-/**
- * Terms that bound a send's execution fee by `gas × maxFeePerGas`: the node's estimate plus a quarter, since state
- * moves before inclusion, at the chain's current EIP-1559 caps. `charge` sees that worst case before the send exists
- * and throws to refuse it. An OP-stack chain's L1 data fee is billed outside the product.
- */
-export function boundedGasTerms(pub: GasPricing, charge: (worstWei: bigint, request: SendRequest) => void): GasTermsFor {
-	return async (request) => {
-		const gas = request.gas ?? ((await pub.estimateGas(request)) * 5n) / 4n
-		const { maxFeePerGas, maxPriorityFeePerGas } = await pub.estimateFeesPerGas()
-		charge(gas * maxFeePerGas, request)
-		return { gas, maxFeePerGas, maxPriorityFeePerGas }
-	}
-}
-
-interface BoundedWrite {
-	address: Address
-	abi: Abi
-	functionName: string
-	args?: readonly unknown[]
-	value?: bigint
-	gas?: bigint
-	account?: Account | Address | null
-}
-
-interface BoundedSend {
-	to?: Address | null
-	data?: Hex
-	value?: bigint
-	gas?: bigint
-	account?: Account | Address | null
-}
-
-/** `wallet` with explicit terms from `terms` on every `writeContract` and `sendTransaction`, so none of its sends goes out
- *  unbounded. Every other action is the wallet's own. */
-export function withGasTerms<W extends WalletClient>(wallet: W, terms: GasTermsFor): W {
-	const from = (account: Account | Address | null | undefined): Address => {
-		const a = account ?? wallet.account
-		if (!a) throw new Error("a bounded send needs an account")
-		return typeof a === "string" ? a : a.address
-	}
-	const writeContract = async (w: BoundedWrite) => {
-		const data = encodeFunctionData({ abi: w.abi, functionName: w.functionName, args: w.args } as never)
-		const bound = await terms({ account: from(w.account), to: w.address, data, value: w.value, gas: w.gas })
-		return wallet.writeContract({ ...w, ...bound } as never)
-	}
-	const sendTransaction = async (s: BoundedSend) => {
-		const bound = await terms({ account: from(s.account), to: s.to ?? undefined, data: s.data ?? "0x", value: s.value, gas: s.gas })
-		return wallet.sendTransaction({ ...s, ...bound } as never)
-	}
-	return { ...wallet, writeContract, sendTransaction } as W
-}
+export { boundedGasTerms, type GasPricing, type GasTerms, type GasTermsFor, type SendRequest, withGasTerms } from "../src/gas-terms"
 
 /**
  * Leaves `spender`'s allowance over `owner`'s `token` at exactly `amount`, never above: a standing max approval is
  * what an exploited spender drains. A token that refuses to move a non-zero allowance (USDT) is reset to zero
- * first. Returns the transactions sent, none when the allowance already equals `amount`.
+ * first. Returns the transactions sent, none when the allowance already equals `amount`. `nonce`, when given, hands
+ * out each write's nonce.
  */
-export async function approveExact(l1: L1Ctx, token: Address, spender: Address, amount: bigint): Promise<Hex[]> {
+export async function approveExact(l1: L1Ctx, token: Address, spender: Address, amount: bigint, nonce?: () => number): Promise<Hex[]> {
 	const current = await allowanceOf(l1, token, spender)
 	if (current === amount) return []
-	const sent = current > 0n && amount > 0n ? [await sendL1(l1, approveCall(token, spender, 0n))] : []
-	sent.push(await setAllowance(l1, token, spender, amount))
+	const sent = current > 0n && amount > 0n ? [await sendL1(l1, approveCall(token, spender, 0n), nonce?.())] : []
+	sent.push(await setAllowance(l1, token, spender, amount, nonce?.()))
 	return sent
 }
 
@@ -208,8 +136,8 @@ export async function approveExact(l1: L1Ctx, token: Address, spender: Address, 
  *
  * @throws when the approval reverts, or the allowance reads back as anything but `amount`.
  */
-export async function setAllowance(l1: L1Ctx, token: Address, spender: Address, amount: bigint): Promise<Hex> {
-	const hash = await sendL1(l1, approveCall(token, spender, amount))
+export async function setAllowance(l1: L1Ctx, token: Address, spender: Address, amount: bigint, nonce?: number): Promise<Hex> {
+	const hash = await sendL1(l1, approveCall(token, spender, amount), nonce)
 	// A backend without the approval's block errors, and the read retries.
 	const { blockNumber } = await l1.pub.waitForTransactionReceipt({ hash })
 	const after = await retried(() => allowanceOf(l1, token, spender, blockNumber))
@@ -284,7 +212,9 @@ export async function retryOnRevert<T>(fn: () => Promise<T>, tries = 3): Promise
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e)
 			if (i >= tries || !/REVERTED/.test(msg)) throw e
-			console.log(`bridge() reverted (attempt ${i}/${tries}) — waiting one Aztec slot and retrying: ${msg.slice(0, 120)}`)
+			console.log(
+				`bridge() reverted (attempt ${i}/${tries}) — waiting one Aztec slot and retrying: ${redactSecrets(msg).slice(0, 120)}`,
+			)
 			await new Promise((r) => setTimeout(r, 45_000))
 		}
 	}

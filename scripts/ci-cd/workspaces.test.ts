@@ -13,7 +13,15 @@ const workspaces: string[] = root.workspaces
 
 // A filter that matches no workspace makes `bun run --filter` exit 0 having run nothing.
 test("the all-workspace scripts select every workspace", () => {
-	expect(workspaces).toEqual(["@unleashed/bridge-core", "@unleashed/design", "@unleashed/landing", "@unleashed/legal", "@unleashed/tools"])
+	expect(workspaces).toEqual([
+		"@unleashed/bridge-core",
+		"@unleashed/design",
+		"@unleashed/landing",
+		"@unleashed/legal",
+		"@unleashed/sdk",
+		"@unleashed/testnet-relayer",
+		"@unleashed/tools",
+	])
 	for (const script of ["typecheck:all", "test:all"]) {
 		const filter = root.scripts[script].match(/--filter '([^']+)'/)?.[1]
 		expect(filter, script).toBeDefined()

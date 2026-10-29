@@ -23,6 +23,8 @@ interface Handle {
 	rollupVersion: number
 	walletChainId: number
 	l1ChainId: number
+	/** The router's swap target is `fuelSwapper`, which speaks LI.FI's swap ABI. */
+	deployment: { fuelSwapper: Hex }
 	/** Absent on a handle from before the sandbox's cross-chain half. */
 	crossChain?: {
 		sourceUrl: string
@@ -47,10 +49,13 @@ function withSandboxRouting(manifestJson: string, cc: CrossChain): string {
 	return `${JSON.stringify(manifest, null, "\t")}\n`
 }
 
-const sandboxLifiOf = (cc: CrossChain, l1ChainId: number): NonNullable<LocalTargetConfig["sandboxLifi"]> => ({
+/** The Ethereum book's Diamond is the router's swap target, so a manifest without the swapper prices and swaps gas
+ *  through LI.FI's client and checks, against the same contract. */
+const sandboxLifiOf = (cc: CrossChain, l1ChainId: number, swapTarget: Hex): NonNullable<LocalTargetConfig["sandboxLifi"]> => ({
 	source: { chainId: cc.sourceChainId, diamond: cc.source.diamond, spokePool: cc.source.spokePool },
 	ethereum: {
 		chainId: l1ChainId,
+		diamond: swapTarget,
 		executor: cc.destination.executor,
 		receiverAcrossV4: cc.destination.receiverAcrossV4,
 		spokePool: cc.destination.spokePool,
@@ -71,11 +76,22 @@ export interface LocalRun {
 	deploymentsJson: string
 }
 
+/** The sandbox manifest lists the testnet swapper; without it, its venue is LI.FI's, as on mainnet. */
+function withoutSwapper(manifestJson: string): string {
+	const manifest = JSON.parse(manifestJson) as { bridge?: { l1: { fuelSwapper?: string } } | null }
+	const bridge = manifest.bridge
+	if (!bridge?.l1.fuelSwapper) throw new Error("local target: the sandbox manifest lists no fuel swapper to stand LI.FI in for")
+	const { fuelSwapper: _, ...l1 } = bridge.l1
+	return `${JSON.stringify({ ...manifest, bridge: { ...bridge, l1 } }, null, "\t")}\n`
+}
+
 export interface LocalRunOptions {
 	/** Where the browser suite serves the built app (exact hostname is integrity layer 5). */
 	host?: string
 	/** The test-wallet pages discovery probes. */
 	webWalletUrls?: readonly string[]
+	/** `lifi`: gas swaps through the sandbox's LI.FI stand-in instead of the listed swapper. */
+	fuelVenue?: "lifi"
 }
 
 export function loadLocalRun(artifactsDir: string, opts: LocalRunOptions = {}): LocalRun {
@@ -91,13 +107,16 @@ export function loadLocalRun(artifactsDir: string, opts: LocalRunOptions = {}): 
 		l1RpcUrl: handle.anvilUrl,
 	}
 	const cc = handle.crossChain
+	// The venue's Diamond lives in the sandbox's LI.FI book, which only the cross-chain half registers.
+	if (opts.fuelVenue === "lifi" && !cc) throw new Error("local target: the LI.FI venue needs a handle with its cross-chain half")
 	if (cc) {
 		config.source = { chainId: cc.sourceChainId, rpcUrl: cc.sourceUrl }
-		config.sandboxLifi = sandboxLifiOf(cc, handle.l1ChainId)
+		config.sandboxLifi = sandboxLifiOf(cc, handle.l1ChainId, handle.deployment.fuelSwapper)
 	}
 	const acrossApiUrl = relayApiUrl(artifactsDir)
 	if (acrossApiUrl) config.acrossApiUrl = acrossApiUrl
-	const manifestJson = readFileSync(join(artifactsDir, "manifest.json"), "utf8")
+	const read = readFileSync(join(artifactsDir, "manifest.json"), "utf8")
+	const manifestJson = opts.fuelVenue === "lifi" ? withoutSwapper(read) : read
 	return {
 		target: localTarget(config),
 		config,
@@ -106,7 +125,8 @@ export function loadLocalRun(artifactsDir: string, opts: LocalRunOptions = {}): 
 	}
 }
 
-/** `UNLEASHED_SANDBOX_ARTIFACTS` (required), `UNLEASHED_TOOLS_HOST`, `UNLEASHED_TOOLS_WEB_WALLETS` (comma-separated). */
+/** `UNLEASHED_SANDBOX_ARTIFACTS` (required), `UNLEASHED_TOOLS_HOST`, `UNLEASHED_TOOLS_WEB_WALLETS` (comma-separated),
+ *  `UNLEASHED_TOOLS_FUEL_VENUE` (`lifi`). */
 export function loadLocalRunFromEnv(env: NodeJS.ProcessEnv = process.env): LocalRun {
 	const dir = env.UNLEASHED_SANDBOX_ARTIFACTS
 	if (!dir) throw new Error("the local target needs UNLEASHED_SANDBOX_ARTIFACTS=<dir written by sandbox:up>")
@@ -116,5 +136,6 @@ export function loadLocalRunFromEnv(env: NodeJS.ProcessEnv = process.env): Local
 			.split(",")
 			.map((s) => s.trim())
 			.filter(Boolean),
+		...(env.UNLEASHED_TOOLS_FUEL_VENUE === "lifi" ? { fuelVenue: "lifi" as const } : {}),
 	})
 }

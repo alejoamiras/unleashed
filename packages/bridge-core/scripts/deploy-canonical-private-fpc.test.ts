@@ -30,7 +30,7 @@ vi.mock("@alejoamiras/private-fee-juice/artifacts/private", () => ({
 	},
 }))
 
-import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
+import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
 import { deployCanonicalPrivateFpc } from "./deploy-canonical-private-fpc"
 
 describe("deployCanonicalPrivateFpc", () => {

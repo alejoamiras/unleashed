@@ -1,13 +1,14 @@
 /**
  * Whether a deposit of one token can buy Fee Juice on the way in, and through which venue: a probe of the
- * manifest's fuel provider at one whole unit, which the gas share scales to the slice. The slice itself is quoted
- * again right before the signature (`sliceSwapData`), and the floor the user reviewed is the one signed.
+ * manifest's fuel provider at one whole unit, which the gas share scales to the slice. The send quotes the slice
+ * again right before the signature and signs the floor the user reviewed.
  */
-import { type FuelProvider, type FuelQuoteReads, manifestFuelProvider, withFuelFloor } from "@unleashed/bridge-core"
+import type { FuelProvider } from "@unleashed/bridge-core"
+import { type FuelQuoteReads, manifestFuelProvider } from "@unleashed/sdk/internal"
 import { type Address, BaseError, ContractFunctionRevertedError, type Hex, type PublicClient } from "viem"
 import { type ComputedRef, computed, type Ref } from "vue"
 import { FUEL_ASSET, MANIFEST, SEND_GENERATION } from "@/contracts/bridge-generation"
-import { type GasLegPlan, NO_GAS_ROUTE } from "@/lib/send-model"
+import { NO_GAS_ROUTE } from "@/lib/send-model"
 import { latestQuote } from "./latest-quote"
 
 const DEBOUNCE_MS = 400
@@ -51,7 +52,11 @@ export function fuelProviderOn(pub: Pick<PublicClient, "readContract">, transact
 				throw e
 			}),
 	}
-	const provider = SEND_GENERATION ? manifestFuelProvider(MANIFEST, reads, transactionId ? { transactionId } : {}) : undefined
+	// LI.FI is the venue wherever the manifest names no swapper; li.quest needs no key.
+	const lifi = typeof fetch === "function" ? { lifi: { fetch: fetch.bind(globalThis) } } : {}
+	const provider = SEND_GENERATION
+		? manifestFuelProvider(MANIFEST, reads, { ...lifi, ...(transactionId ? { transactionId } : {}) })
+		: undefined
 	return { provider, reverted: () => reverted }
 }
 
@@ -87,22 +92,6 @@ export function useFuelQuote(deps: { pub: () => PublicClient | undefined }): Use
 		quote: (token, probeAmount) => core.ask({ token, probeAmount }),
 		dispose: core.dispose,
 	}
-}
-
-/** The swap bytes for the reviewed slice: a fresh quote at exactly `gas.fuelAmount`, carrying the floor the user
- *  reviewed. Refuses when the venue now quotes under that floor, so the signature never binds a swap that would
- *  revert or a floor the user did not see. The fee asset needs no swap. */
-export async function sliceSwapData(
-	pub: PublicClient,
-	token: Address,
-	gas: Pick<GasLegPlan, "fuelAmount" | "minFuelOutput">,
-): Promise<Hex> {
-	if (sameAddress(token, FUEL_ASSET)) return "0x"
-	const { provider } = fuelProviderOn(pub)
-	if (!provider) throw new Error(NO_GAS_ROUTE)
-	const res = await provider.quote(token, gas.fuelAmount)
-	if (!res.ok || res.quote.expectedOut < gas.minFuelOutput) throw new Error(GAS_QUOTE_MOVED)
-	return withFuelFloor(res.quote.swapData, gas.minFuelOutput)
 }
 
 export const GAS_QUOTE_MOVED = "The gas price moved since you reviewed this send — go back and review it again. Nothing was sent."

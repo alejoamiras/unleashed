@@ -2,8 +2,7 @@
  *  timed, with the sponsor paying whatever a flow does not price itself. The integration suite is
  *  where each cell runs on a fresh actor with the payer it claims; this is the CLI's one-shot form
  *  and the source of the calibration numbers an operator copies into a manifest. */
-import type { ManifestV2 } from "../../src/manifest-v2"
-import { PRIVATE_HUB_EXIT_GAS } from "../../src/private-fuel"
+import { type ManifestV2, PRIVATE_HUB_EXIT_GAS } from "@unleashed/sdk/protocol"
 import { calibrateFuelBudgets } from "../calibration"
 import { assertPrivateFpcUnpublished, buildContext, type Samples, type SmokeContext, tokenBlockOf } from "./context"
 import {

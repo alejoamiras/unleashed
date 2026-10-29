@@ -13,8 +13,8 @@ bun run e2e:tools -- specs/spike.spec.ts   # one file
 
 `scripts/e2e/agent.sh` is the whole run: reserve two ports → `sandbox:up` (anvil + `aztec start
 --local-network` + a bridge generation, from `packages/bridge-core`) → `build:local` of tools with
-the run's node URL and wallet URLs baked in → `build:test-wallet` → assert both bundles name the
-node → Playwright with two `webServer`s (`vite preview` of each build, the tools one serving the
+the run's node URL and wallet URLs baked in, then a second one for the LI.FI gas venue (below) →
+`build:test-wallet` → assert the bundles name the node → Playwright with two `webServer`s (`vite preview` of each build, the tools one serving the
 generated CSP) → reap. State lives under `.e2e-state/<run>/` (gitignored): ports, the sandbox
 artifacts, both `dist`s, logs, traces.
 
@@ -31,10 +31,11 @@ artifacts, both `dist`s, logs, traces.
 | `fixtures/sandbox.ts` | the Node side: `openSandbox` on the handle, `newActor()` (sponsor-deployed, own flow context) |
 | `fixtures/l1-wallet.ts` | `window.ethereum` → `exposeFunction` → viem over the anvil of the chain it is on (the sandbox's L1 and its source chain; `wallet_switchEthereumChain` to any other answers 4902); `setChainId`, `setAccount`, `rejectNext`, `holdNext(kind, { to })` (a request that never answers, narrowable to one transaction target), `calls(method)` per-method counts, `permits()` (every Permit2 permit as signed); EIP-5792: no atomic batching unless `atomicOn(chainId)`, `batches()` as the page sent them, `holdBatchReceipts()` (sent at once, receipts withheld); `sendOutside(chainId, call)` for state another app left |
 | `fixtures/relayer.ts` | the cross-chain half: steers the relay loop `sandbox:up` runs (`setMode`: `now`, `delay`, `never`, `starve-gas`, back to `now` after each test), levels the source anvil's clock with Ethereum's before a quote (`syncSourceClock`), and forces L2 blocks until Ethereum's finalized clock passes a deadline (`passOnEthereum`) |
-| `fixtures/egress.ts` | aborts every non-loopback request, answers the token list from `../e2e/fixtures/token-list.json` (or `token-list-hostile.json` under `test.use({ tokenList: "hostile" })`); the record must be empty at teardown |
+| `fixtures/egress.ts` | aborts every non-loopback request, answers the token list from `../e2e/fixtures/token-list.json` (or `token-list-hostile.json` under `test.use({ tokenList: "hostile" })`) and, under `test.use({ lifiQuote: "recorded" \| "hostile" })`, li.quest's gas quote from `fixtures/lifi-quote.ts`; the record must be empty at teardown |
+| `fixtures/lifi-quote.ts` | the recorded mainnet same-chain quote re-encoded for the sandbox: the request's tokens, amount and router, the swapper's own `quote()` as the estimate; `hostile` aims the call at a contract that is not the Diamond |
 | `fixtures/wallet-panel.ts` | parks the SDK's floating session panel in a corner so it covers no testid |
 | `pages/*.ts` | testid-only page helpers: connect, drip, the Send wizard's deposit and exit directions, a deposit from the source chain (`crosschain.ts`: its review signed after the switch, its schema-4 record, its card's phase), the journal (records + the fees their transactions billed), `fees.ts` (the ceiling the wallet will price — see below) |
-| `specs/*.spec.ts` | the cells, one file per family (`deposit-token`, `deposit-crosschain`, `fee-states`, `deposit-token-gas`, `deposit-gas-only`, `tokens`, `tokens-hostile` (the community list served from the hostile fixture), `recovery`, `l1-wallet`, `exits`, `drip`, `activity`, `accounts` — the multi-account path, pair cells take a second actor from the pool — and `accounts-single`, a one-seed wallet with `spares: 0`; `spike` keeps the discovery / grant / isolation checks and the narrow-viewport pass); `test.use({ cells: N, l1Index: i })` at the top of each file |
+| `specs/*.spec.ts` | the cells, one file per family (`deposit-token`, `deposit-crosschain`, `fee-states`, `deposit-token-gas`, `deposit-gas-only`, `tokens`, `tokens-hostile` (the community list served from the hostile fixture), `deposit-gas-lifi` (the LI.FI venue, on the `/lifi/` bundle), `recovery`, `l1-wallet`, `exits`, `drip`, `activity`, `accounts` — the multi-account path, pair cells take a second actor from the pool — and `accounts-single`, a one-seed wallet with `spares: 0`; `spike` keeps the discovery / grant / isolation checks and the narrow-viewport pass); `test.use({ cells: N, l1Index: i })` at the top of each file |
 | `test-wallet/` | the wallet page: `profile.ts` (`plain` \| `selfpay` \| `full`), `wallet.ts` (the embedded wallet + grant + wallet-specific RPCs + self-pay routing), `main.ts` (the handler, the control hook `window.__unleashedTestWallet`: `addAccount`, `calls`, `submitted`, `failNext` / `holdNext` / `swallowNext` — refuse, park (until `release`), or run-but-never-answer the next matching call — `dropNextSubmission` (the next transaction is recorded at the node hand-off and never forwarded), `declineNextGrant`), its own `vite.config.mts` |
 
 ## How a spec gets its accounts
@@ -77,6 +78,16 @@ The wallet accepts only tools' app id and the sandbox's chain, is framed only by
   claim driven from the UI waits on an L1→L2 message no block would carry. The `test` fixture keeps
   a heartbeat for the worker's whole life (the relayer revokes a random public authwit every 3 s),
   the same nudge the harness uses. It is the one place this suite differs from a real network.
+
+## The LI.FI gas venue
+
+Mainnet's manifest lists no swapper: its gas is priced and swapped through LI.FI. The runner builds the
+same run a second time with `UNLEASHED_TOOLS_FUEL_VENUE=lifi`, which drops the listed swapper from the
+manifest and names it as the sandbox book's Ethereum Diamond, and serves that bundle under `/lifi/` on
+the tools origin, so the test wallets accept it. The SDK then asks li.quest for the quote and holds it
+to the same checks as on mainnet; the router calls the swapper, which speaks LI.FI's single-swap call.
+Only a file that sets `lifiQuote` gets li.quest answered; anywhere else the request is blocked and
+fails the egress record.
 
 ## The source chain
 

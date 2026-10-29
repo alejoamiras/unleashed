@@ -58,6 +58,8 @@ jobs:
               - 'packages/design/package.json'
               - 'packages/legal/src/**'
               - 'packages/legal/package.json'
+              - 'packages/sdk/src/**'
+              - 'packages/sdk/package.json'
               - 'package.json'
               - 'bun.lock'
               - 'bunfig.toml'

@@ -4,7 +4,7 @@
  * address; and the record a run prints. Pure: the CLI reads the chains and hands the facts in.
  */
 import { type Address, getAddress, type Hex } from "viem"
-import type { ManifestToken, ManifestV2 } from "../src/manifest-v2"
+import type { ManifestToken, ManifestV2 } from "@unleashed/sdk/protocol"
 import { enabledSources } from "../src/source-chains"
 import type { AcrossLimits } from "../src/across-api"
 

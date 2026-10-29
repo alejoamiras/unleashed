@@ -7,7 +7,9 @@ import { useRowBalances } from "./useRowBalances"
 
 const h = vi.hoisted(() => ({ readErc20Balances: vi.fn() }))
 
-vi.mock("@unleashed/bridge-core", () => ({ readErc20Balances: h.readErc20Balances }))
+vi.mock("@unleashed/sdk/protocol", () => ({
+	readErc20Balances: h.readErc20Balances,
+}))
 
 const OWNER = "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d" as Address
 const PUB = {} as PublicClient

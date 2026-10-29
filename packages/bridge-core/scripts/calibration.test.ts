@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { ManifestV2 } from "../src/manifest-v2"
+import type { ManifestV2 } from "@unleashed/sdk/protocol"
 import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 
 const s = (shape: CalibrationSample["shape"], transactionFee: bigint, feeMode: CalibrationSample["feeMode"] = "fee-juice") => ({
@@ -42,6 +42,13 @@ describe("applyFuelBudgets", () => {
 	it("writes the measured budgets into the fuel block, touching nothing else", () => {
 		const out = applyFuelBudgets(manifest({ depositRouter: "0xr", fuel }), budgets)
 		expect(out.bridge?.l1).toEqual({ depositRouter: "0xr", fuel: { ...fuel, fjPerTx: "7", fjRegister: "3" } })
+	})
+
+	it("writes only fjPerTx into a fuel-only route, which registers nothing", () => {
+		const route = { depositRouter: "0xr", gate: "0xg", fuel: { slippageBps: 100, minFuelFj: "100", fjPerTx: "1" } }
+		const out = applyFuelBudgets({ network: "m", bridge: null, fuelRoute: route } as unknown as ManifestV2, budgets)
+		expect(out.fuelRoute).toEqual({ ...route, fuel: { ...route.fuel, fjPerTx: "7" } })
+		expect(out.bridge).toBeNull()
 	})
 
 	it("refuses a manifest with no fuel route to calibrate", () => {

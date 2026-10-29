@@ -21,19 +21,16 @@ import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas, type GasFees } from "@aztec-labs/stdlib/gas"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { predictedWorstMinFees } from "../src/fee-juice"
-import type { L1Ctx } from "../src/flows"
-import type { HubClaimOutcome } from "../src/hub-l2"
 import {
+	predictedWorstMinFees,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	deriveBridgeSecret,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
-} from "../src/private-fuel"
-import type { SendResult } from "../src/send-flow"
-import { runSend } from "../src/send-flow"
+} from "@unleashed/sdk/protocol"
+import { type L1Ctx, type HubClaimOutcome, type SendResult, runSend } from "@unleashed/sdk/internal"
 import { runFpcGate } from "./check-fpc-version"
 import { type FueledClaimResult, settleFueledClaim } from "./fuel-claim-l2"
 import { requirePinnedSigner } from "./live-intent"
@@ -51,7 +48,7 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -373,7 +370,7 @@ async function buildL2(l1: L1Ctx, nodeUrl: string, mins: () => string): Promise<
 
 async function main() {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 
 	// This canary deposits Fee Juice and pays fees THROUGH the pinned PrivateFPC — an unrecoverable
 	// loss if that address is not the installed artifact's canonical instance, or is published with
@@ -396,7 +393,4 @@ async function main() {
 	if (NOFUEL_SPEND_RUNS > 0) await runNoFuelSpendProof(ctx, fpc, NOFUEL_SPEND_RUNS)
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

@@ -10,7 +10,7 @@ import {
 	fuelSwapperOf,
 	setFuelRate,
 } from "@unleashed/bridge-core/sandbox"
-import { ownGasTxs } from "@unleashed/bridge-core"
+import { ownGasTxs } from "@unleashed/sdk/protocol"
 import { getAddress } from "viem"
 import { trimAddress } from "../../../src/lib/format"
 import { TESTIDS } from "../../../src/lib/testids"

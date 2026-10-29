@@ -24,34 +24,28 @@ import {
 	pad,
 	toFunctionSelector,
 } from "viem"
+import { ACROSS_V4_DATA_COMPONENTS, ACROSS_V4_FACET_ABI, type AcrossV4Data, type AcrossV4DepositParams, acrossV4Call } from "./across-v4"
 import {
-	ACROSS_V4_DATA_COMPONENTS,
-	ACROSS_V4_FACET_ABI,
-	type AcrossV4Data,
-	type AcrossV4DepositParams,
-	acrossV4Call,
 	START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR,
-} from "./across-v4"
-import { DEPOSIT_INTENT_COMPONENTS, DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
-import {
+	DEPOSIT_INTENT_COMPONENTS,
+	DEPOSIT_ROUTER_ABI,
+	type RouterIntent,
 	FUEL_SWAP_SELECTORS,
 	LIFI_RECEIVER_MESSAGE_PARAMS,
 	type LifiBridgeData,
 	type LifiSwapData,
 	SWAP_TOKENS_MULTIPLE_V3_ABI,
 	SWAP_TOKENS_SINGLE_V3_ABI,
-} from "./lifi-abi"
-import { type LifiChainBook, lifiBook, stargatePoolFor } from "./lifi-addresses"
-import { LIFI_ALLOW_EXCHANGES, LIFI_INTEGRATOR, LIFI_MIN_COMPOSE_GAS } from "./lifi-gas"
-import {
-	decodeLzOptions,
-	decodeOftComposeMessage,
-	type LzExecutorOption,
-	type OftComposeMessage,
+	type LifiChainBook,
+	lifiBook,
+	stargatePoolFor,
+	LIFI_ALLOW_EXCHANGES,
+	LIFI_INTEGRATOR,
+	LIFI_MIN_COMPOSE_GAS,
 	START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR,
-	STARGATE_FACET_V2_ABI,
 	SWAP_AND_START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR,
-} from "./stargate"
+} from "@unleashed/sdk/l1"
+import { decodeLzOptions, decodeOftComposeMessage, type LzExecutorOption, type OftComposeMessage, STARGATE_FACET_V2_ABI } from "./stargate"
 
 /** LI.FI's own fee on the fee tier: at most 0.25 % of the input. Our integrator fee is 0, so no second share exists. */
 export const LIFI_FEE_CAP_BPS = 25n
@@ -85,8 +79,6 @@ const RAIL_SELECTORS: Readonly<Record<RailExpectation["kind"], readonly Hex[]>> 
 	acrossV4: [START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR],
 	stargateV2: [SWAP_AND_START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR, START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR],
 }
-
-export type RouterIntent = AbiParameterToPrimitiveType<{ type: "tuple"; components: typeof DEPOSIT_INTENT_COMPONENTS }>
 
 /** The source-chain transaction to sign, and the ERC-20 approval sent before it or batched with it. */
 export interface RouteTx {
@@ -749,6 +741,24 @@ function verdict<T>(run: () => T): { ok: true; decoded: T } | RouteRefusal {
  */
 export function verifyRoute(tx: RouteTx, expected: RouteExpectation): RouteVerdict {
 	return verdict(() => checkRoute(tx, expected))
+}
+
+/**
+ * Decodes a destination message without an expectation: canonical LI.FI receiver parameters holding exactly one step,
+ * whose calldata is a canonical `bridgeFromCaller`. Checks no value: a caller that knows only the deposit compares
+ * the fields it can derive.
+ */
+export function decodeRouterMessage(
+	bytes: Hex,
+): { ok: true; decoded: { message: DecodedMessage; router: DecodedRouterCall } } | RouteRefusal {
+	return verdict(() => {
+		const m = decodeMessage(bytes)
+		eq("message.swapData.length", m.steps.length, 1)
+		return {
+			message: { transactionId: m.transactionId, step: m.step, receiver: m.receiver },
+			router: decodeRouterCall(m.step.callData),
+		}
+	})
 }
 
 /**

@@ -1,5 +1,6 @@
 // @vitest-environment node
-import { acrossMessageOf, lifiBook, TESTNET_FILLER } from "@unleashed/bridge-core"
+import { acrossMessageOf, TESTNET_FILLER } from "@unleashed/bridge-core"
+import { lifiBook } from "@unleashed/sdk/protocol"
 import { describe, expect, it } from "vitest"
 import { NO_GAS_ROUTE } from "@/lib/send-model"
 import { acrossApi, ask, BASE_SEPOLIA, NOW_S, OUT, routeDeps } from "@/test/crosschain"

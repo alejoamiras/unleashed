@@ -9,16 +9,8 @@
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
-import {
-	type Erc20Metadata,
-	predictPortal,
-	readErc20Balances,
-	readErc20Metadata,
-	readRegistration,
-	type Registration,
-	toWord,
-	tokenStateOf,
-} from "@unleashed/bridge-core"
+import { type Erc20Metadata, predictPortal, readErc20Balances, readErc20Metadata, toWord } from "@unleashed/sdk/protocol"
+import { readRegistration, type Registration, tokenStateOf } from "@unleashed/sdk/internal"
 import type { Address, Hex, PublicClient } from "viem"
 import { type Ref, ref, shallowRef } from "vue"
 import { rebuildHubTokenInstance, SEND_GENERATION } from "@/contracts/bridge-generation"

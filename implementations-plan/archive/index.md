@@ -35,6 +35,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [fuel-l1-mint](fuel-l1-mint/plan.md) — archived — Fuel L1 mint — `/blueprint light`
 - [fuel-portal-v5-fix](fuel-portal-v5-fix/plan.md) — archived — Fuel-bridge Fee-Juice portal V5 fix
 - [journal-engine-decomposition](journal-engine-decomposition/plan.md) — archived — journal-engine-decomposition (arc 4, monster 3 of 3)
+- [keyed-logs-1](keyed-logs-1/plan.md) — archived — keyed-logs-1 — one redacted entry for every keyed script (runKeyed, keyedNodeUrl)
 - [landing](landing/plan.md) — archived — option C "Dither tide" at unleashed.systems and www, on its own assets-only Worker
 - [lifi-routing](lifi-routing/plan.md) — archived — deposits from L2s through LI.FI with token and gas, Uniswap removed
 - [no-fuel-claim-fee-source](no-fuel-claim-fee-source/plan.md) — archived — No-fuel claim fee source — pay from public OR private Fee Juice
@@ -43,9 +44,11 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [private-fuel](private-fuel/plan.md) — archived — private-fuel — private Fee Juice across the bridge
 - [private-fuel-fee-fix](private-fuel-fee-fix/plan.md) — archived — Private-fuel claim fee fix (V5 self-paying budget)
 - [protocol-labels](protocol-labels/plan.md) — archived — protocol-labels — the bridge's protocol labels settled, and the testnet generation they require
+- [relayer-1](relayer-1/plan.md) — archived — relayer-1 — a cron Worker that fills the testnet's Base Sepolia sends
 - [send-wizard-ux](send-wizard-ux/plan.md) — archived — Send wizard UX redesign
 - [swap-fuel](swap-fuel/plan.md) — archived — swap-fuel — bridge-and-fuel on the live Sepolia ↔ Aztec testnet bridge
 - [tools-console](tools-console/plan.md) — archived — Tools Console — the shell around the Send wizard
 - [tools-recovery](tools-recovery/plan.md) — archived — tools-recovery — the three stuck-record recoveries, identity-bound
 - [tools-two-network](tools-two-network/plan.md) — archived — Two-network tools deployment (mainnet + testnet) — v3
 - [unleashed-reskin](unleashed-reskin/plan.md) — archived — unleashed-reskin — Dead Channel A′ look, honest wallet voice, SIGNAL/NOISE faucet
+- [wallet-store-1](wallet-store-1/plan.md) — archived — wallet-store-1 — pid-named wallet stores and a guarded reap of dead creators' stores

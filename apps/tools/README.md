@@ -115,11 +115,15 @@ cd apps/tools
 export DEPLOYER_SECRET_KEY=0x…  DEPLOYER_SALT=0x…   # or DEPLOYER_SECRET=<passphrase> for a fresh account
 bun run deploy:testnet          # idempotent: skips anything already at its computed address; writes the candidate
 bun run deploy:testnet:dry      # addresses only, no tx
+bun run deploy:mainnet:dry      # the same addresses: deployer zero and fixed salts give one file for both networks
 ```
 
 Against the live testnet the two deployer values arrive as the `testnet-faucet.env.example` keyed
 run, never as exported shell variables, together with `DRPC_API_KEY`: the owner's shared dRPC CLI
 key, which the deploy composes its node URL from. A dry run talks to no node and needs none of them.
+On mainnet, which has no sponsor, `deploy:mainnet` pays its fees from Fee Juice a pinned funding key
+deposits on L1: a `mainnet-faucet.env.example` keyed run, the bridge-generation skill's "Drip catalog on
+mainnet" section.
 
 The bridge generation (factory + router + hub + pre-created tokens) is deployed by
 `packages/bridge-core/scripts/deploy-generation.ts`, candidate-first, and promoted into
@@ -184,7 +188,8 @@ only from an HTTPS response, and a first HTTP response can be altered before the
 
 | Variable | Where it's read | Purpose |
 |---|---|---|
-| `DEPLOYER_SECRET_KEY` + `DEPLOYER_SALT` (or `DEPLOYER_SECRET`) | `scripts/deploy.ts` only | The faucet deployer account |
+| `DEPLOYER_SECRET_KEY` + `DEPLOYER_SALT` (or `DEPLOYER_SECRET`, never on mainnet) | `scripts/deploy.ts` only | The faucet deployer account |
+| `FUNDING_PRIVATE_KEY` + `ETH_RPC_URL` | `scripts/deploy.ts` only (mainnet) | The pinned funding key and the L1 RPC its deposits go through; a keyed run only |
 | `DRPC_API_KEY` | `scripts/deploy.ts` only (testnet, mainnet) | The owner's shared dRPC CLI key the deploy's node URL is composed from; a keyed run only |
 | `AZTEC_NODE_URL` | `scripts/deploy.ts` only (`--network local-network`) | Override the sandbox node (default `http://localhost:8080`) |
 | `VITE_AZTEC_NODE_URL` | Frontend (dev/e2e only) | Override the target's node URL |

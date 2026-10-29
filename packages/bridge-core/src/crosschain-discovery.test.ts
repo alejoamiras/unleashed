@@ -26,21 +26,27 @@ import {
 } from "viem"
 import { describe, expect, it } from "vitest"
 import { ACROSS_V4_FACET_ABI } from "./across-v4"
-import { bytesFromHex, mintToPrivateContentHash, mintToPublicContentHash, sha256ToField, word } from "./content-hash"
 import {
-	acrossRelayHash,
+	bytesFromHex,
+	mintToPrivateContentHash,
+	mintToPublicContentHash,
+	sha256ToField,
+	word,
+	DEPOSIT_ROUTER_ABI,
+	TOKEN_PORTAL_ABI,
+	LIFI_RECEIVER_MESSAGE_PARAMS,
+} from "@unleashed/sdk/protocol"
+import { acrossRelayHash } from "./across-relay"
+import {
 	type CrossChainDiscovery,
 	type CrossChainDiscoveryContext,
 	type DiscoveryChainReads,
 	type DiscoveryLog,
 	discoverCrossChain,
 	discoveryPatch,
-	readRouterDeposit,
 } from "./crosschain-discovery"
-import { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
-import { TOKEN_PORTAL_ABI } from "./factory-abi"
+import { readRouterDeposit } from "@unleashed/sdk/internal"
 import { type CrossChainDepositRecord, deriveCrossChainDepositStage, outcomeFinality } from "./journal"
-import { LIFI_RECEIVER_MESSAGE_PARAMS } from "./lifi-abi"
 import { CROSSCHAIN_TOKEN, crossChainRecord } from "./test/crosschain-record"
 
 // ── recorded fork receipts ───────────────────────────────────────────────────

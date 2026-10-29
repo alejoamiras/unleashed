@@ -10,15 +10,15 @@ import { describe, expect, test } from "vitest"
  * export. That is not hypothetical — an earlier tightening from 1800s to 600s left one signing
  * site untouched while the change was recorded as covering every site.
  *
- * Source-level rather than behavioural because the alternative is mounting the composable against
- * a mock wallet purely to read one field back.
+ * The app's sends sign through the SDK, which draws the deadline at the signature and is pinned
+ * behaviourally there; these exact zero counts keep the app from growing a signing site of its own.
  */
 const COMPOSABLES = join(__dirname)
 // Exact counts, not "at least one": with a lower bound, a new site that hardcodes its own window
 // would still satisfy the assertion — which is the same shape as the bug this exists to catch.
 const SIGNING_SOURCES: ReadonlyArray<readonly [string, number]> = [
 	["deposit-flow.ts", 0],
-	["useSend.ts", 1],
+	["useSend.ts", 0],
 ]
 
 describe("permit deadline reachability", () => {

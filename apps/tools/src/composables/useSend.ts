@@ -9,35 +9,36 @@
  * anything is claimed against it.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
+import { type EncryptionKey, type SendDepositRecord, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
 import {
-	type EncryptionKey,
+	type DepositRecord,
+	type DepositSecrets,
+	isBridgeError,
 	type JournalTokenBlock,
-	type L1Ctx,
+	type Reads,
+	type TransferEvent,
+} from "@unleashed/sdk"
+import {
+	type DepositPlan,
 	type Registration,
-	type SendDepositRecord,
-	type SendGasLeg,
 	type SendOpts,
-	type SendParams,
-	type SendResult,
 	type SendStage,
-	PERMIT_DEADLINE_SECONDS,
-	claimSendOpts,
+	depositL1,
+	probeHubClaim,
 	claimViaHub,
-	deriveBridgeSecret,
-	deriveTokenClaimSecret,
 	hubAt,
 	hubTokenFor,
-	isProvisionalRecordId,
 	l1ToL2MessageReadiness,
-	makeProvisionalDepositId,
 	readRegistration,
-	runSend,
-} from "@unleashed/bridge-core"
-import type { Hex, PublicClient } from "viem"
+	classifyClaimReceipt,
+	findDepositTx,
+	hubMessageState,
+} from "@unleashed/sdk/internal"
+import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret } from "@unleashed/sdk/protocol"
+import { type PublicClient, WaitForTransactionReceiptTimeoutError, type WalletClient } from "viem"
 import { type Ref, effectScope, ref, watch } from "vue"
 import {
 	FUEL_PORTAL,
@@ -46,26 +47,24 @@ import {
 	MANIFEST_CHAIN,
 	SEND_GENERATION,
 	TOKEN_CLASS_ID,
+	bridgeNetwork,
 	rebuildHubTokenInstance,
 } from "@/contracts/bridge-generation"
-import { classifyClaimReceipt } from "@/lib/claim-receipt"
-import { buildSendRecord, fuelBlockOf, previewBlock, type RecordInputs, sealBindingOf, tokenClaimAmount } from "@/lib/send-record"
+import { appNode } from "@/lib/aztec-node"
+import { buildSendRecord, previewBlock, sealBindingOf, tokenClaimAmount } from "@/lib/send-record"
 
 export { previewBlock }
 import { NETWORK } from "@/lib/network"
-import type { GasLegPlan, GrantOutcome, SendPlan } from "@/lib/send-model"
-import { fuelRecipientFor } from "@/lib/fuel-target"
+import { type GrantOutcome, NO_GAS_ROUTE, type SendPlan } from "@/lib/send-model"
 import { normalizeError } from "@/lib/errors"
 import { humanizeWalletError, sendFailureCopy } from "@/lib/wallet-errors"
 import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
 import { appWatchDeps } from "./crosschain-deposit-flow"
 import { resumeCrossChainWatches } from "./crosschain-watch"
-import { findDepositTx } from "./deposit-reconcile"
 import { readClientFor } from "./useEthereumReader"
-import { sliceSwapData } from "./useFuelQuote"
-import { reconcileFuelConsumed } from "./fuel-recovery"
-import { hubMessageState } from "@/lib/message-nullifier"
+import { GAS_QUOTE_MOVED } from "./useFuelQuote"
+import { reconcileFuelConsumed, fuelOverrideActive, launchStandaloneFuelClaim } from "./fuel-recovery"
 import { resolveToolsTarget } from "@/lib/network-targets"
 import {
 	type ClaimRecord,
@@ -74,10 +73,12 @@ import {
 	connectJournalDeps,
 	discard,
 	flagRecordError,
+	markApproveOutcome,
 	markSessionLive,
 	rekeyJournalRecord,
 	resumeSessionWork,
 	runDepositClaim,
+	runOnLane,
 	setRecordStep,
 	updateRecord,
 	useBridgeJournal,
@@ -86,14 +87,11 @@ import {
 import {
 	type HubClaimFee,
 	buildFeeJuiceClaimDep,
-	ensurePermit2Approval,
 	failStopInteraction,
 	recoverDepositLeg,
 	resolveHubClaimSendOpts,
 	sealPrivateRecord,
 } from "./deposit-flow"
-import { fuelOverrideActive, launchStandaloneFuelClaim } from "./fuel-recovery"
-import { type FuelClaimRetry, simulateFeePayload } from "./fuelClaim"
 import { useBridgeWallet } from "./useBridgeWallet"
 import { useL1Wallet } from "./useL1Wallet"
 import { withOperation } from "./useOpsInFlight"
@@ -131,30 +129,11 @@ function generation() {
  *  re-ask, because each is a separate window. */
 export async function assertL1Chain(l1: { publicClient: { getChainId: () => Promise<number> } }): Promise<void> {
 	const live = await l1.publicClient.getChainId()
-	if (live !== MANIFEST_CHAIN.l1ChainId) {
-		throw new Error(
-			`Your Ethereum wallet is on chain ${live}, but this bridge lives on chain ${MANIFEST_CHAIN.l1ChainId}. Switch networks and try again — nothing was sent.`,
-		)
-	}
+	if (live !== MANIFEST_CHAIN.l1ChainId) throw new Error(wrongChainCopy(live))
 }
 
-/** The gas leg as bridge-core wants it. Private gas MUST use `deriveBridgeSecret`: the PrivateFPC
- *  re-derives that secret from msg_sender, so a random one would strand the Fee Juice forever. */
-function gasLegOf(gas: GasLegPlan, swapData: Hex, recipient: string, isPrivate: boolean, salt?: Fr): SendGasLeg {
-	return {
-		fuelAmount: gas.fuelAmount,
-		fuelRecipient: fuelRecipientFor(isPrivate, recipient),
-		minFuelOutput: gas.minFuelOutput,
-		swapData,
-		...(salt ? { fuelSecret: deriveBridgeSecret(salt, AztecAddress.fromStringUnsafe(recipient)) } : {}),
-	}
-}
-
-/** Every leg's L1-committed hash is known before the signature, so the record that recovers a
- *  crashed send can be written first. The token leg names the record; a gas-only send is named by
- *  its own Fee Juice message. */
-const recordIdOf = (s: { tokenSecretHashHex?: string; fuelSecretHashHex?: string }): string | undefined =>
-	s.tokenSecretHashHex ?? s.fuelSecretHashHex
+const wrongChainCopy = (live: number | string) =>
+	`Your Ethereum wallet is on chain ${live}, but this bridge lives on chain ${MANIFEST_CHAIN.l1ChainId}. Switch networks and try again — nothing was sent.`
 
 let depsWired = false
 let pinAttestationWired = false
@@ -207,6 +186,7 @@ export function ensureSendJournalDeps(): void {
 						chainId: MANIFEST_CHAIN.l1ChainId,
 						router: SEND_GENERATION.router,
 						legacyRouters: LEGACY_ROUTERS,
+						privateFpc: PRIVATE_FPC_ADDRESS,
 						chainEpoch: () => l1.chainChanges.value,
 					})
 				: Promise.resolve("incomplete" as const),
@@ -410,36 +390,6 @@ function hubClaimSeams(id: string, fee: Extract<HubClaimFee, { kind: "opts" }>) 
 	return { seams, fuelOnRegistration }
 }
 
-type HubContract = ReturnType<typeof hubAt>
-type ProbeParams = Parameters<typeof claimViaHub>[1]
-
-/**
- * The consumability probe. A FIRST claim cannot be simulated - registering enqueues the derived
- * Token's constructor, which no wallet can build against an instance it does not hold yet - so
- * for an unregistered token the fuel the registration spends is probed on its own (the fee's
- * setup as a whole transaction) and otherwise the checkpoint gate is the only readiness
- * authority. A registered token probes the real claim, which is what makes the engine wait out a
- * message that has not folded into the L2 yet.
- */
-async function probeHubClaim(
-	hub: HubContract,
-	p: ProbeParams,
-	opts: Record<string, unknown>,
-	aztec: unknown,
-	retry?: FuelClaimRetry,
-): Promise<unknown> {
-	if (!(await hubTokenFor(hub, p.token.erc20, p.from))) {
-		const registerFee = opts.registerFee as { paymentMethod: unknown } | undefined
-		return registerFee ? simulateFeePayload(aztec, AztecAddress.fromStringUnsafe(p.recipient), registerFee, retry) : {}
-	}
-	const to = AztecAddress.fromStringUnsafe(p.recipient)
-	const l2Token = AztecAddress.fromStringUnsafe(p.token.l2Token)
-	const call = p.isPrivate
-		? hub.methods.claim_private(l2Token, to, p.amount, p.claimValue, new Fr(p.leafIndex))
-		: hub.methods.claim_public(l2Token, to, p.amount, p.claimValue, new Fr(p.leafIndex))
-	return call.simulate(claimSendOpts(opts) as never)
-}
-
 interface SendActors {
 	l1: ReturnType<typeof useL1Wallet>
 	recipient: string
@@ -448,18 +398,24 @@ interface SendActors {
 }
 
 /**
- * The pre-signature seal of a private send. `secret` is the credential the claim spends — the token
- * claim salt, or the gas salt when gas is all this send bought — and `salt` is the gas leg's own,
+ * The pre-signature seal of a private send. The credential is what the claim spends — the token
+ * claim salt, or the gas salt when gas is all this send bought — and the gas leg's own salt is
  * sealed alongside it: the PrivateFPC rebuilds the Fee Juice secret from that salt, so a fueled
  * record whose envelope omits it can be restored and still never claim its gas.
  */
-async function sealSend(id: string, plan: SendPlan, prepared: Prepared, actors: SendActors, records: () => ClaimRecord[]): Promise<void> {
-	const credential = prepared.claimSalt ?? prepared.fuelSalt
-	if (!credential) return
+async function sealSend(
+	id: string,
+	plan: SendPlan,
+	secrets: DepositSecrets,
+	actors: SendActors,
+	records: () => ClaimRecord[],
+): Promise<void> {
+	const credential = secrets.claimSalt ?? secrets.fuelSalt
+	if (!credential) throw new Error("a private send carries no salt to seal — refusing to sign")
 	await sealPrivateRecord({
 		id,
 		secretStr: credential.toString(),
-		fuelSaltStr: prepared.fuelSalt?.toString(),
+		fuelSaltStr: secrets.fuelSalt?.toString(),
 		recipient: actors.recipient,
 		tokenAmountStr: tokenClaimAmount(plan).toString(),
 		from: actors.from,
@@ -656,59 +612,213 @@ interface RunCtx {
 	granted?: boolean
 }
 
-/** The row every L1 leg narrates into, opened before the Permit2 approval so its prompt and its
- *  transaction have somewhere to land. A private leg is already named by its claim hash; a public
- *  one takes a provisional name until the send derives that hash. */
-async function openSendRecord(id: string, ctx: RunCtx, prepared: Prepared): Promise<void> {
-	const { plan, actors } = ctx
-	addRecordVerified(
-		buildSendRecord({ ...prepared.inputs, fuelSalt: prepared.fuelSalt, id, plan, recipient: actors.recipient, sender: actors.from }),
-	)
-	markSessionLive(id)
-	// The permission the wallet granted happened before the record existed; it is the run's first,
-	// done phase from the record's first render — the seal's own prompt comes after it.
-	if (ctx.granted) markGrantOutcome(id)
-	// EVERY private send seals, gas-only included: without an envelope its claim material exists
-	// only in this tab's memory, so a reload strands it and a recovery file cannot be exported.
-	if (plan.isPrivate) await sealSend(id, plan, prepared, actors, () => ctx.journal.records.value as ClaimRecord[])
+/**
+ * One send's row. A private send's row is named by its claim hash from the SDK's first persist and sealed there,
+ * before any other prompt; a public one takes a provisional name, with no claim material, until the signature names
+ * it — so a public send that fails before its signature leaves nothing behind.
+ */
+interface SendRow {
+	ctx: RunCtx
+	/** Undefined until the first persist opens the row. */
+	id?: string
+	/** The SDK's latest record: what the signature names a public row with. */
+	latest?: DepositRecord
 }
+
+const rowOf = (ctx: RunCtx, id: string) => ctx.journal.records.value.find((r) => r.id === id) as SendDepositRecord | undefined
+
+/** viem's default receipt wait, the one this app's sends have always given up after: the row keeps its hash, and a
+ *  resume recovers the deposit from it. */
+const DEPOSIT_RECEIPT_WAIT_MS = 180_000
 
 async function executeSend(ctx: RunCtx): Promise<string> {
 	const { plan, actors } = ctx
-	const gen = generation()
-	// Before the FIRST wallet interaction of the send (the private seal's signature), so a wallet on
-	// the wrong chain costs no prompt and leaves no record behind.
+	generation()
+	// Before the network check and the FIRST wallet interaction (a private send's seal), so a wallet on the wrong
+	// chain costs no prompt and leaves no record behind.
 	await assertL1Chain(actors.l1)
-	// Before anything is sealed or signed: a venue that no longer meets the reviewed floor stops here.
-	const swapData = plan.gas ? await sliceSwapData(actors.l1.publicClient as unknown as PublicClient, plan.token.address, plan.gas) : "0x"
-	const prepared = await prepareSecrets(plan, actors.recipient)
-	let id = prepared.id ?? makeProvisionalDepositId()
+	// Every read of the send goes through the wallet's own client, as the signature does.
+	const reads: Reads = { l1: actors.l1.publicClient as unknown as PublicClient, aztecNode: appNode() }
+	const row: SendRow = { ctx }
+	const receiptWait = new AbortController()
+	let timer: ReturnType<typeof setTimeout> | undefined
 	try {
-		// Inside the failure boundary: a private seal asks the wallet for a signature, and its refusal
-		// must settle the row it was opened for like any later refusal.
-		await openSendRecord(id, ctx, prepared)
-		await ensurePermit2Approval(gen.permit2, plan.amount, id, l1ApprovalCtx(actors), plan.token.address)
-		const res = await runSend(
-			l1Ctx(actors),
-			gen,
-			await sendParams(plan, actors, prepared, swapData),
-			(s) => {
-				ctx.stage.value = s
+		const net = await bridgeNetwork(reads)
+		const record = await depositL1(net, reads, sdkWallet(row), depositPlanOf(plan, actors.recipient), {
+			persist: (record, secrets) => persistSend(row, record, secrets),
+			onEvent: (e) => {
+				narrate(row, e)
+				if (e.type !== "deposit-sent") return
+				const timeout = new WaitForTransactionReceiptTimeoutError({ hash: e.txHash })
+				timer = setTimeout(() => receiptWait.abort(timeout), DEPOSIT_RECEIPT_WAIT_MS)
 			},
-			{
-				onSecrets: (s) => {
-					id = persistPreTx(s, ctx, prepared, id)
-				},
-				onSent: (txHash) => updateRecord(id, { depositTxHash: txHash }),
-				onConfirmed: (r) => journalConfirmed(id, r, ctx),
-			},
-		)
-		await afterReceipt(id, ctx, res)
+			signal: receiptWait.signal,
+		})
+		ctx.stage.value = "done"
+		const id = row.id as string
+		await afterReceipt(id, ctx, record.intent === "gas" ? undefined : record.token)
 		return id
 	} catch (e) {
-		settleFailedSend(id, ctx, e)
-		throw e
+		settleFailedSend(row, e)
+		throw appFailureOf(e, row.id === undefined ? undefined : rowOf(ctx, row.id)?.depositTxHash)
+	} finally {
+		clearTimeout(timer)
 	}
+}
+
+/** The reviewed plan, exactly: the SDK re-quotes the slice and refuses `quote-moved` under the reviewed floor, which
+ *  is the floor it signs. A paused route is left to the router's own revert, where this app's sends have always met
+ *  it. */
+function depositPlanOf(plan: SendPlan, recipient: string): DepositPlan {
+	return {
+		intent: plan.intent,
+		token: plan.token.address,
+		amount: plan.amount,
+		recipient,
+		isPrivate: plan.isPrivate,
+		...(plan.gas ? { gas: { fuelAmount: plan.gas.fuelAmount, minFuelOutput: plan.gas.minFuelOutput } } : {}),
+		...(plan.intent === "gas" ? {} : { tokenBlock: previewBlock(plan), registers: plan.token.state.kind !== "registered" }),
+		pauseCheck: false,
+	}
+}
+
+/** The SDK's persist: the first call opens the row; later ones write only the facts a send adds, so the app's own
+ *  fields (a private fuel block's secret and salt, the seal) survive every write. */
+async function persistSend(row: SendRow, record: DepositRecord, secrets?: DepositSecrets): Promise<void> {
+	row.latest = record
+	if (row.id === undefined) return openRow(row, record, secrets)
+	updateRecord(row.id, factsOf(rowOf(row.ctx, row.id), record) as never)
+}
+
+/** The facts under today's names. The SDK's `depositL2Block` is not one: this lane's rows never carried it, and it
+ *  would start a block countdown on the rail. */
+function factsOf(row: SendDepositRecord | undefined, r: DepositRecord): Partial<SendDepositRecord> {
+	const leaf = r.fuel?.leafIndex
+	return {
+		...(r.approveTxHash ? { approveTxHash: r.approveTxHash } : {}),
+		...(r.depositTxHash ? { depositTxHash: r.depositTxHash } : {}),
+		...(r.leafIndex !== undefined ? { leafIndex: r.leafIndex, messageHash: r.messageHash } : {}),
+		...(r.leafIndex !== undefined && r.intent !== "gas" ? { token: r.token } : {}),
+		...(leaf !== undefined
+			? { fuel: { ...row?.fuel, leafIndex: leaf, messageHash: r.fuel?.messageHash, received: r.fuel?.received } }
+			: {}),
+	} as Partial<SendDepositRecord>
+}
+
+async function openRow(row: SendRow, record: DepositRecord, secrets: DepositSecrets | undefined): Promise<void> {
+	const { plan, actors } = row.ctx
+	row.id = plan.isPrivate ? record.id : makeProvisionalDepositId()
+	const fuel = plan.isPrivate ? privateFuelOf(record, secrets, actors.recipient) : {}
+	addRecordVerified(buildSendRecord({ id: row.id, plan, recipient: actors.recipient, sender: actors.from, ...fuel }))
+	markSessionLive(row.id)
+	// The permission the wallet granted happened before the record existed; it is the run's first, done phase from
+	// the record's first render — the seal's own prompt comes after it.
+	if (row.ctx.granted) markGrantOutcome(row.id)
+	// EVERY private send seals, gas-only included: without an envelope its claim material exists only in this tab's
+	// memory, so a reload strands it and a recovery file cannot be exported.
+	if (plan.isPrivate) await sealSend(row.id, plan, secrets ?? {}, actors, () => row.ctx.journal.records.value as ClaimRecord[])
+}
+
+/** A private gas leg's claim material, derived as the PrivateFPC derives it from `msg_sender`, so the row carries the
+ *  whole fuel block from the moment it opens. */
+function privateFuelOf(record: DepositRecord, secrets: DepositSecrets | undefined, recipient: string) {
+	const salt = secrets?.fuelSalt
+	if (!salt || !record.fuel) return {}
+	const secret = deriveBridgeSecret(salt, AztecAddress.fromStringUnsafe(recipient))
+	return { fuelSecretHex: secret.toString(), fuelSecretHashHex: record.fuel.secretHashHex, fuelSalt: salt }
+}
+
+/**
+ * The last moment before the deposit is signed, and the last that can still stop it: a public row is renamed to the
+ * hash the witness commits to, with its claim material, and read back — that hash is a crashed send's only handle on
+ * its own deposit. A failed write throws, and the SDK reports it with nothing signed.
+ */
+function nameAtSignature(row: SendRow): void {
+	const { ctx } = row
+	const rec = row.latest
+	const known = row.id
+	if (!rec || !known) throw new Error("the send produced no claim material — refusing to sign")
+	if (known !== rec.id) {
+		const named = buildSendRecord({
+			id: rec.id,
+			plan: ctx.plan,
+			recipient: ctx.actors.recipient,
+			sender: ctx.actors.from,
+			claimValueHex: rec.secret,
+			fuelSecretHex: rec.fuel?.secret,
+			fuelSecretHashHex: rec.fuel?.secretHashHex,
+		})
+		// Only the identity and the claim material are new: what the approval already wrote into the provisional row
+		// belongs to this same send and must survive the rename.
+		const opened = rowOf(ctx, known)
+		const renamed: SendDepositRecord = { ...named, createdAt: opened?.createdAt ?? named.createdAt }
+		if (opened?.approveTxHash) renamed.approveTxHash = opened.approveTxHash
+		rekeyJournalRecord(known, renamed)
+		if (!rowOf(ctx, rec.id)) throw new Error("Could not persist the bridge record — aborting before the deposit (storage full?).")
+		row.id = rec.id
+	}
+	setRecordStep(rec.id, "signing", "sign the bridge intent in your Ethereum wallet")
+}
+
+/**
+ * The wallet the SDK signs through. The approval takes the L1 prompt lane, as every other L1 prompt does (a private
+ * send's seal takes it inside `persist`, so it is never held across them); the signature first names the row.
+ */
+function sdkWallet(row: SendRow): WalletClient {
+	const { l1, from, wallet } = row.ctx.actors
+	const w = wallet as WalletClient
+	const writeContract = (args: Parameters<WalletClient["writeContract"]>[0]) =>
+		args.functionName === "approve" ? runOnLane("l1", () => w.writeContract(args)) : w.writeContract(args)
+	const signTypedData = async (args: Parameters<WalletClient["signTypedData"]>[0]) => {
+		nameAtSignature(row)
+		row.ctx.stage.value = "signing"
+		const signature = await w.signTypedData(args)
+		row.ctx.stage.value = "sending"
+		return signature
+	}
+	return {
+		...w,
+		account: { address: from, type: "json-rpc" },
+		getChainId: () => l1.publicClient.getChainId(),
+		writeContract,
+		signTypedData,
+	} as unknown as WalletClient
+}
+
+/** The rail, from the SDK's events, into the row as it is named now: a public send's approval narrates into its
+ *  provisional row, which the events' own id does not name. */
+function narrate(row: SendRow, e: TransferEvent): void {
+	const id = row.id
+	if (id === undefined) return
+	if (e.type === "deposit-sent") row.ctx.stage.value = "confirming"
+	if (e.type !== "approval") return
+	if (e.status === "requested") setRecordStep(id, "approving", "first time only: approve Permit2 in your Ethereum wallet")
+	else if (e.status === "waiting") setRecordStep(id, "approving", `still waiting for the approval (round ${e.round})`)
+	else if (e.status === "confirmed") markApproveOutcome(id, "done")
+}
+
+/**
+ * The error this app's copy reads. The SDK's own sentences name its API, so a refusal it makes itself becomes this
+ * app's sentence for it; anything it wraps — a wallet's answer, a venue's, this app's storage — is shown as the
+ * wrapped error, as before.
+ */
+export function appFailureOf(e: unknown, depositTxHash?: string): unknown {
+	if (!isBridgeError(e)) return e
+	if (e.code === "quote-moved") return new Error(GAS_QUOTE_MOVED)
+	if (e.code === "no-fuel-route" || e.code === "fetch-unavailable") return new Error(NO_GAS_ROUTE)
+	const live = e.code === "wrong-chain" ? /on chain (\d+)/.exec(e.message)?.[1] : undefined
+	if (live) return new Error(wrongChainCopy(live))
+	if (e.code === "deposit-reverted" && e.submission === "submitted" && depositTxHash) {
+		return new Error(`bridgeWithPermit() REVERTED (${depositTxHash}) — no funds moved; inspect the tx and retry`)
+	}
+	return e.cause === undefined ? e : appFailureOf(e.cause, depositTxHash)
+}
+
+/** The user said no: the SDK's own code, or today's reading of the first error it wraps (a refused seal arrives
+ *  wrapped in the SDK's `persist-failed`). */
+function refusedByUser(e: unknown): boolean {
+	if (isBridgeError(e)) return e.code === "user-rejected" || (e.cause !== undefined && refusedByUser(e.cause))
+	return normalizeError(e).category === "user-rejected"
 }
 
 /**
@@ -720,103 +830,30 @@ async function executeSend(ctx: RunCtx): Promise<string> {
  * why, names the failure on its active phase so the rail is never left mute. The bookkeeping must
  * not mask the failure it records.
  */
-function settleFailedSend(id: string, ctx: RunCtx, e: unknown): void {
+function settleFailedSend(row: SendRow, e: unknown): void {
 	try {
-		const row = ctx.journal.records.value.find((r) => r.id === id) as SendDepositRecord | undefined
-		const refused = normalizeError(e).category === "user-rejected"
-		if (isProvisionalRecordId(id) || (refused && !row?.depositTxHash)) {
+		const id = row.id
+		if (id === undefined) return
+		const rec = rowOf(row.ctx, id)
+		if (isProvisionalRecordId(id) || (refusedByUser(e) && !rec?.depositTxHash)) {
 			discard(id)
 			return
 		}
-		if (row && !ctx.journal.runtime.value[id]?.attention) flagRecordError(id, sendFailureCopy(e))
+		if (rec && !row.ctx.journal.runtime.value[id]?.attention) flagRecordError(id, sendFailureCopy(appFailureOf(e, rec.depositTxHash)))
 	} catch (cleanup) {
 		log("failed-send bookkeeping threw", cleanup instanceof Error ? cleanup.message : String(cleanup))
 	}
 }
 
-const l1ApprovalCtx = (actors: SendActors) => ({ publicClient: actors.l1.publicClient, wallet: actors.wallet, from: actors.from }) as never
-
-type SecretsReport = { tokenClaimValueHex?: string; tokenSecretHashHex?: string; fuelSecretHex?: string; fuelSecretHashHex?: string }
-
-/** The record must carry the hash the witness commits to BEFORE the signature: that hash is the
- *  only handle a crashed send has on its own deposit. A private leg's row already holds it; a public
- *  leg's provisional row is re-keyed onto it here, with the claim material the send just derived. */
-function persistPreTx(s: SecretsReport, ctx: RunCtx, prepared: Prepared, known: string): string {
-	const id = recordIdOf(s)
-	if (!id) throw new Error("the send produced no claim material — refusing to sign")
-	if (prepared.id && prepared.id !== id) {
-		throw new Error("the send derived a different claim hash than the sealed record — refusing to sign")
-	}
-	if (id === known) {
-		backfillFuelBlock(s, ctx, prepared, id)
-	} else {
-		const named = buildSendRecord({
-			id,
-			plan: ctx.plan,
-			recipient: ctx.actors.recipient,
-			sender: ctx.actors.from,
-			claimValueHex: s.tokenClaimValueHex,
-			fuelSecretHex: s.fuelSecretHex,
-			fuelSecretHashHex: s.fuelSecretHashHex,
-			fuelSalt: prepared.fuelSalt,
-		})
-		// Only the identity and the claim material are new: what the L1 approval already wrote into
-		// the provisional row belongs to this same send and must survive the rename.
-		const opened = ctx.journal.records.value.find((r) => r.id === known) as SendDepositRecord | undefined
-		const renamed: SendDepositRecord = { ...named, createdAt: opened?.createdAt ?? named.createdAt }
-		if (opened?.approveTxHash) renamed.approveTxHash = opened.approveTxHash
-		rekeyJournalRecord(known, renamed)
-		// The same write-and-verify bar `addRecordVerified` sets: an unstored record before the
-		// irreversible L1 transaction is a stranded deposit.
-		if (!ctx.journal.records.value.some((r) => r.id === id)) {
-			throw new Error("Could not persist the bridge record — aborting before the deposit (storage full?).")
-		}
-	}
-	setRecordStep(id, "signing", "sign the bridge intent in your Ethereum wallet")
-	return id
-}
-
-/**
- * A record the send did NOT have to rename keeps whatever was written when it was opened — so a
- * fuel block missing from it would stay missing for good, and with it the salt the private fee
- * ladder is the only consumer of. The send's own pre-signature material is authoritative here:
- * this runs before the witness is signed, so the block the claim reads is the one the L1 leg
- * committed to.
- */
-function backfillFuelBlock(s: SecretsReport, ctx: RunCtx, prepared: Prepared, id: string): void {
-	const gas = ctx.plan.gas
-	if (!gas || !s.fuelSecretHex || !s.fuelSecretHashHex) return
-	const rec = ctx.journal.records.value.find((r) => r.id === id) as SendDepositRecord | undefined
-	if (rec?.fuel?.secret && rec.fuel.secretHashHex) return
-	updateRecord(id, { fuel: { ...rec?.fuel, ...fuelBlockOf(gas, s.fuelSecretHex, s.fuelSecretHashHex, prepared.fuelSalt) } } as never)
-}
-
-/** The confirmed L1 facts, journaled synchronously so a crash right after the receipt still knows
- *  which leaves to claim. */
-function journalConfirmed(id: string, r: SendResult, ctx: RunCtx): void {
-	updateRecord(id, {
-		leafIndex: r.tokenLeafIndex?.toString(),
-		messageHash: r.tokenMessageHashHex,
-		...(r.token ? { token: r.token } : {}),
-		...(r.fuelLeafIndex !== undefined ? { fuel: fuelFacts(id, r, ctx) } : {}),
-	} as never)
-}
-
-function fuelFacts(id: string, r: SendResult, ctx: RunCtx) {
-	const rec = ctx.journal.records.value.find((x) => x.id === id) as SendDepositRecord | undefined
-	const block = rec?.fuel ?? { amount: "0", secret: r.fuelSecretHex ?? "", secretHashHex: r.fuelSecretHashHex ?? "", minOutput: "0" }
-	return { ...block, leafIndex: r.fuelLeafIndex?.toString(), messageHash: r.fuelMessageHashHex, received: r.fuelReceived?.toString() }
-}
-
 /** The words the factory froze win. A read-back naming a different L2 token rewrites the block and
  *  re-raises the grant, so the claim is never built against an address the wallet was not asked
  *  about. */
-async function afterReceipt(id: string, ctx: RunCtx, res: SendResult): Promise<void> {
-	if (res.token && res.token.l2Token.toLowerCase() !== previewBlock(ctx.plan).l2Token.toLowerCase()) {
+async function afterReceipt(id: string, ctx: RunCtx, frozen: JournalTokenBlock | undefined): Promise<void> {
+	if (frozen && frozen.l2Token.toLowerCase() !== previewBlock(ctx.plan).l2Token.toLowerCase()) {
 		log("registration read-back names another token - re-granting", { id })
-		updateRecord(id, { token: res.token } as never)
-		requestHubToken(hubTokenDesc(res.token), { pinned: true })
-		const outcome = await grantForBlock(res.token)
+		updateRecord(id, { token: frozen } as never)
+		requestHubToken(hubTokenDesc(frozen), { pinned: true })
+		const outcome = await grantForBlock(frozen)
 		if (outcome !== "granted") {
 			ctx.error.value = grantRefusal(outcome)
 			return
@@ -833,60 +870,3 @@ export function grantRefusal(outcome: Exclude<GrantOutcome, "granted">): string 
 	if (outcome === "stale") return "The selection changed while your wallet was deciding — nothing was sent."
 	return "Your wallet didn't grant access to this token — nothing was sent."
 }
-
-interface Prepared {
-	/** Known before the signature only when THIS app owns the claim material (every private leg). */
-	id?: string
-	claimSalt?: Fr
-	fuelSalt?: Fr
-	inputs: Omit<RecordInputs, "id" | "plan" | "recipient" | "sender">
-}
-
-/** The gas leg's claim material, which a private send derives ITSELF — the PrivateFPC rebuilds the
- *  same secret from `msg_sender`, so it is knowable before anything is signed and the record can
- *  carry the whole fuel block from the moment it is opened. */
-async function privateFuelInputs(
-	fuelSalt: Fr | undefined,
-	recipientAddr: AztecAddress,
-): Promise<{ fuelSecretHex?: string; fuelSecretHashHex?: string }> {
-	if (!fuelSalt) return {}
-	const secret = deriveBridgeSecret(fuelSalt, recipientAddr)
-	return { fuelSecretHex: secret.toString(), fuelSecretHashHex: (await computeSecretHash(secret)).toString() }
-}
-
-/** Private legs derive their own secrets, so their record id exists before anything is signed;
- *  a public leg learns it from the send's own pre-signature hook. */
-async function prepareSecrets(plan: SendPlan, recipient: string): Promise<Prepared> {
-	const recipientAddr = AztecAddress.fromStringUnsafe(recipient)
-	if (!plan.isPrivate) return { inputs: {} }
-	const fuelSalt = plan.gas ? Fr.random() : undefined
-	const inputs = await privateFuelInputs(fuelSalt, recipientAddr)
-	// Gas-only is named by its own Fee Juice message; a token leg by its claim hash.
-	if (plan.intent === "gas") return { id: inputs.fuelSecretHashHex, fuelSalt, inputs }
-	const claimSalt = Fr.random()
-	const committed = deriveTokenClaimSecret(claimSalt, recipientAddr)
-	return { id: (await computeSecretHash(committed)).toString(), claimSalt, fuelSalt, inputs }
-}
-
-/** A wall-clock deadline fails on a drifted chain: the window is measured from the chain's own
- *  latest block, which is the clock the Permit2 check reads. */
-async function sendParams(plan: SendPlan, actors: SendActors, prepared: Prepared, swapData: Hex): Promise<SendParams> {
-	const block = (await actors.l1.publicClient.getBlock()) as { timestamp: bigint }
-	const deadline = block.timestamp + PERMIT_DEADLINE_SECONDS
-	return {
-		intent: plan.intent,
-		erc20: plan.token.address,
-		amount: plan.amount,
-		aztecRecipient: actors.recipient as `0x${string}`,
-		isPrivate: plan.isPrivate,
-		claimSalt: prepared.claimSalt,
-		gas: plan.gas ? gasLegOf(plan.gas, swapData, actors.recipient, plan.isPrivate, prepared.fuelSalt) : undefined,
-		nonce: BigInt(`0x${[...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, "0")).join("")}`),
-		deadline,
-	}
-}
-
-/** Canonical viem meets the fork-typed bridge-core only here: the clients are structurally what
- *  it calls, and the two viem copies' nominal types are deliberately never shared. */
-const l1Ctx = (actors: SendActors): L1Ctx =>
-	({ pub: actors.l1.publicClient, wallet: actors.wallet, account: actors.from }) as unknown as L1Ctx

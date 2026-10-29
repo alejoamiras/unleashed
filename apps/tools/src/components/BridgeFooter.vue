@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { lifiBook } from "@unleashed/bridge-core"
+import { lifiBook } from "@unleashed/sdk/protocol"
 import { computed } from "vue"
 import { appSources } from "@/composables/useSourceChain"
 import { FUEL_PORTAL, GENERATION, HUB } from "@/contracts/bridge-generation"

@@ -6,8 +6,8 @@ import { Contract, type ContractInstanceWithAddress } from "@aztec-labs/aztec.js
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Abi, encodeDeployData, getContractAddress, type Hex, keccak256, TransactionNotFoundError } from "viem"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
-import type { L1Ctx } from "../src/flows"
-import { toWord } from "../src/register-hash"
+import type { L1Ctx } from "@unleashed/sdk/internal"
+import { toWord } from "@unleashed/sdk/protocol"
 import { openDeployJournal } from "./deploy-manifest"
 import type { PreCreateTokenOptions } from "./generation"
 import { deriveHubInstance } from "./script-l2"
@@ -39,8 +39,8 @@ vi.mock("./script-artifacts", () => {
 		}),
 	}
 })
-vi.mock("../src/hub-l2", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../src/hub-l2")>()
+vi.mock("@unleashed/sdk/internal", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@unleashed/sdk/internal")>()
 	return {
 		...actual,
 		hubAt: vi.fn((wallet: FakeWallet, address: string) => ({ wallet, address })),
