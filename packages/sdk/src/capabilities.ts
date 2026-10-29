@@ -35,19 +35,15 @@ interface GrantedToken {
 const at = (contract: AztecAddress, functions: readonly string[]): ScopedFunction[] => functions.map((fn) => ({ contract, function: fn }))
 
 /**
- * What a claim of this network's gas (`fuel`) and of these tokens' deposits calls. Throws `invalid-request` for a token
- * resolved on another network, or any token on a network without a token route.
+ * The claim calls themselves, with no network to check: `hub` only when a token claim is granted. `capabilitiesFor`
+ * is the checked entry; a host that builds a wider grant of its own merges these in.
  */
-export function capabilitiesFor(net: Network, need: { fuel?: true; tokens?: readonly GrantedToken[] }): Capability[] {
-	assertNetwork(net)
-	const tokens = need.tokens ?? []
-	if (tokens.some((t) => t.network !== net)) throw refusal("invalid-request", "a token was resolved on another network")
-	if (tokens.length > 0 && !net.bridge) throw refusal("invalid-request", "this network has no token route")
+export function claimCapabilities(p: { privateFpc: string; hub?: string; l2Tokens: readonly string[] }): Capability[] {
 	const feeJuice = AztecAddress.fromStringUnsafe(feeJuiceAddress)
-	const fpc = AztecAddress.fromStringUnsafe(net.privateFpc)
+	const fpc = AztecAddress.fromStringUnsafe(p.privateFpc)
 	const fees = [...at(feeJuice, FEE_JUICE_SENDS), ...at(fpc, FPC_SENDS)]
-	const hub = net.bridge && tokens.length > 0 ? AztecAddress.fromStringUnsafe(net.bridge.hub) : undefined
-	const l2Tokens = [...new Set(tokens.map((t) => t.l2Token.toLowerCase()))].map((a) => AztecAddress.fromStringUnsafe(a))
+	const hub = p.hub === undefined ? undefined : AztecAddress.fromStringUnsafe(p.hub)
+	const l2Tokens = [...new Set(p.l2Tokens.map((t) => t.toLowerCase()))].map((a) => AztecAddress.fromStringUnsafe(a))
 	return [
 		{ type: "accounts", canGet: true, canCreateAuthWit: false },
 		{ type: "contracts", contracts: [...(hub ? [hub, ...l2Tokens] : []), fpc], canRegister: true, canGetMetadata: true },
@@ -61,4 +57,17 @@ export function capabilitiesFor(net: Network, need: { fuel?: true; tokens?: read
 		},
 		{ type: "transaction", scope: [...fees, ...(hub ? at(hub, HUB_SENDS) : [])] },
 	]
+}
+
+/**
+ * What a claim of this network's gas (`fuel`) and of these tokens' deposits calls. Throws `invalid-request` for a token
+ * resolved on another network, or any token on a network without a token route.
+ */
+export function capabilitiesFor(net: Network, need: { fuel?: true; tokens?: readonly GrantedToken[] }): Capability[] {
+	assertNetwork(net)
+	const tokens = need.tokens ?? []
+	if (tokens.some((t) => t.network !== net)) throw refusal("invalid-request", "a token was resolved on another network")
+	if (tokens.length > 0 && !net.bridge) throw refusal("invalid-request", "this network has no token route")
+	const hub = net.bridge && tokens.length > 0 ? net.bridge.hub : undefined
+	return claimCapabilities({ privateFpc: net.privateFpc, ...(hub ? { hub } : {}), l2Tokens: tokens.map((t) => t.l2Token) })
 }

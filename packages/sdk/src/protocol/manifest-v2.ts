@@ -18,6 +18,7 @@ import { type Hex, isAddress } from "viem"
 import z from "zod"
 import { aztecLineOf } from "./aztec-line.ts"
 import { deriveHubTokenInstance } from "./hub-token.ts"
+import { SANDBOX_LIFI_CHAIN_IDS } from "./lifi-addresses.ts"
 import { predictPortal } from "./portal-address.ts"
 
 /** Any-case 20-byte hex, for operator inputs that are lower-cased before use. */
@@ -233,6 +234,8 @@ export const manifestV2Schema = z
 /** A router swaps through LI.FI's Diamond on Ethereum mainnet and through the testnet swapper everywhere else. */
 function swapperIssue(l1ChainId: number, hasRouter: boolean, hasSwapper: boolean): string | undefined {
 	if (l1ChainId === 1) return hasSwapper ? "the testnet fuel swapper is refused on Ethereum mainnet" : undefined
+	// A sandbox may swap through its LI.FI stand-in, as mainnet swaps through LI.FI; a live testnet has no LI.FI venue.
+	if (SANDBOX_LIFI_CHAIN_IDS.includes(l1ChainId)) return hasSwapper && !hasRouter ? "a fuelSwapper needs a depositRouter" : undefined
 	return hasRouter !== hasSwapper ? "off mainnet, fuelSwapper is present exactly when depositRouter is" : undefined
 }
 

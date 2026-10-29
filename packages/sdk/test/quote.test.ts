@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import type { Address } from "viem"
+import { type Address, slice } from "viem"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import type { BridgeError } from "../src/errors.ts"
+import { swapDataFor } from "../src/execution/fuel-venue.ts"
 import { depositFuel, probeFuel, quoteFuel } from "../src/fuel/index.ts"
 import { parseNetwork } from "../src/network.ts"
 import { mainnetFuelRoute, readsOf, type Step, testnet, walletOf, worldOf } from "./fakes.ts"
@@ -52,6 +53,18 @@ describe("fuel quotes", () => {
 		expect(e?.submission).toBe("none")
 		expect(persist).not.toHaveBeenCalled()
 		expect(log).toEqual([])
+	})
+
+	it("signs the reviewed floor, not a fresh one, when the venue now quotes the exact slice above it", async () => {
+		const w = worldOf(testnet())
+		const swapper = w.m.bridge?.l1.fuelSwapper as string
+		const token = w.m.bridge?.tokens.find((t) => t.erc20.toLowerCase() !== w.m.feeJuice.asset.toLowerCase())?.erc20 as Address
+		w.reads.set(`${swapper.toLowerCase()}:quote`, (args: readonly unknown[]) => (args[1] as bigint) * 10n ** 13n)
+		const r = readsOf(w)
+		const net = await parseNetwork(w.m, r)
+		const data = await swapDataFor(net, r, token, 10_000_000n, 7n)
+		expect(BigInt(slice(data, 132, 164)), "_minAmountOut").toBe(7n)
+		expect(await swapDataFor(net, r, w.m.feeJuice.asset as Address, 10_000_000n, 7n)).toBe("0x")
 	})
 
 	it("on a LI.FI venue with no fetch at all, refuses with fetch-unavailable, never a missing route", async () => {

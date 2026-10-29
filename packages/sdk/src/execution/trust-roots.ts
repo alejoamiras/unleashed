@@ -10,7 +10,7 @@ import { CODE_PINS, deployedHash, type PinnedContract } from "../protocol/code-h
 import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
 import { PORTAL_FACTORY_ABI, PORTAL_IMPL_CONSTANTS_ABI } from "../protocol/factory-abi.ts"
 import { DEPOSIT_WITNESS_TYPE_STRING } from "../protocol/l1.ts"
-import { lifiBook } from "../protocol/lifi-addresses.ts"
+import { lifiBook, SANDBOX_LIFI_CHAIN_IDS } from "../protocol/lifi-addresses.ts"
 import type { ManifestV2 } from "../protocol/manifest-v2.ts"
 
 /** One comparison, lower-cased: what the chain answered and what it must be, and where the expectation came from. */
@@ -177,9 +177,12 @@ async function swapperBindings(pub: ChainReader, swapper: Address, feeAsset: str
 	return [bind("fuelSwapper.FEE_ASSET", asset, feeAsset)]
 }
 
-/** The router's swap target: LI.FI's Diamond on mainnet, the listed testnet swapper elsewhere. */
+/** The router's swap target: LI.FI's Diamond on mainnet and on a sandbox that lists no swapper (its registered
+ *  stand-in), the listed testnet swapper elsewhere. */
 export function swapTargetOf(l1ChainId: number, fuelSwapper: string | undefined): string | undefined {
-	return l1ChainId === 1 ? lifiBook(1).diamond : fuelSwapper
+	if (l1ChainId === 1) return lifiBook(1).diamond
+	if (!fuelSwapper && SANDBOX_LIFI_CHAIN_IDS.includes(l1ChainId)) return lifiBook(l1ChainId).diamond
+	return fuelSwapper
 }
 
 /** Every on-chain trust root of a manifest's route. The registry it reads through must already be anchored. */

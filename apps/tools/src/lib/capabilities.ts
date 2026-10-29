@@ -1,4 +1,6 @@
 import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/sdk/protocol"
+import type { Capability } from "@unleashed/sdk"
+import { claimCapabilities } from "@unleashed/sdk/internal"
 
 /** The canonical L2 FeeJuice protocol contract (identical on every network). */
 const FEE_JUICE_L2 = AztecAddress.fromStringUnsafe(feeJuiceAddress)
@@ -159,6 +161,33 @@ interface ManifestScopes {
 	readonly transactions: ScopedFunction[]
 }
 
+const scopeKey = (s: ScopedFunction) => `${s.contract.toString().toLowerCase()}.${s.function}`
+
+/** `extra`'s entries that `base` lacks, appended in order: the grant keeps its own order, so an unchanged set is an
+ *  unchanged consent prompt. */
+function union<T>(base: readonly T[], extra: readonly T[], key: (t: T) => string): T[] {
+	const seen = new Set(base.map(key))
+	return [...base, ...extra.filter((t) => !seen.has(key(t)))]
+}
+
+/** The SDK's claims call exactly these, so they are merged in: the grant can never fall behind what a claim sends.
+ *  Today's send scopes already hold every one. */
+function withClaimScopes(scopes: ManifestScopes, hub: AztecAddress | undefined, hubTokens: readonly AztecAddress[]): ManifestScopes {
+	const claims = claimCapabilities({
+		privateFpc: PRIVATE_FPC_ADDRESS,
+		...(hub && hubTokens.length > 0 ? { hub: hub.toString() } : {}),
+		l2Tokens: hubTokens.map((t) => t.toString()),
+	})
+	const of = <K extends Capability["type"]>(type: K) => claims.find((c): c is Extract<Capability, { type: K }> => c.type === type)
+	const address = (a: AztecAddress) => a.toString().toLowerCase()
+	return {
+		contracts: union(scopes.contracts, of("contracts")?.contracts ?? [], address),
+		utilities: union(scopes.utilities, of("simulation")?.utilities.scope ?? [], scopeKey),
+		simulatedTransactions: union(scopes.simulatedTransactions, of("simulation")?.transactions.scope ?? [], scopeKey),
+		transactions: union(scopes.transactions, of("transaction")?.scope ?? [], scopeKey),
+	}
+}
+
 /**
  * The send half of a grant: the hub, the hub Tokens this grant covers, and the fee machinery every
  * L2 send leans on. A grant with no hub carries no token scopes either — a Token the hub cannot
@@ -166,6 +195,10 @@ interface ManifestScopes {
  */
 function sendScopes(hub: AztecAddress | undefined, tokens: readonly AztecAddress[]): ManifestScopes {
 	const hubTokens = hub ? tokens : []
+	return withClaimScopes(appSendScopes(hub, hubTokens), hub, hubTokens)
+}
+
+function appSendScopes(hub: AztecAddress | undefined, hubTokens: readonly AztecAddress[]): ManifestScopes {
 	const onHub = (functions: readonly string[]): ScopedFunction[] => (hub ? at(hub, functions) : [])
 	return {
 		contracts: [...(hub ? [hub] : []), ...hubTokens, PRIVATE_FPC_L2],

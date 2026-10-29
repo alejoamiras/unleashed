@@ -1,4 +1,5 @@
 /** Workspace-only orchestration: the L1 send, receipt leaves, arrival gates, claims and recovery. Never published. */
+export { claimCapabilities } from "./capabilities.ts"
 export * from "./execution/arrival.ts"
 export * from "./execution/chain-scan.ts"
 export * from "./execution/claim-receipt.ts"
@@ -10,6 +11,7 @@ export * from "./execution/fuel-claim.ts"
 export * from "./execution/fuel-claim-state.ts"
 export * from "./execution/fuel-quote.ts"
 export * from "./execution/hub-l2.ts"
+export { depositL1, type DepositPlan } from "./execution/l1-deposit.ts"
 export * from "./execution/l1-receipt.ts"
 export * from "./execution/l1-to-l2-readiness.ts"
 export * from "./execution/legacy-router.ts"

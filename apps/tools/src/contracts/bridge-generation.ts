@@ -12,6 +12,7 @@ import {
 } from "@unleashed/sdk/protocol"
 import { legacyRoutersOf, type SendGeneration, sendGenerationOf } from "@unleashed/sdk/internal"
 import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
+import { type Network, parseNetwork, type Reads } from "@unleashed/sdk"
 import rawTestnetConfig from "../../public/testnet-bridge.json"
 
 /*
@@ -23,7 +24,8 @@ import rawTestnetConfig from "../../public/testnet-bridge.json"
  * Injected per build target via vite `define`; the static testnet import is the vitest fallback.
  */
 const injectedManifest = import.meta.env.VITE_BRIDGE_MANIFEST_JSON
-export const MANIFEST: ManifestV2 = parseManifestV2(injectedManifest ? JSON.parse(injectedManifest) : rawTestnetConfig)
+const rawManifest: unknown = injectedManifest ? JSON.parse(injectedManifest) : rawTestnetConfig
+export const MANIFEST: ManifestV2 = parseManifestV2(rawManifest)
 
 export const GENERATION: BridgeBlock | null = MANIFEST.bridge
 export const IS_PLACEHOLDER = GENERATION === null
@@ -69,3 +71,23 @@ export async function rebuildHubTokenInstance(erc20: string, words: HubTokenWord
 
 export const HUB_ARTIFACT = tokenBridgeHubArtifact
 export const HUB_TOKEN_ARTIFACT = TokenContractArtifact
+
+let network: Promise<Network> | undefined
+
+/**
+ * The SDK's checked network: the manifest re-parsed and its trust roots read once through `reads`, then shared for the
+ * session. Only a manifest with a deposit route has one; a failed check is not remembered, so the next call reads
+ * again.
+ */
+export function bridgeNetwork(reads: Reads): Promise<Network> {
+	network ??= parseNetwork(rawManifest, reads).catch((e: unknown) => {
+		network = undefined
+		throw e
+	})
+	return network
+}
+
+/** Test-only: forget the checked network. */
+export function __resetBridgeNetworkForTests(): void {
+	network = undefined
+}

@@ -206,7 +206,8 @@ export const SANDBOX_LIFI_CHAIN_IDS: readonly number[] = Object.freeze([31337, 3
  *  destination half on Ethereum, a `TestSpokePool` on each side. */
 export interface SandboxLifiContracts {
 	source: { chainId: number; diamond: Address; spokePool: Address }
-	ethereum: { chainId: number; executor: Address; receiverAcrossV4: Address; spokePool: Address }
+	/** `diamond` is the deposit router's swap target, which speaks LI.FI's swap ABI. */
+	ethereum: { chainId: number; diamond: Address; executor: Address; receiverAcrossV4: Address; spokePool: Address }
 }
 
 const NONE: Address = zeroAddress
@@ -229,7 +230,7 @@ function sandboxBooksOf(c: SandboxLifiContracts): LifiChainBook[] {
 		{
 			...shared,
 			chainId: c.ethereum.chainId,
-			diamond: NONE,
+			diamond: c.ethereum.diamond,
 			executor: c.ethereum.executor,
 			receiverAcrossV4: c.ethereum.receiverAcrossV4,
 			facets: {},

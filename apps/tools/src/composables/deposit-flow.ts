@@ -28,7 +28,6 @@ import {
 	type SendGeneration,
 	type SendOpts,
 	type StoredRecord,
-	awaitL1Receipt,
 	buildFeeJuiceClaim,
 	fuelReceiptStatus as fuelReceiptStatusOn,
 	patchFuel as patchFuelOn,
@@ -37,20 +36,12 @@ import {
 	resolveHubClaimSendOpts as resolveHubClaimSendOptsOn,
 	sendStandaloneFjClaim as sendStandaloneFjClaimOn,
 } from "@unleashed/sdk/internal"
-import { ERC20_ABI, PRIVATE_FPC_ADDRESS, ensurePermit2Allowance } from "@unleashed/sdk/protocol"
+import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
 import { NETWORK } from "@/lib/network"
 import { FUEL, FUEL_MIN_FJ, LEGACY_ROUTERS } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"
 import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
-import {
-	cacheSecret,
-	currentRecord,
-	markApproveOutcome,
-	runOnLane,
-	setRecordStep,
-	updateRecord,
-	updateRecordWhen,
-} from "./useBridgeJournal"
+import { cacheSecret, currentRecord, runOnLane, setRecordStep, updateRecord, updateRecordWhen } from "./useBridgeJournal"
 import { readBalance } from "./useTokenBalance"
 
 // Verbose tracing while the bridge flows are being hardened - ids, stages, tx hashes ONLY.
@@ -268,49 +259,4 @@ export async function sealPrivateRecord(ctx: {
 	if (!sealed?.sealedEnvelope) {
 		throw new Error("Could not persist the sealed recovery secret — aborting before the deposit (storage full?).")
 	}
-}
-
-/** Most ERC-20s start at ZERO Permit2 allowance, so a send must do a one-time approve(Permit2, max)
- *  before the witness transfer; a token that pre-grants Permit2 short-circuits with no transaction.
- *  The approval hash is JOURNALED the moment it exists, so a row that outlives a later failure
- *  carries the allowance it granted. A refusal of the witness deletes the row instead: the max
- *  allowance stands, as it does for every Permit2 user, and no deposit was ever sent. */
-export async function ensurePermit2Approval(
-	permit2: `0x${string}`,
-	needed: bigint,
-	recordId: string,
-	l1: DepositL1Ctx,
-	/** The token being pulled — any ERC-20 the wizard sends. */
-	erc20: `0x${string}`,
-): Promise<void> {
-	await ensurePermit2Allowance({
-		allowance: async () =>
-			(await l1.publicClient.readContract({
-				address: erc20,
-				abi: ERC20_ABI,
-				functionName: "allowance",
-				args: [l1.from, permit2],
-			})) as bigint,
-		approveMax: async () =>
-			(await runOnLane("l1", () =>
-				l1.wallet.writeContract({
-					address: erc20,
-					abi: ERC20_ABI,
-					functionName: "approve",
-					args: [permit2, (1n << 256n) - 1n],
-					chain: NETWORK.viemChain,
-					account: l1.from,
-				}),
-			)) as `0x${string}`,
-		waitReceipt: async (hash) =>
-			await awaitL1Receipt(l1.publicClient as never, hash, {
-				onStillWaiting: (attempt) => setRecordStep(recordId, "approving", `still waiting for the approval (round ${attempt})`),
-			}),
-		needed,
-		onStatus: (status, txHash) => {
-			if (status === "approving") setRecordStep(recordId, "approving", "first time only: approve Permit2 in your Ethereum wallet")
-			if (status === "waiting" && txHash) updateRecord(recordId, { approveTxHash: txHash })
-			if (status === "approved") markApproveOutcome(recordId, "done")
-		},
-	})
 }

@@ -9,7 +9,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Account, Address, Chain, Hex, WalletClient } from "viem"
 import { BridgeError, isUserRejection, refusal, type Submission } from "../errors.ts"
 import { type Emit, eventEmitter, type Leaves } from "../events.ts"
-import type { Network, Reads } from "../network.ts"
+import { assertNetwork, type Network, type Reads } from "../network.ts"
 import { aztecLineOf } from "../protocol/aztec-line.ts"
 import { ERC20_ABI } from "../protocol/erc20.ts"
 import { PORTAL_FACTORY_ABI } from "../protocol/factory-abi.ts"
@@ -47,6 +47,9 @@ export interface DepositPlan {
 	tokenBlock?: JournalTokenBlock
 	/** The hub has not registered the token yet: the first claim registers it. */
 	registers?: boolean
+	/** False skips the pause read, leaving a paused route to the router's own revert at the estimate, after the
+	 *  prompts. The public entries always read it. */
+	pauseCheck?: boolean
 }
 
 interface Leg {
@@ -103,18 +106,12 @@ function randomNonce(): bigint {
 	return BigInt(`0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`)
 }
 
-/** The router's params, and the salts a private leg is claimed with. A deadline is measured on the chain's clock,
- *  the one Permit2 reads. */
-async function paramsOf(
-	net: Network,
-	r: Reads,
-	plan: DepositPlan,
-	swapData: Hex,
-): Promise<{ params: SendParams; secrets: DepositSecrets }> {
+/** The router's params, and the salts a private leg is claimed with. The deadline is stamped at the signature
+ *  (`withDeadline`); until then it is zero, which Permit2 refuses. */
+function paramsOf(net: Network, plan: DepositPlan, swapData: Hex): { params: SendParams; secrets: DepositSecrets } {
 	const claimer = AztecAddress.fromStringUnsafe(plan.recipient)
 	const claimSalt = plan.isPrivate && plan.intent !== "gas" ? Fr.random() : undefined
 	const fuelSalt = plan.isPrivate && plan.gas ? Fr.random() : undefined
-	const block = await r.l1.getBlock()
 	const gas = plan.gas && {
 		fuelAmount: plan.gas.fuelAmount,
 		fuelRecipient: (plan.isPrivate ? net.privateFpc : plan.recipient) as Hex,
@@ -131,7 +128,7 @@ async function paramsOf(
 		...(claimSalt ? { claimSalt } : {}),
 		...(gas ? { gas } : {}),
 		nonce: randomNonce(),
-		deadline: block.timestamp + PERMIT_DEADLINE_SECONDS,
+		deadline: 0n,
 	}
 	return { params, secrets: { ...(claimSalt ? { claimSalt } : {}), ...(fuelSalt ? { fuelSalt } : {}) } }
 }
@@ -211,10 +208,20 @@ async function approve(leg: Leg, token: Address, needed: bigint): Promise<void> 
 		leg.emit({ type: "approval", status: "sent", txHash: hash })
 		return hash
 	}
-	const waitReceipt = (hash: Hex) => untilAborted(awaitL1Receipt(l1.pub as never, hash), run, "none") as Promise<{ status?: string }>
+	const waitReceipt = (hash: Hex) =>
+		untilAborted(
+			awaitL1Receipt(l1.pub as never, hash, {
+				onStillWaiting: (round) => leg.emit({ type: "approval", status: "waiting", txHash: hash, round }),
+			}),
+			run,
+			"none",
+		) as Promise<{ status?: string }>
+	const onStatus = (status: string) => {
+		if (status === "approving") leg.emit({ type: "approval", status: "requested" })
+	}
 	let done: { txHash?: Hex }
 	try {
-		done = await ensurePermit2Allowance({ allowance, approveMax, waitReceipt, needed })
+		done = await ensurePermit2Allowance({ allowance, approveMax, waitReceipt, needed, onStatus })
 	} catch (e) {
 		if (e instanceof BridgeError) throw e
 		// A reverted approval means the token refuses Permit2, which no retry changes. One not yet confirmed, or an
@@ -254,8 +261,16 @@ function confirmedPatch(leg: Leg, res: SendResult, l2Block: number | undefined):
 	} as Partial<DepositRecord>
 }
 
-async function sendDeposit(leg: Leg, s: PreparedSend, wallet: WalletClient): Promise<Hex> {
+/** The Permit2 window opens at the signature, on the chain's clock (the one Permit2 reads): a deadline drawn before
+ *  the caller's persist and a slow approval could pass before the witness is even signed. */
+async function withDeadline(r: Reads, s: PreparedSend): Promise<PreparedSend> {
+	const block = await r.l1.getBlock()
+	return { ...s, params: { ...s.params, deadline: block.timestamp + PERMIT_DEADLINE_SECONDS } }
+}
+
+async function sendDeposit(leg: Leg, prepared: PreparedSend, wallet: WalletClient): Promise<Hex> {
 	await assertWalletChain(wallet, leg.net)
+	const s = await withDeadline(leg.r, prepared)
 	checkAbort(leg.run, "none")
 	leg.emit({ type: "signature-requested" })
 	let signature: Hex
@@ -336,13 +351,14 @@ async function confirmDeposit(leg: Leg, s: PreparedSend, txHash: Hex): Promise<v
 
 /** Runs the Ethereum leg of a reviewed deposit; resolves with the confirmed record. */
 export async function depositL1(net: Network, r: Reads, wallet: WalletClient, plan: DepositPlan, run: RunOptions): Promise<DepositRecord> {
+	assertNetwork(net)
 	if (!aztecLineOf(net.l1ChainId).supported) throw refusal("unsupported-line", `this release does not run ${net.name}'s Aztec line`)
 	const route = routeOf(net, plan.intent)
 	const account = await accountOf(wallet)
 	await assertWalletChain(wallet, net)
-	await assertOpen(net, r, plan.intent)
+	if (plan.pauseCheck !== false) await assertOpen(net, r, plan.intent)
 	const swapData = plan.gas ? await swapDataFor(net, r, plan.token, plan.gas.fuelAmount, plan.gas.minFuelOutput) : "0x"
-	const { params, secrets } = await paramsOf(net, r, plan, swapData)
+	const { params, secrets } = paramsOf(net, plan, swapData)
 	let s: PreparedSend
 	try {
 		s = await prepareSend(route, params)
