@@ -1060,7 +1060,7 @@ async function assertCandidateRecord(intent: DeployIntent, candidate: ManifestV2
 
 /** The candidate, strict-parsed: a generation's must carry a bridge and tokens, derived from the candidate record's
  *  hub; a fuel route's the placeholder's `bridge: null`, which `assertFuelRouteScope` then pins. */
-function candidateOf(intent: DeployIntent, raw: string, record: RecordSource): Promise<ManifestV2> {
+export function candidateOf(intent: Pick<DeployIntent, "fuelRoute">, raw: string, record: RecordSource): Promise<ManifestV2> {
 	return intent.fuelRoute
 		? Promise.resolve(parseManifestV2(JSON.parse(raw)))
 		: assertFaucetCandidateShape(JSON.parse(raw), keptHubArtifact(record))
@@ -1267,17 +1267,16 @@ function writeAtomic(target: string, bytes: Buffer, sha: string): void {
  * them, then any file of the closed set the candidate does not hold. Nothing outside the closed set is touched, and a
  * re-run after an interrupted one converges on the same bytes.
  */
-function writeLiveRecord(net: IntentNetwork, files: ReadonlyMap<string, Buffer>): void {
-	const dir = GENERATION_PATHS[net.name].liveRecord
+export function writeLiveRecord(dir: string, files: ReadonlyMap<string, Buffer>, root = repoRoot): void {
 	const order = [...files.keys()].sort((a, b) => Number(a === RECORD_FILE) - Number(b === RECORD_FILE))
 	for (const relative of order) {
-		assertRealPath(repoRoot, `${dir}/${relative}`)
+		assertRealPath(root, `${dir}/${relative}`)
 		const bytes = files.get(relative) as Buffer
-		writeAtomic(join(repoRoot, dir, relative), bytes, sha256Of(bytes))
+		writeAtomic(join(root, dir, relative), bytes, sha256Of(bytes))
 	}
 	for (const relative of RECORD_FILES.filter((f) => !files.has(f))) {
-		assertRealPath(repoRoot, `${dir}/${relative}`)
-		rmSync(join(repoRoot, dir, relative), { force: true })
+		assertRealPath(root, `${dir}/${relative}`)
+		rmSync(join(root, dir, relative), { force: true })
 	}
 }
 
@@ -1354,7 +1353,7 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 	else console.log("no live manifest yet — first promotion; the generation interlock has nothing to compare against")
 
 	// The record first and the manifest last: a manifest is never live without the record that binds it.
-	writeLiveRecord(net, record.files)
+	writeLiveRecord(GENERATION_PATHS[net.name].liveRecord, record.files)
 	writeAtomic(paths.bridgeLive, bytes.bridge, bytes.bridgeSha)
 	if (bytes.faucet && bytes.faucetSha) writeAtomic(paths.faucetLive, bytes.faucet, bytes.faucetSha)
 	await verifyWritten(net, paths, bytes.faucetLivePin)
