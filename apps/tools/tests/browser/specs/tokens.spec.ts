@@ -1,5 +1,13 @@
 /** Tokens (cells 22, 23, 34, 37): the catalog, the paste lookup, the route verdicts, the L1 mint strip. */
-import { balanceOf, freshToken, mint, mintPrivateGasNote, privateCreditOf, privateFpc } from "@unleashed/bridge-core/sandbox"
+import {
+	balanceOf,
+	freshToken,
+	mint,
+	mintPrivateGasNote,
+	privateCreditOf,
+	privateFpc,
+	SOURCE_CHAIN_ID,
+} from "@unleashed/bridge-core/sandbox"
 import { getAddress } from "viem"
 import { TESTIDS } from "../../../src/lib/testids"
 import { expect, test } from "../fixtures/test"
@@ -60,7 +68,7 @@ test("cell 34 — the catalog lists AZTEC, the generation's tokens, then the com
 	).toBeVisible()
 })
 
-test("cell 37 — the mint strip mints a permissionless test token on Ethereum and the tile's balance follows", async ({
+test("cell 37 — the mint strip mints a permissionless test token on Ethereum, the tile's balance follows, and holds with the wallet on the source chain", async ({
 	page,
 	sandbox,
 	actor,
@@ -81,11 +89,21 @@ test("cell 37 — the mint strip mints a permissionless test token on Ethereum a
 	await page.locator(`${tid(TESTIDS.mintL1Card)} ${tid(TESTIDS.mintL1)}[data-symbol="${usdc.displaySymbol}"]`).click()
 	await expect(page.locator(`${tid(TESTIDS.mintL1Status)}[data-error="true"]`)).toHaveCount(0)
 	await expect.poll(async () => balance.textContent(), { timeout: 60_000 }).not.toBe(before)
+	const minted = await balance.textContent()
 	expect(l1.signatures, "the mint was one Ethereum transaction").toBe(1)
 	// What the tile now says is what the amount step offers.
 	await tile.click()
 	await expect(page.locator(tid(TESTIDS.sendStepAmount))).toBeVisible()
 	await expect(page.locator(tid(TESTIDS.sendBalanceL1))).toContainText(/\d/)
+
+	// A fresh page starts with no figure cached: with the wallet on the source chain, whose anvil holds no USDC and no
+	// Multicall3, only the build's own Ethereum reader can show the minted balance.
+	await l1.setChainId(SOURCE_CHAIN_ID)
+	await page.reload()
+	await openSend(page)
+	await connectL1(page)
+	await page.locator(tid(TESTIDS.sendDirectionDeposit)).click()
+	await expect(balance).toHaveText(minted ?? "", { timeout: 30_000 })
 })
 
 test("cell 22 — a routeless token greys the gas choices with the reason; the token alone still sends from credit", async ({

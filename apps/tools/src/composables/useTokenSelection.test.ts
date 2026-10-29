@@ -182,6 +182,7 @@ describe("useTokenSelection", () => {
 		const { readBinding } = makeBindingReader(bindings)
 		const selection = useTokenSelection({
 			pub: () => pub,
+			balanceReader: () => pub,
 			l1Account: () => L1_ACCOUNT,
 			readBinding,
 			l2Account: () => L2_ACCOUNT,
@@ -366,6 +367,19 @@ describe("useTokenSelection", () => {
 		const { selection } = harness(pub, { l1Account: () => undefined })
 		await selection.select(selectable(USDC), "l1-to-l2")
 		expect(selection.balances.value.l1).toBeUndefined()
+	})
+
+	it("reads the Ethereum balance through the balance reader, never the client that resolved the token", async () => {
+		const wallet = makePub({ registrations, l1Balance: 1n })
+		const reader = makePub({ registrations, l1Balance: 7n })
+		const { selection } = harness(wallet, { balanceReader: () => reader })
+		await selection.select(selectable(USDC), "l1-to-l2")
+		expect(selection.balances.value.l1).toBe(7n)
+		;(reader.multicall as unknown as Mock).mockImplementation(async () => [{ status: "success", result: 9n }])
+		await selection.refreshBalances()
+		expect(selection.balances.value.l1).toBe(9n)
+		expect(reader.multicall).toHaveBeenCalledTimes(2)
+		expect(wallet.multicall).not.toHaveBeenCalled()
 	})
 
 	it("refreshBalances re-reads under the direction the selection was made with", async () => {

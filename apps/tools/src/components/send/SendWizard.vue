@@ -143,12 +143,12 @@ const lookup = useAddressLookup({
 	known: () => catalog.tokens.value,
 	chainId: () => catalog.chainId,
 })
-/** No owner while the Ethereum wallet sits on another chain: a balance read there is another
- *  chain's, and the switch back reads afresh. */
-const l1Reader = computed(() => (l1.wrongChain.value ? undefined : (l1.address.value ?? undefined)))
+/** Ethereum balances read through the build's own RPCs, so they stand whichever chain the wallet is on. */
+const bridgeL1 = () => readClientFor(NETWORK.l1ChainId)
+const l1Owner = () => l1.address.value ?? undefined
 const rowBalances = useRowBalances({
-	pub: () => l1.publicClient as unknown as PublicClient,
-	owner: () => l1Reader.value,
+	pub: bridgeL1,
+	owner: l1Owner,
 	tokens: () => catalog.filtered.value,
 })
 // Reads through the build's own RPCs, so the owner stands whichever chain the wallet is on.
@@ -163,7 +163,8 @@ const sourceKeys = new Set(sourceChain.rows.map((r) => r.logoKey))
 const isSourceRow = (token: SelectableToken): boolean => sourceKeys.has(token.logoKey)
 const selection = useTokenSelection({
 	pub: () => l1.publicClient as unknown as PublicClient,
-	l1Account: () => l1Reader.value,
+	balanceReader: bridgeL1,
+	l1Account: l1Owner,
 	readBinding: readHubBinding,
 	l2Account: () => bridge.selectedAccount.value ?? undefined,
 	tokenContract: async (l2Token) => {
@@ -894,8 +895,8 @@ function onMinted(): void {
 // outlives both, is what refreshes after one.
 watch(feeAssetMinted, onMinted)
 
-// The row balances re-read themselves when the reader changes; the selected token's are read here.
-watch(l1Reader, () => void selection.refreshBalances())
+// The row balances re-read themselves when the account changes; the selected token's are read here.
+watch(l1Owner, () => void selection.refreshBalances())
 
 function onDirection(next: Direction): void {
 	direction.value = next
@@ -1609,8 +1610,7 @@ const deliveredPrefill = computed(() => {
 	const v = view.value
 	return v.kind === "outcome" && outcomeVariant(v.record, now.value) === "delivered" ? ethereumPrefillOf(v.record) : null
 })
-// Read from the bridge's L1 whatever chain the wallet is on: after a send from a source chain it is usually there.
-const bridgeL1 = () => readClientFor(NETWORK.l1ChainId)
+// After a send from a source chain the wallet usually sits there, so the continuation reads through `bridgeL1`.
 const continueFuel = useFuelQuote({ pub: bridgeL1 })
 const continueToken = shallowRef<ResolvedToken | null>(null)
 watch(

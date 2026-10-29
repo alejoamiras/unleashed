@@ -4,13 +4,22 @@
  * new rows costs one batch for those rows only; a read that fails leaves what was read standing;
  * a read that is superseded never lands.
  */
-import { readErc20Balances } from "@unleashed/sdk/protocol"
+import { type Erc20Client, readErc20Balances } from "@unleashed/sdk/protocol"
 import type { Address, PublicClient } from "viem"
 import { type Ref, shallowRef, watch } from "vue"
 import type { SelectableToken } from "@/lib/send-model"
 
 /** A remote list can run to hundreds of tokens; one batch stays bounded to what a screen shows. */
 const MAX_ROWS = 50
+
+/** The batch as one `eth_call`: viem splits a multicall past 1,024 calldata bytes (28 rows), and `MAX_ROWS` keeps the
+ *  whole batch small enough to send at once. */
+function oneCall(pub: PublicClient): Erc20Client {
+	return {
+		multicall: (args) => pub.multicall({ ...args, batchSize: 0 }),
+		call: (args) => pub.call(args),
+	}
+}
 
 export interface RowBalancesDeps {
 	pub: () => PublicClient | undefined
@@ -38,7 +47,7 @@ export function useRowBalances(deps: RowBalancesDeps): UseRowBalancesHandle {
 		if (!pub || !owner || rows.length === 0) return
 		try {
 			const got = await readErc20Balances(
-				pub,
+				oneCall(pub),
 				owner,
 				rows.map((r) => r.address),
 			)

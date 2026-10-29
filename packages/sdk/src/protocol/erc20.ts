@@ -182,9 +182,10 @@ export async function readErc20Metadata(client: Erc20Client, token: Address): Pr
 }
 
 /**
- * Balances for many tokens in one batch, keyed by the address AS PASSED (so `get(tokens[i])` hits
- * regardless of casing). A token that reverts, or is not an ERC-20 at all, reports `0n` — one bad
- * entry must never cost the caller the whole list.
+ * Balances for many tokens in one `multicall`, keyed by the address AS PASSED (so `get(tokens[i])`
+ * hits regardless of casing). The client may send it as several `eth_call`s: viem splits past
+ * 1,024 calldata bytes unless the call names a `batchSize`. A token that reverts, or is not an
+ * ERC-20 at all, reports `0n` — one bad entry must never cost the caller the whole list.
  */
 export async function readErc20Balances(client: Erc20Client, owner: Address, tokens: readonly Address[]): Promise<Map<Address, bigint>> {
 	const balances = new Map<Address, bigint>()

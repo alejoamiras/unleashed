@@ -1,13 +1,25 @@
 import { flushPromises } from "@vue/test-utils"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { Address, PublicClient } from "viem"
+import {
+	type Address,
+	createPublicClient,
+	custom,
+	decodeFunctionData,
+	encodeAbiParameters,
+	encodeFunctionResult,
+	type Hex,
+	multicall3Abi,
+	type PublicClient,
+} from "viem"
 import { ref } from "vue"
+import { NETWORK } from "@/lib/network"
 import type { SelectableToken } from "@/lib/send-model"
 import { useRowBalances } from "./useRowBalances"
 
 const h = vi.hoisted(() => ({ readErc20Balances: vi.fn() }))
 
-vi.mock("@unleashed/sdk/protocol", () => ({
+vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
 	readErc20Balances: h.readErc20Balances,
 }))
 
@@ -39,7 +51,10 @@ describe("useRowBalances", () => {
 		const { handle } = harness(rows)
 		await flushPromises()
 		expect(h.readErc20Balances).toHaveBeenCalledTimes(1)
-		expect(h.readErc20Balances).toHaveBeenCalledWith(PUB, OWNER, [rows[0]?.address, rows[1]?.address])
+		expect(h.readErc20Balances).toHaveBeenCalledWith(expect.objectContaining({ multicall: expect.any(Function) }), OWNER, [
+			rows[0]?.address,
+			rows[1]?.address,
+		])
 		expect(handle.balances.value).toEqual({ [rows[0]?.logoKey ?? ""]: 1n, [rows[1]?.logoKey ?? ""]: 2n })
 	})
 
@@ -111,6 +126,36 @@ describe("useRowBalances", () => {
 		release()
 		await flushPromises()
 		expect(handle.balances.value[rows[0]?.logoKey ?? ""]).toBe(1n)
+	})
+
+	it("sends a screen of rows as one eth_call, past the size where viem would split it", async () => {
+		const actual = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
+		h.readErc20Balances.mockImplementation(actual.readErc20Balances)
+		let calls = 0
+		const pub = createPublicClient({
+			chain: NETWORK.viemChain,
+			transport: custom({
+				request: async ({ method, params }) => {
+					if (method !== "eth_call") throw new Error(`unexpected ${method}`)
+					calls++
+					const { args } = decodeFunctionData({ abi: multicall3Abi, data: (params as [{ data: Hex }])[0].data })
+					const batch = args[0] as readonly unknown[]
+					return encodeFunctionResult({
+						abi: multicall3Abi,
+						functionName: "aggregate3",
+						result: batch.map((_, i) => ({
+							success: true,
+							returnData: encodeAbiParameters([{ type: "uint256" }], [BigInt(i + 1)]),
+						})),
+					})
+				},
+			}),
+		}) as PublicClient
+		const rows = Array.from({ length: 29 }, (_, i) => token(i + 1))
+		const handle = useRowBalances({ pub: () => pub, owner: () => OWNER, tokens: () => rows })
+		await vi.waitFor(() => expect(Object.keys(handle.balances.value)).toHaveLength(29))
+		expect(calls).toBe(1)
+		expect(handle.balances.value).toEqual(Object.fromEntries(rows.map((r, i) => [r.logoKey, BigInt(i + 1)])))
 	})
 
 	it("bounds the batch to the first fifty rows", async () => {

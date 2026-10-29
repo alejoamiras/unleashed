@@ -20,7 +20,10 @@ import { userMessage } from "@/lib/errors"
 import { safeDisplay } from "@/lib/token-display"
 
 export interface TokenSelectionDeps {
+	/** Resolves the token; the wallet's own client, whose chain the resolve asserts. */
 	pub: () => PublicClient | undefined
+	/** Reads the Ethereum balance; a client pinned to the bridge's L1, so a wallet on another chain still reads it. */
+	balanceReader: () => PublicClient | undefined
 	l1Account: () => Address | undefined
 	/** The hub's L2 token for an ERC-20, read from the node — no Aztec wallet needed; undefined when unregistered. */
 	readBinding: (erc20: Address) => Promise<string | undefined>
@@ -179,11 +182,12 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 		return out
 	}
 
-	async function loadBalances(pub: PublicClient, token: ResolvedToken, direction: Direction, mine: number): Promise<void> {
+	async function loadBalances(token: ResolvedToken, direction: Direction, mine: number): Promise<void> {
 		const read = ++balanceRead
 		const next: TokenBalances = {}
 		const owner = deps.l1Account()
-		if (owner) next.l1 = (await readErc20Balances(pub, owner, [token.address])).get(token.address) ?? 0n
+		const reader = deps.balanceReader()
+		if (owner && reader) next.l1 = (await readErc20Balances(reader, owner, [token.address])).get(token.address) ?? 0n
 		// The L2 side exists only once the hub has registered the token, and only an exit needs it up
 		// front — a deposit's L2 balance is whatever its own claim will create.
 		if (token.state.kind === "registered" && direction === "l2-to-l1") Object.assign(next, await readL2Balances(token))
@@ -212,7 +216,7 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 		if (stale(mine)) return
 		selected.value = resolved
 		balances.value = {}
-		await loadBalances(pub, resolved, direction, mine)
+		await loadBalances(resolved, direction, mine)
 	}
 
 	async function select(token: SelectableToken, direction: Direction): Promise<void> {
@@ -233,9 +237,8 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 
 	async function refreshBalances(): Promise<void> {
 		const token = selected.value
-		const pub = deps.pub()
-		if (!token || !pub || disposed) return
-		await loadBalances(pub, token, lastDirection, epochValue)
+		if (!token || disposed) return
+		await loadBalances(token, lastDirection, epochValue)
 	}
 
 	function dispose(): void {
