@@ -196,8 +196,12 @@ committed file.
 | Contracts | the contract READMEs' build and test commands; CI runs them in `bridge-contracts.yml` |
 
 CI: `pr-quick.yml` (`quality-status`: commitlint, lint and typecheck, unit tests, both builds with
-`verify:build-target`, and the landing's build and browser smoke on the landing graph), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
+`verify:build-target`, the landing's build and browser smoke on the landing graph, and the SDK's
+`pack:check` on the SDK's), `pr-tools-e2e.yml` (`tools-e2e-status`, six sandbox shards, on the tools
 graph or the `e2e:tools` label), `bridge-contracts.yml` (`bridge-contracts-status`: Foundry, halmos,
 Noir, TXE, the sandbox integration suite), `actionlint.yml`. Every PR workflow opens with a
 `changes` paths-filter job; `workflow_dispatch` bypasses it. A PR run restores only its own caches
 and main's, so `warm-caches.yml` saves main's copies whenever a push to main can move a cache key.
+`publish-sdk.yml` publishes `@unleashed/sdk`, by hand from `main` only: one job tests and packs, and
+the job that alone holds npm's OIDC token checks out and installs nothing
+([`packages/sdk/README.md`](packages/sdk/README.md) § Releasing).

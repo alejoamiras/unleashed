@@ -33,6 +33,7 @@ jobs:
     outputs:
       needs-tools-build: ${{ steps.compute.outputs.needs-tools-build }}
       needs-landing-build: ${{ steps.compute.outputs.needs-landing-build }}
+      needs-sdk-pack: ${{ steps.compute.outputs.needs-sdk-pack }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,7 +46,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
           # Positive-only, no `!` negations (dorny's `some`-quantifier footgun). The built target
           # whole; its workspace libraries by src + manifest; the hub artifact the SDK bundles
-          # from contracts/. Pinned by scripts/ci-cd/behavior-gating.test.ts.
+          # from contracts/. `sdk-pack`: the SDK whole and every file its tarball stages from
+          # outside it. Pinned by scripts/ci-cd/behavior-gating.test.ts.
           filters: |
             tools:
               - 'apps/tools/**'
@@ -62,6 +64,12 @@ jobs:
               - 'packages/design/src/**'
               - 'packages/design/package.json'
               - '.github/workflows/_build-landing.yml'
+            sdk-pack:
+              - 'packages/sdk/**'
+              - 'contracts/bridge/aztec/token_bridge_hub/target/**'
+              - 'apps/tools/public/testnet-bridge.json'
+              - 'apps/tools/public/mainnet-bridge.json'
+              - 'LICENSE'
             workflows:
               - '.github/workflows/**'
               - '.github/actions/**'
@@ -81,6 +89,7 @@ jobs:
           DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
           TOOLS: ${{ steps.filter.outputs.tools }}
           LANDING: ${{ steps.filter.outputs.landing }}
+          SDK_PACK: ${{ steps.filter.outputs.sdk-pack }}
           WORKFLOWS: ${{ steps.filter.outputs.workflows }}
           ROOT: ${{ steps.filter.outputs.root-config }}
         run: |
@@ -93,6 +102,11 @@ jobs:
             echo "needs-landing-build=true" >> "$GITHUB_OUTPUT"
           else
             echo "needs-landing-build=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$DISPATCH" = "true" ] || [ "$SDK_PACK" = "true" ] || [ "$WORKFLOWS" = "true" ] || [ "$ROOT" = "true" ]; then
+            echo "needs-sdk-pack=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs-sdk-pack=false" >> "$GITHUB_OUTPUT"
           fi
 
   commitlint:
@@ -147,10 +161,24 @@ jobs:
     with:
       ref: ${{ github.event.pull_request.head.sha || github.ref }}
 
+  pack-sdk:
+    name: SDK pack check
+    needs: changes
+    if: needs.changes.outputs.needs-sdk-pack == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+      - uses: ./.github/actions/setup-bun
+      - name: Stage, pack, and install the tarball as an npm consumer
+        run: bun run --cwd packages/sdk pack:check
+
   status:
     name: quality-status
     if: always()
-    needs: [changes, commitlint, lint-and-typecheck, unit-tests, build-tools, build-landing]
+    needs: [changes, commitlint, lint-and-typecheck, unit-tests, build-tools, build-landing, pack-sdk]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -165,6 +193,8 @@ jobs:
           BUILD_TOOLS: ${{ needs.build-tools.result }}
           NEEDS_LANDING_BUILD: ${{ needs.changes.outputs.needs-landing-build }}
           BUILD_LANDING: ${{ needs.build-landing.result }}
+          NEEDS_SDK_PACK: ${{ needs.changes.outputs.needs-sdk-pack }}
+          PACK_SDK: ${{ needs.pack-sdk.result }}
         run: |
           # Exact states, not a failure denylist: a job that never ran must not read as green.
           fail=0
@@ -191,5 +221,10 @@ jobs:
             true) expect "Build Landing" "$BUILD_LANDING" success ;;
             false) expect "Build Landing" "$BUILD_LANDING" skipped ;;
             *) echo "::error::needs-landing-build is not true/false: '$NEEDS_LANDING_BUILD'"; fail=1 ;;
+          esac
+          case "$NEEDS_SDK_PACK" in
+            true) expect "SDK pack check" "$PACK_SDK" success ;;
+            false) expect "SDK pack check" "$PACK_SDK" skipped ;;
+            *) echo "::error::needs-sdk-pack is not true/false: '$NEEDS_SDK_PACK'"; fail=1 ;;
           esac
           exit "$fail"

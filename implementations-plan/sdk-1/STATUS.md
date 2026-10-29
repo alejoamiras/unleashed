@@ -50,3 +50,9 @@
 - 2026-10-29 a4 review round 1: Codex 2 Moderate 2 Low (tests overclaimed, event doc, two sentences), Opus 1 Low regression (private fuel-paid resume without secrets settled missing-salt) + 2 doc fixes; all fixed, mutation-checked; sdk 449, lint, typecheck:all green
 - 2026-10-29 a4 review round 2: Codex no new material finding; loop converged in 2 rounds
 - 2026-10-29 a4 browser specs (recovery, registration-retry, fee-states, spike, exits, activity): all 29 cells died at 0 ms, worker SIGBUS — /dev/shm 99% (1.7 GB of older unleashed-wallet-* dirs left for the owner); host, CI's tools-e2e (six shards) and sandbox integration gate this arc
+- 2026-10-29 a5 started on sdk-1-a5 from origin/main 54de731 (a4 squash-merged as #56); close-out deferred to a6 by the orchestrator
+- 2026-10-29 a5 5.1: integrator README, examples/{fuel,bridge,resume}.ts, publish-sdk.yml (D22, D72), pr-quick pack-sdk (D73), pack:check --out; lint, typecheck:all, test:all, lint:actions, test:ci-gating, pack:check green; npm dry-run reads the tarball
+- 2026-10-29 a5 review round 1: Codex 4 Moderate (CSP data:, npm allowed actions and 2-day expiry, error contract scope, minFj wording), Opus 1 Medium-High 1 Medium 4 Low (claim submission none on a sent deposit, never row, reverted drop case, search window, payer labels, example comment); all docs/example, fixed
+- 2026-10-29 a5 review round 2: Codex 1 High (a mined revert is not final: keep the record until it is), 1 Moderate (submission names the transfer; claim preflight none is the exception); fixed in README, errors.ts TSDoc, resume example
+- 2026-10-29 a5 review round 3: Codex no new material finding; loop converged in 3 rounds
+- 2026-10-29 a5 final gates on HEAD: lint, typecheck:all, test:all, lint:actions, test:ci-gating (50), pack:check green; audit:tools hit the known 5 s load timeout in bridge-generation.test.ts (load average 95), green alone and on the rerun

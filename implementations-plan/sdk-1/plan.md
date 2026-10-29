@@ -699,6 +699,13 @@ Each row: the decision, its source, the rejected view with its reason.
   wallet is asked, so an integrator can say "confirm in your wallet" as the app does (ask5).
 - **D71 A resumed claim hash is not re-verified against its message.** A writer of the caller's storage who can plant
   a landed hash can delete the record outright; the app keeps its own check.
+- **D72 The publish job checks the tarball against the pack job's output.** The digest travels as a job output, not
+  in the artifact, so a swapped artifact cannot carry its own; `pack:check --out` hands over the exact tarball it
+  checked. The job also runs only on `main` (the environment refuses other refs only once the owner configures it),
+  takes npm from `setup-node` on Node 24 (trusted publishing needs npm 11.5.1+) with its cache off, and the checkout in
+  the pack job keeps no credential.
+- **D73 `pr-quick` gates `pack:check` on the SDK and every file its tarball stages from outside it.** The filter is
+  derived from `stage.ts`'s `ASSETS` and `DOCUMENTS` by `behavior-gating.test.ts`; `publish-sdk.test.ts` pins D22.
 
 ## Audit verdicts
 
@@ -779,6 +786,27 @@ Arc a4, the implementation (`git diff 556af41..HEAD`):
 - **Round 2, Codex (same session): no new material finding.** The fixes hold and their tests fail without them; the
   hash-equality shortcut matches only a landed claim that paid with the gas (a registration's hash, a cleared or
   hashless claim cannot match); a missing salt is caller input, so retry "safe". Converged.
+
+Arc a5, the implementation (`git diff 54de731..HEAD`):
+
+- **Round 1, Codex: the publish pipeline is sound; 4 Moderate, all in the docs.** bb.js fetches its WebAssembly from a
+  `data:` URL, so `connect-src` needs `data:`; a new npm trusted-publisher entry allows only `npm stage publish`
+  until direct publishing is enabled, and expires unused after two days; a deposit's reads before its signature
+  surface unwrapped errors, so the README's "every failure is a `BridgeError`" is now scoped; `minFj` bounds the
+  bridged Fee Juice, before the claim's fee.
+- **Round 1, Opus 5.5 (beside it): 1 Medium-High, 1 Medium, 4 Low, all in the docs and an example.** A claim refused
+  before it reads anything reports `submission: "none"` on a sent deposit, so a handler that drops `none` records
+  would strand a public claim secret: the README and `BridgeError`'s TSDoc now say `submission` describes the failing
+  call and a claim's `none` never licenses a drop. The `never` row now says a sent deposit is finished with its claim;
+  a mined revert (`submitted`) is the drop case, an `unknown` one is kept; the 50,000-block search window, the
+  `payer` labels and a stray example comment corrected.
+- **Round 2, Codex (same session): the round-1 fixes hold; 1 High, 1 Moderate, both in the docs.** A mined revert is
+  not final: a reorg can re-land the same signed deposit, so dropping its record could lose a public claim secret; the
+  README now drops it only once the block is final. Redefining `submission` as the failing call's was wrong too: after
+  `openClaim` a claim reports `submitted` for its deposit with no claim sent; the TSDoc keeps "for this transfer" with
+  the preflight `none` named as the one exception.
+- **Round 3, Codex (same session): no new material finding.** Deletion now waits for finality, and `submitted` is no
+  longer read as a claim broadcast. Converged.
 
 ## Delivery
 

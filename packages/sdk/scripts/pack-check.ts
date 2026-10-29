@@ -2,7 +2,8 @@
  * Proves the packed tarball works for an npm consumer. Stages and packs the SDK, holds the file list and manifest to the
  * publish rules, installs the consumer fixture (`test/consumer/`) frozen into a scratch copy outside every workspace,
  * unpacks the tarball into its `node_modules`, typechecks the consumer under `NodeNext` and `Bundler`, and runs it in
- * Node and in Bun. `--relock` re-resolves the fixture's lockfile and writes it back; `--keep` keeps the scratch copy.
+ * Node and in Bun. `--relock` re-resolves the fixture's lockfile and writes it back; `--keep` keeps the scratch copy;
+ * `--out <dir>` copies the checked tarball there, the one file a publish may upload.
  */
 import { spawnSync } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs"
@@ -214,9 +215,26 @@ function checkConsumer(scratch: string, installed: string): Report[] {
 	return reports
 }
 
+/** `--out <dir>`, read before anything is staged so a bad flag costs nothing. */
+function outDir(): string | undefined {
+	const at = process.argv.indexOf("--out")
+	if (at === -1) return undefined
+	const dir = process.argv[at + 1]
+	if (!dir || dir.startsWith("--")) fail("--out needs a directory")
+	return dir
+}
+
+function writeOut(tarball: string, dir: string): void {
+	mkdirSync(dir, { recursive: true })
+	const target = join(dir, parse(tarball).base)
+	copyFileSync(tarball, target)
+	console.log(`  wrote ${target} sha256 ${sha256(target)}`)
+}
+
 function main(): void {
 	const relock = process.argv.includes("--relock")
 	const keep = process.argv.includes("--keep")
+	const out = outDir()
 	const staged = stage()
 	checkFixturePins(staged.manifest)
 	const scratch = scratchDir()
@@ -241,6 +259,7 @@ function main(): void {
 		for (const r of reports) console.log(`  ${r.runtime} ${r.version}: ${Object.keys(r.entries).length} entries imported, hub ${r.hub}`)
 		if (staged.unusedPeers.length > 0) console.log(`  peers no published module imports: ${staged.unusedPeers.join(", ")}`)
 		if (relock) console.log("  wrote test/consumer/bun.lock")
+		if (out) writeOut(tarball, out)
 		console.log("pack:check: ok")
 	} finally {
 		if (keep) console.log(`  kept ${scratch}`)

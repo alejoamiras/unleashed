@@ -1,9 +1,10 @@
 import type { FeeStop } from "./execution/fee-stop.ts"
 
 /**
- * Every failure the public API throws. `submission` says whether anything reached a chain for this transfer, and
- * `retry` whether the same call may simply run again: "after-wait" means the chain has not caught up yet, "never"
- * means retrying could move funds twice or cannot succeed.
+ * Every failure the public API throws. `submission` says whether anything reached a chain for this transfer (a claim
+ * refused before it reads anything says "none", though its deposit was sent), and `retry` whether the same call may
+ * simply run again: "after-wait" means the chain has not caught up yet, "never" means retrying could move funds twice
+ * or cannot succeed.
  */
 export type BridgeErrorCode =
 	| "invalid-request"
