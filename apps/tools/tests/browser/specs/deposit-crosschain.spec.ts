@@ -19,11 +19,13 @@ import {
 	crossChainCard,
 	crossChainRecordWhen,
 	expectCardPhase,
+	crossChainRecords,
 	reviewCrossChain,
 	signOnSource,
+	switchToSource,
 } from "../pages/crosschain"
 import { transactionFeeOf } from "../pages/journal"
-import { connectL1, openSend, setVisibility, startDeposit, waitForReceipt } from "../pages/send"
+import { confirmReview, connectL1, openSend, setVisibility, startDeposit, waitForReceipt } from "../pages/send"
 
 test.use({ family: "deposit-crosschain", cells: 6, l1Index: 9 })
 
@@ -45,12 +47,25 @@ const planOf = (src: { srcChainId: number; srcToken: Address }, intent: CrossCha
 	isPrivate,
 })
 
-async function sendFromSource(page: Page, actor: { address: string }, plan: CrossChainPlan) {
+async function openCrossChainReview(page: Page, actor: { address: string }, plan: CrossChainPlan) {
 	await page.goto("/")
 	await openSend(page)
 	await connectL1(page)
 	await connectAztec(page, { profile: "plain", account: actor.address })
 	await reviewCrossChain(page, plan)
+}
+
+/** A review held past the 60 s route TTL shows Rebuild in Sign's place: rebuilt, it can be confirmed again. */
+async function liveTerms(page: Page) {
+	const confirm = page.locator(`${tid(TESTIDS.sendReviewConfirm)}:enabled`)
+	const rebuild = page.locator(tid(TESTIDS.sendXcRefresh))
+	await expect(confirm.or(rebuild).first()).toBeVisible()
+	if (await rebuild.isVisible()) await rebuild.click()
+	await expect(confirm).toBeVisible()
+}
+
+async function sendFromSource(page: Page, actor: { address: string }, plan: CrossChainPlan) {
+	await openCrossChainReview(page, actor, plan)
 	await signOnSource(page, plan.srcChainId)
 }
 
@@ -229,7 +244,7 @@ test("cell 52 — reloaded while bridging, with another deposit for the same cre
 	expect(l1.calls("eth_sendTransaction"), "the reload resent nothing").toBe(2)
 })
 
-test("cell 53 — deposits paused when the fill lands: LI.FI's receiver recovers the delivery to the user's Ethereum address, and the card says delivered to wallet", async ({
+test("cell 53 — deposits paused at the confirm: refused on the review before any prompt; paused when the fill lands: LI.FI's receiver recovers the delivery to the user's Ethereum address, and the card says delivered to wallet", async ({
 	page,
 	sandbox,
 	actor,
@@ -245,7 +260,27 @@ test("cell 53 — deposits paused when the fill lands: LI.FI's receiver recovers
 	await relayer.setMode({ kind: "delay", ms: 30_000 })
 	await relayer.syncSourceClock()
 
-	await sendFromSource(page, actor, planOf(src, "token+gas", false))
+	const plan = planOf(src, "token+gas", false)
+	await openCrossChainReview(page, actor, plan)
+	await switchToSource(page, plan.srcChainId)
+	const sends = l1.calls("eth_sendTransaction")
+	const signatures = l1.signatures
+	await writeL1(sandbox.clients.l1, factory, SET_PAUSED_ABI, "setPaused", [true, false])
+	try {
+		await liveTerms(page)
+		await page.locator(tid(TESTIDS.sendReviewConfirm)).click()
+		await expect(page.locator(tid(TESTIDS.sendReviewError))).toHaveText(
+			"Deposits on this route are paused right now. Nothing was sent.",
+		)
+		expect(l1.calls("eth_sendTransaction"), "the pause stopped the send before any prompt").toBe(sends)
+		expect(l1.signatures).toBe(signatures)
+		expect(await crossChainRecords(page), "nothing was journaled").toHaveLength(0)
+	} finally {
+		await writeL1(sandbox.clients.l1, factory, SET_PAUSED_ABI, "setPaused", [false, false])
+	}
+	// Unpaused, the same review sends.
+	await liveTerms(page)
+	await confirmReview(page)
 	const sent = await bridging(page)
 	await writeL1(sandbox.clients.l1, factory, SET_PAUSED_ABI, "setPaused", [true, false])
 	try {

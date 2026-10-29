@@ -67,10 +67,16 @@ finished from what you stored.
 - A rejected `persist` throws `persist-failed`. In a deposit before anything was sent, `retry` is `"safe"`; after the
   deposit was sent it is `"never"`: the record you already stored names the deposit, so finish it with a claim and
   never deposit again. In a claim it is `"safe"`: the claim resumes from whatever you last stored.
-- To resume, call the claim again with the record as last persisted (and its salts). It finds a deposit whose hash
-  the record lost on Ethereum while the record is under 50,000 blocks old (about a week), reads lost message leaves
-  from the deposit's receipt, watches a claim it already sent instead of sending another, and waits out an attempt
-  whose hash was never stored until its nullifier or its age settles it.
+- To resume, call the claim again with the record as last persisted (and its salts). A record that lost its leaves
+  has them read from the deposit's receipt, after its deposit is found on Ethereum when the hash was lost too (while
+  the record is under 50,000 blocks old, about a week). A claim it already sent is watched, never sent again, and
+  counts only once its message's nullifier shows; one that dropped or reverted is cleared and reported, and the next
+  call claims again. An attempt whose hash was never stored is waited out until its nullifier or its age settles it.
+- `watchOnly: true` resumes without asking the wallet to sign or send (it still reads through it): it does all of
+  the above that needs no signature and throws `needs-prompt` (`retry: "safe"`) where a fee would be priced or a
+  prompt opened. Pass it when a page resumes
+  its records on load, and call again without it when the user acts.
+- `claimRetired(record)` says when a record is complete and its claim material may be dropped.
 - A deposit the user refused (`user-rejected`, `submission: "none"`) moved nothing: drop the record. One that
   reverted on chain (`deposit-reverted` with `submission: "submitted"`) moved nothing once its block is final, and a
   reorg can still land it before then: drop the record only after that. A `deposit-reverted` with
@@ -99,17 +105,21 @@ A claim (`claimFuel`, `claimToken`) reports:
 
 | Event | When |
 |---|---|
-| `deposit-confirmed` | Only on a resume that had to recover the leaves. |
-| `arrival` | Repeated while the messages travel: `counting` with `blocksLeft` or `checkpointsLeft`, `unfolded`, and `wallet-sync` while the Aztec wallet lags the chain. |
+| `deposit-recovery` | Only on a resume that lost its leaves: `searching` for a deposit whose hash was lost, `reading` its receipt, and `waiting` when that deposit is not mined yet and the call waits for Ethereum to confirm it. |
+| `deposit-confirmed` | The recovered leaves are persisted. |
+| `arrival` | Repeated while the messages travel: `counting` with `block` and `blocksLeft`, or `checkpointsLeft` (never rising within a call, 0 once passed); `unfolded`; `wallet-sync` before each claim simulation, `counted` once a wait came first. |
 | `claimable` | The claim's simulation passes. |
 | `registration-requested`, `registration-sent` | A token's first private claim only: its registration is a transaction of its own. |
-| `claim-requested` | The Aztec wallet is asked for the claim; once per attempt. |
+| `claim-requested` | The Aztec wallet is asked for a claim (`leg`: `token`, or `gas` for gas claimed on its own); once per attempt. |
 | `claim-sent` | The claim's hash is persisted. `payer` is `fuel` when the bridged gas paid; otherwise what the account already held paid, `fpc-credit` for a private claim and `own-gas` for a public one. |
+| `claim-waiting` | Before each receipt read of a watched claim, `poll` counting from 1 per hash, and again when a read changes `unreachable`, the count of consecutive reads the node did not answer. |
 | `claim-proposed` | The claim is in a proposed block: not yet settlement. |
+| `claim-verifying` | A claim this call did not send landed: `checking` its message's nullifier, `wallet-sync` while it does not show yet. |
+| `claim-landed` | The tokens are claimed (`via` as in `settled`). A failure after it is the claim of the gas they left. |
 | `settled` | The record is persisted complete. `via` is `claim`, or `claimed-elsewhere` when another submitter spent the message. |
 
-A token plus gas whose claim left its gas unspent reports one more `claim-requested` and `claim-sent` (payer `fuel`)
-before `settled`.
+A token plus gas whose claim left its gas unspent reports one more `claim-requested`, `claim-sent` (payer `fuel`) and
+`claim-waiting`, with `leg: "gas"`, between `claim-landed` and `settled`.
 
 ## Claims
 
@@ -121,7 +131,12 @@ before `settled`.
   private claim never pays from public Fee Juice.
 - **Gas a token claim left unspent** (the claim paid from held gas, or another submitter claimed the token) is claimed
   on its own, public or private, before the record settles. A private leftover without its fuel salt throws
-  `invalid-request` with `retry: "safe"` and leaves the record open: call again with the salt.
+  `invalid-request` with `retry: "safe"` and leaves the record open: call again with the salt. The record says
+  `claimedByOther` as soon as another submitter's claim is read, before that gas claim.
+- **`withoutGas: true`** pays a public token + gas claim from Fee Juice the account holds and settles with the bridged
+  gas unclaimed; `claimFuel` on that record claims it later. `claimFuel` takes a token + gas record once its tokens are
+  claimed (`completedAt`) or were claimed by another submitter (`claimedByOther`), checks only its chain and recipient,
+  and changes only its gas leg.
 - **`gasLeft`** on the outcome is set only when the tokens landed and no retry could claim the gas; it says why.
 - **A record missing its gas leg's leaf, message hash or amount** reads the deposit's receipt before claiming.
 - **The wallet's grant.** `capabilitiesFor(net, { fuel: true, tokens })` returns the exact-address capability entries
@@ -144,7 +159,9 @@ because its claim reported `none`.
 | `never` | Repeating the call could move funds twice or cannot succeed. Keep the record and show the error: a deposit that was sent is still finished with its claim. |
 
 `fee-stop` names its stop in `stop`, a typed union, for your own copy: the claim cannot pay for itself now, and
-nothing was sent.
+nothing was sent. `deposit-not-found` names its search's result in `search`: `none`, `ambiguous` (`never`: finish it
+by hand) or `incomplete`. A claim reports `claim-dropped` and `claim-reverted` with the hash cleared and `retry:
+"safe"`, and `needs-prompt` from a `watchOnly` call.
 
 ## Supported tokens
 

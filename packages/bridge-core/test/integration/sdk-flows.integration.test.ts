@@ -172,14 +172,21 @@ function scriptOf(events: TransferEvent[]): string {
 	return events.map((e) => (e.type === "approval" ? `approval:${e.status}` : e.type)).join(" ")
 }
 
-/** A claim's fixed script. Arrival readings come once per change in the chain's progress, and a claim reads as
- *  proposed only when a receipt poll lands between proposal and checkpoint: both vary with timing, nothing else does. */
-const CLAIM_SCRIPT = /^(arrival )*claimable claim-requested claim-sent (claim-proposed )?settled$/
-/** A record that lost its deposit's hash and leaves reports the leaves it recovered before anything else. */
-const RESUMED_CLAIM_SCRIPT = /^deposit-confirmed (arrival )*claimable claim-requested claim-sent (claim-proposed )?settled$/
+/** A claim's fixed script. Arrival readings come once per change in the chain's progress, a watched claim reports
+ *  each receipt read, and it reads as proposed only when a read lands between proposal and checkpoint: those vary with
+ *  timing, nothing else does. */
+const WATCH = "(claim-waiting |claim-proposed )+"
+const GAS_CLAIM_SCRIPT = new RegExp(`^(arrival )*claimable claim-requested claim-sent ${WATCH}settled$`)
+/** A token claim says its tokens landed before anything about the gas they may have left. */
+const TOKEN_CLAIM_SCRIPT = new RegExp(`^(arrival )*claimable claim-requested claim-sent ${WATCH}claim-landed settled$`)
+/** A record that lost its deposit's hash and leaves reports the search and the receipt read, then the leaves. */
+const RESUMED_CLAIM_SCRIPT = new RegExp(
+	`^(deposit-recovery )+deposit-confirmed (arrival )*claimable claim-requested claim-sent ${WATCH}settled$`,
+)
 /** A private first claim registers the token in a transaction of its own, reported once its hash is stored. */
-const REGISTERING_CLAIM_SCRIPT =
-	/^(arrival )*claimable registration-requested registration-sent claim-requested claim-sent (claim-proposed )?settled$/
+const REGISTERING_CLAIM_SCRIPT = new RegExp(
+	`^(arrival )*claimable registration-requested registration-sent claim-requested claim-sent ${WATCH}claim-landed settled$`,
+)
 
 // ─── Deposits and claims through the public entries ──────────────────────────
 
@@ -306,7 +313,7 @@ async function claimGasPrivate(a: ActorContext, d: Deposited): Promise<Claimed> 
 	expect(d.secrets?.fuelSalt).toBeDefined()
 	const c = await claimWith(claimFuel, a, d.record, d.secrets)
 	expect([c.payer, c.outcome.record.fuel?.consumed]).toEqual(["fuel", true])
-	expect(c.script).toMatch(CLAIM_SCRIPT)
+	expect(c.script).toMatch(GAS_CLAIM_SCRIPT)
 	const after = await settled(read, (v) => v > before, "the private credit after the claim")
 	expectCreditFrom(after - before, d.received, c.fee)
 	return c
@@ -372,7 +379,7 @@ describe.skipIf(!INTEGRATION)("the SDK's entries on the sandbox", () => {
 		const { net } = await integrator()
 		const d = await depositGas(a, net.fuel.feeAsset, GAS_ONLY, "public")
 		expect([d.quote.venue, d.received]).toEqual(["identity", GAS_ONLY])
-		await claimGasPublic(a, d, CLAIM_SCRIPT)
+		await claimGasPublic(a, d, GAS_CLAIM_SCRIPT)
 	})
 
 	it("gas only through the fee asset's identity route, private credit at the PrivateFPC", async () => {
@@ -389,7 +396,7 @@ describe.skipIf(!INTEGRATION)("the SDK's entries on the sandbox", () => {
 		const { erc20, unit } = await usdt()
 		const d = await depositGas(a, erc20, SWAPPED_WHOLE_UNITS * unit, "public")
 		expect([d.quote.venue, d.received]).toEqual(["testnetSwapper", d.quote.expectedFj])
-		await claimGasPublic(a, d, CLAIM_SCRIPT)
+		await claimGasPublic(a, d, GAS_CLAIM_SCRIPT)
 	})
 
 	it("gas only through a token the fuel swapper prices, private credit at the PrivateFPC", async () => {
@@ -418,7 +425,7 @@ describe.skipIf(!INTEGRATION)("the SDK's entries on the sandbox", () => {
 		await holdPrivateCredit(a)
 		const d = await depositTokenOf(a, await firstTimeToken("FPUB"), TOKEN_ONLY_AMOUNT, "public")
 		expect([d.quote.token.state, d.record.registers]).toEqual(["first-time", true])
-		await claimTokenOf(a, d, CLAIM_SCRIPT, "own-gas")
+		await claimTokenOf(a, d, TOKEN_CLAIM_SCRIPT, "own-gas")
 	})
 
 	it("a first-time token, private: a registration of its own, then the claim, both paid from held credit", async () => {
@@ -437,7 +444,7 @@ describe.skipIf(!INTEGRATION)("the SDK's entries on the sandbox", () => {
 		expect(d.quote.token.state).toBe("registered")
 		const readFj = publicFeeJuiceOf(a)
 		const fjBefore = await readFj()
-		const c = await claimTokenOf(a, d, CLAIM_SCRIPT, "fuel")
+		const c = await claimTokenOf(a, d, TOKEN_CLAIM_SCRIPT, "fuel")
 		const fjAfter = await settled(readFj, (v) => v !== fjBefore, "the public Fee Juice after the claim")
 		expect(c.fee).toBeGreaterThan(0n)
 		expect(fjAfter - fjBefore).toBe(d.received - c.fee)
@@ -450,7 +457,7 @@ describe.skipIf(!INTEGRATION)("the SDK's entries on the sandbox", () => {
 		expect(d.quote.token.state).toBe("registered")
 		const readCredit = await privateCreditReader(a)
 		const creditBefore = await readCredit()
-		const c = await claimTokenOf(a, d, CLAIM_SCRIPT, "fuel")
+		const c = await claimTokenOf(a, d, TOKEN_CLAIM_SCRIPT, "fuel")
 		const creditAfter = await settled(readCredit, (v) => v > creditBefore, "the private credit after the claim")
 		expectCreditFrom(creditAfter - creditBefore, d.received, c.fee)
 		assertSaltsUnpublished([...d.entries, ...c.entries], d.secrets)

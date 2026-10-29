@@ -33,7 +33,7 @@ import {
 	revokeSealTrust,
 	upsertRecord,
 } from "@unleashed/bridge-core"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+import { claimRetired, type JournalTokenBlock } from "@unleashed/sdk"
 import {
 	type ArrivalGateState,
 	type ArrivalReads,
@@ -2165,7 +2165,7 @@ async function runWithdrawConsumeLocked(id: string): Promise<void> {
  *  withdraw without an exitTxHash is mid-exit-prompt - re-entering them here races the flow, and
  *  would tag a live provisional record unknown-outcome). */
 function resumeActionFor(rec: BridgeJournalRecord): "skip" | "deposit" | "withdraw" {
-	if (rec.completedAt) return "skip"
+	if (claimRetired(rec)) return "skip"
 	// Once a record is KNOWN malformed there is nothing to resume: every run would re-raise the
 	// same terminal fault. The first resume after a reload still runs, so the card learns the
 	// fault without a click (runtime attention is empty until then); RETRY always reaches it.
@@ -2191,7 +2191,7 @@ function markerApplies(rec: ClaimRecord): boolean {
 /** A marked, unfinished record resumes (prompt-free, any session) to be verified: the completion,
  *  the dropped marker, or — without material at hand — nothing. */
 function claimedByOtherResume(rec: ClaimRecord): "skip" | "deposit" {
-	return claimsThroughHub(rec) && rec.completedAt === undefined ? "deposit" : "skip"
+	return claimsThroughHub(rec) && !claimRetired(rec) ? "deposit" : "skip"
 }
 
 /** Auto-continue ONLY what this page session initiated, plus prompt-free receipt waits. */
