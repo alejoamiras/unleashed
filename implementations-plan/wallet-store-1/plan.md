@@ -180,7 +180,7 @@ export function reapDeadStores(root: string): void
 | D4 | Unreadable process | skipped (fact 4, I2) | keep all candidates: `sd-pam` lives all session, so no reap would run; a pid-namespace id in the name (known limit 2) |
 | D5 | Root guard | real root owned by uid 0 or this uid and sticky, or this uid's and not group- or other-writable | trust the root (a writable root lets another uid swap entries); check every ancestor (store creation already trusts them) |
 | D6 | When | every `ownedWalletStore` call, before `mkdtemp` | once per process: a flag to save one listing |
-| D7 | Test seam | export `reapDeadStores(root)` | a root option on `ownedWalletStore`, public for tests only; mocking `node:fs` for the uid check |
+| D7 | Test seam | export `reapDeadStores(root)`, and `isGuarded` for a table test (implementation round 1) | a root option on `ownedWalletStore`, public for tests only; mocking `node:fs` for the uid check |
 | D8 | Old pid-less names | never reaped; the owner clears them once | reap when unheld: between `mkdtemp` and LMDB's open nothing holds a live store |
 
 ## Audit verdicts
@@ -218,6 +218,23 @@ and limits judged proportionate. Conditions applied.
 | 4 | Low: fact 2 said only the creator knows a store's name; `/dev/shm` lists it to every uid (demonstrated) | adopted: fact 2 restated; I1 rests on what code does |
 
 **Final pass, resumed to verify the conditions: approve.** No regression found.
+
+**Implementation round 1.** Codex (new session): 1 finding. Same-family review (Opus, alongside): 5 findings. All
+verified and fixed (d4441fb, da8ac04); mutation checks in `lessons/phase-1.md`.
+
+| # | Finding (label) | Disposition |
+|---|---|---|
+| C1 | Low: a failing T1 leaks the SIGKILLed child's store (demonstrated by inspection) | fixed: a `finally` removes it |
+| O1 | Low: the doc comment promised a reap by the next call on any host; a 0775 disk root fails the guard (demonstrated) | fixed: points at `reapDeadStores`'s limits |
+| O2 | Low: T1 fails where stores go to a disk root the guard refuses (plausible) | fixed: T1 runs only where stores go to `/dev/shm` (known limit 1) |
+| O3 | Low: on overlayfs before Linux 6.8, `maps` shows the backing path, so T2's mapping holder reads as unheld (plausible) | fixed: T2's root lives in `/dev/shm` when it is a tmpfs |
+| O4 | Low: no test pins the sticky branch's owner check (demonstrated by inspection) | fixed: `isGuarded` exported, six-row table test |
+| O5 | Low: T1's `finally` throws EPERM if another uid takes the freed name (needs a hostile local uid, which is this lane's threat model) | fixed: that removal ignores errors |
+
+**Implementation round 2 (resumed Codex): clean.** All six fixes verified, concurrent runs 8/8. Converged in 2 rounds.
+
+Deviations from the plan: the per-test `finally` cleanup is one `afterEach` (SIGTERM, so cleanup leaks no store);
+`deadCandidates` is named `deadStores`; `isGuarded` is exported (D7).
 
 ## Delivery
 

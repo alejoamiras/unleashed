@@ -6,3 +6,5 @@
 - 2026-10-29 final fresh Codex pass: conditional approve, 4 conditions applied; resumed verification: approve
 - 2026-10-29 plan report written (LEAD_DONE); auto-continue: no owner ask, arc 1 starts
 - 2026-10-29 phase 1 gate green: lint, typecheck:all, wallet-store.test.ts 7/7, test:all, audit:tools; 4 mutation checks caught
+- 2026-10-29 fix loop round 1: Codex 1 Low, Opus 5 Lows; all adopted (d4441fb, da8ac04); Codex round 2 running
+- 2026-10-29 fix loop round 2 (resumed Codex): clean; converged in 2 rounds
