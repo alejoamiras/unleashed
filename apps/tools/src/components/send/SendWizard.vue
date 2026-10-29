@@ -151,9 +151,8 @@ const rowBalances = useRowBalances({
 	owner: l1Owner,
 	tokens: () => catalog.filtered.value,
 })
-// Reads through the build's own RPCs, so the owner stands whichever chain the wallet is on.
 const sourceChain = useSourceChain({
-	owner: () => l1.address.value ?? undefined,
+	owner: l1Owner,
 	walletChainId: () => l1.chainId.value,
 	switchChain: (chainId) => l1.switchChain(chainId),
 })

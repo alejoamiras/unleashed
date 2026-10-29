@@ -128,34 +128,56 @@ describe("useRowBalances", () => {
 		expect(handle.balances.value[rows[0]?.logoKey ?? ""]).toBe(1n)
 	})
 
-	it("sends a screen of rows as one eth_call, past the size where viem would split it", async () => {
+	/** A viem client whose node answers every `aggregate3` with balances 1, 2, 3…, or fails while `down` is set. */
+	async function nodeClient() {
 		const actual = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
 		h.readErc20Balances.mockImplementation(actual.readErc20Balances)
-		let calls = 0
+		const node = { calls: 0, down: false }
 		const pub = createPublicClient({
 			chain: NETWORK.viemChain,
-			transport: custom({
-				request: async ({ method, params }) => {
-					if (method !== "eth_call") throw new Error(`unexpected ${method}`)
-					calls++
-					const { args } = decodeFunctionData({ abi: multicall3Abi, data: (params as [{ data: Hex }])[0].data })
-					const batch = args[0] as readonly unknown[]
-					return encodeFunctionResult({
-						abi: multicall3Abi,
-						functionName: "aggregate3",
-						result: batch.map((_, i) => ({
-							success: true,
-							returnData: encodeAbiParameters([{ type: "uint256" }], [BigInt(i + 1)]),
-						})),
-					})
+			transport: custom(
+				{
+					request: async ({ method, params }) => {
+						if (method !== "eth_call") throw new Error(`unexpected ${method}`)
+						node.calls++
+						if (node.down) throw new Error("429 Too Many Requests")
+						const { args } = decodeFunctionData({ abi: multicall3Abi, data: (params as [{ data: Hex }])[0].data })
+						const batch = args[0] as readonly unknown[]
+						return encodeFunctionResult({
+							abi: multicall3Abi,
+							functionName: "aggregate3",
+							result: batch.map((_, i) => ({
+								success: true,
+								returnData: encodeAbiParameters([{ type: "uint256" }], [BigInt(i + 1)]),
+							})),
+						})
+					},
 				},
-			}),
+				{ retryCount: 0 },
+			),
 		}) as PublicClient
+		return { node, pub }
+	}
+
+	it("sends a screen of rows as one eth_call, past the size where viem would split it", async () => {
+		const { node, pub } = await nodeClient()
 		const rows = Array.from({ length: 29 }, (_, i) => token(i + 1))
 		const handle = useRowBalances({ pub: () => pub, owner: () => OWNER, tokens: () => rows })
 		await vi.waitFor(() => expect(Object.keys(handle.balances.value)).toHaveLength(29))
-		expect(calls).toBe(1)
+		expect(node.calls).toBe(1)
 		expect(handle.balances.value).toEqual(Object.fromEntries(rows.map((r, i) => [r.logoKey, BigInt(i + 1)])))
+	})
+
+	it("a call the node refuses leaves what was read standing, never zeros", async () => {
+		const { node, pub } = await nodeClient()
+		const rows = [token(1), token(2)]
+		const handle = useRowBalances({ pub: () => pub, owner: () => OWNER, tokens: () => rows })
+		await vi.waitFor(() => expect(Object.keys(handle.balances.value)).toHaveLength(2))
+		const read = handle.balances.value
+		node.down = true
+		await handle.refresh()
+		expect(node.calls).toBe(2)
+		expect(handle.balances.value).toBe(read)
 	})
 
 	it("bounds the batch to the first fifty rows", async () => {

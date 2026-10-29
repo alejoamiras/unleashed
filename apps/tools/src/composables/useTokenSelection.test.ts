@@ -382,6 +382,16 @@ describe("useTokenSelection", () => {
 		expect(wallet.multicall).not.toHaveBeenCalled()
 	})
 
+	it("an Ethereum balance the reader cannot read stays unset, and the token stays selected", async () => {
+		const reader = makePub({ registrations })
+		;(reader.multicall as unknown as Mock).mockRejectedValue(new Error("429 Too Many Requests"))
+		const { selection } = harness(makePub({ registrations }), { balanceReader: () => reader })
+		await selection.select(selectable(USDC), "l1-to-l2")
+		expect(selection.selected.value?.address).toBe(USDC.erc20.toLowerCase())
+		expect(selection.balances.value.l1).toBeUndefined()
+		expect(selection.error.value).toBeNull()
+	})
+
 	it("refreshBalances re-reads under the direction the selection was made with", async () => {
 		const pub = makePub({ registrations, l1Balance: 1n })
 		let publicBalance = 11n

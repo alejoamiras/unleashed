@@ -96,8 +96,8 @@ test("cell 37 — the mint strip mints a permissionless test token on Ethereum, 
 	await expect(page.locator(tid(TESTIDS.sendStepAmount))).toBeVisible()
 	await expect(page.locator(tid(TESTIDS.sendBalanceL1))).toContainText(/\d/)
 
-	// A fresh page starts with no figure cached: with the wallet on the source chain, whose anvil holds no USDC and no
-	// Multicall3, only the build's own Ethereum reader can show the minted balance.
+	// A fresh page starts with no figure cached: with the wallet on the source chain, whose anvil holds none of
+	// Ethereum's USDC and no Multicall3, only the build's own Ethereum reader can show the minted balance.
 	await l1.setChainId(SOURCE_CHAIN_ID)
 	await page.reload()
 	await openSend(page)
