@@ -714,6 +714,7 @@ Arc a2, the implementation (`git diff origin/main...HEAD`):
   credit was prompted before anything was persisted (D58); a quote's nested gas leg stayed writable (D56). Fixing them
   found two more: the deposits threw their refusals synchronously, and the token claim handed the fee ladder the record
   as the call opened it. All five round-1 fixes held.
+- **Round 3, Codex (same session): no new material finding.** All three round-2 fixes hold. Converged.
 
 ## Delivery
 

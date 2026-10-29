@@ -147,6 +147,12 @@ on these inputs, so they move only with a new generation.
   `apps/tools/scripts/deploy.ts` records `constructorArgs.authContract`, and
   `apps/tools/src/contracts/deployments.ts` (`rebuildTokenInstanceFrom`) requires it. An arity change
   breaks derivation everywhere at once; `verify:deployments` is the detector.
+- **Mainnet Drip deploy ↔ the canonical portal and the account artifact**: the self-funded deploy
+  (`packages/bridge-core/scripts/drip-deploy.ts`, `deployer-funding.ts`) scans the portal's deposits from
+  `PORTAL_FIRST_BLOCKS` and refuses a portal without an entry, so a canonical-rollup switch adds the new portal's
+  first block. `ACCOUNT_CLAIM_DEPLOY_GAS` (`fee-juice-l2.ts`) was measured for the 6.0.0 Schnorr account; a bump that
+  changes the account contract or the claim re-measures it on the sandbox
+  (`deployer-funding.integration.test.ts` fails when the limit is too low).
 - **Cross-chain discovery ↔ the Inbox**: `packages/bridge-core/src/crosschain-discovery.ts` decodes the Inbox's
   `MessageSent` (the line's `InboxAbi` shape, or the older checkpoint shape the caller names) and recomputes each
   router deposit's leaf from the record. A bump that changes the event or the message hash leaves every deposit

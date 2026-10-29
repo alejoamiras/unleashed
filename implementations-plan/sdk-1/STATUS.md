@@ -31,3 +31,5 @@
 
 - 2026-10-29 a2 review round 1: Codex 2 High 3 Medium, Opus 3 High 1 Medium 4 Low; all fixed with tests except the mainnet guardian pin (D57, OWNER-ASKS §7, follow-ups) and three known limits filed closed (#43, #44, #45); packaging gains license, repository, LICENSE and an allow-listed pack-check environment
 - 2026-10-29 a2 review round 2: Codex 1 High 2 Medium, all fixed with tests (private hashless latch settled by nullifier, credit-paid registration latched, quotes deep-frozen) plus synchronous deposit refusals and a stale record in the token claim's ladder call
+- 2026-10-29 a2 review round 3: Codex no new material finding; loop converged
+- 2026-10-29 merged origin/main (#42, 1f5455f): three conflicts (deploy.ts imports, bridge-core exports, the canary's imports); #42's new scripts repointed at @unleashed/sdk/protocol and /internal; typecheck:all, lint, test:all green

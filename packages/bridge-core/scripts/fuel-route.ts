@@ -96,7 +96,10 @@ export function assertFuelRouteOptions(o: FuelRouteOptions): void {
 /** The router freezes its portal for life, and a registry keeps older rollups whose portals still take deposits: the
  *  registry's canonical rollup must name the portal, and the portal must name that rollup, pay the network's fee asset
  *  and carry its version. Any contract can answer the portal's own reads, so the rollup's is the authority. */
-async function assertCanonicalPortal(l1: L1Ctx, n: FuelRouteNetwork): Promise<void> {
+export async function assertCanonicalPortal(
+	l1: Pick<L1Ctx, "pub">,
+	n: Pick<FuelRouteNetwork, "registry" | "feeJuicePortal" | "feeJuice" | "rollupVersion">,
+): Promise<void> {
 	const portal = (functionName: "UNDERLYING" | "ROLLUP" | "VERSION") =>
 		l1.pub.readContract({ address: n.feeJuicePortal, abi: FeeJuicePortalAbi, functionName })
 	const [underlying, rollup, version, canonical] = await Promise.all([

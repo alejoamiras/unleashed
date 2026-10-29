@@ -1,6 +1,6 @@
 ---
 name: bridge-generation
-description: Runbook for the bridge's on-chain side across an Aztec-line bump — classifying the bump, the Noir surface and drift detectors, and deploying a new bridge generation (PortalFactory + TokenBridgeHub, then DepositRouter + TestnetFuelSwapper) when the network resets or a class id moves, or a router-only deploy (DepositRouter + TestnetFuelSwapper) on the current generation, or Ethereum mainnet's fuel-only route (FuelOnlyGate + DepositRouter). Use when bumping Aztec, when a drift detector goes red, when pre-creating a token, calibrating fjPerTx, deploying a new router or the mainnet fuel route or refilling and re-pricing the testnet fuel swapper, promoting a candidate manifest, or running the live canaries.
+description: Runbook for the bridge's on-chain side across an Aztec-line bump — classifying the bump, the Noir surface and drift detectors, and deploying a new bridge generation (PortalFactory + TokenBridgeHub, then DepositRouter + TestnetFuelSwapper) when the network resets or a class id moves, or a router-only deploy (DepositRouter + TestnetFuelSwapper) on the current generation, or Ethereum mainnet's fuel-only route (FuelOnlyGate + DepositRouter), or the self-funded Drip catalog on mainnet. Use when bumping Aztec, when a drift detector goes red, when pre-creating a token, calibrating fjPerTx, deploying a new router or the mainnet fuel route or refilling and re-pricing the testnet fuel swapper, promoting a candidate manifest, deploying the Drip catalog on mainnet, or running the live canaries.
 ---
 
 # Bridge generation
@@ -613,6 +613,60 @@ canonical rollup's `FeeJuicePortal`; the app sends there once it reads `fuelRout
 
 The gate's owner pauses every send through the route with `setDepositsPaused(true)`; ownership moves
 only through `Ownable2Step` and can never be renounced.
+
+## Drip catalog on mainnet (the faucet, self-funded)
+
+The Dripper, SIGNAL and NOISE deploy universally (deployer zero, salts 1337, 4246, 4247), so mainnet gets the
+addresses `apps/tools/src/contracts/deployments.json` already names, and nothing is promoted. Mainnet has no
+sponsor and Fee Juice has no L2 transfer: the deployer pays every fee from Fee Juice that a single-purpose
+funding key deposits into the canonical portal, and its first claim deploys the account in the same transaction.
+L1 is the funding ledger. Each funding carries a secret derived from the deployer's seed, so the same command,
+re-run, resumes a funding it never claimed, deposits only for a shortfall and never twice, and sends nothing once
+the catalog is initialized. No state is kept between runs.
+
+**Preconditions, all before any keyed run:**
+- `main` carries the 6.0 mainnet identity: `MAINNET_ROLLUP_VERSION`, `public/mainnet-bridge.json` (portal, asset,
+  wallet chain id) and its portal's first block in `PORTAL_FIRST_BLOCKS`
+  (`packages/bridge-core/scripts/deployer-funding.ts`). A canonical-rollup switch needs a new entry there: the run
+  refuses a portal without one.
+- The owner has created `Keyed-Runs/Unleashed-Mainnet-Drip` (`apps/tools/mainnet-faucet.env.example` lists its
+  fields): a fresh deployer pair and a fresh funding key, both used for nothing else, the funding key holding the
+  budget in AZTEC plus the ETH for up to three transactions per funding (an allowance reset, the approval, the
+  deposit). Its address is pinned in `MAINNET_DRIP_FUNDER`
+  by a reviewed commit on `main`; every mainnet run refuses while it is `null`.
+- The owner names the cap (`--cap`, in AZTEC) and gives the go in writing. No cap lives in code. The cap counts
+  every funding from the funding key to this deployer, so a new deployer pair starts a new count.
+
+**Steps** (from the repository root):
+1. **Dry run.** `bun run --cwd apps/tools deploy:mainnet:dry` talks to no node and needs no key. It must print
+   exactly the three addresses of `deployments.json`.
+2. **The keyed run**, re-run until it reports `every catalog contract is initialized`:
+   ```bash
+   env-exec request --template apps/tools/mainnet-faucet.env.example -- \
+     bun run --cwd apps/tools deploy:mainnet --fund <AZTEC> --cap <AZTEC> --output <abs path outside the repo>/mainnet-deployments.json
+   ```
+   Before anything is sent it authenticates the node against `mainnet-bridge.json` and the version, and proves on
+   L1 that the pinned registry's canonical rollup names the portal and the portal pays the manifest's asset. It
+   then reads what is left (the account's and each contract's initialization nullifier, the public Fee Juice
+   balance) and scans the portal's deposits to the deployer from the portal's first block to 12 blocks below the
+   head, counting only those the funding key sent straight to the portal. A deposit it never claimed is claimed and no other is made; otherwise it
+   deposits `--fund` only when the account is not deployed or the balance is below the next send's maximum fee.
+   A funding must be at least twice its own claim's maximum fee.
+   Each send prints its fee, and the deposit prints its hash as it is broadcast.
+
+   | Stops with | Means | Do |
+   |---|---|---|
+   | `re-run with --fund` | the balance cannot pay the next send, whose maximum fee it names | re-run with `--fund` at least that plus the claim's fee |
+   | `newer than the scanned block` | the funding key sent a transaction in the last 12 blocks, or one is pending | wait a few minutes, re-run |
+   | `below twice its own claim` | `--fund` is too small to claim safely | re-run with a larger `--fund` |
+   | `exceeds --cap` | every funding to this deployer together would pass the cap | the owner raises the cap or stops |
+   | `below its own fee limit` | fees rose past what a funding can pay for its own claim | wait for fees to fall, re-run (known limit) |
+3. **Readback.** `cmp` the written file against `apps/tools/src/contracts/deployments.json` (identical), then
+   `bun run --cwd apps/tools verify:deployments`, and `node_getContract` for each of the three addresses on the
+   keyless node, each non-null:
+   `curl -s -X POST https://aztec-mainnet.drpc.org -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"node_getContract","params":["<address>"]}'`.
+4. **First drip**, after the app offers Drip on mainnet: one drip from the owner's own wallet, paid from its own
+   Fee Juice.
 
 ## Gotchas
 
