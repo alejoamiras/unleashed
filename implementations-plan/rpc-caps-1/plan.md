@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: planned (final Codex pass: approve); awaiting the orchestrator's approval
+status: implementing arc 1 (phase 1 green); Codex fix loop
 base: main bee3a71
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -118,7 +118,7 @@ is wider than its cap. (2) When any request of a split query fails, the whole qu
 
 ## Phases (arc a1)
 
-### Phase 1: per-endpoint log caps
+### Phase 1: per-endpoint log caps ✓
 
 1. In `source-chains.ts`, add `maxLogBlocks`, the Base Sepolia caps and the corrected comments. In
    `network-targets.ts:53`, correct the doc.
@@ -183,6 +183,20 @@ proportionate, and the caps re-measured independently (201 served and 202 refuse
 |---|---|---|
 | 1 | Low: fact 4 listed viem's retryable errors too narrowly (demonstrated, `buildRequest.ts:291`) | adopted: fact 4 names them as examples, with the source line |
 | 2 | Low: no test catches a wrapper that returns the prefix on a `null` answer (plausible) | adopted: test 2 runs with `-32000` and with `result: null`. Mechanism adds: no second retry layer |
+
+**Implementation round 1.** Codex (new session): clean, 2 Low. Same-family review (Opus, alongside): 1 material Low,
+3 Low. Verified and fixed in c4924b8; mutations in `lessons/phase-1.md`.
+
+| # | Finding (label) | Disposition |
+|---|---|---|
+| C1 | Low: the retention comment said every older block answers short; below 46,500,000 it refuses (demonstrated) | fixed: the comment names both bands |
+| C2 | Low: `overCap`'s doc-comment restated its signature | fixed: deleted |
+| O1 | Low, material: no split range left a remainder, so a loop dropping the last partial part passed (demonstrated by trace) | fixed: test 1 splits 1,000–3,049 into 11 parts; the mutation fails |
+| O2 | Low: the stub ignored the filter, so a split that dropped `address` passed (plausible) | fixed: the stub refuses a part without it; the mutation fails |
+| O3 | Low: two test comments said "past the cap" where the code means `to − from > 200` and two blocks past it | fixed |
+| O4 | Low: the return type admits a `raw` http transport, and `config.request` still names the inner request (needs unsupported conditions: no caller does either; viem reads it only for filter scopes) | no change |
+
+**Implementation round 2 (resumed Codex): clean.** All fixes verified. Converged in 2 rounds.
 
 ## Delivery
 
