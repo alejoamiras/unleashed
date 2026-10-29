@@ -1099,7 +1099,7 @@ Arc a6, PR 2 (`git diff bc5e585..HEAD`):
 - **Gates on the final code (e3feba5).** `audit:tools`, `test:all`, the jsdom e2e and the sandbox integration suite
   (61 tests) are green. The browser suite at retry 0 passed 44 of 44 in 3224 s. The before run, on PR 1's head, took
   3581 s and failed activity cell 40: both receipts showed, but one record lacked its claim hash, a cross-tab lost
-  write under today's unlocked claim writer.
+  write under today's unlocked claim writer (likely; not traced).
 - **The screenshot tour** reached all five states through real flows. Everything else it flagged is today's
   rendering:
   - the run template after fee-stop copy;
