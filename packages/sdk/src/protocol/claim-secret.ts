@@ -31,16 +31,17 @@ export const DOM_SEP__TOKEN_BRIDGE_PRIVATE_CLAIM_SECRET = 2317478496
 /**
  * The claim secret a private token-bridge deposit binds to: `poseidon2([salt, recipient], DOM_SEP)`.
  * `claim_private` reconstructs it from its `recipient` argument, so a RANDOM secret would strand the
- * deposit — the flow MUST inject this for private token deposits (public deposits keep `Fr.random()`,
+ * deposit — the flow MUST inject this for private token deposits (public deposits keep a random secret,
  * since `claim_public`'s content hash already binds the recipient).
  *
- * PRIVACY INVARIANT — `salt` MUST be a full-entropy random field (`Fr.random()`), NEVER a deterministic
- * or low-entropy value. The private deposit's `secret_hash = computeSecretHash(deriveTokenClaimSecret(
- * salt, recipient))` is written to L1 IN THE CLEAR and the amount is public, so an observer who guesses
- * a small `salt` space can brute-force `(salt, recipient)` and DE-ANONYMIZE the recipient BEFORE the
- * claim — no salt leak required. `Fr.random()` (~254 bits) makes this infeasible; a "deterministic /
- * recoverable salt" convenience refactor would silently break recipient-privacy for EVERY private
- * deposit. This is distinct from the salt-LEAK → linkage risk (see the README). Pinned by
+ * PRIVACY INVARIANT — `salt` MUST be a full-entropy random field (64 WebCrypto bytes reduced mod r),
+ * NEVER a deterministic or low-entropy value. The private deposit's `secret_hash =
+ * computeSecretHash(deriveTokenClaimSecret(salt, recipient))` is written to L1 IN THE CLEAR and the
+ * amount is public, so an observer who guesses a small `salt` space can brute-force `(salt, recipient)`
+ * and DE-ANONYMIZE the recipient BEFORE the claim — no salt leak required. A full-entropy salt (~254
+ * bits) makes this infeasible; a "deterministic / recoverable salt" convenience refactor would silently
+ * break recipient-privacy for EVERY private deposit. This is distinct from the salt-LEAK → linkage risk
+ * (see the README). Pinned by
  * `claim-secret.test.ts` ("two private deposits to the same recipient yield different secret hashes").
  */
 export const deriveTokenClaimSecret = (salt: Fr, recipient: AztecAddress): Fr =>

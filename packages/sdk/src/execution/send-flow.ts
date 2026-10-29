@@ -10,7 +10,7 @@
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
-import { Fr } from "@aztec-labs/aztec.js/fields"
+import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { FEE_JUICE_ADDRESS } from "@aztec-labs/constants"
 import { FeeJuicePortalAbi } from "@aztec-foundation/l1-artifacts"
 import { type Abi, type Address, type Chain, type Hex, pad, toHex, zeroHash } from "viem"
@@ -31,6 +31,7 @@ import { deriveHubTokenInstance } from "../protocol/hub-token.ts"
 import type { JournalTokenBlock } from "../records.ts"
 import { depositWitness, depositWitnessPermitTypedData } from "../protocol/l1.ts"
 import { predictPortal } from "../protocol/portal-address.ts"
+import { randomField } from "../protocol/random-field.ts"
 import { fromWord } from "../protocol/register-hash.ts"
 
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex
@@ -221,7 +222,7 @@ async function tokenSecrets(p: SendParams): Promise<{ claimValue: Fr; secretHash
 	if (p.isPrivate && !p.claimSalt) {
 		throw new Error("runSend: a private token leg requires claimSalt (recipient-committed) — a random secret strands the deposit")
 	}
-	const claimValue = p.isPrivate ? (p.claimSalt as Fr) : Fr.random()
+	const claimValue = p.isPrivate ? (p.claimSalt as Fr) : randomField()
 	const secret = p.isPrivate ? deriveTokenClaimSecret(p.claimSalt as Fr, AztecAddress.fromStringUnsafe(p.aztecRecipient)) : claimValue
 	return { claimValue, secretHash: (await computeSecretHash(secret)).toString() as Hex }
 }
@@ -231,7 +232,7 @@ async function fuelSecrets(p: SendParams): Promise<{ secret: Fr; secretHash: Hex
 	if (p.isPrivate && !p.gas.fuelSecret) {
 		throw new Error("runSend: private gas requires an injected fuelSecret — a random secret strands the Fee Juice")
 	}
-	const secret = p.gas.fuelSecret ?? Fr.random()
+	const secret = p.gas.fuelSecret ?? randomField()
 	return { secret, secretHash: (await computeSecretHash(secret)).toString() as Hex }
 }
 

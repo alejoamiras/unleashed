@@ -164,7 +164,8 @@ needs those three origins and `data:`, and `script-src` needs `'wasm-unsafe-eval
   floor is written into the swap, the router re-checks it on chain, and the signature commits to the swap's bytes.
 - **The chains are asserted before signing.** The Ethereum wallet must be on the network's chain, and the Aztec
   wallet's chain must match the network's.
-- **Salts are full-entropy** and never appear in a record, an event, an error or a log.
+- **Salts and claim secrets are full-entropy**: 64 WebCrypto bytes reduced into the field. They never appear in a
+  record, an event, an error or a log.
 
 ## Releasing
 
@@ -221,6 +222,7 @@ artifact statically (the same test).
 | `lifi-api.ts` / `capped-fetch.ts` | The keyless li.quest client (quotes and `/v1/status`, schema-parsed and held to the request it answers) over one bounded fetch (no redirects, a streaming byte cap, one deadline, typed refusals, never throws). |
 | `gas-share.ts` | The integer gas-share math (`fjPerTx` × target [+ `fjRegister`], the signed floor, the 50 % cap). |
 | `fee-juice.ts` / `fuel.ts` / `private-fuel.ts` / `private-fpc-artifact.ts` | Fee-juice payment methods, the direct `FeeJuicePortal` lane, the Wonderland PrivateFPC (pinned address + salt policy; artifact via dynamic import only). |
+| `random-field.ts` | `randomField`: 64 WebCrypto bytes reduced mod r, the source of every salt, claim secret and nonce the SDK draws. Exported through `./internal`. |
 | `wallet-chain-id.ts` / `artifacts.ts` | `walletChainIdOf` (`(l1 ^ rollupVersion) >>> 0`); the hub artifact (its own entry, `@unleashed/sdk/artifacts`). |
 
 #### `src/execution/` and the root
