@@ -11,7 +11,8 @@ export const RESTOCK_PERIOD_MS = 86_400_000
 export const RESTOCK_BELOW = 20_000_000n
 
 const MINUTE_MS = 60_000
-const TIMEOUT_MS = 10_000
+/** Circle's whole answer, the body included, or the request is refused. */
+export const DRIP_TIMEOUT_MS = 10_000
 const REASON_CHARS = 200
 const ERROR_BODY_BYTES = 4_096
 
@@ -87,7 +88,7 @@ export async function restock(r: RestockRequest): Promise<void> {
 			body: JSON.stringify({ address: r.filler, blockchain: "ETH-SEPOLIA", usdc: true }),
 			// workerd rejects "error"; "manual" returns a 3xx unfollowed, so the key never reaches another host.
 			redirect: "manual",
-			signal: AbortSignal.timeout(TIMEOUT_MS),
+			signal: AbortSignal.timeout(DRIP_TIMEOUT_MS),
 		})
 		if (res.status === 204) r.log({ event: "restock-requested", balance: r.balance })
 		else
