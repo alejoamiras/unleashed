@@ -12,7 +12,20 @@ the answers are in the published documents (#28) and in `plan.md`. C4 is P1-14 O
 with their wallet", with the note "We will need UX / UI decision page on how it looks." C6 is P1-15
 Option A, C7 is P1-16 Option A. C5 (the screen's layout) was never asked; G1 asks it.
 
-## Open: the signed agree screen
+Decision page 11 answered G1–G7, each Option A:
+
+- P11-01: "Approve the agree screen as shown." (G1)
+- P11-02: "Approve the wallet message as shown." (G2)
+- P11-03: "Approve the Privacy Policy edit." (G3)
+- P11-04: "Approve the failure lines as shown; smart-contract accounts that need the chain to check stay out
+  for now." (G4)
+- P11-05: "No copy: the signature stays in the person's browser." (G5)
+- P11-06: "One acceptance per browser for now; decide per-account when the gas flow opens." (G6)
+- P11-07: "Accept it for now, with a check after each merge that both sites serve the merged version." (G7)
+
+The entries below are kept as signed: their words and mocks are the build's spec.
+
+## The signed agree screen (signed on decision page 11)
 
 You chose that a person signs a message with their wallet before using the mainnet app (P1-14), that any
 change to either document asks again (P1-15), and that the screen goes live now, behind the login wall

@@ -21,3 +21,5 @@
 - 2026-10-29 a2 re-plan: the plan's § Arc a2 design drafted (EIP-191 text, browser-only record re-verified on every load, digests in the text re-ask on any change, a smart account refused); OWNER-ASKS.md rewritten around G1–G6; Codex audit round 1 started.
 - 2026-10-29 a2 re-plan: Codex round 1 conditional approve (8 findings, 8 applied, 1 phrasing point rejected); round 2 approve; final fresh pass conditional approve (4 applied), resumed: approve.
 - 2026-10-29 a2 re-plan gate: OWNER-ASKS.md G1–G7 written with 14 light mocks (7 states at 1280 and 390 px, from a throwaway mainnet dev-server component, removed); nothing built; awaiting the owner's sign-off of G1–G4.
+- 2026-10-29 a2 build: orchestrator approved the plan (677d992); owner signed decision page 11 (P11-01 to P11-07, each Option A), recorded in OWNER-ASKS.md and ledger D18; merged origin/main 6462a67 (no conflict).
+- 2026-10-29 a2 P7 gate: lint pass, typecheck:all pass, apps/tools test pass (128 files, 1712 tests).

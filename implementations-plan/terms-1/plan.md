@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: a1 merged (#28); a2 re-planned for a wallet signature (light; final Codex verdict: approve), awaiting the owner's sign-off of OWNER-ASKS G1–G4
+status: a1 merged (#28); a2 approved (677d992) and signed (decision page 11); a2 in implementation
 base: main @ fb90e36 (a1); main @ e1d1c4c (a2 re-plan)
 budget: "recon: 2 Sonnet explorers; code-review: off; Codex gpt-6.1-sol at high for audits and fix loops, at max for the drafting rounds"
 ---
@@ -160,7 +160,8 @@ loop checks it. The record and the gate: § Arc a2 design.
 Owner decisions this arc builds on (the visible budget): **P1-14 Option B**: "Sign a message with their
 wallet." (note: a decision page showing how it looks before it is built). **P1-15 Option A**: "After any
 change to either document." **P1-16 Option A**: "Now, behind the login wall." The layout, every string and
-the signed text are G1–G4, unsigned until the owner signs that page.
+the signed text are G1–G4, signed on decision page 11 (P11-01 to P11-04, each Option A; G5–G7 are P11-05
+to P11-07, ledger D18).
 
 **What is signed: EIP-191 plain text (`personal_sign`)**, ASCII only, from one pure function
 `acceptanceMessage(origin, account)`; the dates, URLs and digests come from `@unleashed/legal`:
@@ -312,7 +313,7 @@ Done and merged as #28; each phase's steps and gate are in git history and its l
 
 Design: § Arc a2 design. Every phase assumes F13–F19 and I5–I6; nothing else is assumed.
 
-**P7: the record and the signed text.** UI impact: none on screen; the text is G2, verbatim.
+**P7 ✓: the record and the signed text.** UI impact: none on screen; the text is G2, verbatim.
 
 1. Merge `origin/main`. Write `acceptance.ts`.
 2. `acceptance.test.ts`, with real signatures from `privateKeyToAccount(...).signMessage`:
@@ -417,6 +418,7 @@ check of the production bundle on its host (F10).
 | D15 | Where the signature is kept (a2) | the user's browser only | a server copy: new persistence and personal data, and the approved policy says no server receives data. The owner's call (G5) |
 | D16 | ERC-1271 signatures (a2) | refused with G4's `failed` line | accept unverified: a junk signature would then pass. Verify on chain: D13's reasons |
 | D17 | Version skew between the landing and the app (a2) | a known limit, put to the owner (G7) | a bundled document view in the app: a second renderer (D11 L) and new visible UI. Versioned document URLs: a publication and retention contract |
+| D18 | The owner's answers (a2) | decision page 11, each Option A: P11-01 "Approve the agree screen as shown."; P11-02 "Approve the wallet message as shown."; P11-03 "Approve the Privacy Policy edit."; P11-04 "Approve the failure lines as shown; smart-contract accounts that need the chain to check stay out for now."; P11-05 "No copy: the signature stays in the person's browser."; P11-06 "One acceptance per browser for now; decide per-account when the gas flow opens."; P11-07 "Accept it for now, with a check after each merge that both sites serve the merged version." | — the owner decides |
 
 **Deviations in a1 (D11).** The file map's `LegalPage.vue`, `MainnetRoot.vue` and `testids.ts` were
 built in P1 and removed once C8 moved the pages to the landing. The a1 file map is now:
