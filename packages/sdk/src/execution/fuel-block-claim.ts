@@ -7,10 +7,11 @@
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { BridgeError, isUserRejection } from "../errors.ts"
 import { isWellFormedTxHash } from "./claim-receipt.ts"
-import { asBridgeError, awaitClaimable, type ClaimLeg, type ClaimOutcome, persistClaim, watchClaim } from "./claim-run.ts"
+import { asBridgeError, assertMayPrompt, awaitClaimable, type ClaimLeg, type ClaimOutcome, persistClaim, watchClaim } from "./claim-run.ts"
 import { FeeStopError } from "./fee-stop.ts"
 import { buildFuelClaimInteraction, type FuelClaimInteraction } from "./fuel-claim.ts"
 import { isPrivateFuelInsufficiency, PRIVATE_ATTEMPT_STALE_MS } from "./fuel-claim-state.ts"
+import { fuelReceiptStatus } from "./fuel-settlement.ts"
 import { isMsgNotReady } from "./message-errors.ts"
 import { consumedMessageNullifier, type TokenMessageState } from "./message-nullifier.ts"
 import { walletMaxFees } from "./wallet-fee-budget.ts"
@@ -22,6 +23,15 @@ const SUBMITTED = "submitted" as const
 
 const fuelOf = (leg: ClaimLeg): DepositFuelBlock => leg.record.fuel as DepositFuelBlock
 const patchFuel = (leg: ClaimLeg, patch: Partial<DepositFuelBlock>) => persistClaim(leg, { fuel: { ...fuelOf(leg), ...patch } })
+const gasOnly = (leg: ClaimLeg) => leg.record.intent === "gas"
+
+/** A gas-only claim's hash lives at the top level, as a token claim's does, and in the fuel block the ladder reads. */
+function storeClaimHash(leg: ClaimLeg, txHash: string | undefined): Promise<void> {
+	const fuel = { ...fuelOf(leg), claimTxHash: txHash, ...(txHash === undefined ? { claimAttempt: false } : {}) }
+	return persistClaim(leg, gasOnly(leg) ? { claimTxHash: txHash, fuel } : { fuel })
+}
+
+const dropped = (txHash: string) => new BridgeError("claim-dropped", `the claim ${txHash} was dropped; claim again`, SUBMITTED, "safe")
 
 /** The secret the Fee Juice message is consumed with: the plaintext of a public leg, the claimer-bound derivation of
  *  a private one's salt. Undefined when the caller holds neither. */
@@ -57,14 +67,28 @@ async function landed(leg: ClaimLeg, via: FuelLanding["via"], txHash?: string): 
 	return { via, ...(txHash ? { txHash } : {}) }
 }
 
-/** Watches the claim the record already sent. Undefined once it dropped: the message is unspent and may be claimed. */
+/** Watches the claim the record already sent: a gas-only record's top-level hash, a token + gas record's gas hash. One
+ *  that dropped is cleared and reported, never sent again in the same call. */
 async function resumeSentClaim(leg: ClaimLeg): Promise<FuelLanding | undefined> {
+	const txHash = gasOnly(leg) ? leg.record.claimTxHash : fuelOf(leg).claimTxHash
+	if (txHash === undefined) return gasOnly(leg) ? readLatchedHash(leg) : undefined
+	if (!isWellFormedTxHash(txHash)) throw asBridgeError(new FeeStopError("malformed-claim-hash"))
+	// A mined claim consumed the message in its setup, whatever its execution result.
+	if ((await watchClaim(leg, txHash, "gas", () => fuelNullifierState(leg))) !== "dropped") return landed(leg, "claim", txHash)
+	await storeClaimHash(leg, undefined)
+	throw dropped(txHash)
+}
+
+/** A gas-only fuel block hash with no top-level one: a writer latched it and then lost, or cleared after a drop, the
+ *  top-level copy. Its receipt is read as the ladder reads a prior attempt: landed or pending stops, dropped is lifted. */
+async function readLatchedHash(leg: ClaimLeg): Promise<undefined> {
 	const txHash = fuelOf(leg).claimTxHash
 	if (txHash === undefined) return undefined
 	if (!isWellFormedTxHash(txHash)) throw asBridgeError(new FeeStopError("malformed-claim-hash"))
-	// A mined claim consumed the message in its setup, whatever its execution result.
-	if ((await watchClaim(leg, txHash)) !== "dropped") return landed(leg, "claim", txHash)
-	await patchFuel(leg, { claimTxHash: undefined, claimAttempt: false })
+	const status = await fuelReceiptStatus({ node: leg.r.aztecNode }, txHash)
+	if (status === "included") throw asBridgeError(new FeeStopError("fuel-already-claimed"))
+	if (status === "pending") throw asBridgeError(new FeeStopError("fuel-claim-pending"))
+	await storeClaimHash(leg, undefined)
 	return undefined
 }
 
@@ -100,18 +124,18 @@ async function buildClaim(leg: ClaimLeg): Promise<FuelClaimInteraction> {
 async function sendClaim(leg: ClaimLeg, interaction: FuelClaimInteraction): Promise<FuelLanding> {
 	const attemptAt = Date.now()
 	await patchFuel(leg, { claimAttempt: true, claimAttemptAt: attemptAt, setupInsufficiency: false })
-	leg.emit({ type: "claim-requested" })
+	leg.emit({ type: "claim-requested", leg: "gas" })
 	let txHash: string
 	try {
 		txHash = (await interaction.send()).txHash
 	} catch (e) {
 		throw await failedSend(leg, e)
 	}
-	await patchFuel(leg, { claimTxHash: txHash })
-	leg.emit({ type: "claim-sent", txHash, payer: "fuel" })
-	if ((await watchClaim(leg, txHash)) !== "dropped") return landed(leg, "claim", txHash)
-	await patchFuel(leg, { claimTxHash: undefined, claimAttempt: false })
-	throw new BridgeError("claim-not-visible", `the claim ${txHash} was dropped; claim again`, SUBMITTED, "safe")
+	await storeClaimHash(leg, txHash)
+	leg.emit({ type: "claim-sent", leg: "gas", txHash, payer: "fuel" })
+	if ((await watchClaim(leg, txHash, "gas")) !== "dropped") return landed(leg, "claim", txHash)
+	await storeClaimHash(leg, undefined)
+	throw dropped(txHash)
 }
 
 /** A send that failed before any transaction existed clears its latch; one that may have reached the wallet's
@@ -148,6 +172,7 @@ async function simulateOrStop(interaction: FuelClaimInteraction): Promise<unknow
 export async function claimFuelBlock(leg: ClaimLeg, opts: { gated: boolean }): Promise<FuelLanding> {
 	const resumed = (await resumeSentClaim(leg)) ?? (await settleOrRefuseInFlight(leg))
 	if (resumed) return resumed
+	assertMayPrompt(leg, "claiming the bridged gas")
 	const interaction = await buildClaim(leg)
 	if (opts.gated) {
 		const hashes = [fuelOf(leg).messageHash].filter((h): h is string => !!h)
@@ -160,4 +185,24 @@ export async function claimFuelBlock(leg: ClaimLeg, opts: { gated: boolean }): P
 		if (ready === "claimed-elsewhere") return landed(leg, "claimed-elsewhere")
 	}
 	return sendClaim(leg, interaction)
+}
+
+/** A claim paid from held gas, or a token another submitter claimed, leaves the bridged Fee Juice unspent. The
+ *  message's nullifier says whether any landed transaction spent it; if none did, it is claimed on its own (public Fee
+ *  Juice, or private credit at the PrivateFPC). `claim: false` only records what the landed token claim spent. */
+export async function claimBridgedGas(leg: ClaimLeg, opts: { claim: boolean }): Promise<void> {
+	const fuel = leg.record.fuel
+	if (!fuel?.leafIndex || fuel.consumed || fuel.standaloneClaimed) return
+	// The landed claim paid its fee from this gas: an included transaction's setup spent the message.
+	if (fuel.claimTxHash !== undefined && fuel.claimTxHash === leg.record.claimTxHash)
+		return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
+	if (!opts.claim) return
+	// A private message is spent with the claimer-bound derivation of its salt, which only the caller holds.
+	if (leg.record.isPrivate && !leg.run.secrets?.fuelSalt && !fuel.bridgeSecretSalt)
+		throw new BridgeError("invalid-request", "claiming the bridged private gas needs secrets.fuelSalt", SUBMITTED, "safe")
+	const state = await fuelNullifierState(leg)
+	if (state === "nullified") return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
+	if (state !== "live")
+		throw new BridgeError("read-failed", "could not read whether the bridged gas was claimed", SUBMITTED, "after-wait")
+	await claimFuelBlock(leg, { gated: false })
 }

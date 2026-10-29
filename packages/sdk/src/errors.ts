@@ -30,26 +30,32 @@ export type BridgeErrorCode =
 	| "registration-dropped"
 	| "registration-reverted"
 	| "claim-not-visible"
+	| "claim-dropped"
 	| "claim-reverted"
+	| "needs-prompt"
 	| "receipt-timeout"
 	| "aborted"
 
 export type Submission = "none" | "submitted" | "unknown"
+export type DepositSearch = "none" | "ambiguous" | "incomplete"
 export type Retry = "safe" | "after-wait" | "never"
 
 export class BridgeError extends Error {
 	override readonly name = "BridgeError"
 	/** For `fee-stop`: which stop, for the caller's own copy. */
 	readonly stop?: FeeStop
+	/** For `deposit-not-found`: no matching deposit, more than one, or a search that could not reach far enough back. */
+	readonly search?: DepositSearch
 	constructor(
 		readonly code: BridgeErrorCode,
 		message: string,
 		readonly submission: Submission,
 		readonly retry: Retry,
-		options?: { cause?: unknown; stop?: FeeStop },
+		options?: { cause?: unknown; stop?: FeeStop; search?: DepositSearch },
 	) {
 		super(message, options)
 		if (options?.stop) this.stop = options.stop
+		if (options?.search) this.search = options.search
 	}
 }
 

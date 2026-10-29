@@ -8,12 +8,12 @@ import { TxHash } from "@aztec-labs/aztec.js/tx"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import type { Hex } from "viem"
 import { BridgeError, refusal, type Submission } from "../errors.ts"
-import { type Emit, eventEmitter, type Leaves } from "../events.ts"
+import { type ClaimLeg as LegKind, type Emit, eventEmitter, type Leaves, type TransferEventBody } from "../events.ts"
 import { assertNetwork, type Network, type Reads } from "../network.ts"
 import { aztecLineOf } from "../protocol/aztec-line.ts"
-import type { DepositRecord } from "../records.ts"
+import { claimRetired, type DepositRecord } from "../records.ts"
 import type { DepositSecrets, RunOptions } from "../run.ts"
-import { untilAborted } from "../run.ts"
+import { checkAbort, untilAborted } from "../run.ts"
 import {
 	type ArrivalGateState,
 	awaitClaimSimulate,
@@ -43,6 +43,13 @@ export interface AztecSigner {
 export interface ClaimOptions extends RunOptions {
 	/** The salts the deposit's `persist` stored: a private claim needs them, and no record or event carries them. */
 	secrets?: DepositSecrets
+	/** Never asks the wallet: recovers the deposit's facts, watches a sent claim, waits out an interrupted one and
+	 *  reads the messages' nullifiers, then throws `needs-prompt` (retry "safe") where the call would next price a fee
+	 *  or prompt. For a page that resumes its records on load. */
+	watchOnly?: boolean
+	/** Pays a public token + gas claim from gas the account already holds and settles without claiming the bridged
+	 *  gas, which `claimFuel` claims later. A private claim's fee comes from its private credit either way. */
+	withoutGas?: boolean
 }
 
 export interface ClaimOutcome {
@@ -84,9 +91,13 @@ async function assertAztecNetwork(net: Network, aztec: AztecSigner): Promise<voi
 	throw refusal("wrong-aztec-network", `the Aztec wallet is not on ${net.name}`, "safe")
 }
 
-function assertRecordOf(net: Network, rec: DepositRecord, intent: "gas" | "token", account: AztecAddress): FuelRoute {
+/** What a call claims: a token deposit, a gas-only one, or the bridged gas a token + gas record's claim left. */
+export type ClaimTarget = "token" | "gas" | "gas-leg"
+
+function assertRecordOf(net: Network, rec: DepositRecord, target: ClaimTarget, account: AztecAddress): FuelRoute {
 	const gasOnly = rec.intent === "gas"
-	if (gasOnly !== (intent === "gas")) throw refusal("invalid-request", `this is a ${rec.intent} deposit; claim it with the other entry`)
+	if (target === "gas-leg") return assertGasLegOf(net, rec, account)
+	if (gasOnly !== (target === "gas")) throw refusal("invalid-request", `this is a ${rec.intent} deposit; claim it with the other entry`)
 	if (rec.chainId !== net.l1ChainId) throw refusal("invalid-request", `the record belongs to chain ${rec.chainId}, not ${net.name}`)
 	const route = gasOnly ? net.fuel : net.bridge
 	const binding = gasOnly ? net.fuel.feeJuicePortal : net.bridge?.hub
@@ -99,6 +110,19 @@ function assertRecordOf(net: Network, rec: DepositRecord, intent: "gas" | "token
 	return route
 }
 
+/** A token + gas record's gas is claimed on its own only once its tokens are done: until then the token claim may pay
+ *  with it. The token's portal and hub are not checked: the gas message went to the Fee Juice portal, so a record whose
+ *  token is distrusted still recovers its gas. */
+function assertGasLegOf(net: Network, rec: DepositRecord, account: AztecAddress): FuelRoute {
+	if (rec.intent === "gas" || !rec.fuel) throw refusal("invalid-request", "the record carries no bridged gas of a token deposit")
+	if (rec.chainId !== net.l1ChainId) throw refusal("invalid-request", `the record belongs to chain ${rec.chainId}, not ${net.name}`)
+	if (rec.recipient.toLowerCase() !== account.toString().toLowerCase())
+		throw refusal("invalid-request", "the record names another Aztec account as its recipient")
+	if (!claimRetired(rec) && !rec.claimedByOther)
+		throw refusal("invalid-request", "the tokens are not claimed yet; their claim claims this gas", "safe")
+	return net.fuel
+}
+
 /** Every check a claim makes before it reads anything else: the network, the line, the record and the wallet. */
 export async function openClaim(
 	net: Network,
@@ -106,11 +130,11 @@ export async function openClaim(
 	aztec: AztecSigner,
 	rec: DepositRecord,
 	run: ClaimOptions,
-	intent: "gas" | "token",
+	target: ClaimTarget,
 ): Promise<ClaimLeg> {
 	assertNetwork(net)
 	if (!aztecLineOf(net.l1ChainId).supported) throw refusal("unsupported-line", `this release does not run ${net.name}'s Aztec line`)
-	const route = assertRecordOf(net, rec, intent, aztec.account)
+	const route = assertRecordOf(net, rec, target, aztec.account)
 	await assertAztecNetwork(net, aztec)
 	return { net, r, aztec, run, route, record: rec, emit: eventEmitter(rec.id, run.onEvent), persisted: Promise.resolve() }
 }
@@ -135,7 +159,7 @@ export function persistClaim(leg: ClaimLeg, patch: Partial<DepositRecord>): Prom
 
 /** A record the caller already holds as complete: reported again, nothing read or sent. */
 export function settledAlready(leg: ClaimLeg): ClaimOutcome | undefined {
-	if (leg.record.completedAt === undefined) return undefined
+	if (!claimRetired(leg.record)) return undefined
 	const via = leg.record.claimedByOther ? "claimed-elsewhere" : "claim"
 	leg.emit({ type: "settled", via })
 	return { record: leg.record, via }
@@ -185,9 +209,15 @@ export async function settle(leg: ClaimLeg, via: ClaimOutcome["via"], txHash?: s
 	return { record: leg.record, via, ...(txHash ? { txHash } : {}), ...(gasLeft ? { gasLeft } : {}) }
 }
 
+/** Throws `needs-prompt` in a `watchOnly` call: what comes next prices a fee or asks the wallet. */
+export function assertMayPrompt(leg: ClaimLeg, next: string): void {
+	if (leg.run.watchOnly) throw new BridgeError("needs-prompt", `${next} needs the wallet`, SUBMITTED, "safe")
+}
+
 /** A record that never stored its deposit's hash finds it on Ethereum, verified by calldata and receipt. */
 async function recoverDepositTx(leg: ClaimLeg): Promise<void> {
 	const { net, r, record } = leg
+	leg.emit({ type: "deposit-recovery", stage: "searching" })
 	const legacyRouters = record.intent === "gas" || !net.manifest.bridge ? [] : legacyRoutersOf(net.manifest.bridge)
 	const found = await findDepositTx(record, r.l1 as never, {
 		chainId: net.l1ChainId,
@@ -197,7 +227,9 @@ async function recoverDepositTx(leg: ClaimLeg): Promise<void> {
 	})
 	if (typeof found === "object") return persistClaim(leg, { depositTxHash: found.txHash })
 	const retry = found === "ambiguous" ? "never" : "after-wait"
-	throw new BridgeError("deposit-not-found", `no single deposit for this record was found on Ethereum (${found})`, "unknown", retry)
+	throw new BridgeError("deposit-not-found", `no single deposit for this record was found on Ethereum (${found})`, "unknown", retry, {
+		search: found,
+	})
 }
 
 function leavesPatch(record: DepositRecord, res: Partial<SendResult>): { patch: Partial<DepositRecord>; leaves: Leaves } {
@@ -240,6 +272,12 @@ const hasLeaves = (rec: DepositRecord) =>
 /** A record that crashed before its receipt was read takes its leaves from the mined deposit. */
 async function recoverLeaves(leg: ClaimLeg): Promise<void> {
 	const hash = leg.record.depositTxHash as Hex
+	leg.emit({ type: "deposit-recovery", stage: "reading", txHash: hash })
+	const l1 = leg.r.l1 as unknown as { getTransactionReceipt(args: { hash: Hex }): Promise<unknown> }
+	if ((await l1.getTransactionReceipt({ hash }).catch(() => undefined)) === undefined) {
+		leg.emit({ type: "deposit-recovery", stage: "waiting", txHash: hash })
+		checkAbort(leg.run, SUBMITTED)
+	}
 	const receipt = (await untilAborted(awaitL1Receipt(leg.r.l1 as never, hash), leg.run, SUBMITTED).catch((e) => {
 		if (e instanceof BridgeError) throw e
 		if (e instanceof Error && /reverted on-chain/.test(e.message))
@@ -264,10 +302,11 @@ async function recoverLeaves(leg: ClaimLeg): Promise<void> {
 	leg.emit({ type: "deposit-confirmed", leaves })
 }
 
-/** The deposit facts a claim stands on, recovered from Ethereum when the record lost them. */
+/** The deposit facts a claim stands on, recovered from Ethereum only when the record lost its leaves. */
 export async function ensureDepositFacts(leg: ClaimLeg): Promise<void> {
+	if (hasLeaves(leg.record)) return
 	if (!leg.record.depositTxHash) await recoverDepositTx(leg)
-	if (!hasLeaves(leg.record)) await recoverLeaves(leg)
+	await recoverLeaves(leg)
 }
 
 function clockOf(run: RunOptions): GateClock {
@@ -277,14 +316,16 @@ function clockOf(run: RunOptions): GateClock {
 	}
 }
 
+type Arrival = Extract<TransferEventBody, { type: "arrival" }>
+
 /** Reports one arrival reading, once per change. */
 function arrivalReporter(leg: ClaimLeg) {
 	let last = ""
-	return (stage: "counting" | "unfolded" | "wallet-sync", counts: { blocksLeft?: number; checkpointsLeft?: number } = {}) => {
-		const key = `${stage}:${counts.blocksLeft ?? ""}:${counts.checkpointsLeft ?? ""}`
+	return (body: Arrival) => {
+		const key = JSON.stringify(body)
 		if (key === last) return
 		last = key
-		leg.emit({ type: "arrival", stage, ...counts })
+		leg.emit(body)
 	}
 }
 
@@ -308,15 +349,20 @@ export async function awaitClaimable(
 	}
 	let gate: ArrivalGateState = { simulateStart: 0, counted: false, preGated: false }
 	gate = await awaitL2BlockCountdown(leg.record.depositL2Block, reads, clock, gate, {
-		block: (_, left) => left > 0 && report("counting", { blocksLeft: left }),
+		block: (block, left) => report({ type: "arrival", stage: "counting", block, blocksLeft: left }),
 	})
+	// A lagging node can report a receding anchor: within one call the count shown only falls.
+	let lowest: number | undefined
 	gate = await awaitMessageCheckpoints(hashes, reads, clock, gate, {
-		unfolded: () => report("unfolded"),
-		checkpointsLeft: (left) => report("counting", { checkpointsLeft: left }),
+		unfolded: () => report({ type: "arrival", stage: "unfolded" }),
+		checkpointsLeft: (left) => {
+			lowest = Math.min(lowest ?? left, left)
+			report({ type: "arrival", stage: "counting", checkpointsLeft: lowest })
+		},
+		checkpointsPassed: () => report({ type: "arrival", stage: "counting", checkpointsLeft: 0 }),
 	})
 	const verdict = await awaitClaimSimulate(simulate, (e) => classifyConsumable(e, nullifier), clock, gate, {
-		// Only a refused simulate means the wallet lags the chain; a first pass is not a wait.
-		notReady: () => report("wallet-sync"),
+		consumableWait: (g) => report({ type: "arrival", stage: "wallet-sync", counted: g.counted }),
 	})
 	if (verdict === "ready") {
 		leg.emit({ type: "claimable" })
@@ -332,18 +378,59 @@ export async function awaitClaimable(
 /** What a sent claim's receipt says, with a dropped transaction confirmed by consecutive readings. */
 export type ClaimFate = "success" | "reverted" | "dropped"
 
-/** Watches a claim transaction until it lands, reverts or drops. Proposed is reported once and is not settlement. */
-export async function watchClaim(leg: ClaimLeg, txHash: string): Promise<ClaimFate> {
+const UNANSWERED = Symbol("unanswered")
+
+/** A landed claim this call did not send is this record's only once its message's nullifier shows: a stored hash can
+ *  name another transaction. "live" keeps the watch going; an unreadable nullifier settles, as no read can do better. */
+async function verifiedLanding(leg: ClaimLeg, txHash: string, claim: LegKind, verify: () => Promise<TokenMessageState>): Promise<boolean> {
+	leg.emit({ type: "claim-verifying", leg: claim, txHash, stage: "checking" })
+	const state = await verify()
+	if (state === "invalid")
+		throw new BridgeError("message-invalid", "the record's message is not the one its facts describe", SUBMITTED, "never")
+	if (state !== "live") return true
+	leg.emit({ type: "claim-verifying", leg: claim, txHash, stage: "wallet-sync" })
+	return false
+}
+
+/** One receipt read of a watched claim: reported before it, and again when it changes the unanswered streak. */
+async function readClaimReceipt(
+	leg: ClaimLeg,
+	txHash: string,
+	claim: LegKind,
+	poll: number,
+	unreachable: number,
+): Promise<{ fate: ReturnType<typeof classifyClaimReceipt>; unreachable: number }> {
+	checkAbort(leg.run, SUBMITTED)
+	leg.emit({ type: "claim-waiting", leg: claim, txHash, poll, unreachable })
+	const receipt = await leg.r.aztecNode.getTxReceipt(TxHash.fromString(txHash)).catch(() => UNANSWERED)
+	const streak = receipt === UNANSWERED ? unreachable + 1 : 0
+	if (streak !== unreachable) leg.emit({ type: "claim-waiting", leg: claim, txHash, poll, unreachable: streak })
+	return { fate: receipt === UNANSWERED ? "pending" : classifyClaimReceipt(receipt as never), unreachable: streak }
+}
+
+/**
+ * Watches a claim transaction until it lands, reverts or drops. Proposed is reported once and is not settlement. With
+ * `verify`, a landing counts only once the message's nullifier shows (a resumed hash). The signal is checked before each
+ * read.
+ */
+export async function watchClaim(
+	leg: ClaimLeg,
+	txHash: string,
+	claim: LegKind,
+	verify?: () => Promise<TokenMessageState>,
+): Promise<ClaimFate> {
 	const clock = clockOf(leg.run)
 	let dropped = 0
+	let unreachable = 0
 	let proposed = false
-	for (let i = 0; i < RECEIPT_POLLS; i++) {
-		const receipt = await leg.r.aztecNode.getTxReceipt(TxHash.fromString(txHash)).catch(() => undefined)
-		const fate = receipt === undefined ? "pending" : classifyClaimReceipt(receipt as never)
-		if (fate === "success" || fate === "reverted") return fate
-		dropped = fate === "dropped" ? dropped + 1 : 0
+	for (let poll = 1; poll <= RECEIPT_POLLS; poll++) {
+		const read = await readClaimReceipt(leg, txHash, claim, poll, unreachable)
+		unreachable = read.unreachable
+		if (read.fate === "success" && (!verify || (await verifiedLanding(leg, txHash, claim, verify)))) return "success"
+		if (read.fate === "reverted") return "reverted"
+		dropped = read.fate === "dropped" ? dropped + 1 : 0
 		if (dropped >= DROPPED_STRIKES) return "dropped"
-		if (fate === "proposed" && !proposed) {
+		if (read.fate === "proposed" && !proposed) {
 			proposed = true
 			leg.emit({ type: "claim-proposed", txHash })
 		}
@@ -361,6 +448,7 @@ const PERMANENT_STOPS: ReadonlySet<FeeStop> = new Set<FeeStop>([
 	"private-fuel-missing",
 	"no-claimable-fuel",
 	"floor-unconfigured",
+	"fuel-already-claimed",
 	"below-claim-floor",
 	"below-fuel-floor",
 	"record-predates-send",

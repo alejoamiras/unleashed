@@ -2,6 +2,8 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from "vitest"
 import { claimToken } from "../src/bridge/index.ts"
+import { resolveHubClaimSendOpts } from "../src/execution/fee-ladder.ts"
+import { claimFuel } from "../src/fuel/index.ts"
 import { ladderEnvOf, openClaim } from "../src/execution/claim-run.ts"
 import type { BridgeError } from "../src/errors.ts"
 import type { TransferEvent } from "../src/events.ts"
@@ -38,8 +40,9 @@ vi.mock("../src/execution/factory-registry.ts", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../src/execution/factory-registry.ts")>()),
 	readRegistration: async () => ({ ...fixture.token, registerKey: REGISTER_KEY, registerIndex: 7n }),
 }))
-/** Overrides the token message's nullifier reading; undefined reads the fake node. */
-const tokenMessage = vi.hoisted(() => ({ state: undefined as string | undefined }))
+/** The token message's nullifier reading: the fixture's message hash is not derived from its facts, so a test that
+ *  wants the real derivation sets undefined. */
+const tokenMessage = vi.hoisted(() => ({ state: "live" as string | undefined }))
 vi.mock("../src/execution/message-nullifier.ts", async (importOriginal) => {
 	const real = await importOriginal<typeof import("../src/execution/message-nullifier.ts")>()
 	return {
@@ -101,8 +104,9 @@ beforeAll(async () => {
 })
 afterEach(() => {
 	vi.useRealTimers()
+	vi.mocked(resolveHubClaimSendOpts).mockClear()
 	hub.bound = true
-	tokenMessage.state = undefined
+	tokenMessage.state = "live"
 	fuelSends.count = 0
 	fuelSends.stop = undefined
 	fuelSends.built = []
@@ -245,7 +249,16 @@ describe("claimToken", () => {
 		const rec = recorder()
 		const out = await claimToken(net, r, aztec, tokenRecord(net), rec.run)
 		expect([out.via, out.txHash, send.mock.calls.length]).toEqual(["claim", CLAIM_HASH, 1])
-		expect(rec.types()).toEqual(["claimable", "claim-requested", "claim-sent", "settled"])
+		expect(rec.types()).toEqual([
+			"arrival",
+			"arrival",
+			"claimable",
+			"claim-requested",
+			"claim-sent",
+			"claim-waiting",
+			"claim-landed",
+			"settled",
+		])
 		expect(rec.heldBefore("claim-sent")?.claimTxHash).toBe(CLAIM_HASH)
 		expect(rec.heldBefore("settled")?.completedAt).toBeDefined()
 	})
@@ -258,12 +271,21 @@ describe("claimToken", () => {
 		expect([e.code, e.retry, send.mock.calls.length]).toEqual(["invalid-request", "never", 0])
 	})
 
-	it("resumes a sent claim that landed without sending again", async () => {
+	it("resumes a sent claim that landed without sending again, once its message's nullifier shows", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
 		const { net, r, aztec } = await setup()
 		const send = claims()
 		const rec = recorder()
-		const out = await claimToken(net, r, aztec, tokenRecord(net, { claimTxHash: CLAIM_HASH }), rec.run)
-		expect([out.txHash, send.mock.calls.length, rec.types()]).toEqual([CLAIM_HASH, 0, ["settled"]])
+		const readings = ["live", "nullified"]
+		tokenMessage.state = undefined
+		const nullifier = vi.spyOn(await import("../src/execution/message-nullifier.ts"), "hubMessageState")
+		nullifier.mockImplementation(async () => readings.shift() as never)
+		const out = await drive(claimToken(net, r, aztec, tokenRecord(net, { claimTxHash: CLAIM_HASH }), rec.run))
+		nullifier.mockRestore()
+		expect([out.txHash, send.mock.calls.length]).toEqual([CLAIM_HASH, 0])
+		const stages = rec.entries.flatMap((e) => ("event" in e && e.event.type === "claim-verifying" ? [e.event.stage] : []))
+		expect(stages).toEqual(["checking", "wallet-sync", "checking"])
+		expect(rec.types().slice(-2)).toEqual(["claim-landed", "settled"])
 	})
 
 	it("a registration that dropped is cleared and registered again", async () => {
@@ -277,11 +299,15 @@ describe("claimToken", () => {
 		const cleared = rec.entries.findIndex((e) => "persisted" in e && e.persisted.registerTxHash === undefined)
 		expect([cleared >= 0, send.mock.calls.length]).toEqual([true, 1])
 		expect(rec.types()).toEqual([
+			"arrival",
+			"arrival",
 			"claimable",
 			"registration-requested",
 			"registration-sent",
 			"claim-requested",
 			"claim-sent",
+			"claim-waiting",
+			"claim-landed",
 			"settled",
 		])
 		expect(rec.heldBefore("registration-sent")?.registerTxHash).toBe(REGISTER_HASH)
@@ -424,12 +450,13 @@ describe("claimToken", () => {
 		const out = await claimToken(net, r, aztec, record(), { ...rec.run, secrets: { claimSalt: Fr.random(), fuelSalt } })
 		expect([out.via, out.gasLeft, send.mock.calls.length, fuelSends.count]).toEqual(["claimed-elsewhere", undefined, 0, 1])
 		expect(fuelSends.built).toEqual([{ isPrivate: true, salt: fuelSalt.toString(), fpc: net.privateFpc }])
-		expect(rec.types()).toEqual(["claim-requested", "claim-sent", "settled"])
+		expect(rec.types()).toEqual(["claim-landed", "claim-requested", "claim-sent", "claim-waiting", "settled"])
+		expect(rec.heldBefore("claim-landed")?.claimedByOther).toBe(true)
 		expect(rec.heldBefore("settled")).toMatchObject({ claimedByOther: true, fuel: { consumed: true, claimTxHash: FUEL_HASH } })
 
 		const open = recorder()
 		const e = await failure(claimToken(net, r, aztec, record(), { ...open.run, secrets: { claimSalt: Fr.random() } }))
-		expect([e.code, e.retry, fuelSends.count, open.types()]).toEqual(["invalid-request", "safe", 1, []])
+		expect([e.code, e.retry, fuelSends.count, open.types()]).toEqual(["invalid-request", "safe", 1, ["claim-landed"]])
 		expect(e.message).toMatch(/the tokens landed; their bridged gas is not claimed yet/)
 	})
 
@@ -452,7 +479,7 @@ describe("claimToken", () => {
 			const rec = recorder()
 			const { [missing]: _, ...unread } = publicFuel()
 			await claimToken(net, r, aztec, tokenRecord(net, { intent: "token+gas", fuel: unread } as Partial<DepositRecord>), rec.run)
-			expect(rec.types()[0]).toBe("deposit-confirmed")
+			expect(rec.types().slice(0, 2)).toEqual(["deposit-recovery", "deposit-confirmed"])
 			expect(rec.heldBefore("deposit-confirmed")?.fuel).toMatchObject({
 				leafIndex: "4",
 				messageHash: `0x${"04".repeat(32)}`,
@@ -462,6 +489,87 @@ describe("claimToken", () => {
 			expect(rec.heldBefore("settled")?.fuel?.consumed).toBe(true)
 		},
 	)
+
+	it("watchOnly sends nothing: an unsent claim stops before its fee, a landed one before the gas it left", async () => {
+		const { net, r, aztec } = await setup()
+		const send = claims()
+		const unsent = await failure(claimToken(net, r, aztec, tokenRecord(net), { ...recorder().run, watchOnly: true }))
+		expect([unsent.code, unsent.retry, vi.mocked(resolveHubClaimSendOpts).mock.calls.length]).toEqual(["needs-prompt", "safe", 0])
+		tokenMessage.state = "nullified"
+		const rec = recorder()
+		const record = tokenRecord(net, { intent: "token+gas", fuel: publicFuel() } as Partial<DepositRecord>)
+		const gas = await failure(claimToken(net, r, aztec, record, { ...rec.run, watchOnly: true }))
+		expect([gas.code, rec.types(), rec.heldBefore("claim-landed")?.claimedByOther]).toEqual(["needs-prompt", ["claim-landed"], true])
+		expect([send.mock.calls.length, fuelSends.built.length]).toEqual([0, 0])
+		const marked = rec.entries.flatMap((e) => ("persisted" in e ? [e.persisted] : [])).at(-1) as DepositRecord
+		await claimFuel(net, r, aztec, marked, recorder().run)
+		expect([marked.completedAt, fuelSends.count]).toEqual([undefined, 1])
+	})
+
+	it("a claimed-by-other marker the chain no longer bears out is dropped before anything is priced", async () => {
+		const { net, r, aztec } = await setup()
+		claims()
+		const rec = recorder()
+		const e = await failure(claimToken(net, r, aztec, tokenRecord(net, { claimedByOther: true }), { ...rec.run, watchOnly: true }))
+		expect([e.code, rec.entries.at(-1)]).toEqual([
+			"needs-prompt",
+			{ persisted: expect.objectContaining({ claimedByOther: undefined }) },
+		])
+	})
+
+	it("a message that is not the record's refuses before any fee or prompt", async () => {
+		const { net, r, aztec } = await setup()
+		const send = claims()
+		tokenMessage.state = "invalid"
+		const e = await failure(claimToken(net, r, aztec, tokenRecord(net), recorder().run))
+		expect([e.code, e.retry, vi.mocked(resolveHubClaimSendOpts).mock.calls.length, send.mock.calls.length]).toEqual([
+			"message-invalid",
+			"never",
+			0,
+			0,
+		])
+	})
+
+	it("a resumed claim that reverted clears its hash and throws, sending nothing", async () => {
+		const { net, r, aztec } = await setup({ [CLAIM_HASH]: [{ status: "checkpointed", executionResult: "reverted" } as never] })
+		const send = claims()
+		const rec = recorder()
+		const e = await failure(claimToken(net, r, aztec, tokenRecord(net, { claimTxHash: CLAIM_HASH }), rec.run))
+		expect([e.code, e.retry, send.mock.calls.length, rec.entries.at(-1)]).toEqual([
+			"claim-reverted",
+			"safe",
+			0,
+			{ persisted: expect.objectContaining({ claimTxHash: undefined }) },
+		])
+	})
+
+	it("a record holding its leaves but no deposit hash claims without searching Ethereum", async () => {
+		const { net, r, aztec } = await setup()
+		const send = claims()
+		const rec = recorder()
+		await claimToken(net, r, aztec, tokenRecord(net, { depositTxHash: undefined }), rec.run)
+		expect([send.mock.calls.length, rec.types().includes("deposit-recovery")]).toEqual([1, false])
+	})
+
+	it("withoutGas pays from held gas and settles with the bridged gas open, which claimFuel then claims", async () => {
+		const { net, r, aztec } = await setup()
+		claims()
+		const record = tokenRecord(net, { intent: "token+gas", fuel: publicFuel() } as Partial<DepositRecord>)
+		const early = await failure(claimFuel(net, r, aztec, record, recorder().run))
+		expect([early.code, early.retry]).toEqual(["invalid-request", "safe"])
+		const out = await claimToken(net, r, aztec, record, { ...recorder().run, withoutGas: true })
+		expect(vi.mocked(resolveHubClaimSendOpts).mock.calls[0]?.[1]).toMatchObject({ userOverride: true })
+		expect([out.record.completedAt !== undefined, out.record.fuel?.consumed, fuelSends.count]).toEqual([true, undefined, 0])
+		const rec = recorder()
+		const gas = await claimFuel(net, r, aztec, out.record, rec.run)
+		expect([gas.txHash, gas.record.fuel?.consumed, gas.record.completedAt, fuelSends.count]).toEqual([
+			FUEL_HASH,
+			true,
+			out.record.completedAt,
+			1,
+		])
+		expect(rec.types()).toEqual(["claim-requested", "claim-sent", "claim-waiting"])
+	})
 
 	it("a token claim latched without its hash refuses while it may still land, with nothing sent", async () => {
 		const { net, r, aztec } = await setup()
