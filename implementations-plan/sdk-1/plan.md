@@ -699,6 +699,13 @@ Each row: the decision, its source, the rejected view with its reason.
   wallet is asked, so an integrator can say "confirm in your wallet" as the app does (ask5).
 - **D71 A resumed claim hash is not re-verified against its message.** A writer of the caller's storage who can plant
   a landed hash can delete the record outright; the app keeps its own check.
+- **D72 The publish job checks the tarball against the pack job's output.** The digest travels as a job output, not
+  in the artifact, so a swapped artifact cannot carry its own; `pack:check --out` hands over the exact tarball it
+  checked. The job also runs only on `main` (the environment refuses other refs only once the owner configures it),
+  takes npm from `setup-node` on Node 24 (trusted publishing needs npm 11.5.1+) with its cache off, and the checkout in
+  the pack job keeps no credential.
+- **D73 `pr-quick` gates `pack:check` on the SDK and every file its tarball stages from outside it.** The filter is
+  derived from `stage.ts`'s `ASSETS` and `DOCUMENTS` by `behavior-gating.test.ts`; `publish-sdk.test.ts` pins D22.
 
 ## Audit verdicts
 

@@ -50,3 +50,5 @@
 - 2026-10-29 a4 review round 1: Codex 2 Moderate 2 Low (tests overclaimed, event doc, two sentences), Opus 1 Low regression (private fuel-paid resume without secrets settled missing-salt) + 2 doc fixes; all fixed, mutation-checked; sdk 449, lint, typecheck:all green
 - 2026-10-29 a4 review round 2: Codex no new material finding; loop converged in 2 rounds
 - 2026-10-29 a4 browser specs (recovery, registration-retry, fee-states, spike, exits, activity): all 29 cells died at 0 ms, worker SIGBUS — /dev/shm 99% (1.7 GB of older unleashed-wallet-* dirs left for the owner); host, CI's tools-e2e (six shards) and sandbox integration gate this arc
+- 2026-10-29 a5 started on sdk-1-a5 from origin/main 54de731 (a4 squash-merged as #56); close-out deferred to a6 by the orchestrator
+- 2026-10-29 a5 5.1: integrator README, examples/{fuel,bridge,resume}.ts, publish-sdk.yml (D22, D72), pr-quick pack-sdk (D73), pack:check --out; lint, typecheck:all, test:all, lint:actions, test:ci-gating, pack:check green; npm dry-run reads the tarball

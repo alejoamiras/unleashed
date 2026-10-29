@@ -34,7 +34,10 @@ const RANGE_PEERS = new Set(["viem"])
 const OWN_DEPENDENCIES = new Set(["zod"])
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/
 /** npm packs these whatever `files` says; Apache-2.0 §4(a) requires the licence to travel with every copy. */
-const DOCUMENTS: Readonly<Record<string, string>> = { LICENSE: join(REPO_DIR, "LICENSE"), "README.md": join(PACKAGE_DIR, "README.md") }
+export const DOCUMENTS: Readonly<Record<string, string>> = {
+	LICENSE: join(REPO_DIR, "LICENSE"),
+	"README.md": join(PACKAGE_DIR, "README.md"),
+}
 
 type Specs = Record<string, string>
 type Repository = { type: "git"; url: string; directory: string }
