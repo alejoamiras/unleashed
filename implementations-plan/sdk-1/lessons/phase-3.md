@@ -12,3 +12,7 @@
 - **3.1: fake timers prove a wait's edge.** `vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })` checks the
   receipt wait still holds a tick before 180 s and aborts at it, without a real wait and without faking the promise
   queue the run needs.
+- **3.2: li.quest's same-chain quote calls the multi-swap entry.** The recorded `deadlineFree` quote is
+  `swapTokensMultipleV3ERC20ToERC20` (LI.FI's fee step, then the swap); `TestnetFuelSwapper` answers only the
+  single-swap entry, so the browser fixture re-encodes the recorded swap leg as a single call. The SDK pins both
+  selectors, so the checks it runs are the mainnet ones.

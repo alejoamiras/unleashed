@@ -672,6 +672,10 @@ Each row: the decision, its source, the rejected view with its reason.
   (`OWNER-ASKS.md` §9).
 - **D65 The app stops waiting for the deposit's receipt after 180 s.** The SDK waits until its signal aborts; the app
   aborts at viem's default, the wait its sends always had, and the row keeps its hash for a resume.
+- **D66 The sandbox's li.quest answer is a single-swap call.** The recorded mainnet quote calls LI.FI's multi-swap
+  entry, which the sandbox's stand-in Diamond (`TestnetFuelSwapper`) does not speak; `fixtures/lifi-quote.ts` keeps
+  the recording's venue, identity and swap leg and re-encodes them as the single-swap call. A `lifiQuote` option turns
+  the answer on per file, so every other file still fails on a request to li.quest.
 
 ## Audit verdicts
 

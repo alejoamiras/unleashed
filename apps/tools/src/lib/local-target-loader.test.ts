@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import { loadLocalRun } from "./local-target-loader"
 
 const MANIFEST = fileURLToPath(new URL("../../../../packages/bridge-core/fixtures/sandbox-manifest.json", import.meta.url))
-const USDC = parseManifestV2(JSON.parse(readFileSync(MANIFEST, "utf8"))).bridge?.tokens.find((t) => t.displaySymbol === "USDC")?.erc20
+const SANDBOX = parseManifestV2(JSON.parse(readFileSync(MANIFEST, "utf8")))
+const USDC = SANDBOX.bridge?.tokens.find((t) => t.displaySymbol === "USDC")?.erc20
+const SWAPPER = SANDBOX.bridge?.l1.fuelSwapper
 const at = (n: number) => `0x${n.toString(16).padStart(40, "0")}`
 
 const crossChain = {
@@ -30,6 +32,7 @@ function artifacts(handle: Record<string, unknown>): string {
 		rollupVersion: 1,
 		walletChainId: 31336,
 		l1ChainId: 31337,
+		deployment: { fuelSwapper: SWAPPER },
 	}
 	writeFileSync(join(dir, "handle.json"), JSON.stringify({ ...base, ...handle }))
 	return dir
@@ -49,9 +52,18 @@ describe("loadLocalRun", () => {
 		})
 		expect(run.target.sandboxLifi).toEqual({
 			source: { chainId: 31338, diamond: at(2), spokePool: at(1) },
-			ethereum: { chainId: 31337, executor: at(5), receiverAcrossV4: at(6), spokePool: at(4) },
+			ethereum: { chainId: 31337, diamond: SWAPPER, executor: at(5), receiverAcrossV4: at(6), spokePool: at(4) },
 		})
 		expect(run.target.readRpcUrls[31338]).toEqual([crossChain.sourceUrl])
+	})
+
+	it("for the LI.FI venue, drops the listed swapper, whose contract the book then names as the Diamond", () => {
+		const run = loadLocalRun(artifacts({ crossChain }), { fuelVenue: "lifi" })
+		expect(SWAPPER).toBeDefined()
+		expect(parseManifestV2(JSON.parse(run.manifestJson)).bridge?.l1.fuelSwapper).toBeUndefined()
+		expect(run.target.sandboxLifi?.ethereum.diamond).toBe(SWAPPER)
+		expect(parseManifestV2(JSON.parse(loadLocalRun(artifacts({ crossChain })).manifestJson)).bridge?.l1.fuelSwapper).toBe(SWAPPER)
+		expect(() => loadLocalRun(artifacts({}), { fuelVenue: "lifi" }), "no book to name the Diamond in").toThrow(/cross-chain half/)
 	})
 
 	it("leaves a handle without the cross-chain half routing nothing", () => {

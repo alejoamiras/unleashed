@@ -8,11 +8,12 @@
  * so the switcher lists the whole pool from the first connect. Two spares cover retries.
  */
 import { test as base, type BrowserContext, expect, type Page } from "@playwright/test"
-import { l2CtxFor, readHandle } from "@unleashed/bridge-core/sandbox"
+import { fuelSwapperOf, l2CtxFor, readHandle } from "@unleashed/bridge-core/sandbox"
 import { type RunEnv, runEnv } from "../env"
 import type { Seed } from "../test-wallet/profile"
 import { confineEgress, type Egress, type TokenListFixture } from "./egress"
 import { installL1Wallet, type L1WalletControl } from "./l1-wallet"
+import { answerLifiQuote, type LifiQuoteFixture } from "./lifi-quote"
 import { type RelayerControl, relayerControl } from "./relayer"
 import { type ActorHandle, type SandboxAccess, sandboxAccess } from "./sandbox"
 import { parkWalletPanel } from "./wallet-panel"
@@ -37,6 +38,8 @@ interface Fixtures {
 	page: Page
 	/** The run's relay loop and the two chains' clocks; the loop goes back to filling at once after the test. */
 	relayer: RelayerControl
+	/** Whether li.quest's gas quote is answered, and how — `test.use({ lifiQuote: "recorded" })`; unset, it is blocked. */
+	lifiQuote: LifiQuoteFixture | undefined
 }
 
 /** Worker-scoped = per spec file: Playwright reuses a worker across files whose worker options
@@ -67,6 +70,7 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 	l1Index: [0, { option: true, scope: "worker" }],
 	spares: [SPARES, { option: true, scope: "worker" }],
 	tokenList: ["community", { option: true, scope: "worker" }],
+	lifiQuote: [undefined, { option: true }],
 
 	run: [
 		// biome-ignore lint/correctness/noEmptyPattern: Playwright requires the destructuring form even with no dependencies.
@@ -150,8 +154,10 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 	},
 
 	egress: [
-		async ({ context, tokenList }, use) => {
-			const egress = await confineEgress(context, tokenList)
+		async ({ context, tokenList, lifiQuote, sandbox }, use) => {
+			const deps = { pub: sandbox.clients.l1.pub, swapper: fuelSwapperOf(sandbox) }
+			const answer = lifiQuote && ((url: URL) => answerLifiQuote(url, deps, lifiQuote))
+			const egress = await confineEgress(context, tokenList, answer)
 			await use(egress)
 			expect(egress.blocked, "every request stayed on loopback").toEqual([])
 		},

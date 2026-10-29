@@ -37,3 +37,4 @@
 - 2026-10-29 CI: the tools smoke suite (apps/tools test:e2e) failed 3 register-path cases on e80cc5b; its mocked hub now answers token_for; 28/28 locally, both build targets verified, relayer integration 6/6
 - 2026-10-29 a3 started on sdk-1-a3 from origin/main f1330bc (a2 squash-merged as #47); orchestrator: OWNER-ASKS §7 decided A, not this arc's work, follow-up kept
 - 2026-10-29 a3 3.1: useSend sends through the SDK's depositL1 (reviewed plan, pause pre-check off, deadline at the signature, approval events); lint, typecheck:all, test:all, audit:tools, tools smoke 28/28 green; OWNER-ASKS §8 §9 added, §7 decided A
+- 2026-10-29 a3 3.2: LI.FI venue through the SDK on a /lifi/ bundle; deposit-gas-lifi 2/2 (cell A 36.0 s, cell B 28.6 s, 1.7 min with worker start; cell B fails under the honest quote); lint, typecheck:all, test:all, lint:actions, ci-gating, build+verify testnet and mainnet green

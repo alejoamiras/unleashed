@@ -3,6 +3,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type Address, createPublicClient, getAddress, type Hex, http, isAddress, keccak256, parseAbi } from "viem"
 import { describe, expect, it } from "vitest"
+import { swapTargetOf } from "../execution/trust-roots.ts"
 import {
 	START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR,
 	SWAP_TOKENS_MULTIPLE_V3_SELECTOR,
@@ -74,12 +75,13 @@ describe("lifi-addresses", () => {
 		const at = (n: number) => getAddress(`0x${n.toString(16).padStart(40, "0")}`)
 		const sandbox = (src: number, eth: number) => ({
 			source: { chainId: src, diamond: at(1), spokePool: at(2) },
-			ethereum: { chainId: eth, executor: at(3), receiverAcrossV4: at(4), spokePool: at(5) },
+			ethereum: { chainId: eth, diamond: at(6), executor: at(3), receiverAcrossV4: at(4), spokePool: at(5) },
 		})
 		const sepolia = lifiBook(11155111)
 		expect(() => registerSandboxLifi(sandbox(31338, 11155111))).toThrow(/chain 11155111 is not a sandbox chain/)
 		expect(() => registerSandboxLifi(sandbox(84532, 31337))).toThrow(/chain 84532 is not a sandbox chain/)
 		expect(() => lifiBook(31337), "a refused pair books neither chain").toThrow(/no LI.FI book/)
+		expect(() => swapTargetOf(31337, undefined), "no book, no swap target").toThrow(/no LI.FI book/)
 		expect(lifiBook(11155111)).toBe(sepolia)
 
 		registerSandboxLifi(sandbox(31338, 31337))
@@ -88,8 +90,17 @@ describe("lifi-addresses", () => {
 			acrossSpokePool: at(2),
 			facets: { [START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR]: at(1) },
 		})
-		expect(lifiBook(31337)).toMatchObject({ executor: at(3), receiverAcrossV4: at(4), acrossSpokePool: at(5), facets: {} })
+		expect(lifiBook(31337)).toMatchObject({
+			diamond: at(6),
+			executor: at(3),
+			receiverAcrossV4: at(4),
+			acrossSpokePool: at(5),
+			facets: {},
+		})
 		expect(Object.keys(LIFI_BOOK)).toHaveLength(6)
+		expect(swapTargetOf(31337, undefined), "a sandbox without a swapper swaps through its book's Diamond").toBe(at(6))
+		expect(swapTargetOf(31337, at(9)), "a listed swapper is the target").toBe(at(9))
+		expect(swapTargetOf(11155111, undefined), "a live testnet has no LI.FI venue").toBeUndefined()
 	})
 
 	it("holds only checksummed addresses, 32-byte code hashes, and a code hash for every receiver it lists", () => {
