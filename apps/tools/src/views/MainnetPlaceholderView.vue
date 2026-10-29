@@ -1,19 +1,26 @@
 <script setup lang="ts">
 /** Services */
 import { Icon } from "@unleashed/design"
+import { LEGAL_URLS } from "@unleashed/legal"
 
 /** Utils */
 import { TESTIDS } from "@/lib/testids"
 
 /**
  * The whole mainnet app. It mounts no wallet session, reaches no node and reads no manifest — the
- * build's CSP allows no remote origin at all, so anything beyond these three links would silently
- * fail rather than degrade.
+ * build's CSP allows no remote origin at all, so anything beyond these links would silently fail
+ * rather than degrade.
  */
 const LINKS = [
 	{ label: "Wallet site", href: "https://nulo.sh" },
 	{ label: "Get the extension", href: import.meta.env.VITE_WALLET_INSTALL_URL ?? "https://nulo.sh" },
 	{ label: "Docs", href: "https://github.com/nulo-sh/nulo" },
+] as const
+
+/** On the public landing, because this host sits behind a login wall until mainnet opens. */
+const LEGAL_LINKS = [
+	{ label: "Terms of Use", href: LEGAL_URLS["unleashed-terms-of-use"] },
+	{ label: "Privacy Policy", href: LEGAL_URLS["unleashed-privacy-policy"] },
 ] as const
 </script>
 
@@ -29,6 +36,16 @@ const LINKS = [
 				target="_blank"
 				rel="noopener noreferrer"
 				:data-testid="TESTIDS.mainnetPlaceholderLink"
+			>{{ link.label }}<Icon name="external-link" :size="12" /></a>
+		</p>
+		<p class="links">
+			<a
+				v-for="link in LEGAL_LINKS"
+				:key="link.href"
+				:href="link.href"
+				target="_blank"
+				rel="noopener noreferrer"
+				:data-testid="TESTIDS.mainnetPlaceholderLegalLink"
 			>{{ link.label }}<Icon name="external-link" :size="12" /></a>
 		</p>
 	</main>

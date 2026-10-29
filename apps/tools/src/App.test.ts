@@ -1,67 +1,65 @@
 import { flushPromises, mount } from "@vue/test-utils"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { TESTIDS } from "@/lib/testids"
 
-const mainnet = vi.hoisted(() => ({ value: false }))
-/** Flipped the ONE time the shell's module is evaluated. Evaluating it is what constructs the
- *  wallet-session singleton, so the mainnet build must never get that far. */
-const shellLoaded = vi.hoisted(() => ({ value: false }))
+/** How many times each root module was evaluated. Evaluating the shell constructs the wallet-session
+ *  singleton, so the mainnet build must never get that far; the placeholder must never load elsewhere. */
+const loaded = vi.hoisted(() => ({ shell: 0, placeholder: 0 }))
 
-vi.mock("@/lib/network", () => ({
-	get IS_MAINNET() {
-		return mainnet.value
-	},
-}))
+// `__esModule` is what tells Vue's async-component loader to unwrap `default` instead of handing the
+// namespace object itself to the renderer. What the placeholder renders is MainnetPlaceholderView.test.ts's job.
 vi.mock("./AppShell.vue", () => {
-	shellLoaded.value = true
-	// `__esModule` is what tells Vue's async-component loader to unwrap `default` instead of handing
-	// the namespace object itself to the renderer.
+	loaded.shell++
 	return { __esModule: true, default: { name: "AppShell", template: `<div data-testid="${TESTIDS.app}" />` } }
 })
-
-import App from "./App.vue"
+vi.mock("./views/MainnetPlaceholderView.vue", () => {
+	loaded.placeholder++
+	return {
+		__esModule: true,
+		default: { name: "MainnetPlaceholderView", template: `<main data-testid="${TESTIDS.mainnetPlaceholder}" />` },
+	}
+})
 
 const sel = (t: string) => `[data-testid="${t}"]`
 
-async function app() {
+/** Mounts a fresh `App.vue` built for `target` (no define means testnet, as in a bare build). */
+async function app(target?: "mainnet") {
+	if (target) vi.stubEnv("VITE_TOOLS_TARGET", target)
+	vi.resetModules()
+	loaded.shell = 0
+	loaded.placeholder = 0
+	const { default: App } = await import("./App.vue")
 	const w = mount(App)
 	await flushPromises()
 	return w
 }
 
-// The first two cases read a ONE-SHOT module-evaluation flag, so they must run before any case that
-// mounts the shell. Everything after them is order-independent.
+afterEach(() => {
+	vi.unstubAllEnvs()
+})
+
 describe("App", () => {
-	it("mainnet never loads the shell module, so no wallet session is constructed", async () => {
-		mainnet.value = true
-		await app()
-		expect(shellLoaded.value).toBe(false)
+	it("mainnet loads the placeholder and never the shell module, so no wallet session is constructed", async () => {
+		await app("mainnet")
+		expect(loaded.placeholder).toBe(1)
+		expect(loaded.shell).toBe(0)
 	})
 
-	it("testnet loads the shell module", async () => {
-		mainnet.value = false
+	it("testnet loads the shell module and never the placeholder", async () => {
 		await app()
-		expect(shellLoaded.value).toBe(true)
+		expect(loaded.shell).toBe(1)
+		expect(loaded.placeholder).toBe(0)
 	})
 
 	it("testnet renders the tabbed shell", async () => {
-		mainnet.value = false
 		const w = await app()
 		expect(w.find(sel(TESTIDS.app)).exists()).toBe(true)
 		expect(w.find(sel(TESTIDS.mainnetPlaceholder)).exists()).toBe(false)
 	})
 
 	it("mainnet renders the placeholder and nothing else", async () => {
-		mainnet.value = true
-		const w = await app()
+		const w = await app("mainnet")
 		expect(w.find(sel(TESTIDS.mainnetPlaceholder)).exists()).toBe(true)
 		expect(w.find(sel(TESTIDS.app)).exists()).toBe(false)
-		expect(w.find(sel(TESTIDS.tabs)).exists()).toBe(false)
-	})
-
-	it("the mainnet placeholder offers its three links", async () => {
-		mainnet.value = true
-		const w = await app()
-		expect(w.findAll(sel(TESTIDS.mainnetPlaceholderLink))).toHaveLength(3)
 	})
 })

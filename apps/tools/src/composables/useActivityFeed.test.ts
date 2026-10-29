@@ -19,8 +19,16 @@ vi.mock("@/composables/useBridgeWallet", () => ({
 }))
 const now = ref(60 * 60_000)
 vi.mock("@/lib/clock", () => ({ useNow: () => now }))
+const net = vi.hoisted(() => ({ mainnet: false }))
+vi.mock("@/lib/network", async (original) => ({
+	...(await original<typeof import("@/lib/network")>()),
+	get IS_MAINNET() {
+		return net.mainnet
+	},
+}))
 
 import { XC_CREATED, XC_TRANSPORT, xcRecord } from "@/test/crosschain-record"
+import { phaseGuide } from "@/lib/crosschain-activity"
 import { useActivityFeed } from "./useActivityFeed"
 import { __resetShellForTests, useShell } from "./useShell"
 
@@ -43,6 +51,7 @@ function dep(over: Partial<DepositJournalRecord> = {}): DepositJournalRecord {
 
 describe("useActivityFeed", () => {
 	beforeEach(() => {
+		net.mainnet = false
 		records.value = []
 		runtime.value = {}
 		activeFlowId.value = null
@@ -108,11 +117,24 @@ describe("useActivityFeed", () => {
 			word: { text: "Continue", tone: "need", spoken: "delivered to Ethereum" },
 		})
 		activeFlowId.value = "expired"
-		expect(row("expired")).toMatchObject({
-			group: "done",
+		expect(row("expired")).toMatchObject({ group: "done", detail: null, word: { text: "Expired", tone: "ended" } })
+		expect(row("expired")?.word?.spoken, "testnet promises no refund").toBeUndefined()
+	})
+
+	it("an expired send on mainnet keeps the refund Across makes there, in its rows and its guide", () => {
+		net.mainnet = true
+		const rec = xcRecord({ id: "expired", completedAt: XC_CREATED + 1 }, { outcome: "expired-on-source" })
+		records.value = [rec as unknown as BridgeJournalRecord]
+		const feed = useActivityFeed()
+		expect(feed.rows.value[0]).toMatchObject({ detail: "refund pending" })
+		activeFlowId.value = "expired"
+		expect(feed.rows.value[0]).toMatchObject({
 			detail: "refund pending",
 			word: { text: "Expired", tone: "ended", spoken: "refund pending on Base Sepolia" },
 		})
+		expect(phaseGuide(rec, { kind: "expired" })).toBe(
+			"Across’s relayers didn’t deliver it within 2 hours. Refund pending on Base Sepolia, to 0x3fA8…c41d.",
+		)
 	})
 
 	it("an other-account record groups last; a gas-only foreground row shows its Fee Juice", () => {
@@ -161,7 +183,7 @@ describe("useActivityFeed", () => {
 			detail: "waiting for Ethereum · Sepolia to finalize",
 		})
 		expect(row("not-sent")).toMatchObject({ status: "lost", word: { text: "Not sent", tone: "lost" }, detail: "nothing moved" })
-		expect(row("expired")).toMatchObject({ word: { text: "Expired", tone: "ended" }, detail: "refund pending" })
+		expect(row("expired")).toMatchObject({ word: { text: "Expired", tone: "ended" }, detail: "public" })
 		expect(row("arrived")).toMatchObject({ status: "done", note: "another deposit found", amount: "4.41" })
 		expect(row("arrived")?.word).toBeUndefined()
 	})

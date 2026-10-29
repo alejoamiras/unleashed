@@ -17,7 +17,7 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { ERC20_ABI, type ManifestToken } from "@unleashed/sdk/protocol"
-import { type L1Ctx, hubExitsPaused, hubTokenFor, type SendOpts, runSend, type SendGeneration } from "@unleashed/sdk/internal"
+import { type L1Ctx, hubExitsPaused, hubTokenFor, randomField, type SendOpts, runSend, type SendGeneration } from "@unleashed/sdk/internal"
 import { sendGenerationOf } from "./script-send"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
@@ -139,7 +139,7 @@ async function bridgeOnce(lane: Lane, isPrivate: boolean): Promise<void> {
 			amount: lane.amount,
 			aztecRecipient: lane.from.toString() as `0x${string}`,
 			isPrivate,
-			claimSalt: isPrivate ? Fr.random() : undefined,
+			claimSalt: isPrivate ? randomField() : undefined,
 			nonce: BigInt(`0x${crypto.randomUUID().replaceAll("-", "")}`),
 			deadline: BigInt(Math.floor(Date.now() / 1000) + 1800),
 		},

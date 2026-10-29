@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs"
 import { type Channel, IMMUTABLE, pageHeaders } from "../../security-headers.ts"
+import { LEGAL_PAGES } from "../../src/legal-pages.ts"
 import { expect, expectClean, LIVE, test } from "./fixtures.ts"
 
 /** The build this run is checked against: the local dist/, which a live run builds at the deployed commit. */
 const DIST = new URL("../../dist/", import.meta.url)
 const reference = {
 	html: readFileSync(new URL("index.html", DIST), "utf8"),
+	legal: LEGAL_PAGES.map((page) => ({ path: page.path, html: readFileSync(new URL(page.file, DIST), "utf8") })),
 	build: JSON.parse(readFileSync(new URL("build.json", DIST), "utf8")) as { buildId: string; channel: Channel },
 	hashed: readFileSync(new URL("_headers", DIST), "utf8")
 		.split("\n")
@@ -47,6 +49,7 @@ test.describe("live host", () => {
 		const served = await (await request.get("/")).text()
 		expect(served).toContain(`<meta name="unleashed-build" content="${reference.build.buildId}">`)
 		expect(served).toBe(reference.html)
+		for (const page of reference.legal) expect(await (await request.get(page.path)).text(), page.path).toBe(page.html)
 		const injected: string[] = []
 		page.on("request", (r) => {
 			if (new URL(r.url()).pathname.startsWith("/cdn-cgi/")) injected.push(r.url())

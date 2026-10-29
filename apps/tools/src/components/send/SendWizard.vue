@@ -1162,26 +1162,54 @@ function adoptRunRecord(): void {
 watch(journal.listedRecords, adoptRunRecord)
 
 /**
- * The gas gate is re-read at CONFIRM, not trusted from when the amount step opened: gas spent
- * elsewhere meanwhile would strand the deposit at its claim. The read holds the buttons but leaves
- * the review live, so an account or chain that moves under it stands it down as usual; only a
- * review still standing when the read returns goes on to sign.
+ * An Ethereum send first passes the bridge check; then the gas gate is re-read at CONFIRM, not
+ * trusted from when the amount step opened: gas spent elsewhere meanwhile would strand the deposit
+ * at its claim. Each read holds the buttons but leaves the review live, so an account or chain that
+ * moves under it stands it down as usual; only a review still standing when the reads return goes on
+ * to sign.
  */
 async function preflight(snapshot: ReviewSnapshot): Promise<boolean> {
 	const target = snapshot.plan
 	if (target.direction === "l2-to-l1") return target.isPrivate ? privateExitPreflight(snapshot) : true
+	if (!snapshot.crossChain && !(await bridgeChecked(snapshot, target))) return false
 	const privateSlice = target.isPrivate && target.intent === "token+gas" ? (target.gas ?? null) : null
 	if (target.intent !== "token" && !privateSlice) return true
 	const repriced = await preflightReads(target.intent === "token", privateSlice !== null)
-	// The SNAPSHOT must be the one still on screen — not merely its plan, which the wizard caches
-	// across an account switch, so a review re-entered under another account would carry the same
-	// plan object and let a confirm nobody gave for it resume.
-	if (reviewed.value !== snapshot || step.value !== 2) return false
-	if (snapshot.account !== (bridge.selectedAccount.value ?? "")) return false
+	if (!reviewStands(snapshot)) return false
 	const why = preflightStandDown(target, privateSlice, repriced, snapshot.ownGasCeiling)
 	if (why === undefined) return true
 	invalidateReview(why ?? undefined)
 	return false
+}
+
+/** The SNAPSHOT must be the one still on screen — not merely its plan, which the wizard caches across an account
+ *  switch, so a review re-entered under another account would carry the same plan object and let a confirm nobody
+ *  gave for it resume. */
+function reviewStands(snapshot: ReviewSnapshot): boolean {
+	return reviewed.value === snapshot && step.value === 2 && snapshot.account === (bridge.selectedAccount.value ?? "")
+}
+
+/** An Ethereum send's bridge check, before the permission screen and every prompt: a refusal stays on the review in
+ *  the send's place, and only a review still standing when the reads return may act on them. */
+async function bridgeChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
+	const refusal = await heldCheck(plan)
+	if (!reviewStands(snapshot)) return false
+	sendFlow.error.value = refusal
+	if (refusal === null) return true
+	// An earlier attempt's decline is not why this one stopped.
+	grantState.value = "idle"
+	return false
+}
+
+/** The check under the preflighting hold. Its caller must test the review only after this resolves: dropping the hold
+ *  lets a deferred receipt request replace the review, and that watcher runs before the caller resumes. */
+async function heldCheck(plan: SendPlan): Promise<string | null> {
+	preflighting.value = true
+	try {
+		return await sendFlow.check(plan)
+	} finally {
+		preflighting.value = false
+	}
 }
 
 /** A private exit's confirm re-reads the private gas its fee is paid from, exactly as a token-only

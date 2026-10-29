@@ -5,7 +5,6 @@
  * that persist.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Account, Address, Chain, Hex, WalletClient } from "viem"
 import { BridgeError, isUserRejection, refusal, type Submission } from "../errors.ts"
 import { type Emit, eventEmitter, type Leaves } from "../events.ts"
@@ -16,6 +15,7 @@ import { PORTAL_FACTORY_ABI } from "../protocol/factory-abi.ts"
 import { feeJuiceAddress } from "../protocol/fee-juice.ts"
 import { ensurePermit2Allowance, PERMIT_DEADLINE_SECONDS } from "../protocol/l1.ts"
 import { deriveBridgeSecret } from "../protocol/private-fuel.ts"
+import { randomField } from "../protocol/random-field.ts"
 import type { DepositRecord, JournalTokenBlock } from "../records.ts"
 import { checkAbort, type DepositSecrets, persistOr, type RunOptions, untilAborted } from "../run.ts"
 import type { L1Ctx } from "./flows.ts"
@@ -47,9 +47,6 @@ export interface DepositPlan {
 	tokenBlock?: JournalTokenBlock
 	/** The hub has not registered the token yet: the first claim registers it. */
 	registers?: boolean
-	/** False skips the pause read, leaving a paused route to the router's own revert at the estimate, after the
-	 *  prompts. The public entries always read it. */
-	pauseCheck?: boolean
 }
 
 interface Leg {
@@ -89,7 +86,9 @@ const chainOf = (net: Network): Chain => ({
 	rpcUrls: { default: { http: [] } },
 })
 
-async function assertOpen(net: Network, r: Reads, intent: DepositPlan["intent"]): Promise<void> {
+/** Refuses (`paused`, nothing sent) when the contract gating `intent`'s deposits has them paused: the factory, or the
+ *  fuel gate on a network without a token bridge. A failed read throws as the read failed. */
+export async function assertDepositsOpen(net: Network, r: Reads, intent: DepositPlan["intent"]): Promise<void> {
 	const gate = (intent === "gas" ? (net.bridge?.factory ?? net.manifest.fuelRoute?.gate) : net.bridge?.factory) as Address
 	const paused = await r.l1.readContract({ address: gate, abi: PORTAL_FACTORY_ABI, functionName: "depositsPaused" })
 	if (paused) throw refusal("paused", `deposits on ${net.name} are paused`, "after-wait")
@@ -110,8 +109,8 @@ function randomNonce(): bigint {
  *  (`withDeadline`); until then it is zero, which Permit2 refuses. */
 function paramsOf(net: Network, plan: DepositPlan, swapData: Hex): { params: SendParams; secrets: DepositSecrets } {
 	const claimer = AztecAddress.fromStringUnsafe(plan.recipient)
-	const claimSalt = plan.isPrivate && plan.intent !== "gas" ? Fr.random() : undefined
-	const fuelSalt = plan.isPrivate && plan.gas ? Fr.random() : undefined
+	const claimSalt = plan.isPrivate && plan.intent !== "gas" ? randomField() : undefined
+	const fuelSalt = plan.isPrivate && plan.gas ? randomField() : undefined
 	const gas = plan.gas && {
 		fuelAmount: plan.gas.fuelAmount,
 		fuelRecipient: (plan.isPrivate ? net.privateFpc : plan.recipient) as Hex,
@@ -356,7 +355,7 @@ export async function depositL1(net: Network, r: Reads, wallet: WalletClient, pl
 	const route = routeOf(net, plan.intent)
 	const account = await accountOf(wallet)
 	await assertWalletChain(wallet, net)
-	if (plan.pauseCheck !== false) await assertOpen(net, r, plan.intent)
+	await assertDepositsOpen(net, r, plan.intent)
 	const swapData = plan.gas ? await swapDataFor(net, r, plan.token, plan.gas.fuelAmount, plan.gas.minFuelOutput) : "0x"
 	const { params, secrets } = paramsOf(net, plan, swapData)
 	let s: PreparedSend
