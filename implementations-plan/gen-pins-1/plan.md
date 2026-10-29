@@ -299,6 +299,14 @@ Stop and reassess after 3 failures on one step. Comments state invariants only.
 | L3 | Pairing check | static gate + D6 known limit (D5) | frozen sandbox suite; frozen-by-default e2e | — |
 | L4 | Chains | record on live chains, HEAD on sandbox ids, refuse others (D4) | HEAD for every non-live chain | — |
 | L5 | Arcs | one (D7) | records first, promotion later | Opus: split optional |
+| L6 | The hub artifact at the tooling's registration sites | `hubArtifactFor(m)`: the kept artifact of the live or candidate record naming that hub, else the hub target | `codeFor(m)`: a router-only pre-create runs before its candidate record exists, so it would refuse | — |
+| L7 | How bridge-core maps a chain to its network | a static table in `generation-paths.ts` | `LIVE_RECORDS`: `write --first` runs before any record exists | — |
+| L8 | Where the SDK binds the record | inside `codeOf(m)`, wrapped by `parseNetwork` as `invalid-network`; `hubArtifactOf` beside the `WeakMap` in `network.ts`, re-exported as `hubArtifact(net)` | a separate binding step | — |
+| L9 | Interface changes the plan did not name | `@unleashed/bridge-core/generation-paths` export (for `verify-deployments.ts`); `preCreateToken({ hubArtifact })`; `SWAPPER_ABI` exported for the D5 map; `writeLiveRecord(dir, files, root)` and `candidateOf` exported for tests; the consumer fixture loads through `protocol.codeOf` | — | — |
+| L10 | A fuel-route candidate in `candidateOf` | `parseManifestV2`: the placeholder has no hub to derive | `assertFaucetCandidateShape` | — |
+| L11 | CI path filters | `contracts/bridge/generations/**` added to `pr-quick.yml`'s `tools` and `sdk-pack`, which the gating test requires once the SDK bundles the records | — | — |
+| L12 | Phase order | phases 2–4 built together: the artifact parameters cross package boundaries, so one typecheck covered them; each gate ran on the result | one phase per commit | — |
+| L13 | The e2e "before" run | a `git archive` of the merge base in the scratch directory, run alongside "after" so both share one load window | sequential runs, whose wall-clock tracks the host's load | — |
 
 ### Audit verdicts
 
