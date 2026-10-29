@@ -41,13 +41,15 @@ let keyed = false
 /**
  * The entry of every keyed script. Routes the SDK's log lines through {@link redactSecrets}, then lets
  * {@link keyedNodeUrl} compose, then runs `main`; a rejection prints `redactSecrets(describe(err))` and exits 1.
- * Build the run's work inside `main`, so nothing logs or composes before the redaction is in place. The default
- * `describe` lifts `inspect`'s 10 000-character string cut, which could leave a key prefix redaction cannot match.
+ * Build the run's work inside `main`, so nothing logs or composes before the redaction is in place.
  */
 export async function runKeyed(
 	main: () => Promise<unknown>,
-	describe: (err: unknown) => string = (err) => inspect(err, { depth: 8, maxStringLength: null }),
+	describe: (err: unknown) => string = (err) => inspect(err, { depth: 8 }),
 ): Promise<void> {
+	// `inspect` cuts strings at 10 000 characters by default, the SDK's debug logs included; a cut through a keyed
+	// value would leave a prefix redaction no longer matches.
+	inspect.defaultOptions.maxStringLength = null
 	installRedactedLogging()
 	keyed = true
 	try {

@@ -37,15 +37,24 @@ describe("runKeyed", () => {
 		expect(lines.some((line) => !line.includes("Error while retrying") && line.includes("<DRPC_API_KEY>"))).toBe(true)
 	})
 
-	it("redacts a long error property whole, not after inspect's string cut", () => {
-		const { status, stderr } = bun(
+	// A node error whose data puts the key across inspect's 10 000-character cut, logged at debug and then thrown.
+	it("redacts long values whole in the SDK's debug log and in the failure", () => {
+		const { status, stdout, stderr } = bun(
 			packageDir,
-			`import { runKeyed } from "./scripts/keyed-run.ts"
-			runKeyed(async () => { throw Object.assign(new Error("cast failed"), { stderr: "x".repeat(9_990) + process.env.DRPC_API_KEY }) })`,
+			`import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
+			import { makeFetch } from "@aztec-labs/foundation/json-rpc/client"
+			import { runKeyed } from "./scripts/keyed-run.ts"
+			const key = process.env.DRPC_API_KEY
+			const error = { code: -32603, message: "failed", data: "x".repeat(10_001 - key.length) + key }
+			const server = Bun.serve({ port: 0, fetch: async (req) => Response.json((await req.json()).map(({ id }) => ({ jsonrpc: "2.0", id, error }))) })
+			runKeyed(() => createAztecNodeClient(\`http://127.0.0.1:\${server.port}/\`, { fetch: makeFetch([0], false) }).getBlockNumber())`,
+			{ LOG_LEVEL: "debug" },
 		)
+		const out = `${stdout}${stderr}`
 		expect(status, "the run failed").toBe(1)
-		expect(stderr.includes(key.slice(0, 10))).toBe(false)
-		expect(stderr.includes("<DRPC_API_KEY>")).toBe(true)
+		expect(out.includes("result aztec_getBlockNumber"), "the SDK logged the response at debug").toBe(true)
+		expect((out.match(/<DRPC_API_KEY>/g) ?? []).length >= 2, "the debug line and the failure both name the key").toBe(true)
+		expect(out.includes(key.slice(0, -1))).toBe(false)
 	})
 })
 
