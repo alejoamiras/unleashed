@@ -7,10 +7,32 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: a1 merged (#28); a2 approved (677d992) and signed (decision page 11); a2 in implementation
+status: completed (a1 #28, a2 #A2PR)
 base: main @ fb90e36 (a1); main @ e1d1c4c (a2 re-plan)
 budget: "recon: 2 Sonnet explorers; code-review: off; Codex gpt-6.1-sol at high for audits and fix loops, at max for the drafting rounds"
 ---
+
+## Outcome
+
+- **Status:** completed; a1 merged as #28, a2 delivered in PR #A2PR (a draft until the owner approves its after
+  shots), awaiting the orchestrator's merge. Delivers ask7.
+- **Shipped:** a1, the Terms of Use and the Privacy Policy, served by the landing at `/terms` and `/privacy`
+  (`packages/legal`). a2, the mainnet app's wallet-signed acceptance gate: `apps/tools/src/legal/`
+  (`acceptance.ts`, `AcceptanceGate.vue`, `MainnetRoot.vue`, `testids.ts`) and their tests, `App.vue` lazily
+  importing `MainnetRoot`, the dist rule in `scripts/legal-dist.ts`, and the signed policy edit (G3). The testnet
+  dist stays byte-identical to `main`'s (`lessons/phase-8.md`).
+- **Changed in review:** a2's Codex round 1 caught a lone gate string the testnet dist rule let through and
+  asked for a root test with the check held; the Opus review gave focus back to the button after a failed
+  signature and removed a dead guard; round 2 had no material findings. Deviation D19: the gate's testids left
+  the global `TESTIDS`.
+- **Lessons:** none promoted, because `lessons.md` is over its budget (8,365 bytes) and no entry is superseded.
+  The folding rule lives in `App.vue`'s comment; the `TESTIDS` fact in `legal-dist.ts`'s rule and
+  `lessons/phase-8.md`.
+- **Known limits:** #82 (a copied record opens the gate in another browser), #83 (the app can ask for a document
+  version the landing does not show yet, including the lazily loaded curve code across a deploy).
+- **Open items:** none filed. Before the merge: `PRIVACY.updated` reads 29 October 2026, so a later merge bumps
+  it first. After it: the owner's release step (P9), with G7's check that both sites serve the merge.
+- **Seeds:** the `/goal` and `/loop` seeds at the end are retired. They are history, not instructions.
 
 # terms-1: Terms of Use and Privacy Policy for the mainnet app
 
@@ -357,7 +379,7 @@ verify:build-target testnet && bun run --cwd apps/tools build:mainnet && bun run
 verify:build-target mainnet`, both printing ✓ (adds build), then `bun run build:landing` exit 0
 (its guard refuses an owner's blank and checks every page).
 
-**P9: review, run, PR, close-out.**
+**P9 ✓: review, run, PR, close-out.**
 
 1. The Codex fix loop on the a2 diff (Post-implementation).
 2. Claim a port: `bun apps/tools/scripts/e2e/resolve-ports.ts <state-dir> terms-1-gate $$`. In `apps/tools`,
