@@ -267,7 +267,7 @@ with `apps/tools/scripts/e2e/resolve-ports.ts`; tear down by process group.
 
 ### Arc a2: the Drip deploy on mainnet (after sdk-1 a1 merges; no screen)
 
-**2.1 The funding and the deploy.**
+**2.1 The funding and the deploy.** ✓
 1. Lift the canary's deposit and its `--fresh-selfpay` claim into `scripts/fee-juice-l2.ts`; the canary imports it.
 2. `deploy.ts --network mainnet`: the six steps of the Drip-deploy flow above; the hex key pair only.
 3. Unit tests (`fund.test.ts`, `deploy-config.test.ts`): the mainnet config derives `deployments.json`; a destination
@@ -283,7 +283,7 @@ with `apps/tools/scripts/e2e/resolve-ports.ts`; tear down by process group.
 - Gate: base commands; `bun run audit:tools`; `bun run --cwd packages/bridge-core test:integration`. Layers: unit,
   integration.
 
-**2.2 Scripts, template, runbook.**
+**2.2 Scripts, template, runbook.** ✓
 1. `apps/tools/package.json`: `deploy:mainnet`, `deploy:mainnet:dry`. `mainnet-faucet.env.example`: the deployer key
    pair, the funding key, the L1 RPC and `DRPC_API_KEY`, as names and the owner's 1Password references, no values.
 2. `SKILL.md` § "Drip catalog on mainnet": preconditions (the 6.0 identity on `main`, M7, the owner's go); the dry run
@@ -454,6 +454,9 @@ Round 1's fixes held; Codex replayed the stale-decision trace (one deposit, the 
 
 Codex also named a trust assumption: the scan trusts the RPC to return every log at or below the scanned block. The
 margin covers a lagging backend, not one that omits an old log while reporting the nonce it moved.
+
+**a2 implementation, Codex round 3 (same session): approve.** No finding; the redacted destination holds for loggers
+created before it, the wallet's and the PXE's included, and the child-process test fails without it.
 
 ## Delivery
 
