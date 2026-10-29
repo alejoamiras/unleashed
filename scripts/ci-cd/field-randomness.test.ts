@@ -5,14 +5,14 @@ import { join } from "node:path"
 /**
  * Production sources draw every fresh field (salt, claim secret, authwit nonce) from `randomField`
  * (`@unleashed/sdk/internal`), which reads WebCrypto. This matches direct references only, so an alias
- * escapes it; the SDK's own test of `randomField` covers the runtime. Tests and the local sandbox suite are
- * exempt.
+ * escapes it; the SDK's runtime test covers `randomField` and the fuel planner's default salt. Tests and
+ * the local sandbox suite are exempt.
  */
 const ROOT = join(import.meta.dir, "..", "..")
 const ROOTS = ["packages/sdk/src/", "packages/bridge-core/src/", "packages/bridge-core/scripts/", "apps/tools/src/"]
 const EXEMPT = /\.(?:test|spec)\.ts$|\/test\/|^packages\/bridge-core\/scripts\/sandbox\//
 const SOURCE = /\.(?:ts|tsx|vue)$/
-const FOUNDATION_DRAW = /\bF[rq]\s*\.\s*random\b|@aztec-labs\/foundation\/crypto\/random\b/g
+const FOUNDATION_DRAW = /\b(?:F[rq]|GrumpkinScalar|Point)\s*\.\s*random\b|@aztec-labs\/foundation\/crypto\/random\b/g
 // Doc comments name what they do not call.
 const COMMENT = /\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm
 
@@ -29,6 +29,7 @@ test("the matcher flags foundation's field generators and passes randomField", (
 		"spaced call": "const salt = Fr . random ()",
 		"passed as a value": "random: () => Fr = Fr.random,",
 		"base field": "Fq.random()",
+		"grumpkin scalar": "GrumpkinScalar.random()",
 		"module import": 'import { randomBytes } from "@aztec-labs/foundation/crypto/random"',
 		"in a comment": "/** never Fr.random() */",
 		randomField: "const salt = randomField()",
@@ -39,6 +40,7 @@ test("the matcher flags foundation's field generators and passes randomField", (
 		"spaced call: 1",
 		"passed as a value: 1",
 		"base field: 1",
+		"grumpkin scalar: 1",
 		"module import: 1",
 		"in a comment: 0",
 		"randomField: 0",
