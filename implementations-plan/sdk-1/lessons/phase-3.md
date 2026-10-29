@@ -16,3 +16,10 @@
   `swapTokensMultipleV3ERC20ToERC20` (LI.FI's fee step, then the swap); `TestnetFuelSwapper` answers only the
   single-swap entry, so the browser fixture re-encodes the recorded swap leg as a single call. The SDK pins both
   selectors, so the checks it runs are the mainnet ones.
+
+- **Review round 1: a check on a display path is not a check on the signing path.** Cell B proved the review's probe
+  refuses a quote aimed elsewhere, and its "no signature" assertion held only because the cell never confirmed. Cell
+  C flips li.quest's answer after the review, so the signing re-quote is the one that must refuse.
+- **Review round 1: a reviewer's diff against a freshly fetched trunk shows the trunk's new commits reversed.**
+  Fetching `origin/main` mid-review put #48's keyed-log redaction into `origin/main..HEAD` as a removal; Codex
+  reported it as a regression. Pin the review base to a commit, not a moving ref.

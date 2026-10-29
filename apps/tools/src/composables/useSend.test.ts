@@ -61,6 +61,7 @@ const h = vi.hoisted(() => ({
 	hubToken: { value: undefined as string | undefined },
 	sendStandaloneFjClaim: vi.fn(async (_aztec: unknown, _to: unknown, _fuel: unknown, _id: string) => {}),
 	depositL1: vi.fn(),
+	bridgeNetwork: vi.fn(),
 	rebuiltL2Token: { value: "" as string },
 }))
 
@@ -86,7 +87,7 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		FUEL_ASSET: manifest.feeJuice.asset,
 		FUEL_MIN_FJ: BigInt(manifest.feeJuice.minFj),
 		rebuildHubTokenInstance: async () => ({ address: { toString: () => h.rebuiltL2Token.value } }),
-		bridgeNetwork: async () => ({}),
+		bridgeNetwork: (reads: unknown) => h.bridgeNetwork(reads),
 	}
 })
 
@@ -464,6 +465,7 @@ describe("useSend", () => {
 		h.signMessage.mockImplementation(async () => SEAL_SIG)
 		h.resolveHubClaimSendOpts.mockImplementation(async () => ({ kind: "opts", opts: {} }))
 		h.depositL1.mockImplementation(fakeDeposit())
+		h.bridgeNetwork.mockImplementation(async () => ({}))
 		h.signTypedData.mockImplementation(async () => "0xsig")
 		h.writeContract.mockImplementation(async () => "0xl1tx")
 	})
@@ -1018,6 +1020,17 @@ describe("useSend", () => {
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
 		expect(send.error.value).toMatch(/on chain 1/)
+		expect(h.depositL1).not.toHaveBeenCalled()
+		expect(useBridgeJournal().records.value).toHaveLength(0)
+	})
+
+	it("a node whose Ethereum reads disagree with the manifest refuses before any prompt, in this app's words", async () => {
+		h.bridgeNetwork.mockImplementation(async () => {
+			throw new BridgeError("wrong-chain", "the Ethereum reads are on chain 1, not 31337", "none", "safe")
+		})
+		const send = useSend()
+		expect(await send.send(plan())).toBe("")
+		expect(send.error.value).toMatch(/Your Ethereum wallet is on chain 1, but this bridge lives on chain 31337/)
 		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})

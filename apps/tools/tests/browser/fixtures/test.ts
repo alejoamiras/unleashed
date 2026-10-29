@@ -40,6 +40,8 @@ interface Fixtures {
 	relayer: RelayerControl
 	/** Whether li.quest's gas quote is answered, and how — `test.use({ lifiQuote: "recorded" })`; unset, it is blocked. */
 	lifiQuote: LifiQuoteFixture | undefined
+	/** li.quest's answer now; `set` changes it mid-test, in a file that sets `lifiQuote`. */
+	lifi: { readonly mode: LifiQuoteFixture | undefined; set(mode: LifiQuoteFixture): void }
 }
 
 /** Worker-scoped = per spec file: Playwright reuses a worker across files whose worker options
@@ -153,10 +155,23 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 		await use(control)
 	},
 
+	lifi: async ({ lifiQuote }, use) => {
+		const answered = { mode: lifiQuote }
+		await use({
+			get mode() {
+				return answered.mode
+			},
+			set(mode) {
+				if (!answered.mode) throw new Error("li.quest is blocked in this file: set `lifiQuote` first")
+				answered.mode = mode
+			},
+		})
+	},
+
 	egress: [
-		async ({ context, tokenList, lifiQuote, sandbox }, use) => {
+		async ({ context, tokenList, lifi, sandbox }, use) => {
 			const deps = { pub: sandbox.clients.l1.pub, swapper: fuelSwapperOf(sandbox) }
-			const answer = lifiQuote && ((url: URL) => answerLifiQuote(url, deps, lifiQuote))
+			const answer = lifi.mode && ((url: URL) => answerLifiQuote(url, deps, lifi.mode ?? "recorded"))
 			const egress = await confineEgress(context, tokenList, answer)
 			await use(egress)
 			expect(egress.blocked, "every request stayed on loopback").toEqual([])

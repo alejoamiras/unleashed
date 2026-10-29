@@ -639,11 +639,11 @@ async function executeSend(ctx: RunCtx): Promise<string> {
 	await assertL1Chain(actors.l1)
 	// Every read of the send goes through the wallet's own client, as the signature does.
 	const reads: Reads = { l1: actors.l1.publicClient as unknown as PublicClient, aztecNode: appNode() }
-	const net = await bridgeNetwork(reads)
 	const row: SendRow = { ctx }
 	const receiptWait = new AbortController()
 	let timer: ReturnType<typeof setTimeout> | undefined
 	try {
+		const net = await bridgeNetwork(reads)
 		const record = await depositL1(net, reads, sdkWallet(row), depositPlanOf(plan, actors.recipient), {
 			persist: (record, secrets) => persistSend(row, record, secrets),
 			onEvent: (e) => {

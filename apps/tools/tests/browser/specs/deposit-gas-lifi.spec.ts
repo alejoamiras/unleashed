@@ -10,7 +10,7 @@ import { connectAztec, tid } from "../pages/connect"
 import { depositRecords, fuelConservation } from "../pages/journal"
 import { confirmReview, connectL1, openSend, reviewDeposit, setVisibility, startDeposit, waitForReceipt } from "../pages/send"
 
-test.use({ family: "deposit-gas-lifi", cells: 2, l1Index: 10, lifiQuote: "recorded" })
+test.use({ family: "deposit-gas-lifi", cells: 3, l1Index: 10, lifiQuote: "recorded" })
 
 const LIFI_BUNDLE = "/lifi/"
 const L1 = 31337
@@ -57,23 +57,49 @@ test("cell A — the review names LI.FI's venue, and a gas-only send through its
 	expect(await balanceOf(actor.s.feeJuiceL2, actor.actor.address, "public")).toBe(fjBefore + received - fee)
 })
 
-test.describe("a quote aimed at another contract", () => {
-	test.use({ lifiQuote: "hostile" })
+test("cell B — a quote aimed at another contract leaves the gas route blocked, so the review cannot offer gas", async ({
+	page,
+	sandbox,
+	actor,
+	l1,
+	egress,
+	lifi,
+}) => {
+	lifi.set("hostile")
+	const { usdt } = sandbox.tokens
+	await mint(sandbox.clients.l1, usdt.erc20 as `0x${string}`, l1.address, 30n * USDC)
 
-	test("cell B — leaves the gas route blocked and opens no prompt", async ({ page, sandbox, actor, l1, egress }) => {
-		const { usdt } = sandbox.tokens
-		await mint(sandbox.clients.l1, usdt.erc20 as `0x${string}`, l1.address, 30n * USDC)
+	await page.goto(LIFI_BUNDLE)
+	await openSend(page)
+	await connectL1(page)
+	await connectAztec(page, { profile: "plain", account: actor.address })
+	await startDeposit(page, { l1ChainId: L1, erc20: usdt.erc20, amount: "30" })
+	await setVisibility(page, false)
+	await expect(page.locator(tid(TESTIDS.sendRouteStatus))).toHaveAttribute("data-route", "no-route", { timeout: 60_000 })
+	await expect(page.locator(tid(TESTIDS.sendChoiceTokenGas))).toBeDisabled()
+	await expect(page.locator(tid(TESTIDS.sendChoiceGas))).toBeDisabled()
+	expect(egress.quoted.length, "the route was asked for, and refused").toBeGreaterThan(0)
+})
 
-		await page.goto(LIFI_BUNDLE)
-		await openSend(page)
-		await connectL1(page)
-		await connectAztec(page, { profile: "plain", account: actor.address })
-		await startDeposit(page, { l1ChainId: L1, erc20: usdt.erc20, amount: "30" })
-		await setVisibility(page, false)
-		await expect(page.locator(tid(TESTIDS.sendRouteStatus))).toHaveAttribute("data-route", "no-route", { timeout: 60_000 })
-		await expect(page.locator(tid(TESTIDS.sendChoiceTokenGas))).toBeDisabled()
-		await expect(page.locator(tid(TESTIDS.sendChoiceGas))).toBeDisabled()
-		expect(egress.quoted.length, "the route was asked for, and refused").toBeGreaterThan(0)
-		expect(l1.signatures, "nothing reached the Ethereum wallet").toBe(0)
-	})
+test("cell C — a quote that turns hostile after the review is refused at the signature's re-quote, before any prompt", async ({
+	page,
+	sandbox,
+	actor,
+	l1,
+	lifi,
+}) => {
+	const { usdt } = sandbox.tokens
+	await mint(sandbox.clients.l1, usdt.erc20 as `0x${string}`, l1.address, 30n * USDC)
+
+	await page.goto(LIFI_BUNDLE)
+	await openSend(page)
+	await connectL1(page)
+	await connectAztec(page, { profile: "plain", account: actor.address })
+	await reviewDeposit(page, { l1ChainId: L1, erc20: usdt.erc20, amount: "30", intent: "gas", isPrivate: false })
+	lifi.set("hostile")
+	await expect(confirmReview(page)).rejects.toThrow(/The gas price moved since you reviewed this send/)
+	for (const method of ["eth_signTypedData_v4", "eth_sendTransaction"]) {
+		expect(l1.calls(method), `${method} never reached the Ethereum wallet`).toBe(0)
+	}
+	expect(await depositRecords(page), "a send refused before its signature leaves no row").toEqual([])
 })
