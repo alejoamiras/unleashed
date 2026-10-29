@@ -35,6 +35,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [fuel-l1-mint](fuel-l1-mint/plan.md) — archived — Fuel L1 mint — `/blueprint light`
 - [fuel-portal-v5-fix](fuel-portal-v5-fix/plan.md) — archived — Fuel-bridge Fee-Juice portal V5 fix
 - [journal-engine-decomposition](journal-engine-decomposition/plan.md) — archived — journal-engine-decomposition (arc 4, monster 3 of 3)
+- [keyed-logs-1](keyed-logs-1/plan.md) — archived — keyed-logs-1 — one redacted entry for every keyed script (runKeyed, keyedNodeUrl)
 - [landing](landing/plan.md) — archived — option C "Dither tide" at unleashed.systems and www, on its own assets-only Worker
 - [lifi-routing](lifi-routing/plan.md) — archived — deposits from L2s through LI.FI with token and gas, Uniswap removed
 - [no-fuel-claim-fee-source](no-fuel-claim-fee-source/plan.md) — archived — No-fuel claim fee source — pay from public OR private Fee Juice
