@@ -146,7 +146,7 @@ export function crossChainExpectation(
 		destToken: b.destToken.erc20 as Address,
 		feeAsset: b.feeAsset,
 		routerCall: p.routerCall,
-		...(p.hasFuel ? { fuel: { provider: "testnetSwapper" as const } } : {}),
+		...(p.hasFuel ? { fuel: { provider: "testnetSwapper" as const }, fuelSwapper: b.fuelSwapper } : {}),
 		rail: {
 			kind: "acrossV4",
 			outputAmount: p.terms.outputAmount,

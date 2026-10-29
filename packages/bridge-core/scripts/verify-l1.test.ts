@@ -19,6 +19,7 @@ describe("judgeBook", () => {
 		executor: at(2),
 		receiverAcrossV4: at(3),
 		feeForwarder: at(4),
+		fuelVenues: {},
 		facets: { [SELECTOR]: at(5), [BRIDGE]: at(8) },
 		acrossSpokePool: at(6),
 		codeHashes: { executor: keccak256(codeOf(2)), receiverAcrossV4: keccak256(codeOf(3)), feeForwarder: keccak256(codeOf(4)) },
