@@ -9,6 +9,7 @@ import { BridgeError, refusal } from "./errors.ts"
 import { mismatches, networkBindings } from "./execution/trust-roots.ts"
 import { fuelRouteOf, type ManifestFuelRoute, sendGenerationOf } from "./execution/send-generation.ts"
 import type { SendGeneration } from "./execution/send-flow.ts"
+import { deepFreeze } from "./protocol/freeze.ts"
 import { aztecLineOf } from "./protocol/aztec-line.ts"
 import { CANONICAL_PERMIT2, MAINNET_L1, MAX_FUEL_SLIPPAGE_BPS } from "./protocol/l1-pins.ts"
 import { assertManifestTokensDerive, type ManifestToken, type ManifestV2, parseManifestV2 } from "./protocol/manifest-v2.ts"
@@ -74,6 +75,9 @@ function assertStaticRoots(m: ManifestV2, fuel: ManifestFuelRoute | undefined): 
 	if (!same(fuel.permit2, CANONICAL_PERMIT2)) throw refusal("invalid-network", `permit2 ${fuel.permit2} is not the canonical Permit2`)
 	if (fuel.slippageBps > MAX_FUEL_SLIPPAGE_BPS)
 		throw refusal("invalid-network", `slippage ${fuel.slippageBps} bps is above the ${MAX_FUEL_SLIPPAGE_BPS} bps this release allows`)
+	// A deposit lands at least the route's floor; under the claim's own floor it would land gas no claim can spend.
+	if (fuel.minFuelFj < BigInt(m.feeJuice.minFj))
+		throw refusal("invalid-network", `the route's fuel floor ${fuel.minFuelFj} is under the claim floor ${m.feeJuice.minFj}`)
 	if (m.l1ChainId !== 1) return
 	const pinned = [
 		["registry", registryOf(m), MAINNET_L1.registry],
@@ -130,7 +134,7 @@ async function assertChainRoots(m: ManifestV2, r: Reads): Promise<void> {
  * this release's builds bound to the registry's canonical rollup.
  */
 export async function parseNetwork(manifest: unknown, r: Reads): Promise<Network> {
-	const m = parsed(manifest)
+	const m = deepFreeze(parsed(manifest))
 	const route = fuelRouteOf(m)
 	assertStaticRoots(m, route)
 	const rollupVersion = await assertNodeRoots(m, r)

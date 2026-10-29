@@ -98,7 +98,7 @@ describe("the events of a deposit", () => {
 		expect(record.intent).toBe("gas")
 	})
 
-	it("a private token + gas deposit with Permit2 already allowed: no approval events, and no salt in any record or event", async () => {
+	it("a private token + gas deposit with Permit2 already allowed: no approval events, the salts with every persist and in no record or event", async () => {
 		const log: Step[] = []
 		const w = worldOf(testnet())
 		const token = w.m.bridge?.tokens.find((t) => t.erc20.toLowerCase() !== w.m.feeJuice.asset.toLowerCase())
@@ -130,8 +130,10 @@ describe("the events of a deposit", () => {
 		const record = await depositToken(net, r, walletOf(log, net.l1ChainId), quote, run)
 		expect(events().map((e) => e.type)).toEqual(["prepared", "signature-requested", "deposit-sent", "deposit-confirmed"])
 		assertPersistedFirst(entries)
-		const secrets = entries.flatMap((e) => ("secrets" in e && e.secrets ? [e.secrets] : []))
-		expect(secrets).toHaveLength(1)
+		// Every persist carries the salts, so a store that keeps only the latest pair never loses them.
+		const persists = entries.filter((e) => "persisted" in e)
+		const secrets = persists.map((e) => ("secrets" in e ? e.secrets : undefined))
+		expect(secrets.every((x) => x === secrets[0] && x !== undefined)).toBe(true)
 		const salts = [secrets[0]?.claimSalt, secrets[0]?.fuelSalt].map((s) => (s as Fr).toString())
 		expect(salts.every((s) => Fr.fromHexString(s) instanceof Fr)).toBe(true)
 		const published = JSON.stringify(

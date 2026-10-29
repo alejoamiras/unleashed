@@ -5,6 +5,7 @@ import { type FuelVenue, isFeeAsset, quoteSlice } from "../execution/fuel-venue.
 import { assertRecipient, probeFuel } from "../fuel/quote.ts"
 import { assertNetwork, type Network, type Privacy, type Reads } from "../network.ts"
 import { proposeGasShare } from "../protocol/gas-share.ts"
+import { madeQuote } from "../quote-proof.ts"
 import type { BridgeToken } from "./token.ts"
 
 /** The gas a token deposit buys on the way in. */
@@ -93,13 +94,15 @@ export async function quoteBridge(
 	if (q.amount <= 0n) throw refusal("invalid-request", "amount must be positive")
 	await assertRecipient(q.recipient)
 	const gas = q.gas ? await gasLeg(net, r, { ...q, gas: q.gas }) : undefined
-	return Object.freeze({
-		network: net,
-		token: q.token,
-		amount: q.amount,
-		tokenAmount: q.amount - (gas?.fuelAmount ?? 0n),
-		recipient: q.recipient,
-		privacy: q.privacy,
-		...(gas ? { gas } : {}),
-	})
+	return madeQuote(
+		Object.freeze({
+			network: net,
+			token: q.token,
+			amount: q.amount,
+			tokenAmount: q.amount - (gas?.fuelAmount ?? 0n),
+			recipient: q.recipient,
+			privacy: q.privacy,
+			...(gas ? { gas } : {}),
+		}),
+	)
 }

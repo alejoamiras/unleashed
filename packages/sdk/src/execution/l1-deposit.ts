@@ -23,13 +23,15 @@ import { swapDataFor } from "./fuel-venue.ts"
 import { awaitL1Receipt } from "./l1-receipt.ts"
 import {
 	confirmSend,
+	estimateSend,
 	type FuelRoute,
 	type PreparedSend,
 	prepareSend,
+	readSendInbox,
 	type SendParams,
 	type SendResult,
 	signSend,
-	submitSend,
+	writeSend,
 } from "./send-flow.ts"
 
 /** What a reviewed quote commits the leg to. */
@@ -54,6 +56,8 @@ interface Leg {
 	route: FuelRoute
 	run: RunOptions
 	record: DepositRecord
+	/** Handed to every persist, so a store that keeps the latest `(record, secrets)` pair never loses them. */
+	secrets: DepositSecrets | undefined
 	emit: Emit
 }
 
@@ -173,7 +177,7 @@ function recordOf(net: Network, plan: DepositPlan, s: PreparedSend, sender: Addr
 
 async function persistStep(leg: Leg, patch: Partial<DepositRecord>, submission: Submission): Promise<void> {
 	leg.record = { ...leg.record, ...patch, updatedAt: Date.now() } as DepositRecord
-	await persistOr(leg.run, leg.record, submission)
+	await persistOr(leg.run, leg.record, submission, leg.secrets)
 }
 
 /** The one-time `approve(Permit2, max)` when the allowance is short: its hash persisted, then reported. */
@@ -213,8 +217,10 @@ async function approve(leg: Leg, token: Address, needed: bigint): Promise<void> 
 		done = await ensurePermit2Allowance({ allowance, approveMax, waitReceipt, needed })
 	} catch (e) {
 		if (e instanceof BridgeError) throw e
-		// A reverted or ineffective approval moved nothing; the token refuses Permit2 and a retry cannot help.
-		throw new BridgeError("approval-failed", messageOf(e), "none", "never", { cause: e })
+		// A reverted approval means the token refuses Permit2, which no retry changes. One not yet confirmed, or an
+		// allowance read that lags it, moved nothing either; the next call reads the allowance again.
+		const refused = /approval reverted/i.test(messageOf(e))
+		throw new BridgeError("approval-failed", messageOf(e), "none", refused ? "never" : "after-wait", { cause: e })
 	}
 	if (done.txHash) leg.emit({ type: "approval", status: "confirmed", txHash: done.txHash })
 }
@@ -256,34 +262,72 @@ async function sendDeposit(leg: Leg, s: PreparedSend, wallet: WalletClient): Pro
 	try {
 		signature = await signSend(leg.l1, leg.route, s)
 	} catch (e) {
+		// Nothing was signed: a wallet that failed here moved nothing, and the next call signs afresh.
 		throw isUserRejection(e)
 			? refusal("user-rejected", "the deposit signature was refused", "safe", e)
-			: refusal("invalid-request", messageOf(e), "never", e)
+			: refusal("invalid-request", `the wallet did not sign the deposit: ${messageOf(e)}`, "safe", e)
+	}
+	let estimate: bigint
+	try {
+		estimate = await estimateSend(leg.l1, leg.route, s, signature)
+	} catch (e) {
+		// A simulated revert (an expired permit, a quote the venue no longer honours) sends nothing; the next call
+		// quotes and signs again.
+		throw refusal("deposit-reverted", `the deposit would revert: ${messageOf(e)}`, "safe", e)
 	}
 	try {
-		return await submitSend(leg.l1, leg.route, s, signature, chainOf(leg.net))
+		return await writeSend(leg.l1, leg.route, s, signature, estimate, chainOf(leg.net))
 	} catch (e) {
 		if (isUserRejection(e)) throw refusal("user-rejected", "the deposit transaction was refused", "safe", e)
 		throw new BridgeError("deposit-reverted", `the deposit could not be sent: ${messageOf(e)}`, "unknown", "never", { cause: e })
 	}
 }
 
-async function confirmDeposit(leg: Leg, s: PreparedSend, txHash: Hex): Promise<void> {
-	let receipt: { status: string; logs: never }
+/** Once the deposit's hash is stored a second deposit call would move the funds again: every failure from here says
+ *  never, and the claim entry recovers the rest from the receipt. */
+const RESUME = "claimFuel or claimToken recovers it from the receipt"
+
+async function awaitDeposit(leg: Leg, txHash: Hex): Promise<{ status: string; logs: never }> {
 	try {
-		receipt = (await untilAborted(awaitL1Receipt(leg.l1.pub as never, txHash), leg.run, "submitted")) as never
+		return (await untilAborted(awaitL1Receipt(leg.l1.pub as never, txHash), leg.run, "submitted")) as never
 	} catch (e) {
-		if (e instanceof BridgeError) throw e
 		const reverted = e instanceof Error && /reverted on-chain/.test(e.message)
 		if (reverted)
 			throw new BridgeError("deposit-reverted", `the deposit ${txHash} reverted; nothing moved`, "submitted", "safe", { cause: e })
-		throw new BridgeError("receipt-timeout", `the deposit ${txHash} is not confirmed yet`, "submitted", "after-wait", { cause: e })
+		const code = e instanceof BridgeError ? e.code : "receipt-timeout"
+		throw new BridgeError(code, `the deposit ${txHash} is not confirmed yet; ${RESUME}`, "submitted", "never", { cause: e })
+	}
+}
+
+async function confirmDeposit(leg: Leg, s: PreparedSend, txHash: Hex): Promise<void> {
+	const receipt = await awaitDeposit(leg, txHash)
+	let inbox: Awaited<ReturnType<typeof readSendInbox>>
+	try {
+		inbox = await readSendInbox(leg.l1.pub, leg.route)
+	} catch (e) {
+		throw new BridgeError(
+			"read-failed",
+			`the deposit ${txHash} landed but its Inbox could not be read; ${RESUME}`,
+			"submitted",
+			"never",
+			{
+				cause: e,
+			},
+		)
 	}
 	let res: SendResult
 	try {
-		res = await confirmSend(leg.l1, leg.route, s, txHash, receipt)
+		res = await confirmSend(leg.l1, leg.route, s, txHash, receipt, inbox)
 	} catch (e) {
-		throw new BridgeError("receipt-mismatch", `the deposit ${txHash} did not carry this transfer`, "submitted", "never", { cause: e })
+		throw new BridgeError(
+			"receipt-mismatch",
+			`the deposit ${txHash} could not be matched to this transfer; ${RESUME}`,
+			"submitted",
+			"never",
+			{
+				cause: e,
+			},
+		)
 	}
 	const l2Block = await leg.r.aztecNode.getBlockNumber().catch(() => undefined)
 	await persistStep(leg, confirmedPatch(leg, res, l2Block === undefined ? undefined : Number(l2Block)), "submitted")
@@ -307,7 +351,7 @@ export async function depositL1(net: Network, r: Reads, wallet: WalletClient, pl
 	}
 	const l1: L1Ctx = { pub: r.l1, wallet, account }
 	const record = recordOf(net, plan, s, account.address)
-	const leg: Leg = { net, r, l1, route, run, record, emit: eventEmitter(record.id, run.onEvent) }
+	const leg: Leg = { net, r, l1, route, run, record, secrets, emit: eventEmitter(record.id, run.onEvent) }
 	checkAbort(run, "none")
 	await persistOr(run, record, "none", secrets)
 	leg.emit({ type: "prepared" })

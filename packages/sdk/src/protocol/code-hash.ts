@@ -5,24 +5,28 @@
  */
 import { type Hex, keccak256 } from "viem"
 import pins from "./code-pins.json" with { type: "json" }
+import { deepFreeze } from "./freeze.ts"
 
 export interface ImmutableSpan {
 	start: number
 	length: number
 }
 
-/** A build's masked runtime: its length, where its metadata trailer starts, its immutable spans, and the hash. */
+/**
+ * A build's masked runtime: its length, where its metadata trailer starts, its immutables (each the spans of one
+ * immutable's copies, which solc inlines wherever the code reads it), and the hash.
+ */
 export interface CodePin {
 	length: number
 	trailerStart: number
-	immutables: ImmutableSpan[]
+	immutables: ImmutableSpan[][]
 	hash: Hex
 }
 
 export type PinnedContract = "DepositRouter" | "PortalFactory" | "TokenPortalImpl" | "FuelOnlyGate" | "TestnetFuelSwapper"
 
 /** The pins of this release's contract builds, regenerated from the forge output by `scripts/code-pins.ts`. */
-export const CODE_PINS = pins as Record<PinnedContract, CodePin>
+export const CODE_PINS = deepFreeze(pins) as Readonly<Record<PinnedContract, CodePin>>
 
 /**
  * The size of solc's metadata trailer: a CBOR map and its 2-byte big-endian length. A sanity check on trusted
@@ -40,25 +44,34 @@ export function metadataTrailerSize(code: Uint8Array): number {
 	return size
 }
 
-function maskedHash(code: Uint8Array, immutables: readonly ImmutableSpan[], trailerStart: number): Hex {
+function maskedHash(code: Uint8Array, immutables: readonly (readonly ImmutableSpan[])[], trailerStart: number): Hex {
 	const masked = Uint8Array.from(code)
-	for (const s of immutables) masked.fill(0, s.start, s.start + s.length)
+	for (const s of immutables.flat()) masked.fill(0, s.start, s.start + s.length)
 	return keccak256(masked.fill(0, trailerStart))
 }
 
 /** A build's pin. forge omits the immutable map for a contract with none; an empty map then masks nothing. */
 export function pinOfBuild(built: Uint8Array, immutables: Record<string, ImmutableSpan[]> = {}): CodePin {
-	const spans = Object.values(immutables)
-		.flat()
-		.sort((a, b) => a.start - b.start)
+	const groups = Object.values(immutables)
+		.map((copies) => [...copies].sort((a, b) => a.start - b.start))
+		.sort((a, b) => (a[0]?.start ?? 0) - (b[0]?.start ?? 0))
 	const trailerStart = built.length - metadataTrailerSize(built)
-	return { length: built.length, trailerStart, immutables: spans, hash: maskedHash(built, spans, trailerStart) }
+	return { length: built.length, trailerStart, immutables: groups, hash: maskedHash(built, groups, trailerStart) }
+}
+
+/** Whether every copy of each immutable holds the same bytes: a getter reads one copy, so a check through it binds
+ *  the others only when they agree. */
+function copiesAgree(code: Uint8Array, immutables: readonly (readonly ImmutableSpan[])[]): boolean {
+	const bytes = (s: ImmutableSpan) => code.subarray(s.start, s.start + s.length).join(",")
+	return immutables.every((copies) => copies.every((s) => bytes(s) === bytes(copies[0] as ImmutableSpan)))
 }
 
 /**
- * Deployed code under its build's mask, or undefined when the lengths differ. Both masks come from the build, so the
- * result equals `pin.hash` exactly when the deployment differs from the build only in its immutables and its trailer.
+ * Deployed code under its build's mask, or undefined when the lengths differ or an immutable's copies disagree. Both
+ * masks come from the build, so the result equals `pin.hash` exactly when the deployment differs from the build only
+ * in its immutables, each written alike wherever it is read, and in its trailer.
  */
 export function deployedHash(onChain: Uint8Array, pin: CodePin): Hex | undefined {
-	return onChain.length === pin.length ? maskedHash(onChain, pin.immutables, pin.trailerStart) : undefined
+	if (onChain.length !== pin.length || !copiesAgree(onChain, pin.immutables)) return undefined
+	return maskedHash(onChain, pin.immutables, pin.trailerStart)
 }

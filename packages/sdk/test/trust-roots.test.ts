@@ -31,12 +31,17 @@ describe("parseNetwork's trust roots", () => {
 		expect(Object.isFrozen(net)).toBe(true)
 	})
 
-	it("refuses a genuine router bound to the attacker's Permit2, portal or swap target", async () => {
+	it("refuses a genuine router bound to the attacker's Permit2, portal or swap target, or a swapper paying another asset", async () => {
 		for (const fn of ["PERMIT2", "FEE_JUICE_PORTAL", "SWAP_TARGET"]) {
 			const w = worldOf(testnet())
 			w.reads.set(`${router(w).toLowerCase()}:${fn}`, ATTACKER)
 			await refusedWith(w, "invalid-network", new RegExp(`depositRouter.${fn}`))
 		}
+		const swapper = worldOf(testnet())
+		const listed = swapper.m.bridge?.l1.fuelSwapper
+		if (!listed) throw new Error("the testnet manifest lists a fuel swapper")
+		swapper.reads.set(`${listed.toLowerCase()}:FEE_ASSET`, ATTACKER)
+		await refusedWith(swapper, "invalid-network", /fuelSwapper.FEE_ASSET/)
 	})
 
 	it("refuses a manifest naming a non-canonical Permit2 or a slippage above the cap, before any read", async () => {

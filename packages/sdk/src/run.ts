@@ -11,7 +11,8 @@ export interface DepositSecrets {
 
 export interface RunOptions {
 	/** Awaited before the first wallet prompt, then before each event that names a new fact. A rejection before the
-	 *  signature aborts with nothing signed. */
+	 *  signature aborts with nothing signed. A private transfer's `secrets` come with every call, so a store that keeps
+	 *  the latest pair never loses them; the record never holds them. */
 	persist(record: DepositRecord, secrets?: DepositSecrets): Promise<void>
 	/** Display only; a throw here never changes the run. */
 	onEvent?(e: TransferEvent): void

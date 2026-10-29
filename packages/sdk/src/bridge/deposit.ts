@@ -2,6 +2,7 @@ import type { WalletClient } from "viem"
 import { refusal } from "../errors.ts"
 import { depositL1 } from "../execution/l1-deposit.ts"
 import { assertNetwork, type Network, type Reads } from "../network.ts"
+import { assertQuote } from "../quote-proof.ts"
 import type { DepositRecord } from "../records.ts"
 import type { RunOptions } from "../run.ts"
 import type { BridgeQuote } from "./quote.ts"
@@ -15,6 +16,7 @@ import { tokenBlockOf } from "./token.ts"
 export function depositToken(net: Network, r: Reads, l1: WalletClient, quote: BridgeQuote, run: RunOptions): Promise<DepositRecord> {
 	assertNetwork(net)
 	if (quote.network !== net) throw refusal("invalid-request", "the quote was made for another network")
+	assertQuote(quote)
 	return depositL1(
 		net,
 		r,

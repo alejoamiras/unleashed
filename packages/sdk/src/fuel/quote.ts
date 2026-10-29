@@ -1,5 +1,6 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Address } from "viem"
+import { madeQuote } from "../quote-proof.ts"
 import { refusal } from "../errors.ts"
 import { type FuelVenue, isFeeAsset, quoteRefusal, quoteSlice, venueOf } from "../execution/fuel-venue.ts"
 import { assertNetwork, type Network, type Privacy, type Reads } from "../network.ts"
@@ -61,15 +62,17 @@ export async function quoteFuel(
 	if (q.amount <= 0n) throw refusal("invalid-request", "amount must be positive")
 	await assertRecipient(q.recipient)
 	const s = await quoteSlice(net, r, q.token, q.amount)
-	return Object.freeze({
-		network: net,
-		token: q.token,
-		amount: q.amount,
-		recipient: q.recipient,
-		privacy: q.privacy,
-		venue: s.venue,
-		...(s.tool ? { tool: s.tool } : {}),
-		expectedFj: s.expectedOut,
-		minFj: s.minOut,
-	})
+	return madeQuote(
+		Object.freeze({
+			network: net,
+			token: q.token,
+			amount: q.amount,
+			recipient: q.recipient,
+			privacy: q.privacy,
+			venue: s.venue,
+			...(s.tool ? { tool: s.tool } : {}),
+			expectedFj: s.expectedOut,
+			minFj: s.minOut,
+		}),
+	)
 }

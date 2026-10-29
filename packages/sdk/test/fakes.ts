@@ -46,7 +46,7 @@ export function mainnetFuelRoute(router: string, slippageBps = 100): ManifestV2 
 			guardian: addr(0x6a8d),
 			registry: MAINNET_L1.registry,
 			permit2: CANONICAL_PERMIT2,
-			fuel: { slippageBps, minFuelFj: "1000", fjPerTx: "40" },
+			fuel: { slippageBps, minFuelFj: "20000000000000000000", fjPerTx: "2000000000000000000" },
 		},
 	})
 }
@@ -95,7 +95,10 @@ export function worldOf(m: ManifestV2): World {
 		[(route.depositRouter as string).toLowerCase(), runtime(1, 0x33)],
 		[factory.toLowerCase(), runtime(m.bridge ? 2 : 4, 0x33)],
 	])
-	if (route.fuelSwapper) code.set(route.fuelSwapper.toLowerCase(), runtime(5, 0x33))
+	if (route.fuelSwapper) {
+		code.set(route.fuelSwapper.toLowerCase(), runtime(5, 0x33))
+		set(route.fuelSwapper, "FEE_ASSET", m.feeJuice.asset)
+	}
 	if (m.bridge) {
 		const b = m.bridge
 		for (const [fn, v] of [

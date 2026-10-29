@@ -28,15 +28,16 @@ import {
 import { patchFuel } from "../execution/fee-env.ts"
 import { type HubClaimFee, resolveHubClaimSendOpts } from "../execution/fee-ladder.ts"
 import { FeeStopError } from "../execution/fee-stop.ts"
-import { isPrivateFuelInsufficiency } from "../execution/fuel-claim-state.ts"
-import { sendStandaloneFjClaim } from "../execution/fuel-settlement.ts"
+import { isPrivateFuelInsufficiency, PRIVATE_ATTEMPT_STALE_MS } from "../execution/fuel-claim-state.ts"
+import { claimFuelBlock, fuelNullifierState } from "../execution/fuel-block-claim.ts"
 import { type Registration, readRegistration } from "../execution/factory-registry.ts"
 import { claimViaHub, type HubClaimParams, hubAt, hubTokenFor, probeHubClaim, type SendOpts } from "../execution/hub-l2.ts"
+import { registrationToBlock } from "../execution/send-flow.ts"
 import { isMsgNotReady } from "../execution/message-errors.ts"
 import { hubMessageState, type TokenMessageState } from "../execution/message-nullifier.ts"
 import type { Network, Reads, TokenRoute } from "../network.ts"
 import { deriveHubTokenInstance } from "../protocol/hub-token.ts"
-import type { DepositFuelBlock, DepositRecord, JournalTokenBlock } from "../records.ts"
+import type { DepositRecord, JournalTokenBlock } from "../records.ts"
 import { untilAborted } from "../run.ts"
 
 const SUBMITTED = "submitted" as const
@@ -64,25 +65,30 @@ async function registrationOf(leg: ClaimLeg, bridge: TokenRoute, erc20: string):
 
 /**
  * The record's token must still be the one the factory froze and the hub derives: a record edited or restored from
- * elsewhere could otherwise aim the claim, or a registration, at another token. Returns the block with the frozen
- * register key and index a first claim registers with, persisted when the record lacked them.
+ * elsewhere could otherwise aim the claim, or a registration, at another token. A block the deposit never froze (its
+ * receipt was not read before a crash) is the quote's prediction; the registration replaces it, as confirmation does.
  */
 async function frozenTokenBlock(leg: ClaimLeg, bridge: TokenRoute): Promise<JournalTokenBlock> {
 	const token = tokenOf(leg)
 	const reg = await registrationOf(leg, bridge, token.erc20)
 	if (!reg || !same(reg.portal, token.portal)) throw refused("the record's token has no portal on this network")
+	if (token.registerKey === undefined) {
+		const frozen = await registrationToBlock(bridge, token.erc20 as Address, reg)
+		await persistClaim(leg, { token: frozen } as Partial<DepositRecord>)
+		return frozen
+	}
 	const words = same(reg.nameWord, token.nameWord) && same(reg.symbolWord, token.symbolWord) && reg.decimals === token.decimals
 	const keyed =
-		(token.registerKey === undefined || same(reg.registerKey, token.registerKey)) &&
+		same(reg.registerKey, token.registerKey) &&
 		(token.registerIndex === undefined || reg.registerIndex.toString() === token.registerIndex)
 	if (!words || !keyed) throw refused("the record's token no longer matches its registration on Ethereum")
 	const hub = AztecAddress.fromStringUnsafe(bridge.hub)
 	const derived = await deriveHubTokenInstance(hub, token.erc20, reg, bridge.tokenClassId)
 	if (!same(derived.address.toString(), token.l2Token)) throw refused("the record names an Aztec token the hub does not derive")
-	if (token.registerKey !== undefined && token.registerIndex !== undefined) return token
-	const frozen = { ...token, registerKey: reg.registerKey, registerIndex: reg.registerIndex.toString() }
-	await persistClaim(leg, { token: frozen } as Partial<DepositRecord>)
-	return frozen
+	if (token.registerIndex !== undefined) return token
+	const indexed = { ...token, registerIndex: reg.registerIndex.toString() }
+	await persistClaim(leg, { token: indexed } as Partial<DepositRecord>)
+	return indexed
 }
 
 /** The claim's arguments. A private claim spends the claim salt only the caller's `secrets` hold. */
@@ -123,19 +129,56 @@ async function resumeRegistration(leg: ClaimLeg, bound: boolean): Promise<void> 
 	throw new BridgeError("claim-not-visible", `the registration ${txHash} has not reached the wallet yet`, SUBMITTED, "after-wait")
 }
 
-/** A public claim that paid from held gas left the bridged Fee Juice unspent, for a claim of its own. */
-const fuelLeftOver = (rec: DepositRecord) =>
-	!rec.isPrivate && !!rec.fuel?.leafIndex && !rec.fuel.consumed && !rec.fuel.standaloneClaimed && rec.fuel.claimTxHash === undefined
+/** A public claim paid from held gas leaves its bridged Fee Juice unspent. The message's nullifier says whether any
+ *  landed transaction spent it; if none did, it is claimed on its own, resumably, before the record settles, so no
+ *  completed record strands gas. */
+async function claimLeftoverFuel(leg: ClaimLeg): Promise<void> {
+	const fuel = leg.record.fuel
+	if (leg.record.isPrivate || !fuel?.leafIndex || fuel.consumed || fuel.standaloneClaimed) return
+	const state = await fuelNullifierState(leg)
+	if (state === "nullified") return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
+	if (state !== "live")
+		throw new BridgeError("read-failed", "could not read whether the bridged gas was claimed", SUBMITTED, "after-wait")
+	await claimFuelBlock(leg, { gated: false })
+}
 
-/** The token landed: the gas it bridged is claimed too before the record settles, so no record completes with Fee
- *  Juice nobody claimed. */
+/** The tokens landed. Gas that can never pay for its own claim does not hold the record open: it settles, saying
+ *  why. Any other failure of the gas claim names the landed token claim, and the next call claims the gas again. */
 async function landed(leg: ClaimLeg, via: ClaimOutcome["via"], txHash?: string): Promise<ClaimOutcome> {
-	if (fuelLeftOver(leg.record)) {
-		const { aztec, record } = leg
-		await sendStandaloneFjClaim(ladderEnvOf(leg), aztec.wallet, aztec.account, record.fuel as DepositFuelBlock, record.id)
+	let gasLeft: BridgeError | undefined
+	try {
+		await claimLeftoverFuel(leg)
+	} catch (e) {
+		const error = asClaimError(e)
+		if (error.retry !== "never") {
+			const message = `the tokens landed${txHash ? ` in ${txHash}` : ""}; their bridged gas is not claimed yet: ${error.message}`
+			throw new BridgeError(error.code, message, SUBMITTED, error.retry, { cause: e, ...(error.stop ? { stop: error.stop } : {}) })
+		}
+		gasLeft = error
 	}
 	await leg.persisted
-	return settle(leg, via, txHash)
+	return settle(leg, via, txHash, gasLeft)
+}
+
+/** A token claim latched without its hash, its message not spent yet: it may still land until it ages past landing.
+ *  A claim sent again after that is safe, since the message's nullifier lets only one of them spend it. */
+async function settleHashlessClaim(leg: ClaimLeg): Promise<void> {
+	const { claimAttempt, claimAttemptAt, claimTxHash } = leg.record
+	if (!claimAttempt || claimTxHash !== undefined) return
+	if (claimAttemptAt === undefined || Date.now() - claimAttemptAt > PRIVATE_ATTEMPT_STALE_MS)
+		return persistClaim(leg, { claimAttempt: false })
+	throw new BridgeError("claim-not-visible", "an earlier claim of this deposit may still land", SUBMITTED, "after-wait")
+}
+
+/** A public fuel attempt latched without its hash may have landed. Its nullifier settles it, and once it has aged past
+ *  landing the latch is lifted, so the ladder never waits on it forever. */
+async function settleHashlessAttempt(leg: ClaimLeg): Promise<void> {
+	const fuel = leg.record.fuel
+	if (leg.record.isPrivate || !fuel?.claimAttempt || fuel.claimTxHash !== undefined || fuel.consumed) return
+	const state = await fuelNullifierState(leg)
+	if (state === "nullified") return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
+	const aged = fuel.claimAttemptAt === undefined || Date.now() - fuel.claimAttemptAt > PRIVATE_ATTEMPT_STALE_MS
+	if (state === "live" && aged) return persistClaim(leg, { fuel: { ...fuel, claimAttempt: false } })
 }
 
 /** Watches the claim the record already sent. Undefined once it dropped: the message is unspent. */
@@ -155,7 +198,7 @@ async function afterSend(
 	how: "resumed" | "sent",
 ): Promise<ClaimOutcome | undefined> {
 	if (fate === "success") return landed(leg, "claim", txHash)
-	await persistClaim(leg, { claimTxHash: undefined })
+	await persistClaim(leg, { claimTxHash: undefined, claimAttempt: false })
 	if (fate === "reverted") throw new BridgeError("claim-reverted", `the claim ${txHash} reverted; claim again`, SUBMITTED, "safe")
 	if (how === "resumed") return undefined
 	throw new BridgeError("claim-not-visible", `the claim ${txHash} was dropped; claim again`, SUBMITTED, "safe")
@@ -187,7 +230,7 @@ function hubSeams(leg: ClaimLeg, fee: OptsFee) {
 		},
 		onClaimSend: async () => {
 			if (!fuelOnRegistration()) fee.onAttempt?.()
-			await leg.persisted
+			await persistClaim(leg, { claimAttempt: true, claimAttemptAt: Date.now() })
 		},
 	}
 	return { seams, fuelOnRegistration }
@@ -195,13 +238,15 @@ function hubSeams(leg: ClaimLeg, fee: OptsFee) {
 
 /** A send that failed before its claim existed. A refused prompt sent nothing, so its fuel latch is lifted. */
 async function failedSend(leg: ClaimLeg, e: unknown): Promise<unknown> {
-	if (e instanceof BridgeError || e instanceof FeeStopError) return e
+	// The ladder's failure latch persists without awaiting: its refusal outranks the send's own error.
+	await leg.persisted
+	if (e instanceof BridgeError) return e
 	const msg = messageOf(e)
-	if (isUserRejection(e)) {
+	if (isUserRejection(e) || e instanceof FeeStopError) {
 		const fuel = leg.record.fuel
 		if (fuel?.claimAttempt && fuel.claimTxHash === undefined) patchFuel(ladderEnvOf(leg), leg.record.id, fuel, { claimAttempt: false })
-		await leg.persisted
-		return new BridgeError("user-rejected", "the claim was refused", SUBMITTED, "safe", { cause: e })
+		await persistClaim(leg, { claimAttempt: false })
+		return isUserRejection(e) ? new BridgeError("user-rejected", "the claim was refused", SUBMITTED, "safe", { cause: e }) : e
 	}
 	const registration = /registration \S+ (was dropped|reverted)/.exec(msg)
 	if (registration) {
@@ -238,8 +283,13 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	const { aztec, run, record } = leg
 	const p = claimParamsOf(leg, token)
 	const hub = hubAt(aztec.wallet, bridge.hub)
+	// A claim of ours that never stored its hash, or anyone's, may already have spent the message: no fee is chosen for it.
+	if ((await tokenState(leg, p)) === "nullified")
+		return landed(leg, record.claimAttempt || record.fuel?.claimAttempt ? "claim" : "claimed-elsewhere")
+	await settleHashlessClaim(leg)
 	const bound = (await hubTokenFor(hub, token.erc20, p.from)) !== undefined
 	await resumeRegistration(leg, bound)
+	await settleHashlessAttempt(leg)
 	const fee = await resolveHubClaimSendOpts(ladderEnvOf(leg), {
 		rec: record,
 		recipientAddr: aztec.account,

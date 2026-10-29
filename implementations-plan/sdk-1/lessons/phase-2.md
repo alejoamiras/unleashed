@@ -25,3 +25,15 @@
 - **2.4: a moved helper takes its own imports with it.** The app's tests mocked `hubTokenFor` at the SDK barrel; once
   `probeHubClaim` moved into the SDK it calls its sibling directly, so the app's tests mock the probe itself.
 
+- **Review round 1: a store that merges synchronously still needs its persists awaited somewhere.** The ladder's
+  writes queue the caller's `persist`; a failure surfaced only at the next awaited persist, so `failedSend` awaits the
+  queue first or a ladder refusal would be masked by the send's own error.
+- **Review round 1: fake-timer tests and a new awaited read.** Adding the Inbox pre-read before a confirmation wait
+  moved a timer past a single `advanceTimersByTimeAsync`; a `drive()` loop that advances until the promise settles
+  keeps the tests independent of how many awaits sit before the timer.
+- **Review round 1: a new parse-time refusal meets old fixtures.** Refusing a route floor under the claim floor broke a
+  mainnet fixture whose floor was a toy `1000`; the fixture now carries a real-sized floor, and the LI.FI cases still
+  clear it by an order of magnitude.
+- **Review round 1: `pack-check` passes an allow-list environment.** Anything a keyed shell exported reached
+  `bun install` and the consumer runs before; the proxy and CA variables are on the list so a sandboxed host can still
+  install.

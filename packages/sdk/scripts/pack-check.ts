@@ -34,8 +34,15 @@ const FORBIDDEN = [
 	/(^|\/)(tsconfig[^/]*\.json|bunfig\.toml|bun\.lockb?|\.npmrc|[^/]*\.tsbuildinfo)$/,
 ]
 const BUN = process.versions.bun === undefined ? "bun" : process.execPath
-// Either would let a runtime resolve modules from outside the consumer.
-const { NODE_PATH: _nodePath, NODE_OPTIONS: _nodeOptions, ...CHILD_ENV } = process.env
+/**
+ * Only what the tools need to run and to find the user's caches: a keyed shell's secrets never reach an install or a
+ * consumer, and `NODE_PATH`/`NODE_OPTIONS` would let a runtime resolve modules from outside the consumer.
+ */
+const PASSED_ENV = [
+	...["PATH", "HOME", "TMPDIR", "XDG_CACHE_HOME", "BUN_INSTALL", "BUN_INSTALL_CACHE_DIR", "LANG", "TERM", "CI"],
+	...["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS"],
+]
+const CHILD_ENV = Object.fromEntries(PASSED_ENV.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]])))
 
 type Report = {
 	runtime: string

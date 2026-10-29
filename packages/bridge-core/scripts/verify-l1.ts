@@ -554,7 +554,7 @@ async function checkCodeHash(pub: PublicClient, out: string, contract: string, a
 	const pin = pinOfBuild(hexToBytes(object), artifact.deployedBytecode?.immutableReferences)
 	const onChain = hexToBytes(((await pub.getCode({ address })) ?? "0x") as Hex)
 	const deployed = deployedHash(onChain, pin)
-	if (deployed === undefined) throw new Error(`length ${onChain.length} != build ${pin.length}`)
+	if (deployed === undefined) throw new Error(`length ${onChain.length} != build ${pin.length}, or an immutable's copies disagree`)
 	same(`${label} hash (immutables and metadata masked)`, deployed, pin.hash, "build")
 	// The SDK refuses a network whose code is not its pinned build, so the build verified here must be that one.
 	sameBuild(contract as PinnedContract, pin)

@@ -33,15 +33,19 @@ const RANGE_PEERS = new Set(["viem"])
 /** Installed with the SDK, exact at the version the lockfile resolves. */
 const OWN_DEPENDENCIES = new Set(["zod"])
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/
+/** npm packs these whatever `files` says; Apache-2.0 §4(a) requires the licence to travel with every copy. */
+const DOCUMENTS: Readonly<Record<string, string>> = { LICENSE: join(REPO_DIR, "LICENSE"), "README.md": join(PACKAGE_DIR, "README.md") }
 
 type Specs = Record<string, string>
-type WorkspaceManifest = { name: string; version: string; exports: Specs; dependencies?: Specs; license?: string }
+type Repository = { type: "git"; url: string; directory: string }
+type WorkspaceManifest = { name: string; version: string; exports: Specs; dependencies?: Specs; license: string; repository: Repository }
 type Lockfile = { packages: Record<string, [string, ...unknown[]]> }
 type DependencyFields = { peerDependencies: Specs; dependencies: Specs }
 export type PublishedManifest = DependencyFields & {
 	name: string
 	version: string
-	license?: string
+	license: string
+	repository: Repository
 	type: "module"
 	sideEffects: false
 	exports: Record<string, { types: string; import: string }>
@@ -225,7 +229,8 @@ function publishedManifest(workspace: WorkspaceManifest, fields: DependencyField
 	return {
 		name: workspace.name,
 		version: workspace.version,
-		...(workspace.license === undefined ? {} : { license: workspace.license }),
+		license: workspace.license,
+		repository: workspace.repository,
 		type: "module",
 		sideEffects: false,
 		exports,
@@ -250,6 +255,8 @@ export function stage(): Staged {
 	const declared = new Set([...Object.keys(fields.peerDependencies), ...Object.keys(fields.dependencies)])
 	const undeclared = [...imported].filter((name) => !declared.has(name)).sort()
 	if (undeclared.length > 0) fail(`imported but neither a peer nor a dependency: ${undeclared.join(", ")}`)
+	if (!workspace.license || !workspace.repository?.url) fail("the workspace manifest names no license or repository")
+	for (const [name, source] of Object.entries(DOCUMENTS)) copyExact(source, join(DIST_DIR, name))
 	const files = stagedFiles().map(fromDist)
 	const manifest = publishedManifest(workspace, fields, files)
 	for (const target of Object.values(manifest.exports).flatMap((e) => [e.types, e.import])) {

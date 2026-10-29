@@ -2,6 +2,12 @@
 	"name": "@unleashed/sdk",
 	"private": true,
 	"version": "0.1.0",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/alejoamiras/unleashed.git",
+		"directory": "packages/sdk"
+	},
 	"type": "module",
 	"sideEffects": false,
 	"exports": {

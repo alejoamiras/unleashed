@@ -623,6 +623,28 @@ Each row: the decision, its source, the rejected view with its reason.
   Juice unspent; `claimToken` claims it on its own before the record completes, so no completed record strands gas.
 - **D50 The self-pay floor of a direct Fee Juice claim is `feeJuice.minFj`.** The route's `minFuelFj` is the send
   budget; the claim floor is the manifest's Fee Juice floor, as in the app.
+- **D51 A code pin groups each immutable's copies.** The compiler writes an immutable at every place it is read;
+  `deployedHash` masks them per immutable and refuses a runtime whose copies of one immutable disagree, which a
+  genuine constructor never writes. `verify-l1` and `parseNetwork` share the rule.
+- **D52 Secrets travel with every persist and never in a record.** `persist(record, secrets)` gets the run's secrets on
+  every call, so a store that keeps the latest call alone never loses them. The ladder sees `fuelSalt` through a view;
+  what it writes back drops it. A claim's failed persist is `persist-failed`, retry "safe": nothing was sent after the
+  last record the caller holds.
+- **D53 After the deposit hash is persisted, a deposit error is retry "never".** The money is on its way; calling
+  `depositFuel` or `depositToken` again would send a second deposit. Its message names `claimFuel`/`claimToken`, which
+  resume from the record.
+- **D54 A token claim whose bridged gas can never be claimed settles, saying why.** A permanent failure of the
+  leftover gas claim settles the record with `gasLeft`; a transient one keeps the record open and names the landed
+  token claim.
+- **D55 A claim attempt without a hash ages out.** A latch the SDK persisted before the wallet answered blocks a second
+  send until the message's nullifier answers or `PRIVATE_ATTEMPT_STALE_MS` passes, for the token claim and for the
+  public gas claim beside it.
+- **D56 Only the SDK's own quotes and frozen networks reach a send.** `depositFuel`/`depositToken` refuse a quote
+  `quoteFuel`/`quoteBridge` did not return; the network, the manifest under it and every bundled pin are deep-frozen.
+  `parseNetwork` refuses a route whose fuel floor is under the claim floor (D50), which no claim could pay from.
+- **D57 The SDK does not pin mainnet's guardian yet.** A hostile manifest can name a genuine-code generation someone
+  else deployed, whose guardian can pause it (a delay, never a transfer). The owner's guardian is pinned once the
+  mainnet generation exists (`follow-ups.md`, `OWNER-ASKS.md`).
 
 ## Audit verdicts
 
@@ -669,6 +691,20 @@ Arc a1, the implementation (`git diff fb90e36..HEAD`):
 - **Round 3, Codex (same session): no new material finding** on the one fix after round 2 (strict `verify-l1` refused
   `FuelOnlyGate`'s artifact, which records no immutables; an absent map is now an empty mask). It tightened the fix's
   comment. Closed at the three-round cap.
+
+Arc a2, the implementation (`git diff origin/main...HEAD`):
+
+- **Round 1, Codex (fresh session): 2 High, 3 Medium; all verified and fixed with tests.** The private fuel salt
+  reached persisted records (D52); a hashless public gas attempt blocked a token claim for good (D55); recovery
+  refused a first deposit's frozen metadata (the token block is rebuilt from the factory's registration when no
+  registration was persisted); the standalone gas claim sent before persisting its attempt; a claim's failed persist
+  said retry "never" (D52).
+- **Round 1, Opus 5.5 (beside it): 3 High, 1 Medium, 4 Low.** Immutable copies that disagree passed a pin (D51); two
+  deposit errors after the hash said retry "safe" (D53); the secrets left the record after the first persist (D52);
+  quote and network objects were mutable between check and send (D56); the packaged manifest lacked `license` and
+  `repository`, and `pack-check` passed the whole environment to its subprocesses (fixed). The mainnet guardian
+  is not pinned (D57). Known limits: #43 (the reconcile window), #44 (one dropped registration read), #45 (retired
+  routers' leaves). A sub-reviewer found no drift in the moved fee ladder.
 
 ## Delivery
 

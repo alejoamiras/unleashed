@@ -199,7 +199,8 @@ export async function readSendReceiptLeaves(
 	return sendLeavesOf(await readRouterDeposit(logs, txHash, sendLogContext(g, inbox, expected), expected))
 }
 
-async function registrationToBlock(g: SendGeneration, erc20: Address, r: Registration): Promise<JournalTokenBlock> {
+/** The token block the factory froze: its words, decimals and register leaf, and the Aztec token the hub derives. */
+export async function registrationToBlock(g: SendGeneration, erc20: Address, r: Registration): Promise<JournalTokenBlock> {
 	const words = { nameWord: r.nameWord, symbolWord: r.symbolWord, decimals: r.decimals }
 	const inst = await deriveHubTokenInstance(AztecAddress.fromStringUnsafe(g.hub), erc20, words, g.tokenClassId)
 	return {
@@ -340,17 +341,30 @@ export function signSend(l1: L1Ctx, g: FuelRoute, s: PreparedSend): Promise<Hex>
 }
 
 /** Sends `bridgeWithPermit`. `chain` is the chain viem asserts the wallet is on; the wallet's own when omitted. */
-export async function submitSend(l1: L1Ctx, g: FuelRoute, s: PreparedSend, signature: Hex, chain?: Chain): Promise<Hex> {
+function sendCall(l1: L1Ctx, g: FuelRoute, s: PreparedSend, signature: Hex) {
 	const p = s.params
-	const call = {
+	return {
 		address: g.router,
 		abi: DEPOSIT_ROUTER_ABI,
 		functionName: "bridgeWithPermit",
 		args: [s.intent, s.swapData, p.amount, { nonce: p.nonce, deadline: p.deadline, signature }],
 		account: l1.account,
 	}
-	const estimate = await l1.pub.estimateContractGas(call as never)
+}
+
+/** The send's gas, simulated: a throw here means nothing was sent. */
+export function estimateSend(l1: L1Ctx, g: FuelRoute, s: PreparedSend, signature: Hex): Promise<bigint> {
+	return l1.pub.estimateContractGas(sendCall(l1, g, s, signature) as never)
+}
+
+/** Hands the signed send to the wallet under the gas `estimateSend` returned. */
+export async function writeSend(l1: L1Ctx, g: FuelRoute, s: PreparedSend, signature: Hex, estimate: bigint, chain?: Chain): Promise<Hex> {
+	const call = sendCall(l1, g, s, signature)
 	return (await l1.wallet.writeContract({ ...call, chain: chain ?? l1.wallet.chain, gas: sendGasLimit(estimate) } as never)) as Hex
+}
+
+export async function submitSend(l1: L1Ctx, g: FuelRoute, s: PreparedSend, signature: Hex, chain?: Chain): Promise<Hex> {
+	return writeSend(l1, g, s, signature, await estimateSend(l1, g, s, signature), chain)
 }
 
 /** The facts a mined send produced: its leaves from the router's own `Deposited`, and the token's frozen registration. */
@@ -360,9 +374,10 @@ export async function confirmSend(
 	s: PreparedSend,
 	txHash: Hex,
 	receipt: { status: string; logs: Parameters<typeof readRouterDeposit>[0] },
+	inbox?: InboxContext,
 ): Promise<SendResult> {
 	if (receipt.status !== "success") throw new Error(`bridgeWithPermit() REVERTED (${txHash}) — no funds moved; inspect the tx and retry`)
-	const leaves = await readSendReceiptLeaves(g, await readSendInbox(l1.pub, g), s.expected, txHash, receipt.logs)
+	const leaves = await readSendReceiptLeaves(g, inbox ?? (await readSendInbox(l1.pub, g)), s.expected, txHash, receipt.logs)
 	return readSendResult(l1, g, s.params, { txHash, ...leaves }, s.tok, s.fuel)
 }
 

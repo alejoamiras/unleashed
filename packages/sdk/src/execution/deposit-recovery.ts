@@ -8,7 +8,7 @@ import type { DepositRecord } from "../records.ts"
 import { type FeeLadderEnv, patchFuel, type RecordPatch } from "./fee-env.ts"
 import { FeeStopError } from "./fee-stop.ts"
 import { emittedBy, readLegacySendLeaves } from "./legacy-router.ts"
-import { depositExpectationOf } from "./router-receipt.ts"
+import { depositExpectationOf, type InboxContext } from "./router-receipt.ts"
 import { type FuelRoute, readSendInbox, readSendReceiptLeaves, type SendGeneration, type SendResult } from "./send-flow.ts"
 
 type Hex = `0x${string}`
@@ -30,12 +30,13 @@ export async function readDepositLeaves(
 	pub: RecoveryL1Client,
 	generation: FuelRoute | undefined,
 	legacyRouters: readonly Hex[],
+	inboxRead?: InboxContext,
 ): Promise<Partial<SendResult>> {
 	const hash = rec.depositTxHash as Hex
 	const legacy = legacyRouters.find((router) => emittedBy(router, logs))
 	if (legacy && !(generation && emittedBy(generation.router, logs))) return readLegacySendLeaves(legacy, rec.intent, hash, logs)
 	if (!generation) throw new FeeStopError("no-bridge")
-	const inbox = await readSendInbox(pub as never, generation)
+	const inbox = inboxRead ?? (await readSendInbox(pub as never, generation))
 	return readSendReceiptLeaves(generation, inbox, depositExpectationOf(rec), hash, logs as never)
 }
 

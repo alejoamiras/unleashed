@@ -9,6 +9,7 @@
  * `LIFI_LIVE=1`.
  */
 import { type Address, type Hex, zeroAddress, zeroHash } from "viem"
+import { deepFreeze } from "./freeze.ts"
 import {
 	START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR,
 	SWAP_TOKENS_MULTIPLE_V3_SELECTOR,
@@ -189,7 +190,7 @@ const BASE_SEPOLIA: LifiChainBook = {
 	},
 }
 
-export const LIFI_BOOK: Readonly<Record<number, LifiChainBook>> = Object.freeze({
+export const LIFI_BOOK: Readonly<Record<number, LifiChainBook>> = deepFreeze({
 	1: ETHEREUM,
 	8453: BASE,
 	42161: ARBITRUM,

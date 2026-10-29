@@ -21,6 +21,20 @@ function maskedRuntimeHashes(onChain: Uint8Array, built: Uint8Array, refs: Recor
 }
 
 describe("deployedHash under a build's pin", () => {
+	it("fails when one immutable's copies disagree, though each copy is masked", () => {
+		// PUSH32 <copy 1> POP PUSH32 <copy 2> POP STOP: one immutable, read in two places.
+		const two = (a: string, b: string) => `0x7f${a.repeat(32)}507f${b.repeat(32)}5000` as Hex
+		const refs = {
+			"7": [
+				{ start: 1, length: 32 },
+				{ start: 35, length: 32 },
+			],
+		}
+		const pin = pinOfBuild(runtime(two("00", "00"), 0x22), refs)
+		expect(deployedHash(runtime(two("ab", "ab"), 0x11), pin)).toBe(pin.hash)
+		expect(deployedHash(runtime(two("ab", "cd"), 0x11), pin)).toBeUndefined()
+	})
+
 	it("matches a deployment that differs from the build only in its immutables and metadata trailer", () => {
 		const deployed = runtime(DEPLOYED, 0x11)
 		// The chain's own length word is ignored: the mask is bounded by the build alone.

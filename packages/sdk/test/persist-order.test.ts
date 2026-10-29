@@ -69,7 +69,7 @@ describe("persist before every prompt", () => {
 		const kinds = log.map((s) => s.kind)
 		expect(kinds.indexOf("persist")).toBeLessThan(kinds.indexOf("write"))
 		expect(kinds.indexOf("persist")).toBeLessThan(kinds.indexOf("sign"))
-		// The private gas leg's salt reached storage with the first persist, and only there.
+		// The private gas leg's salt reached storage with the first persist.
 		expect(Object.keys(persist.mock.calls[0]?.[1] ?? {})).toEqual(["fuelSalt"])
 	})
 
@@ -87,5 +87,14 @@ describe("persist before every prompt", () => {
 		expect([e?.code, e?.submission]).toEqual(["wrong-chain", "none"])
 		expect(persist).not.toHaveBeenCalled()
 		expect(log).toEqual([])
+	})
+
+	it("an abort once the deposit is sent says never: a second deposit call would move the funds again", async () => {
+		const { quote, wallet } = await setup()
+		const controller = new AbortController()
+		const onEvent = (e: { type: string }) => e.type === "deposit-sent" && controller.abort()
+		const e = await failure(depositFuel(net, r, wallet, quote, { persist: async () => {}, onEvent, signal: controller.signal }))
+		expect([e?.code, e?.submission, e?.retry]).toEqual(["aborted", "submitted", "never"])
+		expect(e?.message).toMatch(/claimFuel or claimToken/)
 	})
 })

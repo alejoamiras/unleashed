@@ -5,7 +5,7 @@
  * reserve, so the registry itself is anchored by the caller (to the Aztec node's, or the mainnet pin).
  */
 import { FeeJuicePortalAbi, RegistryAbi, RollupAbi } from "@aztec-foundation/l1-artifacts"
-import { type Address, hexToBytes, type PublicClient } from "viem"
+import { type Address, hexToBytes, type PublicClient, parseAbi } from "viem"
 import { CODE_PINS, deployedHash, type PinnedContract } from "../protocol/code-hash.ts"
 import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
 import { PORTAL_FACTORY_ABI, PORTAL_IMPL_CONSTANTS_ABI } from "../protocol/factory-abi.ts"
@@ -169,6 +169,14 @@ export async function codeBindings(pub: ChainReader, targets: readonly (readonly
 	)
 }
 
+const SWAPPER_ABI = parseAbi(["function FEE_ASSET() view returns (address)"])
+
+/** The testnet swapper's code is pinned; what it swaps into is an immutable, read here. */
+async function swapperBindings(pub: ChainReader, swapper: Address, feeAsset: string): Promise<Binding[]> {
+	const asset = await pub.readContract({ address: swapper, abi: SWAPPER_ABI, functionName: "FEE_ASSET" })
+	return [bind("fuelSwapper.FEE_ASSET", asset, feeAsset)]
+}
+
 /** The router's swap target: LI.FI's Diamond on mainnet, the listed testnet swapper elsewhere. */
 export function swapTargetOf(l1ChainId: number, fuelSwapper: string | undefined): string | undefined {
 	return l1ChainId === 1 ? lifiBook(1).diamond : fuelSwapper
@@ -198,6 +206,7 @@ export async function networkBindings(pub: ChainReader, m: ManifestV2): Promise<
 		portalBindings(pub, m.feeJuice.portal as Address, m.feeJuice.asset, rollup),
 		bridge ? factoryBindings(pub, bridge, rollup) : [],
 		bridge ? implementationBindings(pub, bridge, rollup) : [],
+		m.l1ChainId !== 1 && route.fuelSwapper ? swapperBindings(pub, route.fuelSwapper as Address, m.feeJuice.asset) : [],
 	])
 	return groups.flat()
 }

@@ -76,6 +76,10 @@ interface DepositRecordBase {
 	leafIndex?: string
 	messageHash?: string
 	claimTxHash?: string
+	/** Latched before the token claim's wallet call, with its time: a claim sent without its hash stored is waited on
+	 *  until its message's nullifier or its age settles it. */
+	claimAttempt?: boolean
+	claimAttemptAt?: number
 	claimedByOther?: boolean
 	depositL2Block?: number
 	fuel?: DepositFuelBlock

@@ -141,6 +141,21 @@ function recorder(signal?: AbortSignal) {
 	return { entries, run, types, last }
 }
 
+/** Advances the fake clock until `p` settles, however many waits it starts. */
+async function drive<T>(p: Promise<T>): Promise<T> {
+	let done = false
+	p.then(
+		() => {
+			done = true
+		},
+		() => {
+			done = true
+		},
+	)
+	while (!done) await vi.advanceTimersByTimeAsync(1000)
+	return p
+}
+
 const failure = (p: Promise<unknown>) =>
 	p.then(
 		() => expect.unreachable("the claim resolved"),
@@ -192,8 +207,7 @@ describe("claimFuel", () => {
 		const calls = interaction()
 		const rec = recorder()
 		const run = claimFuel(net, r, aztec, gasRecord(net, {}, { claimAttempt: true, claimTxHash: dropped }), rec.run)
-		await vi.advanceTimersByTimeAsync(10_000)
-		const out = await run
+		const out = await drive(run)
 		expect([out.txHash, calls.send]).toEqual([CLAIM_HASH, 1])
 		const cleared = rec.entries.find((e) => "persisted" in e && e.persisted.fuel?.claimTxHash === undefined)
 		expect(cleared).toBeDefined()
@@ -269,5 +283,13 @@ describe("claimFuel", () => {
 		const rec = recorder()
 		const refused = await failure(claimFuel(net, r, aztec, gasRecord(net), rec.run))
 		expect([refused.code, refused.retry, rec.last()?.fuel?.claimAttempt]).toEqual(["user-rejected", "safe", false])
+	})
+
+	it("storage that refuses the attempt's latch fails the claim before the wallet is asked, safe to run again", async () => {
+		const { net, r, aztec } = await setup()
+		const calls = interaction()
+		const run = { persist: async () => Promise.reject(new Error("quota")) }
+		const e = await failure(claimFuel(net, r, aztec, gasRecord(net), run))
+		expect([e.code, e.submission, e.retry, calls.send]).toEqual(["persist-failed", "submitted", "safe", 0])
 	})
 })
