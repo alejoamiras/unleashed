@@ -7,10 +7,38 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: final Codex verdict approve; awaiting the orchestrator's approval
+status: completed; delivered in the PR that closes #40, awaiting the orchestrator's merge
 base: main a111e8a
 budget: "recon: 1 Sonnet explorer; audit: Codex gpt-6.1-sol at high, plus one Opus Plan critique; code-review: off"
 ---
+
+## Outcome
+
+- **Status:** completed; delivered in one arc's PR, awaiting the orchestrator's merge. Closes #40.
+- **Shipped:**
+  - P6-01's B strings on the testnet review notice, Takes line, Bridge step, strip ETA and expired card, with no
+    testnet Refund row. The Activity row and guide drop "refund pending" (D4).
+  - P7-01 and P7-02 come from `useSend.check` in the wizard's confirm preflight, before the permission screen and
+    every prompt. `assertDepositsOpen` is exported through `@unleashed/sdk/internal`, and `DepositPlan.pauseCheck`
+    is gone. Mainnet copy is unchanged, with a mainnet control in each module that branches.
+- **Changed in review:**
+  - Codex round 1 found that a receipt deferred by the check's hold replaced the review after its guard. The guard
+    now runs after the awaited release, with a regression test and a control.
+  - The Opus leg found nothing material, and its nits were taken.
+  - Round 2: no material findings.
+- **Gates:** on the final head, `audit:tools`, `test:all`, `test:e2e`, lint and typecheck exit 0.
+- **Deviations:**
+  - P3 ran once, after the Codex loop.
+  - Its browser specs were lost to the host twice. The sandbox hit SIGSEGV at boot because `/dev/shm` was full of
+    old pid-less stores, so CI's `tools-e2e-status` is the browser gate.
+  - The after shots were not taken, for the same reason.
+- **Lessons:** one promoted, on a Vue hold's release order.
+- **Known limits:** #58 (D5).
+- **Open items:**
+  - `OWNER-ASKS.md` §1, the cross-chain pause check;
+  - §2, a refusal's sentence on a re-entered review;
+  - the after shots, once the host's `/dev/shm` has room.
+- **Seeds:** the `/goal` and `/loop` seeds at the end are retired; they are history, not instructions.
 
 # send-copy-1: testnet send wording, and two refusals before any wallet prompt
 
