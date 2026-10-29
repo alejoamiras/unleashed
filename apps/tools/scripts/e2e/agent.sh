@@ -106,6 +106,15 @@ build_apps() {
     grep -rqF -- "$url" "$TOOLS_DIST/assets" || { log "FATAL: the tools bundle does not list the test wallet at $url"; exit 2; }
   done
 
+  # The LI.FI venue's bundle: the same run without the listed swapper, served from the same origin under /lifi/ so
+  # the test wallets accept it. Built after the default one, whose build empties $TOOLS_DIST.
+  log "building tools (local target, LI.FI venue) → $TOOLS_DIST/lifi"
+  UNLEASHED_SANDBOX_ARTIFACTS="$ARTIFACTS" UNLEASHED_TOOLS_WEB_WALLETS="$WEB_WALLETS" UNLEASHED_TOOLS_FUEL_VENUE=lifi \
+    bun run build:local -- --outDir "$TOOLS_DIST/lifi" --base /lifi/ >"$STATE_DIR/build-tools-lifi.log" 2>&1
+  UNLEASHED_SANDBOX_ARTIFACTS="$ARTIFACTS" UNLEASHED_TOOLS_WEB_WALLETS="$WEB_WALLETS" UNLEASHED_TOOLS_FUEL_VENUE=lifi \
+    bun run verify:build-target local --dist "$TOOLS_DIST/lifi"
+  grep -rqF -- "/lifi/assets/" "$TOOLS_DIST/lifi/index.html" || { log "FATAL: the LI.FI bundle is not based at /lifi/"; exit 2; }
+
   log "building the test wallet → $WALLET_DIST"
   UNLEASHED_SANDBOX_ARTIFACTS="$ARTIFACTS" UNLEASHED_TOOLS_ORIGIN="$TOOLS_ORIGIN" UNLEASHED_TEST_WALLET_OUT_DIR="$WALLET_DIST" \
     bun run build:test-wallet >"$STATE_DIR/build-wallet.log" 2>&1

@@ -212,8 +212,10 @@ async function deposit(token: Address, amount: bigint, send: (run: ReturnType<ty
 	})
 	const rec = recorder()
 	const record = await send(rec.run)
-	const approval = allowance < amount ? ["approval:sent", "approval:confirmed"] : []
-	expect(scriptOf(rec.events())).toBe(["prepared", ...approval, "signature-requested", "deposit-sent", "deposit-confirmed"].join(" "))
+	const approval = allowance < amount ? ["approval:requested", "approval:sent", "approval:confirmed"] : []
+	// A receipt wait that outlasts a round adds `approval:waiting`, which a block's timing decides.
+	const script = scriptOf(rec.events()).replaceAll(" approval:waiting", "")
+	expect(script).toBe(["prepared", ...approval, "signature-requested", "deposit-sent", "deposit-confirmed"].join(" "))
 	assertPersistedFirst(rec.entries)
 	expect(rec.last()).toEqual(record)
 	const secrets = rec.secrets()

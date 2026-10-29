@@ -72,6 +72,10 @@ export const LOCAL_L1_CHAIN_ID = 31337
  * paths after a redirect, which is one more reason the loader refuses redirects.
  */
 const TOKEN_LIST_SOURCE = "https://cdn.jsdelivr.net/npm/@uniswap/default-token-list@22.20.0/build/uniswap-default.tokenlist.json"
+/** The SDK's `LI_QUEST_API` origin, spelled out to stay Node-safe; the test pins the two equal. The local target's
+ *  LI.FI venue asks it for a gas quote, which the browser suite answers from a fixture. */
+const LI_QUEST_SOURCE = "https://li.quest"
+
 /**
  * dRPC's keyless public Aztec testnet endpoint: the bundle holds no key, so nothing in it can be
  * lifted and spent. It must answer without a redirect to another host, which the CSP would block.
@@ -126,9 +130,9 @@ export function localTarget(cfg: LocalTargetConfig): ToolsTarget {
 		host: cfg.host,
 		nodeUrl: cfg.nodeUrl,
 		l1ExplorerBaseUrl: "http://127.0.0.1",
-		// Loopback only, plus the token list so the browser suite can answer it from a fixture
+		// Loopback only, plus the token list and li.quest so the browser suite can answer them from fixtures
 		// (a CSP-blocked request never reaches a route handler).
-		cspConnectSrc: `'self' data: blob: ${loopback("http")} ${loopback("ws")} ${walletOrigins.join(" ")} ${TOKEN_LIST_SOURCE}`,
+		cspConnectSrc: `'self' data: blob: ${loopback("http")} ${loopback("ws")} ${walletOrigins.join(" ")} ${TOKEN_LIST_SOURCE} ${LI_QUEST_SOURCE}`,
 		webWalletUrls: cfg.webWalletUrls,
 		...(cfg.tokenListSha256 ? { tokenListSha256: cfg.tokenListSha256 } : {}),
 		readRpcUrls,

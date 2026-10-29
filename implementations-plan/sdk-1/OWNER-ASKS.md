@@ -157,3 +157,30 @@ delay, never a transfer.
 Options: **A (recommended)** pin the guardian address once the mainnet generation exists (the factory's and the gate's
 `owner()`, the hub's L2 guardian) and ship it in an SDK release; moving the guardian later, to a multisig say, then
 needs a release first. **B** leave it unpinned and rely on integrators shipping the bundled manifest.
+
+**Decided:** A.
+
+## §8 Refuse a paused route before any prompt
+
+**What ships now.** A send on a paused route goes as it does today: the wallet asks for the approval and the
+signature, and the router's revert ends the send with nothing moved.
+
+The SDK can read the pause switches first and refuse before any prompt; the app keeps that check off, because the
+refusal would be a new sentence on the review. Options: **A (recommended)** turn it on, with copy such as "Deposits
+on this route are paused right now. Nothing was sent."; **B** keep today's path.
+
+## §9 Two failures that read differently
+
+**What ships now.** The send checks the network against the chain before its first prompt (the SDK's trust check, the
+plan's D40). A correctly deployed network never shows either difference:
+
+- A node that does not answer, or contracts the bundled network does not name, stop the send before any prompt. Before,
+  the deposit went out and its claim waited on the node. The review shows the node client's error, or for a mismatch
+  the SDK's own sentence ("the deployed contracts are not this release's network: …"). The first send of a page also
+  waits on the check, about a second.
+- A wallet that leaves the chain between a send's start and its signature now stops before the signature. A public
+  send's row is discarded and the review names the wrong chain, as it does when the chain is wrong at the start;
+  before, the signature went out and the row stayed, flagged.
+
+Options: **A (recommended)** keep both, and give the first this app's own sentence: "This app could not check the
+bridge on this network. Nothing was sent."; **B** keep both as they read now.

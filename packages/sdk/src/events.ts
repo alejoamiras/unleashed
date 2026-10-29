@@ -8,7 +8,10 @@ export type Leaves = {
 
 export type TransferEventBody =
 	| { type: "prepared" }
+	| { type: "approval"; status: "requested" }
 	| { type: "approval"; status: "sent" | "confirmed"; txHash: Hex }
+	/** The approval is not mined after `round` receipt waits; the wait goes on. */
+	| { type: "approval"; status: "waiting"; txHash: Hex; round: number }
 	| { type: "signature-requested" }
 	| { type: "deposit-sent"; txHash: Hex }
 	| { type: "deposit-confirmed"; leaves: Leaves }

@@ -1,4 +1,5 @@
 import { SOURCE_CHAINS, TOKEN_LIST_URL } from "@unleashed/bridge-core"
+import { LI_QUEST_API } from "@unleashed/sdk/protocol"
 import { describe, expect, it } from "vitest"
 import { localTarget, MAINNET_TARGET, resolveToolsTarget, TESTNET_TARGET } from "./network-targets"
 
@@ -79,6 +80,13 @@ describe("local target", () => {
 		expect(csp).toContain("http://127.0.0.1:17777")
 		expect(csp.split(" ")).toContain(TOKEN_LIST_URL)
 		expect(csp).not.toContain("aztec")
+	})
+
+	it("alone admits li.quest, at the SDK's own origin", () => {
+		const liQuest = new URL(LI_QUEST_API).origin
+		expect(localTarget(cfg).cspConnectSrc.split(" ")).toContain(liQuest)
+		expect(TESTNET_TARGET.cspConnectSrc).not.toContain("li.quest")
+		expect(MAINNET_TARGET.cspConnectSrc).not.toContain("li.quest")
 	})
 
 	it("reads its own two anvils, and asks its own Across API", () => {

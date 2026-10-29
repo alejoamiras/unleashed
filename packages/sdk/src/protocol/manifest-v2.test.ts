@@ -168,16 +168,19 @@ describe("manifest v2 DepositRouter fields", () => {
 		expect(parseManifestV2({ ...(await fixture()) }).bridge?.l1.depositRouter).toBeUndefined()
 	})
 
-	it("refuses the testnet swapper on mainnet and a router without its swapper or budgets elsewhere", async () => {
+	it("refuses the testnet swapper on mainnet and a router without its swapper or budgets on a live testnet", async () => {
 		const mainnet = await routed()
 		Object.assign(mainnet, { l1ChainId: 1, walletChainId: 1 })
 		expect(() => parseManifestV2(mainnet)).toThrow(/fuel swapper is refused on Ethereum mainnet/)
 		mainnet.bridge.l1.fuelSwapper = undefined
 		expect(parseManifestV2(mainnet).bridge?.l1.fuelSwapper).toBeUndefined()
 
-		const noSwapper = await routed()
-		noSwapper.bridge.l1.fuelSwapper = undefined
-		expect(() => parseManifestV2(noSwapper)).toThrow(/fuelSwapper is present exactly when depositRouter is/)
+		const sandbox = await routed()
+		sandbox.bridge.l1.fuelSwapper = undefined
+		expect(parseManifestV2(sandbox).bridge?.l1.fuelSwapper, "a sandbox swaps through its LI.FI stand-in").toBeUndefined()
+		const sepolia = Object.assign(await routed(), { l1ChainId: 11155111, walletChainId: 11155111 })
+		sepolia.bridge.l1.fuelSwapper = undefined
+		expect(() => parseManifestV2(sepolia)).toThrow(/fuelSwapper is present exactly when depositRouter is/)
 		const noBudgets = await routed()
 		noBudgets.bridge.l1.fuel = undefined
 		expect(() => parseManifestV2(noBudgets)).toThrow(/needs the fuel budgets/)
@@ -232,7 +235,7 @@ describe("manifest v2 fuel route", () => {
 		expect(parseManifestV2(await fuelOnly(31337)).fuelRoute?.fuelSwapper).toBe(SWAPPER)
 	})
 
-	it("refuses a fuel route beside a bridge, the testnet swapper on mainnet, and a missing swapper elsewhere", async () => {
+	it("refuses a fuel route beside a bridge, the testnet swapper on mainnet, and a missing swapper on a live testnet", async () => {
 		const beside = { ...(await routed()), fuelRoute: (await fuelOnly(31337)).fuelRoute }
 		expect(() => parseManifestV2(beside)).toThrow(/fuelRoute: a fuel route is legal only with bridge: null/)
 		const mainnet = await fuelOnly()
@@ -240,7 +243,10 @@ describe("manifest v2 fuel route", () => {
 		expect(() => parseManifestV2(mainnet)).toThrow(/fuelRoute\.fuelSwapper: the testnet fuel swapper is refused/)
 		const sandbox = await fuelOnly(31337)
 		sandbox.fuelRoute.fuelSwapper = undefined
-		expect(() => parseManifestV2(sandbox)).toThrow(/fuelRoute\.fuelSwapper: off mainnet, fuelSwapper is present/)
+		expect(parseManifestV2(sandbox).fuelRoute?.fuelSwapper).toBeUndefined()
+		const sepolia = await fuelOnly(11155111)
+		sepolia.fuelRoute.fuelSwapper = undefined
+		expect(() => parseManifestV2(sepolia)).toThrow(/fuelRoute\.fuelSwapper: off mainnet, fuelSwapper is present/)
 		const loose = await fuelOnly()
 		loose.fuelRoute.factory = FACTORY
 		expect(() => parseManifestV2(loose)).toThrow(/fuelRoute/)

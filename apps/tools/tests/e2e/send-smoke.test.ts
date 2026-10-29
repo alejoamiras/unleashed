@@ -60,12 +60,11 @@ const h = vi.hoisted(() => ({
 	},
 	fn: {
 		loadTokenList: vi.fn(),
-		runSend: vi.fn(),
+		depositL1: vi.fn(),
 		claimViaHub: vi.fn(),
 		exitViaHub: vi.fn(),
 		preflightHubExit: vi.fn(),
 		retryCapabilities: vi.fn(),
-		ensurePermit2Approval: vi.fn(),
 		readContract: vi.fn(),
 		buildFeeJuiceClaimDep: vi.fn(),
 	},
@@ -104,6 +103,8 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		HUB_TOKEN_ARTIFACT: {},
 		rebuildHubInstance: async () => ({ address: { toString: () => bridge.l2.hub.address } }),
 		rebuildHubTokenInstance: async (erc20: string) => ({ address: { toString: () => derived(erc20) } }),
+		// The trust-root check reads the chain; the faked deposit below never looks at what it returns.
+		bridgeNetwork: async () => ({}),
 	}
 	h.wire.gen = { ...gen, placeholder }
 	// A getter, so one case can turn this network into a placeholder without a module reset.
@@ -204,7 +205,7 @@ vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
 }))
 vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
-	runSend: h.fn.runSend,
+	depositL1: h.fn.depositL1,
 	claimViaHub: h.fn.claimViaHub,
 	exitViaHub: h.fn.exitViaHub,
 	preflightHubExit: h.fn.preflightHubExit,
@@ -222,14 +223,13 @@ vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	readRegistration: async (_pub: unknown, _factory: string, erc20: string) => h.state.registrations.get(erc20.toLowerCase()),
 }))
 
-// Only the four boundaries that need a live wallet or the recovery crypto; the rest of the module
-// (the stop-interaction shape, the fingerprint) stays real.
+// Only the boundaries that need a live wallet or the recovery crypto; the rest of the module (the
+// stop-interaction shape, the fingerprint) stays real.
 vi.mock("@/composables/deposit-flow", async (orig) => {
 	const actual = await orig<typeof import("@/composables/deposit-flow")>()
 	const { cacheSecret } = await import("@/composables/useBridgeJournal")
 	return {
 		...actual,
-		ensurePermit2Approval: h.fn.ensurePermit2Approval,
 		resolveHubClaimSendOpts: async () => ({ kind: "opts", opts: {} }),
 		// The private exit's fee reads the credit at the PrivateFPC (a 2.2 MB artifact import in the
 		// real reader, which outlasts the harness's zero-delay settle); the wizard's held-gas stub answers.
@@ -244,10 +244,13 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 	}
 })
 
+import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { SendDepositRecord } from "@unleashed/bridge-core"
-import { predictPortal } from "@unleashed/sdk/protocol"
+import type { DepositRecord, DepositSecrets, RunOptions } from "@unleashed/sdk"
+import type { DepositPlan } from "@unleashed/sdk/internal"
+import { deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
 import { type Hex, keccak256, stringToHex } from "viem"
 import listFixture from "./fixtures/token-list.json"
 
@@ -373,69 +376,73 @@ function claimOutcome(erc20: string) {
 	return { path: "register,claim", claimTxHash: "0xclaim", registerTxHash: "0xregister" }
 }
 
-interface RunSendParams {
-	intent: string
-	erc20: Hex
-	amount: bigint
-	aztecRecipient: string
-	isPrivate: boolean
-	claimSalt?: Fr
-	gas?: unknown
-}
-
-interface RunSendHooks {
-	onSecrets?: (s: Record<string, unknown>) => void
-	onSent?: (txHash: string) => void
-	onConfirmed?: (r: unknown) => void
+interface SmokeWallet {
+	signTypedData(args: unknown): Promise<Hex>
+	writeContract(args: { functionName: string }): Promise<Hex>
 }
 
 const PUBLIC_SECRET = `0x${"07".repeat(32)}`
+const FUEL_SECRET_HASH = `0x${"08".repeat(32)}`
 
-/** Drives the recovery hooks in the real order and reports the registration the factory froze. */
-async function fakeRunSend(_l1: unknown, _gen: unknown, p: RunSendParams, _stage?: unknown, hooks?: RunSendHooks) {
-	h.state.order.push("runSend")
+/** The record `depositL1` opens with, reduced to what the wizard reads: a public leg's claim material in it, a private
+ *  token leg's salt beside it, hashed by the same (faked) derivations the claim will check. */
+async function plannedRecord(p: DepositPlan): Promise<{ record: DepositRecord; secrets: DepositSecrets }> {
 	const isToken = p.intent !== "gas"
-	const tokenSecretHashHex = p.claimSalt
-		? (await computeSecretHash(p.claimSalt)).toString()
-		: (await computeSecretHash(Fr.fromString(PUBLIC_SECRET))).toString()
-	// A registered token keeps the decimals the factory froze; a first-time one takes the list's.
-	const frozen = h.state.registrations.get(p.erc20.toLowerCase()) as { decimals: number } | undefined
-	const decimals = frozen?.decimals ?? LIST_DECIMALS
-	const token = isToken
-		? {
-				erc20: p.erc20.toLowerCase(),
-				portal: portalOf(p.erc20),
-				l2Token: l2TokenOf(p.erc20),
-				nameWord: field(p.erc20, "name"),
-				symbolWord: field(p.erc20, "symbol"),
-				decimals,
-				displaySymbol: "TOK",
-				registerKey: field(p.erc20, "key"),
-				registerIndex: "3",
-			}
-		: undefined
-	hooks?.onSecrets?.({
-		tokenClaimValueHex: isToken ? (p.claimSalt?.toString() ?? PUBLIC_SECRET) : undefined,
-		tokenSecretHashHex: isToken ? tokenSecretHashHex : undefined,
-		fuelSecretHex: p.gas ? PUBLIC_SECRET : undefined,
-		fuelSecretHashHex: p.gas ? `0x${"08".repeat(32)}` : undefined,
-	})
-	hooks?.onSent?.("0xl1tx")
+	const claimSalt = p.isPrivate && isToken ? Fr.random() : undefined
+	const fuelSalt = p.isPrivate && p.gas ? Fr.random() : undefined
+	const claimValue = claimSalt
+		? deriveTokenClaimSecret(claimSalt, AztecAddress.fromStringUnsafe(p.recipient))
+		: Fr.fromString(PUBLIC_SECRET)
+	const id = isToken ? (await computeSecretHash(claimValue)).toString() : FUEL_SECRET_HASH
+	const fuel = p.gas && { ...(fuelSalt ? {} : { secret: PUBLIC_SECRET }), secretHashHex: FUEL_SECRET_HASH }
+	const record = {
+		id,
+		intent: p.intent,
+		...(!p.isPrivate && isToken ? { secret: PUBLIC_SECRET } : {}),
+		...(fuel ? { fuel } : {}),
+	} as unknown as DepositRecord
+	return { record, secrets: { ...(claimSalt ? { claimSalt } : {}), ...(fuelSalt ? { fuelSalt } : {}) } }
+}
+
+/** The block the factory froze: a registered token keeps its decimals, a first-time one takes the list's. */
+function frozenBlock(erc20: Hex) {
+	const frozen = h.state.registrations.get(erc20.toLowerCase()) as { decimals: number } | undefined
+	return {
+		erc20: erc20.toLowerCase(),
+		portal: portalOf(erc20),
+		l2Token: l2TokenOf(erc20),
+		nameWord: field(erc20, "name"),
+		symbolWord: field(erc20, "symbol"),
+		decimals: frozen?.decimals ?? LIST_DECIMALS,
+		displaySymbol: "TOK",
+		registerKey: field(erc20, "key"),
+		registerIndex: "3",
+	}
+}
+
+/** `depositL1` in the SDK's order: the record persisted before any prompt (a private send seals there), the signature
+ *  that names a public row, the deposit, then the leaves and the registration the factory froze. */
+async function fakeDepositL1(_net: unknown, _r: unknown, wallet: SmokeWallet, p: DepositPlan, run: RunOptions): Promise<DepositRecord> {
+	h.state.order.push("depositL1")
+	const { record, secrets } = await plannedRecord(p)
+	await run.persist(record, secrets)
+	await wallet.signTypedData({})
+	const txHash = await wallet.writeContract({ functionName: "bridgeWithPermit" })
+	const sent = { ...record, depositTxHash: txHash } as DepositRecord
+	await run.persist(sent, secrets)
+	run.onEvent?.({ id: record.id, seq: 0, type: "deposit-sent", txHash })
+	const token = p.intent === "gas" ? undefined : frozenBlock(p.token)
 	// The send created the clone, so the token is registered on Ethereum from here on.
-	if (isToken && !h.state.registrations.has(p.erc20.toLowerCase())) {
-		h.state.registrations.set(p.erc20.toLowerCase(), registrationOf(p.erc20, decimals))
+	if (token && !h.state.registrations.has(p.token.toLowerCase())) {
+		h.state.registrations.set(p.token.toLowerCase(), registrationOf(p.token, token.decimals))
 	}
-	const result = {
-		txHash: "0xl1tx",
-		tokenLeafIndex: isToken ? 7n : undefined,
-		tokenMessageHashHex: isToken ? field(p.erc20, "msg") : undefined,
-		fuelLeafIndex: p.gas ? 8n : undefined,
-		fuelMessageHashHex: p.gas ? field(p.erc20, "fuelmsg") : undefined,
-		fuelReceived: p.gas ? 5n : undefined,
-		token,
-	}
-	hooks?.onConfirmed?.(result)
-	return result
+	const confirmed = {
+		...sent,
+		...(token ? { leafIndex: "7", messageHash: field(p.token, "msg"), token } : {}),
+		...(sent.fuel ? { fuel: { ...sent.fuel, leafIndex: "8", messageHash: field(p.token, "fuelmsg"), received: "5" } } : {}),
+	} as DepositRecord
+	await run.persist(confirmed, secrets)
+	return confirmed
 }
 
 // ── mounting + driving ───────────────────────────────────────────────────────────────────────────
@@ -525,11 +532,10 @@ describe("send wizard smoke", () => {
 			if (h.state.listGate) await h.state.listGate
 			return { tokens: listFixture.tokens, provenance: "fresh" }
 		})
-		h.fn.runSend.mockImplementation(fakeRunSend)
+		h.fn.depositL1.mockImplementation(fakeDepositL1)
 		h.fn.claimViaHub.mockImplementation(async (_hub: unknown, p: { token: { erc20: string } }) => claimOutcome(p.token.erc20))
 		h.fn.exitViaHub.mockImplementation(async () => ({ receipt: { txHash: "0xexittx", blockNumber: 5 } }))
 		h.fn.preflightHubExit.mockImplementation(async () => {})
-		h.fn.ensurePermit2Approval.mockImplementation(async () => {})
 		h.fn.buildFeeJuiceClaimDep.mockImplementation(async () => ({
 			simulate: async () => ({}),
 			send: async () => ({ txHash: "0xfjclaim" }),
@@ -596,8 +602,8 @@ describe("send wizard smoke", () => {
 		await settle()
 
 		expect(h.state.order.indexOf("retryCapabilities")).toBeGreaterThanOrEqual(0)
-		expect(h.state.order.indexOf("retryCapabilities")).toBeLessThan(h.state.order.indexOf("runSend"))
-		expect(h.fn.runSend).toHaveBeenCalledTimes(1)
+		expect(h.state.order.indexOf("retryCapabilities")).toBeLessThan(h.state.order.indexOf("depositL1"))
+		expect(h.fn.depositL1).toHaveBeenCalledTimes(1)
 		expect(sendRecord()?.token?.erc20).toBe(LIST_WBTC)
 	})
 
@@ -612,7 +618,7 @@ describe("send wizard smoke", () => {
 		await settle()
 
 		expect(h.fn.retryCapabilities).toHaveBeenCalled()
-		expect(h.fn.runSend).not.toHaveBeenCalled()
+		expect(h.fn.depositL1).not.toHaveBeenCalled()
 		expect(records()).toHaveLength(0)
 		expect(w.find(sel(TESTIDS.sendGrantDeclined)).exists()).toBe(true)
 	})
@@ -643,7 +649,7 @@ describe("send wizard smoke", () => {
 
 		release()
 		await settle()
-		expect(h.fn.runSend).toHaveBeenCalledTimes(1)
+		expect(h.fn.depositL1).toHaveBeenCalledTimes(1)
 		expect(w.find(sel(TESTIDS.stepper)).attributes("data-id")).not.toMatch(/^dep-pending-permit-/)
 		// Granted in this run, the permission stays on the rail as its first, done phase.
 		expect(w.findAll(sel(TESTIDS.stepperPhase))[0]?.attributes("data-phase")).toBe("permit")
@@ -676,8 +682,8 @@ describe("send wizard smoke", () => {
 		await toReview(w)
 		await w.find(sel(TESTIDS.sendReviewConfirm)).trigger("click")
 		await settle()
-		expect(h.fn.runSend).toHaveBeenCalledTimes(1)
-		expect(h.fn.runSend.mock.calls[0][2].intent).toBe("token")
+		expect(h.fn.depositL1).toHaveBeenCalledTimes(1)
+		expect(h.fn.depositL1.mock.calls[0][3].intent).toBe("token")
 	})
 
 	it("an unregistered token warns on the review and claims through the register path", async () => {
@@ -761,7 +767,7 @@ describe("send wizard smoke", () => {
 		await w.find(sel(TESTIDS.sendReviewConfirm)).trigger("click")
 		await settle()
 
-		expect(h.fn.runSend.mock.calls[0][2].intent).toBe("gas")
+		expect(h.fn.depositL1.mock.calls[0][3].intent).toBe("gas")
 		const rec = records().find((r) => r.intent === "gas")
 		expect(rec).toBeDefined()
 		expect(rec?.token).toBeUndefined()
