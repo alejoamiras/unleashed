@@ -151,7 +151,7 @@ describe("CI behavior-gating guard", () => {
   test("the tools build covers the tools graph, the files its libraries bundle from outside it, and its workflow", () => {
     const tools = filtersOf("pr-quick.yml")["tools"]
     assertGraphCovered(tools, "tools", "tools")
-    expect(importsOutside("sdk").length, "the SDK bundles the hub artifact from contracts/").toBeGreaterThan(0)
+    expect(importsOutside("sdk").length, "the SDK bundles hub artifacts and generation records from contracts/").toBeGreaterThan(0)
     const outside = transitiveDeps("tools").flatMap(importsOutside)
     for (const path of outside) {
       expect(tools.some((pattern) => new Bun.Glob(pattern).match(path)), `tools must gate ${path}`).toBe(true)
