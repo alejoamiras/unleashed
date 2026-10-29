@@ -23,3 +23,6 @@
 - **Review round 1: a reviewer's diff against a freshly fetched trunk shows the trunk's new commits reversed.**
   Fetching `origin/main` mid-review put #48's keyed-log redaction into `origin/main..HEAD` as a removal; Codex
   reported it as a regression. Pin the review base to a commit, not a moving ref.
+- **CI: a new SDK event reaches the sandbox integration suite's pinned scripts.** `sdk-flows.integration.test.ts`
+  pins each deposit's event script; D63's `approval:requested` failed it on CI after every local gate had passed,
+  because none of them runs `test:integration`. An SDK event or order change runs `sdk-flows` before the PR.
