@@ -177,11 +177,10 @@ interface RouteCtx {
 	rate?: FuelProbe
 }
 
-/** Why the venue gave no gas leg: a quote under the claim minimum is the amount's, a failed read is an outage, and
- *  any other answer (a revert, a broken pin, a zero rate) is no route. */
-function gasFailure(c: RouteCtx, res?: FuelQuoteRefusal): Outcome {
-	if (res?.reason === "floor") return settle({ kind: "below-floor", expectedOut: res.expectedOut, floor: res.floor })
-	const outage = res?.reason === "provider" && c.venue !== undefined && !c.venue.reverted()
+/** Only a failed read is an outage: a quote under the claim minimum is the amount's to fix, any other refusal no route. */
+function gasFailure(c: RouteCtx, res: FuelQuoteRefusal): Outcome {
+	if (res.reason === "floor") return settle({ kind: "below-floor", expectedOut: res.expectedOut, floor: res.floor })
+	const outage = res.reason === "provider" && !c.venue?.reverted()
 	return outage ? unavailable("The gas venue could not be read.") : noRoute(NO_GAS_ROUTE)
 }
 
@@ -190,7 +189,7 @@ async function sliceOf(c: RouteCtx, venue: FuelQuoteProvider, delivered: bigint)
 	if (!c.rate) {
 		const probe = await venue.probe(c.ask.srcToken.destToken, 10n ** BigInt(c.ask.srcToken.decimals))
 		if (!probe.ok) return gasFailure(c, probe)
-		if (probe.probe.probeOut <= 0n) return gasFailure(c)
+		if (probe.probe.probeOut <= 0n) return noRoute(NO_GAS_ROUTE)
 		c.rate = probe.probe
 	}
 	const slice = c.deps.slice(c.ask, delivered, c.rate)

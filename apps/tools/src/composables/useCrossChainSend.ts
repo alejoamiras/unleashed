@@ -96,7 +96,8 @@ export interface UseCrossChainSendHandle {
 	readonly figures: ComputedRef<CrossChainFigures | null>
 	readonly ceiling: ComputedRef<FeeCeiling | null>
 	readonly notice: ComputedRef<CrossChainNotice | null>
-	/** Why the route's gas leg cannot be signed, the same refusals the Ethereum-origin slice gets. */
+	/** Why the gas leg cannot be signed, the same refusals the Ethereum-origin slice gets, a slice the venue quotes
+	 *  under the claim minimum included. */
 	readonly gasError: ComputedRef<string | null>
 	/** The gas leg as the amount step and the plan carry it. */
 	readonly gas: ComputedRef<GasLegPlan | null>
