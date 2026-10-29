@@ -25,7 +25,7 @@ import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
 import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
-import { claimViaHub, hubAt, type HubClaimOutcome, type HubClaimParams, type SendOpts } from "@unleashed/sdk/internal"
+import { claimViaHub, hubAt, type HubClaimOutcome, type HubClaimParams, randomField, type SendOpts } from "@unleashed/sdk/internal"
 import { deriveHubTokenInstance, type ManifestToken, type ManifestV2, PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
 import { type DeployerNetwork, resolveDeployerKeys } from "./deployer-keys"
 
@@ -183,8 +183,8 @@ export async function freshSchnorrAccount(ewallet: {
 		signingKey: unknown,
 	) => Promise<{ getAccount: () => Promise<{ getAddress: () => AztecAddress }> }>
 }) {
-	const { signingKey, secretKey } = await deriveNuloAccountKeys(Fr.random())
-	const manager = await ewallet.createSchnorrAccount(secretKey, Fr.random(), signingKey)
+	const { signingKey, secretKey } = await deriveNuloAccountKeys(randomField())
+	const manager = await ewallet.createSchnorrAccount(secretKey, randomField(), signingKey)
 	const from = (await manager.getAccount()).getAddress()
 	return { manager, from }
 }

@@ -10,12 +10,11 @@
  */
 import { FEE_JUICE_ADDRESS } from "@aztec-labs/constants"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, getAddress, type Hex, type LocalAccount, type PublicClient, pad, parseEther, toHex, type WalletClient } from "viem"
 import { privateKeyToAccount, privateKeyToAddress } from "viem/accounts"
 import type { DiscoveryChainReads } from "../src/crosschain-discovery"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
-import type { L1Ctx } from "@unleashed/sdk/internal"
+import { type L1Ctx, randomField } from "@unleashed/sdk/internal"
 import { lifiBook, type ManifestV2 } from "@unleashed/sdk/protocol"
 import { runFpcGate } from "./check-fpc-version"
 import { type FillDeps, fillSourceDeposit } from "./fill-testnet"
@@ -192,7 +191,7 @@ async function main(): Promise<void> {
 	const base: Omit<CanaryDeps, "recipient" | "mode"> = {
 		reads: { source: reads.source as unknown as ChainReads, ethereum: reads.ethereum as unknown as ChainReads },
 		across: { fetch: globalThis.fetch, base: edge.acrossBase },
-		random: () => Fr.random(),
+		random: randomField,
 		now: () => Date.now(),
 		sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 		log: (line) => console.log(line),
