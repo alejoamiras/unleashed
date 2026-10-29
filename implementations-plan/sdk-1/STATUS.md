@@ -53,3 +53,4 @@
 - 2026-10-29 a5 started on sdk-1-a5 from origin/main 54de731 (a4 squash-merged as #56); close-out deferred to a6 by the orchestrator
 - 2026-10-29 a5 5.1: integrator README, examples/{fuel,bridge,resume}.ts, publish-sdk.yml (D22, D72), pr-quick pack-sdk (D73), pack:check --out; lint, typecheck:all, test:all, lint:actions, test:ci-gating, pack:check green; npm dry-run reads the tarball
 - 2026-10-29 a5 review round 1: Codex 4 Moderate (CSP data:, npm allowed actions and 2-day expiry, error contract scope, minFj wording), Opus 1 Medium-High 1 Medium 4 Low (claim submission none on a sent deposit, never row, reverted drop case, search window, payer labels, example comment); all docs/example, fixed
+- 2026-10-29 a5 review round 2: Codex 1 High (a mined revert is not final: keep the record until it is), 1 Moderate (submission names the transfer; claim preflight none is the exception); fixed in README, errors.ts TSDoc, resume example

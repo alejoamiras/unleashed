@@ -23,3 +23,6 @@
   tell an integrator when to drop a record must key on both `code` and `submission`.
 - **npm's trusted-publisher entries changed under us.** Since Sep 2026 a new entry allows only `npm stage publish`
   unless direct `npm publish` is enabled, and an entry unused for two days expires (npm docs, trusted publishers).
+- **Round 2: a fix to a contract sentence needs the same throw-site sweep as the original.** Rewording `submission`
+  as "the failing call" fixed the preflight `none` and broke every later claim error, which says `submitted` for the
+  deposit with no claim sent. And "reverted on chain" is not "nothing moved" until the block is final.

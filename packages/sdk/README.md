@@ -66,11 +66,12 @@ finished from what you stored.
   the record lost on Ethereum while the record is under 50,000 blocks old (about a week), reads lost message leaves
   from the deposit's receipt, watches a claim it already sent instead of sending another, and waits out an attempt
   whose hash was never stored until its nullifier or its age settles it.
-- A deposit the user refused (`user-rejected`, `submission: "none"`) or one that reverted on chain
-  (`deposit-reverted` with `submission: "submitted"`, from the deposit or a later claim) moved nothing: drop the
-  record. A `deposit-reverted` with `submission: "unknown"` may still have been broadcast: keep it. A page that closed between
-  `persist` and the signature leaves a record no deposit may match: its claim reports `deposit-not-found`
-  (`after-wait`), and when to give it up is yours.
+- A deposit the user refused (`user-rejected`, `submission: "none"`) moved nothing: drop the record. One that
+  reverted on chain (`deposit-reverted` with `submission: "submitted"`) moved nothing once its block is final, and a
+  reorg can still land it before then: drop the record only after that. A `deposit-reverted` with
+  `submission: "unknown"` may have been broadcast: keep it. A page that closed between `persist` and the signature
+  leaves a record no deposit may match: its claim reports `deposit-not-found` (`after-wait`), and when to give it up
+  is yours.
 - `signal` stops a call's waiting. It never cancels a sent transaction and is not honoured between a send and the
   persist of its hash.
 
@@ -126,8 +127,9 @@ before `settled`.
 
 Every claim failure, and every deposit failure from its signature on, is a `BridgeError` (`isBridgeError`). Anything
 else comes from your RPC, node or wallet failing before the deposit was signed: the deposit was not sent, and the same
-call may run again. `code` says what happened; `submission` whether the failing call put anything on a chain
-(`none`, `submitted`, `unknown`); `retry` what to do next. A claim always follows a sent deposit: never drop a record
+call may run again. `code` says what happened; `submission` whether anything reached a chain for this transfer
+(`none`, `submitted`, `unknown`); `retry` what to do next. A claim's `submitted` names its deposit, not a claim it
+broadcast, and a claim refused before it reads anything says `none` although its deposit was sent: never drop a record
 because its claim reported `none`.
 
 | `retry` | Meaning |

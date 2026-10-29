@@ -800,6 +800,11 @@ Arc a5, the implementation (`git diff 54de731..HEAD`):
   call and a claim's `none` never licenses a drop. The `never` row now says a sent deposit is finished with its claim;
   a mined revert (`submitted`) is the drop case, an `unknown` one is kept; the 50,000-block search window, the
   `payer` labels and a stray example comment corrected.
+- **Round 2, Codex (same session): the round-1 fixes hold; 1 High, 1 Moderate, both in the docs.** A mined revert is
+  not final: a reorg can re-land the same signed deposit, so dropping its record could lose a public claim secret; the
+  README now drops it only once the block is final. Redefining `submission` as the failing call's was wrong too: after
+  `openClaim` a claim reports `submitted` for its deposit with no claim sent; the TSDoc keeps "for this transfer" with
+  the preflight `none` named as the one exception.
 
 ## Delivery
 
