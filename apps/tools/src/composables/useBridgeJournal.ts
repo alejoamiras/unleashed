@@ -268,6 +268,8 @@ function engineRecords(): BridgeJournalRecord[] {
 
 // Module state, deliberately non-reactive: secrets and locks never enter Vue reactivity.
 const sessionLive = new Set<string>()
+/** Discarded here, its storage removal waiting for the journal lock. */
+const discarding = new Set<string>()
 const inFlight = new Set<string>()
 const secretCache = new Map<string, { secretHex: string; envelope: DepositEnvelopeV2 }>()
 // Set ONLY when THIS process sent the record's claim: its landing is not narrated as a
@@ -315,8 +317,9 @@ export function runOnLane<T>(lane: "l1" | "aztec", fn: () => Promise<T>): Promis
 }
 
 function reload(): void {
-	records.value = loadJournal(deps.kv)
-	crossChainRecords.value = loadCrossChainJournal(deps.kv)
+	const kept = <T extends { id: string }>(rs: T[]) => (discarding.size ? rs.filter((r) => !discarding.has(r.id)) : rs)
+	records.value = kept(loadJournal(deps.kv))
+	crossChainRecords.value = kept(loadCrossChainJournal(deps.kv))
 	logNewHashes()
 }
 
@@ -445,6 +448,7 @@ export function __resetJournalForTests(): void {
 	crossChainRecords.value = []
 	runtime.value = {}
 	sessionLive.clear()
+	discarding.clear()
 	inFlight.clear()
 	secretCache.clear()
 	localClaimProvenance.clear()
@@ -516,6 +520,7 @@ export function updateRecordWhen(
 /** The PERSISTED record, read straight from kv — not this tab's reactive copy, which lags other
  *  tabs' writes until their storage event lands. For read-then-patch sites; touches no ref. */
 export function currentRecord(id: string): BridgeJournalRecord | undefined {
+	if (discarding.has(id)) return undefined
 	return loadAllRecords(deps.kv).find((r) => r.id === id) as BridgeJournalRecord | undefined
 }
 
@@ -543,6 +548,7 @@ export function updateCrossChainRecord(
 
 /** The persisted cross-chain record, read straight from storage. */
 export function currentCrossChainRecord(id: string): CrossChainDepositRecord | undefined {
+	if (discarding.has(id)) return undefined
 	return loadCrossChainJournal(deps.kv).find((r) => r.id === id)
 }
 
@@ -632,12 +638,24 @@ export function discard(id: string): Promise<void> {
 	runtime.value = rest
 	const remove = () => {
 		removeRecord(deps.kv, id)
+		discarding.delete(id)
 		reload()
 		// Re-derived from what SURVIVED, never from the record that left: two records can share a token.
 		deps.retainPinnedTokens?.(sendTokenBlocks().map((t) => t.l2Token))
 		log("discarded", id)
 	}
-	return deps.locks ? deps.locks.journal(remove) : Promise.resolve(remove())
+	if (!deps.locks) {
+		remove()
+		return Promise.resolve()
+	}
+	// The removal waits for the journal lock; callers read the record as gone the moment they discard it.
+	discarding.add(id)
+	reload()
+	return deps.locks.journal(remove).catch((e) => {
+		discarding.delete(id)
+		reload()
+		log("discard failed - the record stays", id, e instanceof Error ? e.message : String(e))
+	})
 }
 
 export const clearDone = discard
@@ -887,8 +905,8 @@ async function resolvePrivateSecret(rec: ClaimRecord): Promise<{ secretHex: stri
 }
 
 /** Per-record dedup wrapper: process-local first, then the cross-tab record lock when one is wired —
- *  a runner another tab holds is skipped exactly like an in-flight duplicate here. */
-/** `quiet`: the run shows on its own control, so the record does not read as busy meanwhile. */
+ *  a runner another tab holds is skipped exactly like an in-flight duplicate here. `quiet`: the run shows on its own
+ *  control, so the record does not read as busy meanwhile. */
 async function withRecordLock(id: string, fn: () => Promise<void>, quiet = false): Promise<"ran" | "held-local" | "held-elsewhere"> {
 	if (inFlight.has(id)) {
 		log("already in flight - skipping duplicate", id)
@@ -1059,8 +1077,8 @@ function completeWithdraw(rec: ExitRecord | undefined, consumeTxHash?: string): 
 export async function runDepositClaim(id: string, opts: ClaimRunOptions = {}): Promise<void> {
 	try {
 		// withOperation wraps EACH spawned continuation (this is the single entry point for card
-		// retries, resumeSessionWork, and the fuel claim leg) — never the void dispatcher, which
-		// would release the switch gate immediately.
+		// retries and resumeSessionWork) — never the void dispatcher, which would release the switch
+		// gate immediately.
 		await withOperation(() => runDepositClaimInner(id, opts))
 	} catch (e) {
 		surfaceRunFailure(id, e)
@@ -1240,12 +1258,19 @@ async function claimMaterialFor(rec: ClaimRecord, gen: number, mode: ClaimMode):
 		const resolved = await resolvePrivateSecret(rec)
 		return resolved ? { value: resolved } : "stop"
 	}
+	return unsentPrivateMaterial(rec, gen, mode)
+}
+
+/** An unsent private claim's material: the deposit's facts first, so an unconfirmed deposit costs no signature, and
+ *  none for a watching run, which would stop at the claim's prompt anyway. */
+async function unsentPrivateMaterial(rec: ClaimRecord, gen: number, mode: ClaimMode): Promise<{ value?: ClaimMaterial } | ClaimRun> {
 	let target = rec
 	if (factsMissing(rec)) {
 		const recovered = await recoverDepositFacts(rec, gen)
 		if (typeof recovered === "string") return recovered
 		target = recovered
 	}
+	if (mode.watchOnly) return "stop"
 	const material = await resolvePrivateClaimMaterial(target, target.id)
 	return material ? { value: material } : "stop"
 }
@@ -1263,11 +1288,8 @@ async function recoverDepositFacts(rec: ClaimRecord, gen: number): Promise<Claim
 /** The claim material: for a private record the unsealed authoritative copy. Null = the run must stop (already
  *  narrated). */
 async function resolvePrivateClaimMaterial(rec: ClaimRecord, id: string): Promise<ClaimMaterial | null> {
-	// Only narrate UNSEALING when a real signature is needed (a rediscovered record). A fresh
-	// in-session deposit has its secret cached, so the unseal is instant - setting "unsealing"
-	// (which the rail maps to CLAIM) flashes CLAIM and then regresses to CROSSING when the sync
-	// gate below runs (the "instant green then rollback" bug). Cached ⇒ stay quiet; the gate
-	// narrates CROSSING until the simulate probe says the message is consumable.
+	// Only narrate UNSEALING when a real signature is needed (a rediscovered record): "unsealing" maps to CLAIM on the
+	// rail, and a cached secret's instant unseal would flash CLAIM before the claim's arrival narration regresses it.
 	if (!secretCache.has(id)) setStep(id, "unsealing", "one Ethereum signature")
 	return resolvePrivateSecret(rec)
 }
@@ -1307,9 +1329,11 @@ interface CallPlan {
 	watchOnly: boolean
 	material?: ClaimMaterial
 	factsOnly?: boolean
+	/** The tokens already landed elsewhere: every failure is the gas claim's. */
+	landed?: boolean
 }
 
-/** The card's gas claim shows its progress on its own button, as it always has, and watches its hash to the end. */
+/** The card's gas claim shows its progress on its own button and watches its receipt for `GAS_CLAIM_POLLS` reads. */
 const quietCall = (call: ClaimCall) => call.target === "gas-leg"
 
 /** Why the engine stopped a call: a receipt round ended, a newer runner or a discard took the record, discovery moved
@@ -1359,7 +1383,10 @@ async function claimCall(rec: ClaimRecord, gen: number, plan: CallPlan, setup?: 
 	const call: ClaimCall = {
 		target: plan.target,
 		controller: new AbortController(),
-		scene: newScene(runtime.value[rec.id]?.claimable === true, localClaimProvenance.has(rec.id)),
+		scene: {
+			...newScene(runtime.value[rec.id]?.claimable === true, localClaimProvenance.has(rec.id)),
+			...(plan.landed ? { landed: "claimed-elsewhere" as const } : {}),
+		},
 		base: view,
 		factsOnly: plan.factsOnly === true,
 	}
@@ -1372,7 +1399,8 @@ async function claimCall(rec: ClaimRecord, gen: number, plan: CallPlan, setup?: 
 			signal: call.controller.signal,
 			secrets: secretsOf(rec, plan.material),
 			watchOnly: plan.watchOnly,
-			withoutGas: deps.withoutGas?.(rec.id) === true,
+			// A private claim always claims its private gas: settling without it would strand the sealed salt.
+			withoutGas: !rec.isPrivate && deps.withoutGas?.(rec.id) === true,
 		})
 		return { outcome, call }
 	} catch (error) {
@@ -1412,6 +1440,8 @@ function watchDepositMove(rec: ClaimRecord, call: ClaimCall): () => void {
 				if (depositMovedFrom(rec.id, call)) stopCall(call, "moved")
 			})
 		},
+		// A move that landed while the call was set up counts too.
+		{ immediate: true },
 	)
 }
 
@@ -1423,7 +1453,11 @@ function depositMovedFrom(id: string, call: ClaimCall): boolean {
 }
 
 function onClaimEvent(id: string, call: ClaimCall, e: TransferEvent): void {
-	if (call.stopped || quietCall(call)) return
+	if (call.stopped) return
+	if (quietCall(call)) {
+		if (e.type === "claim-waiting" && e.poll > GAS_CLAIM_POLLS) stopCall(call, "round")
+		return
+	}
 	// The wait after a hash's last poll of the round ends it: the record lock is released and the run re-enters.
 	if (e.type === "claim-waiting" && e.poll > RECEIPT_POLLS_PER_ROUND) {
 		stopCall(call, "round")
@@ -1442,6 +1476,8 @@ function onClaimEvent(id: string, call: ClaimCall, e: TransferEvent): void {
 
 const UNCHECKED_NETWORK = "This app could not check the bridge on this network. Nothing was sent."
 const RECEIPT_POLL_MS = 4000
+/** ×4s ≈ four minutes: how long the card's gas claim watches its receipt before saying it has not confirmed. */
+const GAS_CLAIM_POLLS = 60
 
 /** The SDK's checked network. Before a claim is sent nothing runs on a network this app could not check; a sent
  *  claim's network check is retried through a node that does not answer, as its receipt reads are. */
@@ -1547,7 +1583,19 @@ async function verifyClaimedByOther(rec: SendDepositRecord, gen: number, mode: C
 	if (markerDropped(rec.id, watched)) return "stop"
 	if (mode.watchOnly || !gasLeftForPrompt(watched)) return claimEnded(rec.id, watched)
 	if ((await claimGuards(rec, rec.id)) === "stop") return "stop"
-	return runClaim(rec.id, gen, mode, material)
+	return claimLeftGas(rec.id, gen, material)
+}
+
+/** The gas another submitter's token claim left, claimed through the gas entry, so the click can send no claim but that
+ *  one; a watching token call then settles the record. */
+async function claimLeftGas(id: string, gen: number, material?: ClaimMaterial): Promise<ClaimRun> {
+	const rec = engineRecords().find((r) => r.id === id) as ClaimRecord | undefined
+	if (!rec) return "stop"
+	const gas = await claimCall(rec, gen, { target: "gas", watchOnly: false, material, landed: true })
+	if (!("outcome" in gas)) return claimEnded(id, gas)
+	const live = engineRecords().find((r) => r.id === id) as ClaimRecord | undefined
+	if (!live) return "stop"
+	return claimEnded(id, await claimCall(live, gen, { target: "token", watchOnly: true, material }))
 }
 
 /** The chain read the message live and the marker is gone: whatever the watching call met after that, the run ends
@@ -1613,7 +1661,7 @@ export async function runGasClaim(id: string): Promise<void> {
 				throw new Error(UNCHECKED_NETWORK)
 			})
 			const result = await claimCall(rec, gen, { target: "gas-leg", watchOnly: false }, { ctx, net })
-			if ("error" in result && !result.call.stopped) failure = result.error
+			failure = gasClaimFailure(result)
 			reload()
 			const live = engineRecords().find((r) => r.id === id) as ClaimRecord | undefined
 			finish = "outcome" in result && live?.claimedByOther === true && !claimRetired(live)
@@ -1623,6 +1671,14 @@ export async function runGasClaim(id: string): Promise<void> {
 	if (ran === "held-elsewhere") throw new Error("Another tab is claiming this deposit — try again in a moment.")
 	if (failure !== undefined) throw new Error(failureText(failure))
 	if (finish) await runDepositClaim(id, { interactive: false, watchOnly: true })
+}
+
+/** A card gas claim not confirmed within its watch, or dropped, says it may simply be claimed again. */
+function gasClaimFailure(result: CallResult): unknown {
+	if (!("error" in result)) return undefined
+	const dropped = isBridgeError(result.error) && result.error.code === "claim-dropped"
+	if (result.call.stopped === "round" || dropped) return new Error(FEE_STOP_COPY["standalone-unconfirmed"])
+	return result.call.stopped ? undefined : result.error
 }
 
 /** The withdraw consume tail: rediscovered consumeTxHash waits (with identity check) instead of

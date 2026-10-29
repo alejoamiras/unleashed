@@ -1043,6 +1043,29 @@ Arc a6, PR 1 (`git diff 890edac..HEAD`):
   opened the prompt (checked right before each wallet send, the known-unsent latch lifted).
 - **Round 3, Codex (same session): APPROVE.** Both reproductions abort with nothing settled or sent. Converged.
 
+Arc a6, PR 2 (`git diff bc5e585..HEAD`):
+
+- **Round 1, Codex: APPROVE WITH CHANGES, 4 Medium; all verified and fixed with tests.**
+  - A discard waiting for the journal lock still listed the record, so a rejected exit was adopted: the record now
+    leaves this tab's lists and readers at once.
+  - Failure text unwrapped the wallet's own causes: it now stops at the first error under the SDK's wrappers.
+  - The claimed-elsewhere continuation could send a token claim if the message read live again: the gas left is
+    claimed through the gas entry, and a watching token call settles the record.
+  - The card's gas claim watched for 30 minutes and ended on a raw sentence: it keeps its four-minute watch, and a
+    timeout or drop shows today's `standalone-unconfirmed` sentence.
+- **Round 1, Opus (beside it): 1 Medium, 3 Low; all verified and fixed with tests.**
+  - "Claim without fuel" on a private claimed-elsewhere record settled it with its private gas stranded: a private
+    claim ignores the choice, as today's private ladder did.
+  - A deposit move that landed while a call was set up went unnoticed: the move watch also checks at its start.
+  - A watching run could still ask for the unseal signature: it now stops before it.
+  - The pending discard (fixed above). Four stale or narrating comments were rewritten.
+- **The screenshot tour** reached all five states through real flows. Everything else it flagged is today's
+  rendering:
+  - the run template after fee-stop copy;
+  - the error chip;
+  - the lost wording under any error;
+  - two primary buttons on a claimed-elsewhere card.
+
 Arc a5, the implementation (`git diff 54de731..HEAD`):
 
 - **Round 1, Codex: the publish pipeline is sound; 4 Moderate, all in the docs.** bb.js fetches its WebAssembly from a

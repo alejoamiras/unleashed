@@ -147,11 +147,11 @@ export function narrateClaim(
 
 const GAS_TAIL = "Your tokens are unaffected — retry the gas claim from this card."
 
-/** The sentence a failure stands for: a fee stop's own copy, else the deepest cause's message, which is what the
- *  wallet or the chain said. */
+/** The sentence a failure stands for: a fee stop's own copy, else what the wallet or the chain said, the first error
+ *  under the SDK's wrappers. */
 export function failureText(e: unknown): string {
 	if (isBridgeError(e) && e.code === "fee-stop" && e.stop) return FEE_STOP_COPY[e.stop]
-	if (e instanceof Error && e.cause instanceof Error) return failureText(e.cause)
+	if (isBridgeError(e) && e.cause instanceof Error) return failureText(e.cause)
 	return e instanceof Error ? e.message : String(e)
 }
 

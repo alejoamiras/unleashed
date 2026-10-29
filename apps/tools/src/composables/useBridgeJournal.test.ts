@@ -50,7 +50,16 @@ import {
 	updateRecordWhen,
 	useBridgeJournal,
 } from "./useBridgeJournal"
-import { bridgeError, CLAIM_TX, type ClaimScript, type FakeClaimSdk, failsWith, fakeClaimSdk, sendsClaim } from "./test/fake-claim-sdk"
+import {
+	bridgeError,
+	CLAIM_TX,
+	type ClaimScript,
+	type FakeClaimSdk,
+	failsWith,
+	fakeClaimSdk,
+	pollsForever,
+	sendsClaim,
+} from "./test/fake-claim-sdk"
 
 function memKV(): KV {
 	const store = new Map<string, string>()
@@ -909,6 +918,23 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		expect(sdk.deps.claimContext).toHaveBeenCalledWith({ recipient: RECIPIENT, watchOnly: true })
 	})
 
+	it("a private claim ignores the claim-without-gas choice, and a watching run never asks for the unseal signature", async () => {
+		const sdk = fakeClaimSdk()
+		const deps = { ...claimDeps(kv, sdk), withoutGas: () => true }
+		connectJournalDeps(deps)
+		const cached = mkFueled("0xprivgas", { isPrivate: true, secret: undefined, sealerL1: SEALER })
+		addRecord(cached)
+		cacheSecret("0xprivgas", PRIV_SECRET, envelopeOf(cached, { salt: GAS_SALT }))
+		await runDepositClaim("0xprivgas")
+		expect(sdk.calls.map((c) => c.run.withoutGas)).toEqual([false])
+		const sealed = mkSend("0xsealed", { isPrivate: true, secret: undefined, sealerL1: SEALER })
+		sealed.sealedEnvelope = await sealEnvelopeFor(sealed)
+		addRecord(sealed)
+		await runDepositClaim("0xsealed", { interactive: false, watchOnly: true })
+		expect(deps.signL1).not.toHaveBeenCalled()
+		expect(sdk.calls).toHaveLength(1)
+	})
+
 	it("an unchecked network stops a claim not yet sent, with nothing sent", async () => {
 		const sdk = fakeClaimSdk()
 		sdk.network.mockRejectedValue(new Error("fetch failed"))
@@ -1223,12 +1249,17 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		expect(depositOf("0xfalse")?.completedAt).toBeUndefined()
 	})
 
-	it("a click on a record whose tokens another claimed claims the gas they left in a second, prompting pass; a resume leaves it", async () => {
+	it("a click on a record whose tokens another claimed claims the gas they left through the gas entry; a resume leaves it", async () => {
 		const sdk = fakeClaimSdk()
+		const gasOf = (c: { record: DepositRecord }) => c.record.fuel as NonNullable<DepositRecord["fuel"]>
 		sdk.script("token", async (c) => {
-			if (!c.run.watchOnly) return c.settle("claimed-elsewhere")
+			if (gasOf(c).consumed) return c.settle("claimed-elsewhere")
 			c.emit({ type: "claim-landed", via: "claimed-elsewhere" })
 			throw bridgeError("needs-prompt")
+		})
+		sdk.script("fuel", async (c) => {
+			await c.persist({ fuel: { ...gasOf(c), consumed: true } })
+			return { record: c.record, via: "claim" as const }
 		})
 		connectJournalDeps(claimDeps(kv, sdk))
 		addRecord(mkFueled("0xresumed", { claimedByOther: true }))
@@ -1237,10 +1268,12 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		expect(depositOf("0xresumed")?.completedAt).toBeUndefined()
 		addRecord(mkFueled("0xclicked", { claimedByOther: true }))
 		await runDepositClaim("0xclicked")
-		expect(sdk.calls.map((c) => [c.view.id, c.run.watchOnly])).toEqual([
-			["0xresumed", true],
-			["0xclicked", true],
-			["0xclicked", false],
+		// The token entry only ever watches: whatever the chain says between passes, the click sends no token claim.
+		expect(sdk.calls.map((c) => [c.view.id, c.entry, c.run.watchOnly])).toEqual([
+			["0xresumed", "token", true],
+			["0xclicked", "token", true],
+			["0xclicked", "fuel", false],
+			["0xclicked", "token", true],
 		])
 		expect(depositOf("0xclicked")?.completedAt).toBeDefined()
 	})
@@ -1362,6 +1395,35 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		expect(depositOf("0xleft")?.completedAt).toBeDefined()
 		addRecord(mkFueled("0xshort", { completedAt: 5 }))
 		await expect(runGasClaim("0xshort")).rejects.toThrow(/under the private claim's fee ceiling/)
+	})
+
+	it("the card's gas claim says it has not confirmed when its watch runs out or it is dropped", async () => {
+		const sdk = fakeClaimSdk()
+		sdk.script("fuel", pollsForever, failsWith(bridgeError("claim-dropped")))
+		connectJournalDeps(claimDeps(kv, sdk))
+		for (const id of ["0xslow", "0xdropped"]) {
+			addRecord(mkFueled(id, { completedAt: 5 }))
+			await expect(runGasClaim(id)).rejects.toThrow("The gas claim was sent but hasn't confirmed yet")
+		}
+	})
+
+	it("a discard waiting for the journal lock reads as gone at once, and no reload brings the record back", async () => {
+		const locks = memoryJournalLocks()
+		connectJournalDeps({ ...claimDeps(kv, fakeClaimSdk()), locks })
+		addRecord(mkSend("0xgone"))
+		addRecord(mkSend("0xother"))
+		let release: () => void = () => {}
+		const held = new Promise<void>((r) => {
+			release = r
+		})
+		const holder = locks.journal(() => held)
+		const removed = discard("0xgone")
+		expect(currentRecord("0xgone")).toBeUndefined()
+		updateRecord("0xother", { depositTxHash: DEPOSIT_TX })
+		expect(useBridgeJournal().records.value.map((r) => r.id)).toEqual(["0xother"])
+		release()
+		await Promise.all([holder, removed])
+		expect(kv.getItem(JOURNAL_KEY)).not.toContain("0xgone")
 	})
 })
 

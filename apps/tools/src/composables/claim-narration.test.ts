@@ -171,10 +171,11 @@ describe("narrateClaim", () => {
 describe("claimFailure", () => {
 	const scene = (patch: Partial<ReturnType<typeof newScene>> = {}) => ({ ...newScene(false, false), ...patch })
 
-	it("words a fee stop with its own copy and anything else with its deepest cause", () => {
+	it("words a fee stop with its own copy and anything else as the first error under the SDK's wrappers", () => {
 		expect(failureText(err("fee-stop", "x", { stop: "credit-short" }))).toBe(FEE_STOP_COPY["credit-short"])
-		expect(failureText(err("read-failed", "outer", { cause: new Error("mid", { cause: new Error("the node said no") }) }))).toBe(
-			"the node said no",
+		const wallet = new Error("the wallet said no", { cause: new Error("socket closed") })
+		expect(failureText(err("read-failed", "outer", { cause: err("claim-dropped", "inner", { cause: wallet }) }))).toBe(
+			"the wallet said no",
 		)
 		expect(failureText("plain")).toBe("plain")
 	})

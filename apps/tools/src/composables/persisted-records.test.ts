@@ -11,13 +11,14 @@ import { xcRecord } from "@/test/crosschain-record"
 
 vi.mock("@/contracts/bridge-generation", () => ({ FUEL_PORTAL: "0xfd05ee8687d4ca828ba3d26ef04b80dd1348e5bd" }))
 
-import { CLAIM_TX as CLAIM, type FakeClaimSdk, fakeClaimSdk } from "./test/fake-claim-sdk"
+import { CLAIM_TX as CLAIM, FAKE_NETWORK, type FakeClaimSdk, fakeClaimSdk, sendsClaim } from "./test/fake-claim-sdk"
 import {
 	__resetJournalForTests,
 	addRecord,
 	connectJournalDeps,
 	resumeSessionWork,
 	runDepositClaim,
+	updateCrossChainRecord,
 	useBridgeJournal,
 } from "./useBridgeJournal"
 
@@ -206,6 +207,32 @@ describe("persisted records claim through their views", () => {
 			attention: "error",
 			note: FEE_STOP_COPY["record-predates-send"],
 		})
+	})
+
+	it("a deposit discovery moved while the claim was being set up restarts the claim on the new leaf", async () => {
+		let open: () => void = () => {}
+		const gate = new Promise<void>((r) => {
+			open = r
+		})
+		sdk.deps.claimContext.mockImplementationOnce(async () => {
+			await gate
+			return { reads: {} as never, aztec: {} as never, network: async () => FAKE_NETWORK }
+		})
+		sdk.script(
+			"token",
+			async (c) => {
+				await c.hold()
+				throw new Error("the stale call was never stopped")
+			},
+			sendsClaim,
+		)
+		addRecord(schema4() as never)
+		const run = runDepositClaim(word("04"))
+		await vi.waitFor(() => expect(sdk.deps.claimContext).toHaveBeenCalled())
+		updateCrossChainRecord(word("04"), { leafIndex: "9", messageHash: word("9f") })
+		open()
+		await run
+		await vi.waitFor(() => expect(sdk.calls.map((c) => c.view.leafIndex)).toEqual(["7", "9"]))
 	})
 
 	it("a retired record of any shape resumes nothing", async () => {
