@@ -40,7 +40,7 @@ import {
 } from "@unleashed/sdk/protocol"
 import { createPublicClient, type Hex, hexToBytes, http, sha256 } from "viem"
 import {
-	assertNoSymlink,
+	assertRealPath,
 	BUILD_INPUTS,
 	GENERATION_PATHS,
 	type LiveNetwork,
@@ -180,17 +180,18 @@ export function buildOf(side: keyof typeof BUILD_INPUTS, root: string, tag: stri
 	return { commit: head, tag }
 }
 
-/** Rewrites a record directory: only the closed file set is removed, then the record's files are written. */
-export function writeRecordDir(dir: string, record: GenerationRecord, files: ReadonlyMap<string, Buffer>): void {
-	assertNoSymlink(dir)
-	for (const relative of RECORD_FILES) rmSync(join(dir, relative), { force: true })
-	for (const [relative, bytes] of files) {
-		if (!RECORD_FILES.includes(relative)) throw new Error(`${relative} is not a record file — STOP`)
-		mkdirSync(dirname(join(dir, relative)), { recursive: true })
-		writeFileSync(join(dir, relative), bytes)
+/** Rewrites record directory `dir` (repo-relative): only the closed file set is removed, then the record's files are
+ *  written. */
+export function writeRecordDir(root: string, dir: string, record: GenerationRecord, files: ReadonlyMap<string, Buffer>): void {
+	for (const relative of RECORD_FILES) {
+		assertRealPath(root, `${dir}/${relative}`)
+		rmSync(join(root, dir, relative), { force: true })
 	}
-	mkdirSync(dir, { recursive: true })
-	writeFileSync(join(dir, RECORD_FILE), jsonBytes(record))
+	for (const [relative, bytes] of [...files, [RECORD_FILE, jsonBytes(record)] as const]) {
+		if (!RECORD_FILES.includes(relative)) throw new Error(`${relative} is not a record file — STOP`)
+		mkdirSync(dirname(join(root, dir, relative)), { recursive: true })
+		writeFileSync(join(root, dir, relative), bytes)
+	}
 }
 
 export interface WriteOptions {
@@ -215,7 +216,7 @@ export async function writeRecord(network: LiveNetwork, opts: WriteOptions = {})
 		hubTarget: () => readFileSync(join(root, HUB_TARGET)),
 		build: (side) => buildOf(side, root, opts.tag),
 	})
-	writeRecordDir(join(root, dir), record, files)
+	writeRecordDir(root, dir, record, files)
 	return dir
 }
 

@@ -57,6 +57,7 @@ vi.mock("@/contracts/bridge-generation", () => ({
 	MANIFEST_TOKENS: [],
 	IS_PLACEHOLDER: false,
 	rebuildHubTokenInstance: vi.fn(async () => ({ address: { toString: () => h.L2_TOKEN } })),
+	hubArtifact: async () => ({ name: "TokenBridgeHub" }),
 }))
 
 vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({

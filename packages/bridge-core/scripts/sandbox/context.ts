@@ -44,6 +44,7 @@ import { deadline, FEE_CEILING, PERMIT2, rndNonce } from "./constants"
 import type { SandboxClients } from "./handle"
 import { mintFeeAsset } from "./l1"
 import { l2CtxFor } from "./l2"
+import { hubArtifactFor } from "../generation-paths"
 
 // ─── Credit-note inventory ───────────────────────────────────────────────────
 
@@ -132,7 +133,7 @@ export interface SmokeContext {
 /** A context whose actor is `from`. Each test file (each actor) builds its own. */
 export async function buildContext(clients: SandboxClients, manifest: ManifestV2, from: AztecAddress): Promise<SmokeContext> {
 	const bridge = manifest.bridge as BridgeBlock
-	const hub = await registerHub(clients.l2.wallet, bridge.l2.hub)
+	const hub = await registerHub(clients.l2.wallet, bridge.l2.hub, hubArtifactFor(manifest))
 	const hubAddress = AztecAddress.fromStringUnsafe(bridge.l2.hub.address)
 	const known = new Map<string, ContractBase>()
 	return {

@@ -4,8 +4,8 @@ import { DripperContractArtifact } from "@aztec-foundation/aztec-standards/artif
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
 import {
 	HUB,
-	HUB_ARTIFACT,
 	HUB_TOKEN_ARTIFACT,
+	hubArtifact,
 	MANIFEST_TOKENS,
 	rebuildHubInstance,
 	rebuildHubTokenInstance,
@@ -119,7 +119,7 @@ async function buildCapabilityManifest() {
  *  place its instance reaches the wallet. Nothing on a placeholder network. */
 async function registerHubContracts(w: Wallet): Promise<void> {
 	if (!HUB) return
-	await w.registerContract(await rebuildHubInstance(), HUB_ARTIFACT)
+	await w.registerContract(await rebuildHubInstance(), await hubArtifact())
 	const seen = new Set<string>()
 	const manifestTokens = MANIFEST_TOKENS.map((t) => ({
 		l2Token: t.l2Token,

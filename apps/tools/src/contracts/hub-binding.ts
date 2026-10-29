@@ -5,7 +5,7 @@
  */
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { hubBindingAt } from "@unleashed/sdk/internal"
-import { HUB } from "@/contracts/bridge-generation"
+import { HUB, hubArtifact } from "@/contracts/bridge-generation"
 import { NETWORK } from "@/lib/network"
 
 type NodeClient = ReturnType<typeof createAztecNodeClient>
@@ -21,7 +21,7 @@ export async function readHubBinding(erc20: string): Promise<string | undefined>
 	if (!HUB) return undefined
 	node ??= createAztecNodeClient(NETWORK.nodeUrl)
 	try {
-		return await hubBindingAt(node, HUB.toString(), erc20)
+		return await hubBindingAt(node, HUB.toString(), erc20, await hubArtifact())
 	} catch (e) {
 		console.debug(e instanceof Error ? e : new Error("hub binding read failed"))
 		throw new Error("Couldn't reach the Aztec node to read this token's status. Try again in a moment.")

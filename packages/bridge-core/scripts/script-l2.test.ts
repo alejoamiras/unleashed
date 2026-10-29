@@ -71,12 +71,12 @@ describe("script-l2", () => {
 			constructorArgs: [TOKEN_CLASS_ID, FACTORY, GUARDIAN],
 		}
 		const { wallet, registered } = fakeWallet()
-		const hub = await registerHub(wallet, record)
+		const hub = await registerHub(wallet, record, tokenBridgeHubArtifact)
 		expect(hub.address.toString()).toBe(record.address)
 		expect(registered).toEqual({ classes: 1, instances: [record.address] })
 
 		const guard = fakeWallet()
-		await expect(registerHub(guard.wallet, { ...record, address: `0x${"11".repeat(32)}` })).rejects.toThrow(
+		await expect(registerHub(guard.wallet, { ...record, address: `0x${"11".repeat(32)}` }, tokenBridgeHubArtifact)).rejects.toThrow(
 			/manifest hub mismatch: derived .* != recorded/,
 		)
 	})

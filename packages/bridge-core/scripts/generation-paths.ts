@@ -91,20 +91,23 @@ export function liveNetworkOf(l1ChainId: number): LiveNetwork | undefined {
 	return (Object.keys(GENERATION_PATHS) as LiveNetwork[]).find((n) => GENERATION_PATHS[n].l1ChainId === l1ChainId)
 }
 
-/** Refuses a symlink anywhere a record is read or written: it would redirect the read-once and rename contracts. */
-export function assertNoSymlink(path: string): void {
-	if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error(`refusing a symlinked record path: ${path} — STOP`)
+/** Refuses a symlink at `relative` or any directory on the way to it from `root`: one would redirect a record's
+ *  reads and its atomic renames outside the tree. A component that does not exist yet passes. */
+export function assertRealPath(root: string, relative: string): void {
+	let path = root
+	for (const part of relative.split("/")) {
+		path = join(path, part)
+		if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error(`refusing a symlinked record path: ${path} — STOP`)
+	}
 }
 
 /** The record in working-tree directory `dir` (repo-relative), or undefined when it holds none. */
 export function workingTreeRecord(dir: string, root = REPO_ROOT): RecordSource | undefined {
-	const file = join(root, dir, RECORD_FILE)
-	assertNoSymlink(join(root, dir))
-	if (!existsSync(file)) return undefined
+	assertRealPath(root, `${dir}/${RECORD_FILE}`)
+	if (!existsSync(join(root, dir, RECORD_FILE))) return undefined
 	const read = (relative: string) => {
-		const path = join(root, dir, relative)
-		assertNoSymlink(path)
-		return readFileSync(path)
+		assertRealPath(root, `${dir}/${relative}`)
+		return readFileSync(join(root, dir, relative))
 	}
 	return { dir, record: parseGenerationRecord(JSON.parse(read(RECORD_FILE).toString("utf8"))), read }
 }
@@ -180,4 +183,24 @@ export function codeFor(m: ManifestV2, root = REPO_ROOT): GenerationCodeOnDisk {
 	}
 	if (SANDBOX_LIFI_CHAIN_IDS.includes(m.l1ChainId)) return { pins: CODE_PINS, hubArtifact: () => tokenBridgeHubArtifact }
 	throw new Error(`chain ${m.l1ChainId} is neither a live network nor a sandbox — STOP`)
+}
+
+/**
+ * The artifact `m`'s hub was deployed from, for registering it with a wallet: the kept artifact of the live or
+ * candidate record that names that hub, else (a sandbox chain, or a hub this arc deploys before its record is
+ * written) this checkout's hub target. The hub's address commits to its class, so a caller that derives the address
+ * from the artifact refuses a wrong one.
+ */
+export function hubArtifactFor(m: ManifestV2, root = REPO_ROOT): ContractArtifact {
+	const hub = m.bridge?.l2.hub.address
+	if (!hub) throw new Error(`the ${m.network} manifest has no hub — STOP`)
+	const network = liveNetworkOf(m.l1ChainId)
+	const dirs = network ? [GENERATION_PATHS[network].liveRecord, GENERATION_PATHS[network].candidateRecord] : []
+	for (const dir of dirs) {
+		const source = workingTreeRecord(dir, root)
+		const kept = source?.record.aztec?.TokenBridgeHub
+		if (source && kept && kept.address === hub.toLowerCase())
+			return loadContractArtifact(JSON.parse(source.read(KEPT_HUB_ARTIFACT).toString("utf8")))
+	}
+	return tokenBridgeHubArtifact
 }

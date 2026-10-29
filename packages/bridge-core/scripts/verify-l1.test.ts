@@ -6,7 +6,8 @@ import { join } from "node:path"
 import { type Hex, keccak256 } from "viem"
 import { describe, expect, it, vi } from "vitest"
 import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR, type LifiChainBook, parseManifestV2 } from "@unleashed/sdk/protocol"
-import { judgeBook, type ObservedBook, verifyL1Manifest } from "./verify-l1"
+import { recordFor } from "./generation-paths"
+import { codeCheckOf, judgeBook, type ObservedBook, verifyL1Manifest } from "./verify-l1"
 
 describe("judgeBook", () => {
 	const at = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as const
@@ -82,7 +83,7 @@ describe("verifyL1Manifest's printed failures", () => {
 			vi.stubEnv("FORGE_BIN", join(tmpdir(), "absent-forge"))
 			const live = join(import.meta.dirname, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json")
 			const manifest = parseManifestV2(JSON.parse(readFileSync(live, "utf8")))
-			const failures = await verifyL1Manifest(manifest, url, { sourceRpcUrl: () => url })
+			const failures = await verifyL1Manifest(manifest, url, { sourceRpcUrl: () => url, record: recordFor(manifest) })
 			expect(failures > 0, "the checks failed").toBe(true)
 			expect(printed.some((line) => line.includes("<SEPOLIA_RPC_URL>"))).toBe(true)
 			expect(printed.some((line) => line.includes(key))).toBe(false)
@@ -91,5 +92,24 @@ describe("verifyL1Manifest's printed failures", () => {
 			vi.unstubAllEnvs()
 			server.close()
 		}
+	})
+})
+
+describe("what verify:l1 checks deployed code against", () => {
+	const testnet = parseManifestV2(
+		JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json"), "utf8")),
+	)
+
+	it("refuses a live chain given no record, before any read, and any chain that is neither live nor a sandbox", async () => {
+		await expect(verifyL1Manifest(testnet, "http://127.0.0.1:9")).rejects.toThrow(
+			/chain 11155111 is checked only against a generation record/,
+		)
+		expect(() => codeCheckOf({ ...testnet, l1ChainId: 8453 }, {})).toThrow(/chain 8453 is checked only against/)
+	})
+
+	it("takes the record a live manifest binds, and a sandbox's own build", () => {
+		const record = recordFor(testnet)
+		expect(codeCheckOf(testnet, { record })).toEqual({ kind: "record", record, baseline: undefined })
+		expect(codeCheckOf({ ...testnet, l1ChainId: 31337 }, {})).toEqual({ kind: "build" })
 	})
 })

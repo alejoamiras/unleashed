@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { privateKeyToAccount } from "viem/accounts"
 import type { L1Ctx } from "@unleashed/sdk/internal"
+import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
 import type { ManifestToken, ManifestV2 } from "@unleashed/sdk/protocol"
 import { type DeployJournal, openDeployJournal, writeCandidateAtomically } from "../deploy-manifest"
 import { deployGeneration, type GenerationRecord, type L2Ctx, preCreateToken } from "../generation"
@@ -85,10 +86,12 @@ async function deployTokens(
 	d: L1Deployment,
 	journal: DeployJournal,
 ): Promise<ManifestToken[]> {
+	// A sandbox deploys this checkout's hub target.
+	const hubArtifact = tokenBridgeHubArtifact
 	return [
-		await preCreateToken(l1, l2, gen, d.tokens.usdc, journal, { maxWholePerTx: 1_000_000 }),
-		await preCreateToken(l1, l2, gen, d.tokens.usdt, journal, { maxWholePerTx: 1_000_000 }),
-		await preCreateToken(l1, l2, gen, d.tokens.pxo, journal, { register: false, maxWholePerTx: 1_000_000 }),
+		await preCreateToken(l1, l2, gen, d.tokens.usdc, journal, { hubArtifact, maxWholePerTx: 1_000_000 }),
+		await preCreateToken(l1, l2, gen, d.tokens.usdt, journal, { hubArtifact, maxWholePerTx: 1_000_000 }),
+		await preCreateToken(l1, l2, gen, d.tokens.pxo, journal, { hubArtifact, register: false, maxWholePerTx: 1_000_000 }),
 	]
 }
 

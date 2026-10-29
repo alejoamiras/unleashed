@@ -49,6 +49,7 @@ import {
 	SEND_GENERATION,
 	TOKEN_CLASS_ID,
 	bridgeNetwork,
+	hubArtifact,
 	rebuildHubTokenInstance,
 } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"
@@ -322,7 +323,7 @@ async function buildHubClaim(
 	const aztec = bridgeWallet.wallet.value
 	if (!aztec || !HUB) throw new Error("Connect your Aztec wallet first.")
 	const recipientAddr = AztecAddress.fromStringUnsafe(rec.recipient)
-	const hub = hubAt(aztec as never, HUB.toString())
+	const hub = hubAt(aztec as never, HUB.toString(), await hubArtifact())
 	// Whether THIS claim registers the token is a live fact (someone may have registered it since
 	// the send): it decides which transaction spends the fuel, and what a claim from held gas sets
 	// aside; the hub re-checks at send time.
