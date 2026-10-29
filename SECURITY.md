@@ -44,7 +44,8 @@ Do not file public issues for security bugs.
   script prints that URL, records it in a deploy intent or puts it in an error. The Aztec node client
   prints its URL on a failed call, so a script takes the URL only from `keyedNodeUrl`
   (`packages/bridge-core/scripts/keyed-run.ts`), which refuses until `runKeyed` routes the SDK's logs
-  and the run's failure through redaction of every keyed value (`scripts/ci-cd/keyed-runs.test.ts`).
+  and the run's failure through redaction of every keyed value. Every other script entry that reads a keyed value,
+  an L1 RPC URL or a signing key, runs through `runKeyed` too (`scripts/ci-cd/keyed-runs.test.ts`).
   env-exec's masking is the second layer, so a failing keyed command is still never re-run outside
   env-exec.
 - **No key is ever committed.** `scripts/ci-cd/node-keys.test.ts` fails on a keyed `lb.drpc.live` URL

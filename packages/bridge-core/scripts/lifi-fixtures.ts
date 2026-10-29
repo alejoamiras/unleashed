@@ -33,6 +33,7 @@ import { buildAcrossV4Deposit, encodeLifiReceiverMessage } from "../src/across-v
 import { type DEPOSIT_INTENT_COMPONENTS, DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { LIFI_SWAP_DATA_COMPONENTS, type LifiSwapData } from "../src/lifi-abi"
 import { LIFI_INTEGRATOR } from "../src/lifi-gas"
+import { runKeyed } from "./keyed-run"
 import { MAINNET, recordMainnetQuotes } from "./lifi-fixtures-mainnet"
 import { resolveBin, run } from "./run"
 
@@ -436,4 +437,4 @@ async function main(): Promise<void> {
 	if (runForks) forge(["test", "--match-contract", `^(${commands.map((c) => FORK_SUITES[c]).join("|")})$`, "-vv"])
 }
 
-if (import.meta.main) await main()
+if (import.meta.main) runKeyed(main)

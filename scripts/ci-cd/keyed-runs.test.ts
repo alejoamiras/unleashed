@@ -5,14 +5,16 @@ import { KEYED_ENV } from "../../packages/bridge-core/scripts/keyed-env"
 
 /**
  * What a keyed script prints stays free of keyed values. Only keyed-run.ts may name the dRPC URL composer: every
- * other script takes the URL from `keyedNodeUrl`, which refuses until `runKeyed` has redacted the run's output.
- * `KEYED_ENV`, the list redaction replaces, holds every keyed-looking env name the code reads and every `op://`
- * field of the keyed-run templates. Untracked files that git does not ignore count. Failures name files and env
- * names, never values.
+ * other script takes the URL from `keyedNodeUrl`, which refuses until `runKeyed` has redacted the run's output, and
+ * every script entry that reads a keyed value runs through `runKeyed`. `KEYED_ENV`, the list redaction replaces,
+ * holds every keyed-looking env name the code reads and every `op://` field of the keyed-run templates. Untracked
+ * files that git does not ignore count. Failures name files and env names, never values.
  */
 const ROOT = join(import.meta.dir, "..", "..")
 const COMPOSER = /\brequireDrpcNodeUrl\b|lb\.drpc\.(?:live|org)|\benv\.DRPC_API_KEY\b/
 const ALLOWED_COMPOSERS = ["packages/bridge-core/src/drpc-node.ts", "packages/bridge-core/scripts/keyed-run.ts"]
+// A CLI entry: a direct-invocation guard, or a top-level call of the script's main.
+const ENTRY = /import\.meta\.main|\bisMain\b|\bisDirectInvocation\b|^(?:await )?main\(\)|^runKeyed\(/m
 const KEYED_SUFFIX = /_(?:KEY|SECRET|SECRET_[A-Z]+|RPC|RPC_URL|TOKEN)$/
 const PUBLIC_NAMES = new Set([
 	"DEPLOYER_SALT", // a deployed account's salt
@@ -54,6 +56,17 @@ export function keyedNames(text: string): string[] {
 	return [...named, ...destructured].filter((name) => KEYED_SUFFIX.test(name))
 }
 
+/** Script entries that read a keyed env var. */
+export function keyedEntries(sources: ReadonlyMap<string, string>): [path: string, text: string][] {
+	const keyed = new Set<string>(KEYED_ENV)
+	return [...sources].filter(
+		([path, text]) => /^(apps|packages)\/[^/]+\/scripts\//.test(path) && ENTRY.test(text) && keyedNames(text).some((name) => keyed.has(name)),
+	)
+}
+
+const unkeyed = (entries: [path: string, text: string][]): string[] =>
+	entries.filter(([, text]) => !/\brunKeyed\(/.test(text)).map(([path]) => path)
+
 test("the composer rule flags a call, an alias, a namespace import and a hand-built URL, and passes keyedNodeUrl", () => {
 	const sources = new Map([
 		["call.ts", 'import { requireDrpcNodeUrl } from "../src/drpc-node"\nrequireDrpcNodeUrl("testnet", process.env)'],
@@ -75,6 +88,23 @@ test("keyedNames finds reads, quoted names and destructuring, and skips other na
 		'const c = env.SEED_TOKENS + "PLAIN"',
 	].join("\n")
 	expect(keyedNames(text).sort()).toEqual(["BAR_API_KEY", "BAZ_SECRET_MAINNET", "FOO_RPC_URL", "QUX_TOKEN"])
+})
+
+test("the entry rule flags a script entry that reads a keyed value without runKeyed", () => {
+	const read = "const rpc = process.env.SEPOLIA_RPC_URL"
+	const sources = new Map([
+		["packages/x/scripts/bare.ts", `${read}\nif (import.meta.main) await main()`],
+		["packages/x/scripts/keyed.ts", `${read}\nif (import.meta.main) runKeyed(main)`],
+		["packages/x/scripts/library.ts", `export function rpc(): string | undefined {\n\treturn process.env.SEPOLIA_RPC_URL\n}`],
+		["packages/x/scripts/keyless.ts", "main().catch(() => process.exit(1))"],
+	])
+	expect(unkeyed(keyedEntries(sources))).toEqual(["packages/x/scripts/bare.ts"])
+})
+
+test("every script entry that reads a keyed value runs through runKeyed", () => {
+	const entries = keyedEntries(sourcesOf(files))
+	expect(entries.length).toBeGreaterThan(10)
+	expect(unkeyed(entries)).toEqual([])
 })
 
 test("no source composes the dRPC node URL except through keyedNodeUrl", () => {

@@ -51,6 +51,7 @@ import { toWord } from "../src/register-hash"
 import { legacyRoutersOf } from "../src/send-generation"
 import { walletChainIdOf } from "../src/wallet-chain-id"
 import { redactSecrets } from "./keyed-env"
+import { runKeyed } from "./keyed-run"
 import { resolveBin, run } from "./run"
 import { createL1PublicClient, loadManifestV2FromConfigArg, requireRoute } from "./script-bootstrap"
 import {
@@ -731,11 +732,8 @@ async function main(): Promise<number> {
 	return (await verifyL1Manifest(manifest, rpcUrl, { strict: process.argv.includes("--strict") })) === 0 ? 0 : 1
 }
 
-if (import.meta.main) {
-	try {
-		process.exit(await main())
-	} catch (e) {
-		console.error(`✗ ${e instanceof Error ? e.message : String(e)}`)
-		process.exit(1)
-	}
-}
+if (import.meta.main)
+	runKeyed(
+		async () => process.exit(await main()),
+		(e) => `✗ ${e instanceof Error ? e.message : String(e)}`,
+	)

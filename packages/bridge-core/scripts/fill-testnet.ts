@@ -22,6 +22,7 @@ import {
 	SEPOLIA_RPC_DEFAULT,
 } from "../src/across-fill"
 import { lifiBook } from "../src/lifi-addresses"
+import { runKeyed } from "./keyed-run"
 import { PLAN_PINNED_CANARY_SIGNERS } from "./live-intent"
 import { createL1Clients, createL1PublicClient } from "./script-bootstrap"
 import { manifestL1Chain } from "./script-l1"
@@ -147,8 +148,8 @@ export async function fillCli(
 }
 
 if (import.meta.main) {
-	fillCli(process.env, process.argv).catch((e) => {
-		console.error(e instanceof FillRefused ? `refused (${e.reason}): ${e.message}` : errorText(e))
-		process.exit(1)
-	})
+	runKeyed(
+		() => fillCli(process.env, process.argv),
+		(e) => (e instanceof FillRefused ? `refused (${e.reason}): ${e.message}` : errorText(e)),
+	)
 }

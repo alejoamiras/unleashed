@@ -16,14 +16,16 @@ budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 
 - **Status:** completed; delivered in PR #48 (one arc), awaiting the orchestrator's merge.
 - **Shipped:** `keyed-env.ts` and `keyed-run.ts` (`runKeyed`, `keyedNodeUrl`); all 14 composers on them; the five
-  known mid-run prints redacted; the `keyed-runs.test.ts` guard. Closes #46.
+  known mid-run prints redacted; the `keyed-runs.test.ts` guard. On the orchestrator's steer, A1 reversed: the five
+  L1-keyed entries (`verify-l1`, `pause-factory`, `fill-testnet`, `deploy-seed-tokens`, `lifi-fixtures`) run through
+  `runKeyed` too, and the guard fails any script entry that reads a `KEYED_ENV` name without it. Closes #46, #49.
 - **Changed in review:** implementation round 1 added the `inspect` string-cut lift, the escaped-error handlers, the
   guard's keyed-host and raw-key alternatives, and kept the verify-l1 case local. Rejected in planning: a global
   `console` wrapper and an import-graph guard (D1, D2).
 - **Lessons:** none promoted. The two Bun gotchas (console bypasses `process.stderr.write`; `inspect` cuts strings at
   10 000 characters) live in `keyed-run.ts`'s comments and in `recon.md`, and `lessons.md` is at its budget.
 - **Known limits:** #50.
-- **Open items:** #49.
+- **Open items:** none.
 - **Seeds:** the `/goal` and `/loop` seeds at the end are retired; they are history, not instructions.
 
 # keyed-logs-1: one redacted entry for every keyed script
@@ -65,8 +67,9 @@ before any client exists. Failures name files, never values.
    160), `script-l1.ts:229` `retryOnRevert` (slices to 120), and `run.ts:54-55` `RunError` (keeps the last 4000
    characters of stderr). Slicing before redaction can keep a key fragment.
 5. viem prints the RPC URL in error text and strips only userinfo (`viem/errors/utils.ts:31-37`).
-6. Ten scripts import `live-intent.ts`, several only for constants (`fill-testnet.ts`, and through it the relayer
-   Worker), so an import-graph rule cannot tell a composer's caller from a constant's reader.
+6. Ten scripts import `live-intent.ts`, several only for constants (`fill-testnet.ts`), so an import-graph rule cannot
+   tell a composer's caller from a constant's reader. Corrected at implementation: the relayer Worker imports
+   `across-fill`, not `fill-testnet.ts`, so it was never reached this way.
 7. The SDK's log lines all go through foundation's root pino logger; `overwriteLoggingStream` replaces its stream
    (`pino-logger.js:351`), so the original transport worker gets nothing after it.
 
@@ -83,7 +86,7 @@ before any client exists. Failures name files, never values.
 - A1 (orchestrator, scope): the standalone entries of `verify-l1.ts`, `pause-factory.ts` and `fill-testnet.ts` print
   viem messages under keyed L1 URLs but compose no node URL. Assumption: their entries stay out (the lane scope
   names node-URL composers); verify-l1's `fail`/`warn` are fixed because live-intent runs them. The close-out files
-  one issue for the three entries.
+  one issue for the three entries. Reversed by the orchestrator's steer: #49 folded into this PR.
 
 ## Architecture & Implementation
 
