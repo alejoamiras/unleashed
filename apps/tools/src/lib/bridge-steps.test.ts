@@ -157,7 +157,7 @@ describe("stepperPhases - determinate progress + ETA (only where real targets ex
 		const rec = dep({ depositTxHash: "0xt", leafIndex: "7", depositL2Block: 100 })
 		const sync = stepperPhases(rec, { step: "syncing", syncBlock: 102 }).find((p) => p.key === "sync")
 		expect(sync?.progress).toEqual({ current: 102, target: 103, fraction: 2 / 3 })
-		expect(sync?.eta).toBe("usually 1-4 min")
+		expect(sync?.eta).toBe("usually ~1 min")
 		expect(sync?.detail).toBe("Aztec picks up deposits every few blocks. Nothing for you to do.")
 		// The live checkpoint count replaces the static sentence while the gate waits.
 		const live = stepperPhases(rec, { step: "syncing", stepDetail: "2 checkpoints until your funds arrive" }).find(
@@ -172,7 +172,7 @@ describe("stepperPhases - determinate progress + ETA (only where real targets ex
 			seal: undefined,
 			sign: undefined,
 			deposit: undefined,
-			sync: "~1–4 min",
+			sync: "~1 min",
 			claim: "your signature + a few sec",
 			confirm: "~1–2 min",
 		})

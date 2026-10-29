@@ -53,6 +53,7 @@ describe("stepperPhases - a cross-chain send", () => {
 			link: { href: `https://scan.li.fi/tx/${XC_SRC_TX}`, lead: "Track on LI.FI" },
 		})
 		expect(p.deposit).toMatchObject({ state: "pending", estimate: "~1 min", note: "+ 0.49 USDC swapped into gas on Aztec" })
+		expect(p.sync).toMatchObject({ state: "pending", estimate: "~1 min" })
 		expect(p.claim).toMatchObject({ state: "pending", estimate: "your signature", signs: true })
 	})
 
@@ -93,7 +94,7 @@ describe("stepperPhases - a cross-chain send", () => {
 		expect(running.claimAction).toBeUndefined()
 
 		const crossing = byKey(deposited({ depositL2Block: 100 }), { step: "syncing", syncBlock: 102 }).sync
-		expect(crossing).toMatchObject({ state: "active", meter: "block", progress: { current: 2, target: 3 } })
+		expect(crossing).toMatchObject({ state: "active", eta: "usually ~1 min", meter: "block", progress: { current: 2, target: 3 } })
 	})
 
 	it("an outcome stops the rail at the phase that decided it, live with 'finalizing' until that chain finalizes", () => {
