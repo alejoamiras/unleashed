@@ -82,7 +82,8 @@ nonce-pinned factory prediction, journalled, candidate-first) deploys from `out/
 
 **176 hermetic forge tests** (`forge test --no-match-contract Fork`), **20 halmos proofs**
 (`FormalDepositRouterTest 11 · FormalCloneTest 4 · FormalFuelOnlyGateTest 3 · FormalFactoryTest 2`; the guard-shaped ones carry a
-forge canary proving the property fails without the guard), **live fork suites** (the real Sepolia
+forge canary proving they are not vacuous: a mutant without the guard succeeds, or the real guard
+passes a compliant deposit at the bound), **live fork suites** (the real Sepolia
 registry/Inbox/FeeJuicePortal, real Permit2, LI.FI's deployed contracts, live token metadata), and a
 committed `.gas-snapshot` for the metered first-time vs known `bridgeWithPermit()` and a fueled
 `bridgeFromCaller()`.

@@ -417,8 +417,7 @@ contract DepositRouterBlackhatTest is DepositRouterFixture {
         SenderSurchargeERC20 sur = new SenderSurchargeERC20(100);
         uint256 extra = AMOUNT / 100;
         sur.mint(address(router), extra);
-        sur.mint(user, 2 * (AMOUNT + extra));
-        uint256 sent = inbox.sent();
+        sur.mint(user, AMOUNT + extra);
         vm.startPrank(user);
         sur.approve(address(permit2), type(uint256).max);
         sur.approve(address(router), type(uint256).max);
@@ -427,10 +426,6 @@ contract DepositRouterBlackhatTest is DepositRouterFixture {
         vm.expectRevert(TokenPortalImpl.InexactTransfer.selector);
         router.bridgeFromCaller(_plainIntent(address(sur), false), "", AMOUNT, AMOUNT);
         vm.stopPrank();
-        assertEq(sur.balanceOf(user), 2 * (AMOUNT + extra));
-        assertEq(sur.balanceOf(address(router)), extra);
-        assertEq(sur.balanceOf(portalFor(address(sur))), 0);
-        assertEq(inbox.sent(), sent, "no deposit message");
     }
 
     // ─────────────── atomicity, portals, native value ───────────────

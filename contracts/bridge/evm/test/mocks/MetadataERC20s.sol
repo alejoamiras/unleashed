@@ -149,7 +149,7 @@ contract FeeOnTransferERC20 is ERC20 {
 }
 
 /// Charges the SENDER `surchargeBps` on top of every transfer: the recipient nets the full value,
-/// so the deposit-side check passes and only the sender's own debit shows it.
+/// so a recipient-credit check alone passes and only the sender's own debit shows it.
 contract SenderSurchargeERC20 is ERC20 {
     uint256 public immutable surchargeBps;
 

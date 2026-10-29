@@ -124,7 +124,8 @@ contract TokenPortalImpl is ReentrancyGuardTransient {
     }
 
     /// @dev Exact on both sides, the mirror of withdraw's exact debit: a short credit would mint more than the
-    /// reserve holds. The reserve backs every L2 mint, and the L2 token's supply is a u128.
+    /// reserve holds. While balances are truthful and fall only through withdraw, the reserve bounds the L2 supply
+    /// plus every unclaimed deposit, so capping it at the L2 token's u128 keeps every accepted claim mintable.
     function _pullExact(uint256 amount) private {
         IERC20 token = underlying();
         uint256 senderBefore = token.balanceOf(msg.sender);

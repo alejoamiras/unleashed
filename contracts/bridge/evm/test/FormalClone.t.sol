@@ -22,8 +22,9 @@ import {PortalImplWithoutPause} from "./mocks/CounterpartyMocks.sol";
 ///
 ///   check_deposit_revertsWhenPaused        — ∀ (to, amount, secretHash): a paused factory blocks both deposits
 ///   check_withdraw_revertsWhenPaused       — ∀ (recipient, amount): a paused factory blocks withdrawal
-///   check_deposit_refusesInexactPull       — ∀ skew ≠ (0, 0), amount ≤ 1e30: a sender debit or a clone credit
-///                                            other than `amount` blocks both deposits
+///   check_deposit_refusesInexactPull       — ∀ amount ≤ 1e30, additive skews ≠ (0, 0) (sender extra ≤ 1e30, clone
+///                                            short ≤ amount): a sender debit above `amount` or a clone credit
+///                                            below it blocks both deposits
 ///   check_deposit_refusesReservePastL2Max  — ∀ reserve, amount ≤ uint128.max with reserve + amount > uint128.max:
 ///                                            both deposits are refused
 contract FormalCloneTest is Test {
