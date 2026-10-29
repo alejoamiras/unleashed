@@ -48,6 +48,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [protocol-labels](protocol-labels/plan.md) — archived — protocol-labels — the bridge's protocol labels settled, and the testnet generation they require
 - [relayer-1](relayer-1/plan.md) — archived — relayer-1 — a cron Worker that fills the testnet's Base Sepolia sends
 - [relayer-2](relayer-2/plan.md) — archived — relayer-2 — the testnet relayer's scan window by timestamps, four passes a minute
+- [rpc-caps-1](rpc-caps-1/plan.md) — archived — rpc-caps-1 — per-endpoint eth_getLogs caps, so Base Sepolia's capped fallback answers split queries
 - [send-copy-1](send-copy-1/plan.md) — archived — send-copy-1 — testnet send wording, and two refusals before any wallet prompt
 - [send-wizard-ux](send-wizard-ux/plan.md) — archived — Send wizard UX redesign
 - [swap-fuel](swap-fuel/plan.md) — archived — swap-fuel — bridge-and-fuel on the live Sepolia ↔ Aztec testnet bridge
