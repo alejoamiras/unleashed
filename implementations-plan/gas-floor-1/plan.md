@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: planned
+status: implementing (arc a1 green, Codex converged)
 base: main a111e8a
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -93,7 +93,7 @@ and no hung review re-quote behind the refusal.
   misleading successful quote is bounded by the signed floor, unchanged here.
 - **Least privilege, cryptography, supply chain, secrets:** no new dependency, permission, key or network call. N/A.
 
-## Phase 1 (arc a1): refusal mapping, card state, estimates
+## Phase 1 (arc a1): refusal mapping, card state, estimates ✓
 
 1. Route: the outcome kind and `gasFailure` as above. Write each first test before its fix and see it fail.
 2. Send: `noticeOf`, `gasErrorOf`, `loading` as above.
@@ -155,6 +155,17 @@ Layers: lint, typecheck, unit, component, e2e. A Bun or barretenberg SIGBUS coun
   (`SYNC_TARGET_MARGIN_BLOCKS`; L2 blocks now 51 s testnet, 70 s mainnet) would hold the phase at 2–3.5 min and
   proposed sending ask32 to the owner. Codex refuted it with a trace, and the planner verified it: fresh app rows carry
   no `depositL2Block`, so the countdown is skipped (I2). ask32 stays in a1, with no owner ask.
+- **Implementation, Codex fix loop (gpt-6.1-sol, high).** r1: CLEAN, one comment nit (adopted for `gasFailure`;
+  the fixture comment stays, it explains `a + 1n`). r2 (resumed, on the fix diff): CLEAN. Converged in 2 rounds.
+- **Implementation, Opus diff review (beside r1): 3 findings, no bug.** Adopted: `gasFailure` takes a required
+  refusal, the zero probe returns no route directly, the `gasError` TSDoc covers below-floor. Sent to the owner
+  (`OWNER-ASKS.md`, ships unchanged): `DEPOSIT_TAKES` "usually 3–8 min end to end" and the cross-chain review's "a few
+  minutes for Aztec to pick it up". Known limit: a zero `minFuelFj` leaves the step without a reason (unsupported
+  manifest), filed at close-out.
+- **Deviations.** The Ethereum stepper labels the step "Crossing"; its estimate is `DEPOSIT_ESTIMATES.sync`. Cell 55
+  measured 41.6 s (estimated 30 s); `deposit-crosschain` went from 10.0 min (cells 50–54) to 10.7 min. The new
+  worktree needed `contracts/bridge/evm/lib`: forge-std, OpenZeppelin and v4-core copied, `lifi-contracts` installed
+  with `--no-git` at the README's pin.
 
 ## Delivery
 
