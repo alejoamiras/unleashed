@@ -4,7 +4,7 @@
  * chain the build pins no RPC for has no reader, and whatever needs one reports that instead of borrowing the
  * wallet's transport.
  */
-import type { DiscoveryChainReads, DiscoveryReads } from "@unleashed/bridge-core"
+import { cappedLogs, type DiscoveryChainReads, type DiscoveryReads, sourceChain } from "@unleashed/bridge-core"
 import { type Erc20Client, readErc20Balances } from "@unleashed/sdk/protocol"
 import { type Address, BaseError, CallExecutionError, createPublicClient, fallback, http, type PublicClient } from "viem"
 import { NETWORK, readChainOf } from "@/lib/network"
@@ -20,10 +20,13 @@ export function readClientFor(chainId: number): PublicClient | undefined {
 	if (cached) return cached
 	const read = readChainOf(chainId)
 	if (!read || read.rpcUrls.length === 0) return undefined
-	const client = createPublicClient({
-		chain: read.chain,
-		transport: fallback(read.rpcUrls.map((url) => http(url, { timeout: READ_TIMEOUT_MS, retryCount: 1 }))),
-	}) as PublicClient
+	const caps = sourceChain(chainId)?.maxLogBlocks
+	const endpoint = (url: string) => {
+		const transport = http(url, { timeout: READ_TIMEOUT_MS, retryCount: 1 })
+		const cap = caps?.[url]
+		return cap === undefined ? transport : cappedLogs(transport, cap)
+	}
+	const client = createPublicClient({ chain: read.chain, transport: fallback(read.rpcUrls.map(endpoint)) }) as PublicClient
 	clients.set(chainId, client)
 	return client
 }
