@@ -56,8 +56,10 @@ async function wordsOf(r: Reads, erc20: Address, registration: Registration | un
 }
 
 /**
- * Resolves any ERC-20 against the network's factory and hub. A registered token's L2 address is the hub's binding and
- * must equal the derivation from the frozen words; a first-time token's is the address the hub will derive.
+ * Resolves any ERC-20 against the network's factory and hub. A registered token's portal must be the factory's CREATE2
+ * clone of the network's implementation for it, and its L2 address the hub's binding, equal to the derivation from the
+ * frozen words; a first-time token's are the clone and the address the hub will derive. Refuses (`invalid-network`)
+ * either mismatch.
  */
 export async function resolveToken(net: Network, r: Reads, erc20: Address): Promise<BridgeToken> {
 	assertNetwork(net)
@@ -68,6 +70,9 @@ export async function resolveToken(net: Network, r: Reads, erc20: Address): Prom
 	} catch (e) {
 		throw readFailed("the factory's registration", e)
 	}
+	const clone = predictPortal(b.factory, b.implementation, erc20)
+	if (registration && registration.portal.toLowerCase() !== clone)
+		throw refusal("invalid-network", `the factory registers ${erc20} at ${registration.portal}, not its clone ${clone}`)
 	const words = await wordsOf(r, erc20, registration)
 	let bound: string | undefined
 	try {
@@ -83,7 +88,7 @@ export async function resolveToken(net: Network, r: Reads, erc20: Address): Prom
 	return deepFreeze({
 		network: net,
 		erc20,
-		portal: (registration?.portal ?? predictPortal(b.factory, b.implementation, erc20)) as Address,
+		portal: (registration?.portal ?? clone) as Address,
 		...words,
 		symbol: fromWord(words.symbolWord),
 		l2Token: derived as Hex,

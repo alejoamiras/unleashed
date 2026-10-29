@@ -6,12 +6,14 @@
 import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import type { Address, PublicClient } from "viem"
 import { BridgeError, refusal } from "./errors.ts"
+import { bundledManifest } from "./networks.ts"
 import { mismatches, networkBindings } from "./execution/trust-roots.ts"
 import { fuelRouteOf, type ManifestFuelRoute, sendGenerationOf } from "./execution/send-generation.ts"
 import type { SendGeneration } from "./execution/send-flow.ts"
 import { deepFreeze } from "./protocol/freeze.ts"
 import { aztecLineOf } from "./protocol/aztec-line.ts"
 import { CANONICAL_PERMIT2, MAINNET_L1, MAX_FUEL_SLIPPAGE_BPS } from "./protocol/l1-pins.ts"
+import { SANDBOX_LIFI_CHAIN_IDS } from "./protocol/lifi-addresses.ts"
 import { assertManifestTokensDerive, type ManifestToken, type ManifestV2, parseManifestV2 } from "./protocol/manifest-v2.ts"
 import { walletChainIdOf } from "./protocol/wallet-chain-id.ts"
 
@@ -88,6 +90,30 @@ function assertStaticRoots(m: ManifestV2, fuel: ManifestFuelRoute | undefined): 
 		if (!same(got, want)) throw refusal("invalid-network", `${label} ${got} is not mainnet's ${want}`)
 }
 
+const HEX = /^0x[0-9a-f]*$/i
+const keysOf = (o: object) => Object.keys(o).filter((k) => (o as Record<string, unknown>)[k] !== undefined)
+
+/** One parsed manifest tree: object keys in any order, an `undefined` key as absent, `0x` hex in any case, else exact. */
+function sameTree(a: unknown, b: unknown): boolean {
+	if (typeof a === "string" && typeof b === "string") return HEX.test(a) && HEX.test(b) ? same(a, b) : a === b
+	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return a === b
+	if (Array.isArray(a) !== Array.isArray(b)) return false
+	const [ka, kb] = [keysOf(a), keysOf(b)]
+	const at = (o: object, k: string) => (o as Record<string, unknown>)[k]
+	return ka.length === kb.length && ka.every((k) => Object.hasOwn(b, k) && sameTree(at(a, k), at(b, k)))
+}
+
+/** On a chain this release bundles a network for, that network only; off them, a sandbox's chain alone. Reads nothing. */
+function assertBundled(m: ManifestV2): void {
+	const bundled = bundledManifest(m.l1ChainId)
+	if (bundled === undefined) {
+		if (SANDBOX_LIFI_CHAIN_IDS.includes(m.l1ChainId)) return
+		throw refusal("invalid-network", `this release bundles no network for chain ${m.l1ChainId}`)
+	}
+	if (!sameTree(m, parsed(bundled)))
+		throw refusal("invalid-network", `the manifest is not the network this release bundles for chain ${m.l1ChainId}`)
+}
+
 /** The Aztec node names the rollup: its chain, version, registry and Fee Juice contracts must be the manifest's. */
 async function assertNodeRoots(m: ManifestV2, r: Reads): Promise<number> {
 	const [l1ChainId, info] = await Promise.all([r.l1.getChainId(), r.aztecNode.getNodeInfo()])
@@ -127,16 +153,19 @@ async function assertChainRoots(m: ManifestV2, r: Reads): Promise<void> {
 }
 
 /**
- * Parses a manifest and checks it against the chain. Refuses (`BridgeError`, nothing sent) a manifest that fails
- * strict validation, has no deposit route, runs an Aztec line this release does not, names a non-canonical Permit2 or
- * a slippage above `MAX_FUEL_SLIPPAGE_BPS`, disagrees with the Aztec node on its chain, rollup, registry or Fee Juice
- * contracts (or with mainnet's pins), or whose deployed router, factory or gate, implementation and swapper are not
- * this release's builds bound to the registry's canonical rollup.
+ * Parses a manifest and checks it against the chain. On a chain this release bundles a network for (`bundledManifest`)
+ * only that network is accepted, before any read; off them only a sandbox chain's. Refuses (`BridgeError`, nothing
+ * sent) a manifest that fails strict validation, has no deposit route, runs an Aztec line this release does not, names
+ * a non-canonical Permit2 or a slippage above `MAX_FUEL_SLIPPAGE_BPS`, is not the bundled network, disagrees with the
+ * Aztec node on its chain, rollup, registry or Fee Juice contracts (or with mainnet's pins), or whose deployed router,
+ * factory or gate, implementation and swapper are not this release's builds bound to the registry's canonical rollup.
+ * The guarantee is the returned `Network`'s: a raw `/protocol` primitive given a manifest of its own inherits none of it.
  */
 export async function parseNetwork(manifest: unknown, r: Reads): Promise<Network> {
 	const m = deepFreeze(parsed(manifest))
 	const route = fuelRouteOf(m)
 	assertStaticRoots(m, route)
+	assertBundled(m)
 	const rollupVersion = await assertNodeRoots(m, r)
 	await assertDerivations(m)
 	await assertChainRoots(m, r)

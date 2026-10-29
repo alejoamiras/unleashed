@@ -68,6 +68,8 @@ export function acrossApi(answer: "quote" | "error" = "quote") {
 	return { client: { fetch: fetch as unknown as typeof globalThis.fetch, base: "https://across.test/api" }, asked }
 }
 
+const SWAPPER: Address = `0x${"5e".repeat(20)}`
+
 /** `under-floor` prices like the live Sepolia swapper (32 FJ per USDC) against the testnet manifest's claim minimum. */
 export type Venue = "swapper" | "reverts" | "down" | "answers-another-slice" | "under-floor" | "zero-rate" | "pin-broken"
 
@@ -90,12 +92,12 @@ export function routeDeps(o: { venue?: Venue; across?: ReturnType<typeof acrossA
 		return amountIn * (venue === "under-floor" ? 32n : 1n) * 10n ** 12n
 	}
 	return {
-		bindings: { l1ChainId: SEPOLIA, router: ROUTER, feeAsset: FEE_ASSET },
+		bindings: { l1ChainId: SEPOLIA, router: ROUTER, feeAsset: FEE_ASSET, fuelSwapper: SWAPPER },
 		across: (o.across ?? acrossApi()).client,
 		fuel: (lifiTxId) => {
 			const provider = testnetSwapperFuelProvider({
 				reader: { quote },
-				swapper: `0x${"5e".repeat(20)}`,
+				swapper: SWAPPER,
 				router: ROUTER,
 				feeAsset: FEE_ASSET,
 				transactionId: lifiTxId,

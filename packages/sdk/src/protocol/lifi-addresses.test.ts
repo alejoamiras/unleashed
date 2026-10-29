@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { type Address, createPublicClient, getAddress, type Hex, http, isAddress, keccak256, parseAbi } from "viem"
 import { describe, expect, it } from "vitest"
 import { swapTargetOf } from "../execution/trust-roots.ts"
+import { decodeFuelSwap, type FuelSwap } from "./fuel-swap.ts"
 import {
 	START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR,
 	SWAP_TOKENS_MULTIPLE_V3_SELECTOR,
@@ -57,6 +58,7 @@ function addressesOf(b: LifiChainBook): Address[] {
 		b.receiverAcrossV4,
 		b.feeForwarder,
 		b.acrossSpokePool,
+		...Object.values(b.fuelVenues),
 		...(b.receiverStargateV2 ? [b.receiverStargateV2] : []),
 		...Object.values(b.facets),
 		...(b.stargate ? [b.stargate.tokenMessaging, ...b.stargate.pools.flatMap((p) => [p.pool, p.token])] : []),
@@ -134,6 +136,13 @@ describe("lifi-addresses", () => {
 		expect(lower(compose.base.endpoint)).toBe(lower(base.layerZero?.endpointV2))
 		expect(compose.srcEid).toBe(base.layerZero?.eid)
 		expect(compose.dstEid).toBe(ethereum.layerZero?.eid)
+		const venues = Object.values<{ tool: string; data: Hex }>(mainnet.sameChain)
+			.filter((q) => Object.hasOwn(ethereum.fuelVenues, q.tool))
+			.map((q) => {
+				const swap = decodeFuelSwap(q.data) as FuelSwap
+				return [q.tool, swap.steps.at(-1)?.callTo]
+			})
+		expect(Object.fromEntries(venues), "each venue is the swap step of its tool's recorded quote").toEqual(ethereum.fuelVenues)
 	})
 
 	describe.skipIf(!existsSync(join(LIFI_LIB, "deployments")))("against the pinned lifinance/contracts lib", () => {

@@ -1,12 +1,28 @@
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { type Address, concat, decodeAbiParameters, decodeFunctionData, type Hex, numberToHex, pad, size, slice } from "viem"
+import {
+	type Address,
+	concat,
+	decodeAbiParameters,
+	decodeFunctionData,
+	encodeFunctionData,
+	type Hex,
+	numberToHex,
+	pad,
+	size,
+	slice,
+} from "viem"
 import { describe, expect, it, vi } from "vitest"
 import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
 import { lifiFuelProvider, testnetSwapperFuelProvider, withFuelFloor } from "./fuel-quote.ts"
 import { signedMinFuelOutput } from "../protocol/gas-share.ts"
-import { LIFI_RECEIVER_MESSAGE_PARAMS } from "../protocol/lifi-abi.ts"
+import { FEE_FORWARDER_ABI } from "../protocol/fuel-swap.ts"
+import { LIFI_RECEIVER_MESSAGE_PARAMS, SWAP_TOKENS_MULTIPLE_V3_ABI } from "../protocol/lifi-abi.ts"
+
+/** The recorded quotes swap on Ethereum; these cases hold them to the policy as an enabled chain would. */
+const fuelChains = vi.hoisted(() => [31337, 31338, 1])
+vi.mock("../protocol/lifi-gas.ts", async (importOriginal) => ({ ...(await importOriginal<object>()), LIFI_FUEL_CHAIN_IDS: fuelChains }))
 
 const FIXTURES = join(
 	dirname(fileURLToPath(import.meta.url)),
@@ -81,6 +97,37 @@ describe("lifiFuelProvider", () => {
 		["swapData", tx({ data: slice(data, 0, 100) })],
 	])("refuses a quote whose %s breaks its pin", async (field, raw) => {
 		expect(await lifiProvider(raw).quote(MAINNET.ethereum.usdc, SLICE)).toEqual({ ok: false, reason: "unsafe", field })
+	})
+
+	it("passes a LI.FI quote only with LI.FI's capped fee and the named venue at the slice minus that fee", async () => {
+		const call = decodeFunctionData({ abi: SWAP_TOKENS_MULTIPLE_V3_ABI, data })
+		const [feeStep, venueStep] = call.args[5]
+		const fee = decodeFunctionData({ abi: FEE_FORWARDER_ABI, data: feeStep.callData }).args
+		const taken = SLICE - SLICE / 100n
+		const feeCall = encodeFunctionData({ abi: FEE_FORWARDER_ABI, args: [fee[0], [{ ...fee[1][0], amount: taken }]] })
+		const steps = [
+			{ ...feeStep, callData: feeCall },
+			{ ...venueStep, fromAmount: SLICE - taken },
+		]
+		const moved = encodeFunctionData({ abi: SWAP_TOKENS_MULTIPLE_V3_ABI, args: [...call.args.slice(0, 5), steps] as never })
+		expect(await lifiProvider(tx({ data: moved })).quote(MAINNET.ethereum.usdc, SLICE)).toEqual({
+			ok: false,
+			reason: "unsafe",
+			field: "fuelFee._distributions[0].amount",
+		})
+		expect((await lifiProvider(base).quote(MAINNET.ethereum.usdc, SLICE)).ok).toBe(true)
+	})
+
+	it("refuses LI.FI gas quotes on a chain where LI.FI gas swaps are not enabled", async () => {
+		fuelChains.splice(fuelChains.indexOf(1), 1)
+		try {
+			const provider = lifiProvider(base)
+			const refused = { ok: false, reason: "unsafe", field: "fuel.provider" }
+			expect(await provider.quote(MAINNET.ethereum.usdc, SLICE)).toEqual(refused)
+			expect(await provider.probe(MAINNET.ethereum.usdc, SLICE)).toEqual(refused)
+		} finally {
+			fuelChains.push(1)
+		}
 	})
 
 	it("passes LI.FI's own refusal through as the provider's", async () => {

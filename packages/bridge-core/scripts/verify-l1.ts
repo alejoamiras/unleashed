@@ -370,6 +370,7 @@ function bookEntries(book: LifiChainBook): Array<[string, string]> {
 		["stargate.tokenMessaging", book.stargate?.tokenMessaging],
 		["layerZero.endpointV2", book.layerZero?.endpointV2],
 		...(book.stargate?.pools ?? []).map((p): [string, string] => [`stargate pool ${p.assetId}`, p.pool]),
+		...Object.entries(book.fuelVenues).map(([tool, venue]): [string, string] => [`fuel venue ${tool}`, venue]),
 	]
 	return entries.filter((e): e is [string, string] => e[1] !== undefined)
 }
