@@ -38,7 +38,7 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -188,7 +188,7 @@ async function assertExitsOpen(lane: Lane): Promise<void> {
 
 async function main(): Promise<void> {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 	const tokens = BRIDGE.tokens.slice(0, 2)
 	if (tokens.length < 2) throw new Error("the candidate carries fewer than two tokens — the smoke exists to prove the hub serves several")
 
@@ -233,7 +233,4 @@ async function main(): Promise<void> {
 	console.log("   Safe to promote the candidate manifest.")
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

@@ -22,7 +22,7 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas } from "@aztec-labs/stdlib/gas"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { privateKeyToAccount } from "viem/accounts"
-import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
+import { postNodeRpc, readNodeRpcBody } from "../src/drpc-node"
 import {
 	predictedWorstMinFees,
 	FeeJuicePortalAbi,
@@ -33,7 +33,9 @@ import {
 	deriveBridgeSecret,
 	privateMintAndPayFee,
 } from "@unleashed/sdk/protocol"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 import { resolveDeployerKeys } from "./deployer-keys"
+import { redactSecrets } from "./keyed-env"
 import { requirePinnedSigner } from "./live-intent"
 import { createL1Clients, createL2Wallet, createNode, mainnetChain, stopwatch } from "./script-bootstrap"
 
@@ -77,7 +79,7 @@ async function nodeL1(nodeUrl: string): Promise<{ portal: `0x${string}`; asset: 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: accepted at score 23 — the live canary binds fee sizing, deposit evidence, repriced retries and balance-delta acceptance
 async function main() {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("mainnet", process.env)
+	const nodeUrl = keyedNodeUrl("mainnet")
 
 	const node = createNode(nodeUrl)
 	const fpc = AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS)
@@ -169,7 +171,8 @@ async function main() {
 			} as never)
 			settled = true
 		} catch (e) {
-			if (i % 10 === 0) console.log(`claim retry (${mins()}): ${e instanceof Error ? e.message.slice(0, 160) : e}`)
+			if (i % 10 === 0)
+				console.log(`claim retry (${mins()}): ${redactSecrets(e instanceof Error ? e.message : String(e)).slice(0, 160)}`)
 			await new Promise((r) => setTimeout(r, 6000))
 		}
 	}
@@ -183,7 +186,4 @@ async function main() {
 	console.log(`   Calibrated minFuelFj (2× live ceiling): ${dust} — set bridge.l1.fuel.minFuelFj in the candidate.`)
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

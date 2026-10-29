@@ -72,6 +72,8 @@ import {
 	routerBindings,
 	swapTargetOf,
 } from "@unleashed/sdk/internal"
+import { redactSecrets } from "./keyed-env"
+import { runKeyed } from "./keyed-run"
 import { resolveBin, run } from "./run"
 import { createL1PublicClient, loadManifestV2FromConfigArg, requireRoute } from "./script-bootstrap"
 import {
@@ -105,15 +107,16 @@ let warnings = 0
 const ok = (label: string) => console.log(`✓ ${label}`)
 const skip = (label: string, why: string) => console.log(`— ${label}: ${why}`)
 
+/** `detail` is often a caught viem error, whose text carries the RPC URL. */
 function fail(label: string, detail: string): void {
 	failures++
-	console.error(`✗ ${label}: ${detail}`)
+	console.error(redactSecrets(`✗ ${label}: ${detail}`))
 }
 
 /** Worth an operator's look, never a reason to refuse: the next check that depends on it is still exact. */
 function warn(label: string, detail: string): void {
 	warnings++
-	console.warn(`! ${label}: ${detail}`)
+	console.warn(redactSecrets(`! ${label}: ${detail}`))
 }
 
 function same(label: string, actual: unknown, expected: unknown, expectedSource = "manifest"): void {
@@ -636,11 +639,8 @@ async function main(): Promise<number> {
 	return (await verifyL1Manifest(manifest, rpcUrl, { strict: process.argv.includes("--strict") })) === 0 ? 0 : 1
 }
 
-if (import.meta.main) {
-	try {
-		process.exit(await main())
-	} catch (e) {
-		console.error(`✗ ${e instanceof Error ? e.message : String(e)}`)
-		process.exit(1)
-	}
-}
+if (import.meta.main)
+	runKeyed(
+		async () => process.exit(await main()),
+		(e) => `✗ ${e instanceof Error ? e.message : String(e)}`,
+	)

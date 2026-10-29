@@ -10,6 +10,7 @@
 
 import { type SpawnSyncOptions, spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
+import { redactSecrets } from "./keyed-env"
 
 export interface RunOptions {
 	cwd?: string
@@ -51,7 +52,8 @@ export class RunError extends Error {
 					: result.signal
 						? `signal ${result.signal}`
 						: `exit ${result.exitCode}`
-		const stderr = result.stderr.trim()
+		// Redacted before the cut: a keyed value split by it would survive as a fragment no redaction matches.
+		const stderr = redactSecrets(result.stderr.trim())
 		const tail = stderr.length > STDERR_TAIL ? `…${stderr.slice(-STDERR_TAIL)}` : stderr
 		super(`${bin} failed (${reason})${tail ? `: ${tail}` : ""}`)
 		this.name = "RunError"
