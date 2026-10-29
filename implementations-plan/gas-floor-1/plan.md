@@ -7,10 +7,27 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: implementing (arc a1 green, Codex converged)
+status: completed (PR #70)
 base: main a111e8a
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
+
+## Outcome
+
+- **Status:** completed; delivered in PR #70 (one arc), awaiting the orchestrator's merge. Delivers ask28, ask32.
+- **Shipped:** the `below-floor` route outcome and the refusal sorting in `gasFailure` (`useCrossChainRoute.ts`);
+  the claim-minimum sentence, no box and a settled `loading` for it (`useCrossChainSend.ts`); "~1 min" and
+  "usually ~1 min" for the Cross to Aztec step on both networks; route, send and step tests; browser cell 55.
+- **Changed in review:** planning corrected the fixture facts (fixed terms keep 75%) and the controls, and added the
+  re-quote case. Implementation review made the refusal a required argument. Rejected: a mainnet carve-out for
+  `unsafe`, a wizard-level test and the whole browser suite run locally (ledger D3, D8, D9).
+- **Left to the owner, unchanged:** "usually 3–8 min end to end" and "a few minutes for Aztec to pick it up"
+  (`OWNER-ASKS.md`).
+- **Lessons:** none promoted. The sandbox's missing-library error names its own fix. The screenshot-tour hold is in
+  `apps/tools/tests/browser/README.md`.
+- **Known limits:** #71.
+- **Open items:** the two owner asks in `OWNER-ASKS.md`, with the orchestrator.
+- **Seeds:** the `/goal` and `/loop` seeds at the end are retired; they are history, not instructions.
 
 # gas-floor-1: a gas slice under the claim minimum, and the Cross to Aztec estimate
 
