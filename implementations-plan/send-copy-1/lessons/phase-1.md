@@ -36,3 +36,17 @@
 
 - Verified both fixes, including the Vue-scheduler reproduction for a pass and a refusal. **NO MATERIAL FINDINGS**:
   converged in 2 rounds.
+
+## Final head gates and the host
+
+- On the final head, `audit:tools` exit 0 (125 files, 1684 tests), `test:all` exit 0 and `test:e2e` exit 0
+  (3 files, 30 tests). At a lower host load, `bridge-generation.test.ts` passed in `test:all` with no timeout.
+- The browser gate was lost to the host, twice. Both runs died at sandbox boot: Bun hit SIGSEGV opening the wallet's
+  LMDB store in `/dev/shm`, which was full (11 MB free). About 1.7 GB of that is pid-less `unleashed-wallet-*`
+  stores. No code in this checkout makes stores with that name, and `reapDeadStores` never reaps such names by
+  design.
+- Unprivileged user namespaces are refused, so a private tmpfs is not an option. `storeRoot` has no override.
+- The second run's own store (`unleashed-3807561-…`) was removed. It was the child of that run's `sandbox:up`, pid
+  3807556, and nothing else was touched.
+- CI's `tools-e2e-status` is the browser gate for this PR. The after shots wait for a host with space. The throwaway
+  shots spec is kept outside the tree.

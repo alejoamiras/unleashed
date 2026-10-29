@@ -10,3 +10,4 @@
 - 2026-10-29 environment: the worktree's forge out/ predated FuelOnlyGate (sdk code-pins ENOENT); rebuilt with `forge build`
 - 2026-10-29 audit:tools green; Codex round 1: 1 material finding (receipt race), fixed in a11c5d5 with its regression
 - 2026-10-29 Opus leg: no material findings, nits in 36207f5; Codex round 2: NO MATERIAL FINDINGS (converged in 2 rounds)
+- 2026-10-29 final head: audit:tools, test:all, test:e2e green; local browser gate lost to the host (/dev/shm full, sandbox SIGSEGV at boot twice); CI's tools-e2e-status is the browser gate; shots blocked
