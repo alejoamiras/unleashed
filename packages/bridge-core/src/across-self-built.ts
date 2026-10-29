@@ -3,8 +3,8 @@
  * complete our message: it fills with 1.15× the node's gas estimate, and under Sepolia's gas rules that lands
  * where LI.FI's ReceiverAcrossV4 recovers the token to the user's wallet instead of depositing it. So every
  * testnet send names `TESTNET_FILLER` as its exclusive relayer, and that key fills it before `fillDeadline`: the
- * `packages/testnet-relayer` service, or `packages/bridge-core/scripts/fill-testnet.ts` by hand. Across's testnet
- * refunds no unfilled deposit, so a missed one stays in the source pool. Mainnet rides a live quote and any relayer.
+ * `packages/testnet-relayer` Worker, or its `scripts/relayer.ts once` by hand. Across's testnet refunds no unfilled
+ * deposit, so a missed one stays in the source pool. Mainnet rides a live quote and any relayer.
  */
 import type { Address } from "viem"
 
@@ -30,14 +30,18 @@ export const SELF_BUILT_MAX_WHOLE_TOKENS = 8n
 export function selfBuiltMaxDeposit(decimals: number): bigint {
 	return SELF_BUILT_MAX_WHOLE_TOKENS * 10n ** BigInt(decimals)
 }
-/** The pinned testnet canary key: the one account testnet fills are signed with. */
-export const TESTNET_FILLER: Address = "0x7A4f7Be599Afa3AfB0A41bb1D44762Ce441f8fAc"
+/**
+ * The testnet relayer's address; its key is the Worker's secret, and the Worker refuses a key that does not derive
+ * it. Never the canary, which fills its own deposits, so the two never share a nonce. A send built before this moves
+ * keeps naming the old address.
+ */
+export const TESTNET_FILLER: Address = "0x6bF61c9C868fe8d1b3B3d977fBf80498DBD7Cf1F"
 
 const ETHEREUM_MAINNET = 1
 
 /**
- * Terms priced like Across's testnet quotes and timed from the source chain's head: the output keeps
- * `SELF_BUILT_RELAY_FEE_BPS` of `srcAmount`, the fill deadline is `SELF_BUILT_FILL_WINDOW_S` after the head,
+ * Terms priced like Across's testnet quotes and timed from the source chain's head: the output is
+ * `srcAmount` less `SELF_BUILT_RELAY_FEE_BPS`, the fill deadline is `SELF_BUILT_FILL_WINDOW_S` after the head,
  * and `filler` alone may fill until then. `etaSeconds` is the whole window: nobody quotes a fill time.
  *
  * @param l1ChainId The destination L1 of the manifest the deposit is built for.
