@@ -931,8 +931,15 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		sealed.sealedEnvelope = await sealEnvelopeFor(sealed)
 		addRecord(sealed)
 		await runDepositClaim("0xsealed", { interactive: false, watchOnly: true })
+		const sent = mkSend("0xsealedsent", { isPrivate: true, secret: undefined, sealerL1: SEALER, claimTxHash: CLAIM_TX })
+		sent.sealedEnvelope = await sealEnvelopeFor(sent)
+		addRecord(sent)
+		await runDepositClaim("0xsealedsent", { watchOnly: true })
 		expect(deps.signL1).not.toHaveBeenCalled()
-		expect(sdk.calls).toHaveLength(1)
+		expect(sdk.calls.map((c) => [c.view.id, c.run.watchOnly])).toEqual([
+			["0xprivgas", false],
+			["0xsealedsent", true],
+		])
 	})
 
 	it("an unchecked network stops a claim not yet sent, with nothing sent", async () => {
@@ -1397,14 +1404,25 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		await expect(runGasClaim("0xshort")).rejects.toThrow(/under the private claim's fee ceiling/)
 	})
 
-	it("the card's gas claim says it has not confirmed when its watch runs out or it is dropped", async () => {
+	it("the card's gas claim says it has not confirmed when its watch runs out or it is dropped; a retry gets the sent claim", async () => {
 		const sdk = fakeClaimSdk()
-		sdk.script("fuel", pollsForever, failsWith(bridgeError("claim-dropped")))
+		sdk.script(
+			"fuel",
+			async (c) => {
+				await c.persist({ fuel: { ...c.record.fuel, claimTxHash: CLAIM_TX } } as never)
+				return pollsForever(c)
+			},
+			async (c) => ({ record: c.record, via: "claim" as const }),
+			failsWith(bridgeError("claim-dropped")),
+		)
 		connectJournalDeps(claimDeps(kv, sdk))
-		for (const id of ["0xslow", "0xdropped"]) {
-			addRecord(mkFueled(id, { completedAt: 5 }))
-			await expect(runGasClaim(id)).rejects.toThrow("The gas claim was sent but hasn't confirmed yet")
-		}
+		addRecord(mkFueled("0xslow", { completedAt: 5 }))
+		await expect(runGasClaim("0xslow")).rejects.toThrow("The gas claim was sent but hasn't confirmed yet")
+		expect(depositOf("0xslow")?.fuel?.claimTxHash).toBe(CLAIM_TX)
+		await runGasClaim("0xslow")
+		expect(sdk.calls[1]?.view.fuel?.claimTxHash).toBe(CLAIM_TX)
+		addRecord(mkFueled("0xdropped", { completedAt: 5 }))
+		await expect(runGasClaim("0xdropped")).rejects.toThrow("The gas claim was sent but hasn't confirmed yet")
 	})
 
 	it("a discard waiting for the journal lock reads as gone at once, and no reload brings the record back", async () => {

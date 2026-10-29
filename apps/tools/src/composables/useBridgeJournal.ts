@@ -1085,8 +1085,8 @@ export async function runDepositClaim(id: string, opts: ClaimRunOptions = {}): P
 	}
 }
 
-/** `interactive`: a click, which may ask for the unseal signature. `watchOnly`: the Aztec wallet is never asked; by
- *  default a run nobody clicked for on a record this session did not start. */
+/** `interactive`: a click, which may ask for the unseal signature. `watchOnly`: no wallet is asked, the unseal included;
+ *  by default a run nobody clicked for on a record this session did not start. */
 export interface ClaimRunOptions {
 	interactive?: boolean
 	watchOnly?: boolean
@@ -1106,8 +1106,8 @@ function surfaceRunFailure(id: string, e: unknown): void {
 }
 
 async function runDepositClaimInner(id: string, opts: ClaimRunOptions): Promise<void> {
-	const interactive = opts.interactive !== false
-	const mode: ClaimMode = { interactive, watchOnly: opts.watchOnly ?? (!interactive && !sessionLive.has(id)) }
+	const watchOnly = opts.watchOnly ?? (opts.interactive === false && !sessionLive.has(id))
+	const mode: ClaimMode = { interactive: opts.interactive !== false && !watchOnly, watchOnly }
 	let next = "stop" as ClaimRun
 	let gen = 0
 	const ran = await withRecordLock(id, async () => {
@@ -1404,6 +1404,10 @@ async function claimCall(rec: ClaimRecord, gen: number, plan: CallPlan, setup?: 
 		})
 		return { outcome, call }
 	} catch (error) {
+		if (refusedByMove(rec, error)) {
+			await wait(RECEIPT_POLL_MS)
+			stopCall(call, "moved")
+		}
 		return { error, call }
 	} finally {
 		unwatch()
@@ -1442,6 +1446,18 @@ function watchDepositMove(rec: ClaimRecord, call: ClaimCall): () => void {
 		},
 		// A move that landed while the call was set up counts too.
 		{ immediate: true },
+	)
+}
+
+/** A write the identity guard refused on a cross-chain record: discovery's move, met before the watch's delay ran out,
+ *  so the claim restarts after the same delay. */
+function refusedByMove(rec: ClaimRecord, e: unknown): boolean {
+	return (
+		isCrossChainRecord(rec as AnyJournalRecord) &&
+		isBridgeError(e) &&
+		e.code === "persist-failed" &&
+		e.cause instanceof RecordDeltaRefused &&
+		e.cause.reason === "identity"
 	)
 }
 

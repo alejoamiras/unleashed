@@ -210,6 +210,8 @@ describe("persisted records claim through their views", () => {
 	})
 
 	it("a deposit discovery moved while the claim was being set up restarts the claim on the new leaf", async () => {
+		// The move watch's delay outlasts the stale call's first write, which the identity guard refuses.
+		connectJournalDeps({ waitMs: () => new Promise((r) => setTimeout(r, 20)) })
 		let open: () => void = () => {}
 		const gate = new Promise<void>((r) => {
 			open = r
@@ -221,8 +223,8 @@ describe("persisted records claim through their views", () => {
 		sdk.script(
 			"token",
 			async (c) => {
-				await c.hold()
-				throw new Error("the stale call was never stopped")
+				await c.persist({ claimTxHash: CLAIM })
+				throw new Error("the stale call's write landed")
 			},
 			sendsClaim,
 		)

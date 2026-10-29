@@ -1059,6 +1059,12 @@ Arc a6, PR 2 (`git diff bc5e585..HEAD`):
   - A deposit move that landed while a call was set up went unnoticed: the move watch also checks at its start.
   - A watching run could still ask for the unseal signature: it now stops before it.
   - The pending discard (fixed above). Four stale or narrating comments were rewritten.
+- **Round 2, Codex: APPROVE WITH CHANGES, 2 Medium, 1 Low; all verified and fixed with tests.** It confirmed the
+  round-1 fixes.
+  - A stale call's write that the identity guard refused before the move watch fired stopped the claim: a refused write
+    on a cross-chain record now restarts it after the same delay.
+  - Only an unsent record skipped the unseal on an explicit watch-only run: such a run is no longer interactive.
+  - The gas-timeout test stored no hash: it now keeps the sent hash and hands it to the retry.
 - **The screenshot tour** reached all five states through real flows. Everything else it flagged is today's
   rendering:
   - the run template after fee-stop copy;
