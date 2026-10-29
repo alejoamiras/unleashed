@@ -10,6 +10,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [aztec-fee-asset](aztec-fee-asset/plan.md) — archived — $AZTEC first in the Send picker, and a testnet AZTEC mint on Send and the Faucet tab
 - [aztec-5.0.0-stable](aztec-5.0.0-stable/plan.md) — archived — aztec-5.0.0-stable
 - [aztec-5.0.1-line](aztec-5.0.1-line/plan.md) — archived — aztec-5.0.1-line
+- [balances-1](balances-1/plan.md) — archived — balances-1 — Ethereum balances on the token list whichever chain the wallet is on
 - [bridge-evm-verification](bridge-evm-verification/plan.md) — archived — bridge-evm-verification
 - [bridge-form-stepper](bridge-form-stepper/plan.md) — archived — Bridge form-stepper round (third UX amendment)
 - [bridge-hardening](bridge-hardening/plan.md) — archived — bridge-hardening
