@@ -9,3 +9,4 @@
 - 2026-10-29 a1 P1 gate: lint, typecheck:all, test:all (tools 1705), test:e2e (30), audit:tools exit 0; browser deposit-crosschain + l1-wallet + recovery 14 passed at retry 0 (18.8 min; cell 53 1.5 min).
 - 2026-10-29 a1 Codex loop: round 1 no material findings (nits taken); Opus two lows fixed; round 2 no material findings.
 - 2026-10-29 a1 after shots taken (design/a1-*.png, light and dark); merged origin/main 228fbc9; final-head gates next.
+- 2026-10-29 a1 final head 8c38307: lint, typecheck:all, test:all, test:e2e, audit:tools exit 0; browser 14 passed at retry 0 (18.2 min; cell 53 1.4 min).
