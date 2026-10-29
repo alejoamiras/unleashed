@@ -105,8 +105,10 @@ const sendError = ref<string | null>(null)
 const sendBusy = ref(false)
 const sendFn = vi.fn(async (): Promise<string> => "")
 const checkFn = vi.fn(async (_plan: unknown): Promise<string | null> => null)
+const checkXcFn = vi.fn(async (_plan: unknown): Promise<string | null> => null)
 const sendDispose = vi.fn()
 const exitError = ref<string | null>(null)
+const exitPaused = ref<"l1" | "l2" | null>(null)
 const exitFn = vi.fn(async (_plan: unknown, _approvedCeiling?: bigint): Promise<string> => "")
 const exitDispose = vi.fn()
 
@@ -331,7 +333,15 @@ vi.mock("@/composables/useGasShare", () => ({
 	}),
 }))
 vi.mock("@/composables/useSend", () => ({
-	useSend: () => ({ send: sendFn, check: checkFn, stage: ref(null), busy: sendBusy, error: sendError, dispose: sendDispose }),
+	useSend: () => ({
+		send: sendFn,
+		check: checkFn,
+		checkCrossChain: checkXcFn,
+		stage: ref(null),
+		busy: sendBusy,
+		error: sendError,
+		dispose: sendDispose,
+	}),
 	previewBlock: (plan: { token: ResolvedToken }) => ({
 		erc20: plan.token.address,
 		portal: plan.token.portal,
@@ -344,7 +354,7 @@ vi.mock("@/composables/useSend", () => ({
 }))
 vi.mock("@/composables/useHubExit", () => ({
 	EXIT_TOKEN_NOT_REGISTERED: "The bridge hasn't registered this token on Aztec yet, so there is nothing here to withdraw.",
-	useHubExit: () => ({ exit: exitFn, busy: ref(false), error: exitError, paused: ref(null), dispose: exitDispose }),
+	useHubExit: () => ({ exit: exitFn, busy: ref(false), error: exitError, paused: exitPaused, dispose: exitDispose }),
 }))
 
 import { predictPortal } from "@unleashed/sdk/protocol"
@@ -399,6 +409,7 @@ const stubs = {
 		"grant",
 		"busy",
 		"error",
+		"paused",
 	]),
 	StepStrip: stub("StepStrip", ["steps", "active", "completed"]),
 	BridgeStepper: stub("BridgeStepper", ["record", "runtime", "canBackground", "startedAt"]),
@@ -538,6 +549,8 @@ describe("SendWizard", () => {
 		readContract.mockResolvedValue("0x0000000000000000000000000000000000000000")
 		sendFn.mockResolvedValue("")
 		checkFn.mockReset().mockResolvedValue(null)
+		checkXcFn.mockReset().mockResolvedValue(null)
+		exitPaused.value = null
 		exitFn.mockResolvedValue("")
 		proposeFn.mockReturnValue({ fuelAmount: 2_000_000n, fuelFj: 5n * 10n ** 18n, capped: null })
 	})
@@ -1189,6 +1202,52 @@ describe("SendWizard", () => {
 		release()
 		await flushPromises()
 		expect(sendFn).toHaveBeenCalledTimes(1)
+		expect(checkXcFn).not.toHaveBeenCalled()
+	})
+
+	it("an earlier attempt's error and decline stay on its review and clear when the review is entered again", async () => {
+		granted.value = []
+		grantOutcome = "declined"
+		sendFn.mockImplementation(async () => {
+			sendError.value = "Your wallet didn't grant access to this token — nothing was sent."
+			return ""
+		})
+		const w = await wizard()
+		const review = await atReview(w)
+		review.vm.$emit("confirm")
+		await flushPromises()
+		// The permission screen replaced the review while the grant was open: this is a new instance.
+		const after = w.findComponent({ name: "ReviewStep" })
+		expect(after.props()).toMatchObject({ grant: "declined", error: expect.stringContaining("didn't grant") })
+		after.vm.$emit("back")
+		await flushPromises()
+		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
+		await flushPromises()
+		expect(w.findComponent({ name: "ReviewStep" }).props()).toMatchObject({ grant: "idle", error: null })
+	})
+
+	it("an exit's error and pause clear when its review is entered again; a decline from picking the token stays", async () => {
+		granted.value = []
+		grantOutcome = "declined"
+		nextResolved = (token) => resolvedToken(token, HUB_REGISTERED)
+		exitFn.mockImplementation(async () => {
+			exitError.value = "Withdraw failed"
+			exitPaused.value = "l1"
+			return ""
+		})
+		const w = await wizard()
+		w.findComponent({ name: "WizardShell" }).vm.$emit("update:direction", "l2-to-l1")
+		await flushPromises()
+		const review = await atReview(w)
+		expect(review.props("grant")).toBe("declined")
+		review.vm.$emit("confirm")
+		await flushPromises()
+		expect(review.props()).toMatchObject({ error: "Withdraw failed", paused: "l1" })
+		review.vm.$emit("back")
+		await flushPromises()
+		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
+		await flushPromises()
+		expect(w.findComponent({ name: "ReviewStep" }).props()).toMatchObject({ error: null, paused: null, grant: "declined" })
 	})
 
 	it("a backgrounded send that lands re-resolves the token, standing down a next review priced from it", async () => {
@@ -1983,6 +2042,85 @@ describe("SendWizard", () => {
 		review.vm.$emit("act")
 		await flushPromises()
 		expect(xcSend).toHaveBeenCalledWith(xcQuoted.value, XC_ROUTE, expect.objectContaining({ address: ERC20 }), {})
+	})
+
+	it("a cross-chain confirm on a paused route says so on the review and prompts nothing; once it reads open it sends", async () => {
+		checkXcFn.mockResolvedValueOnce("Deposits on this route are paused right now. Nothing was sent.")
+		const w = await wizard()
+		const review = await atCrossChainReview(w)
+		l1ChainId.value = XC_SOURCE
+		await flushPromises()
+		review.vm.$emit("confirm")
+		await flushPromises()
+		expect(review.props("error")).toBe("Deposits on this route are paused right now. Nothing was sent.")
+		expect(contractAccount).not.toHaveBeenCalled()
+		expect(xcSend).not.toHaveBeenCalled()
+		expect(checkFn).not.toHaveBeenCalled()
+		review.vm.$emit("back")
+		await flushPromises()
+		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
+		await flushPromises()
+		const again = w.findComponent({ name: "CrossChainReview" })
+		expect(again.props("error")).toBeNull()
+		again.vm.$emit("confirm")
+		await flushPromises()
+		expect(checkXcFn.mock.calls[1]?.[0]).toMatchObject({ direction: "l1-to-l2", amount: 4_510_000n })
+		expect(xcSend).toHaveBeenCalledTimes(1)
+	})
+
+	it.each([
+		{ name: "passes", answer: null },
+		{ name: "refuses", answer: "Deposits on this route are paused right now. Nothing was sent." },
+	])("a cross-chain pause check that $name after the account switched sends nothing and shows nothing", async ({ answer }) => {
+		let release = (): void => {}
+		checkXcFn.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					release = () => resolve(answer)
+				}),
+		)
+		const w = await wizard()
+		const review = await atCrossChainReview(w)
+		l1ChainId.value = XC_SOURCE
+		await flushPromises()
+		review.vm.$emit("confirm")
+		await flushPromises()
+		selectedAccount.value = `0x${"20".repeat(32)}`
+		await flushPromises()
+		release()
+		await flushPromises()
+		expect(xcSend).not.toHaveBeenCalled()
+		expect(contractAccount).not.toHaveBeenCalled()
+		expect(w.findComponent({ name: "CrossChainReview" }).exists()).toBe(false)
+	})
+
+	it("a cross-chain send that fails says why on its own review, never on a newer one opened after backgrounding it", async () => {
+		xcSend.mockResolvedValueOnce({ error: "Rejected in your wallet." })
+		const w = await wizard()
+		const review = await atCrossChainReview(w)
+		l1ChainId.value = XC_SOURCE
+		await flushPromises()
+		review.vm.$emit("confirm")
+		await flushPromises()
+		expect(review.props("error")).toBe("Rejected in your wallet.")
+
+		let fail = (): void => {}
+		xcSend.mockImplementationOnce(async () => {
+			sessionLive.add("xc-1")
+			crossChainRecords.value = [xcRecord({ id: "xc-1" })]
+			await new Promise<void>((resolve) => {
+				fail = resolve
+			})
+			return { error: "Rejected in your wallet." }
+		})
+		review.vm.$emit("confirm")
+		await flushPromises()
+		w.findComponent({ name: "BridgeStepper" }).vm.$emit("background")
+		await flushPromises()
+		const newer = await atCrossChainReview(w)
+		fail()
+		await flushPromises()
+		expect(newer.props()).toMatchObject({ error: null, state: null })
 	})
 
 	it("puts the outcome panel in the stepper's place once its cross-chain send ends without arriving; dismissing starts over", async () => {

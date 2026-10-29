@@ -952,7 +952,17 @@ function enterReview(): void {
 	reviewed.value = freezeReview(target)
 	reviewStale.value = false
 	clearCrossChainReview()
+	clearSendErrors()
 	step.value = 2
+}
+
+/** A fresh review starts blank: what an earlier attempt said is not about this one. An exit's decline comes from
+ *  picking the token, not from a send, and stands until the token is picked again. */
+function clearSendErrors(): void {
+	sendFlow.error.value = null
+	exitFlow.error.value = null
+	exitFlow.paused.value = null
+	if (!isExit.value && grantState.value === "declined") grantState.value = "idle"
 }
 
 function goToStep(index: 0 | 1 | 2): void {
@@ -1133,7 +1143,11 @@ async function runCrossChain(snapshot: ReviewSnapshot, frozen: FrozenRoute, targ
 	const sent = await xc.send(frozen.quoted, frozen.route, target.token, client)
 	if ("id" in sent) {
 		if (ownedId.value !== sent.id && backgroundedCanonical.value !== sent.id) adopt(sent.id)
-	} else if ("refused" in sent) xcRefusal.value = refusalState(sent.refused, ask.user)
+		return
+	}
+	// A send backgrounded mid-prompt fails after the wizard moved on: why it stopped belongs to its own review only.
+	if (reviewed.value !== snapshot) return
+	if ("refused" in sent) xcRefusal.value = refusalState(sent.refused, ask.user)
 	else xcError.value = sent.error
 }
 
@@ -1162,16 +1176,16 @@ function adoptRunRecord(): void {
 watch(journal.listedRecords, adoptRunRecord)
 
 /**
- * An Ethereum send first passes the bridge check; then the gas gate is re-read at CONFIRM, not
- * trusted from when the amount step opened: gas spent elsewhere meanwhile would strand the deposit
- * at its claim. Each read holds the buttons but leaves the review live, so an account or chain that
- * moves under it stands it down as usual; only a review still standing when the reads return goes on
- * to sign.
+ * A deposit first passes its check (an Ethereum send the bridge's, a cross-chain send the pause); then the gas gate
+ * is re-read at CONFIRM, not trusted from when the amount step opened: gas spent elsewhere meanwhile would strand the
+ * deposit at its claim. Each read holds the buttons but leaves the review live, so an account or chain that moves
+ * under it stands it down as usual; only a review still standing when the reads return goes on to sign.
  */
 async function preflight(snapshot: ReviewSnapshot): Promise<boolean> {
 	const target = snapshot.plan
 	if (target.direction === "l2-to-l1") return target.isPrivate ? privateExitPreflight(snapshot) : true
-	if (!snapshot.crossChain && !(await bridgeChecked(snapshot, target))) return false
+	const checked = snapshot.crossChain ? crossChainChecked(snapshot, target) : bridgeChecked(snapshot, target)
+	if (!(await checked)) return false
 	const privateSlice = target.isPrivate && target.intent === "token+gas" ? (target.gas ?? null) : null
 	if (target.intent !== "token" && !privateSlice) return true
 	const repriced = await preflightReads(target.intent === "token", privateSlice !== null)
@@ -1192,7 +1206,7 @@ function reviewStands(snapshot: ReviewSnapshot): boolean {
 /** An Ethereum send's bridge check, before the permission screen and every prompt: a refusal stays on the review in
  *  the send's place, and only a review still standing when the reads return may act on them. */
 async function bridgeChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
-	const refusal = await heldCheck(plan)
+	const refusal = await heldCheck(() => sendFlow.check(plan))
 	if (!reviewStands(snapshot)) return false
 	sendFlow.error.value = refusal
 	if (refusal === null) return true
@@ -1201,12 +1215,21 @@ async function bridgeChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<
 	return false
 }
 
-/** The check under the preflighting hold. Its caller must test the review only after this resolves: dropping the hold
+/** A cross-chain send's pause check, before any prompt on the source chain: a pause it reads stays on the review in
+ *  the send's place, and only a review still standing when the reads return may act on them. */
+async function crossChainChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
+	const refusal = await heldCheck(() => sendFlow.checkCrossChain(plan))
+	if (!reviewStands(snapshot)) return false
+	xcError.value = refusal
+	return refusal === null
+}
+
+/** A check under the preflighting hold. Its caller must test the review only after this resolves: dropping the hold
  *  lets a deferred receipt request replace the review, and that watcher runs before the caller resumes. */
-async function heldCheck(plan: SendPlan): Promise<string | null> {
+async function heldCheck(run: () => Promise<string | null>): Promise<string | null> {
 	preflighting.value = true
 	try {
-		return await sendFlow.check(plan)
+		return await run()
 	} finally {
 		preflighting.value = false
 	}
