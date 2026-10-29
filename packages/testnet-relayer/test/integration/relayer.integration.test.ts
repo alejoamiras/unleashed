@@ -252,7 +252,8 @@ describe.skipIf(!INTEGRATION)("the relayer on two anvils", () => {
 		const resumed = new Promise<void>((r) => {
 			resume = r
 		})
-		// Held before its fill is signed: the first run's approval has landed and its fill was simulated.
+		// Held before its fill is signed: the first run's approval has landed, its fill was simulated and priced at the
+		// nonce it read, which the other run's approval and fill then spend.
 		const wallet = dst.wallet(KEYS.filler)
 		const held = {
 			...wallet,
@@ -276,7 +277,11 @@ describe.skipIf(!INTEGRATION)("the relayer on two anvils", () => {
 		resume()
 		expect(await first).toEqual({ outcome: "failed" })
 		expect(lines).toContainEqual(
-			expect.objectContaining({ event: "failed", reason: expect.stringMatching(/reverted/), relayHash: newer.relayHash }),
+			expect.objectContaining({
+				event: "failed",
+				reason: expect.stringMatching(/lower than the current nonce/),
+				relayHash: newer.relayHash,
+			}),
 		)
 		expect(await run()).toMatchObject({ outcome: "filled" })
 		expect(await status(newer.relayHash)).toBe(2n)
