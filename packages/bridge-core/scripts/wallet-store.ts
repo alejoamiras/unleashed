@@ -75,7 +75,7 @@ function isDead(pid: string | undefined): boolean {
 
 /** Whoever can rename entries in a root could swap a checked dead store for a live one before its removal: on a sticky
  *  root that is only its owner, elsewhere anyone with write access. */
-function isGuarded(root: Stats, uid: number): boolean {
+export function isGuarded(root: Pick<Stats, "mode" | "uid">, uid: number): boolean {
 	if (root.mode & S_ISVTX) return root.uid === uid || root.uid === 0
 	return root.uid === uid && (root.mode & 0o022) === 0
 }
@@ -138,7 +138,7 @@ export function reapDeadStores(root: string): void {
  * and signing keys, so it never sits in the SDK's default `./aztec-wallet-data`, which is in the tree
  * and shared between runs, and never on disk unless `allowDisk` marks the keys as public sandbox keys
  * (the local sandbox on macOS). Removal covers an exit and a signal; a store that a SIGKILL or a crash
- * leaves is reaped by the next call on the host (`reapDeadStores`). The signal fallback is prepended so it
+ * leaves is removed by a later call, within `reapDeadStores`'s limits. The signal fallback is prepended so it
  * counts a `once` handler before that handler is dropped: it exits only when nothing else handles the
  * signal, and a handler that does (the sandbox's async reaper) exits through `process.exit`, which runs
  * the removal.

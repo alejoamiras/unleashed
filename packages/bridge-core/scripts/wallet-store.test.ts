@@ -3,11 +3,13 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, symli
 import { homedir, tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { reapDeadStores, storeRoot } from "./wallet-store"
+import { isGuarded, reapDeadStores, storeRoot } from "./wallet-store"
 
 const module = join(import.meta.dirname, "wallet-store.ts")
 const keepAlive = "setInterval(() => {}, 1000);"
 const hasProc = existsSync("/proc/self/fd")
+/** Stores go to a tmpfs `/dev/shm`, whose sticky root-owned root the reap trusts; a disk root may be group-writable. */
+const reapsShm = hasProc && storeRoot({ allowDisk: true }) === "/dev/shm"
 
 type Child = { proc: ChildProcess; lines: string[]; exited: Promise<number | null> }
 const spawned: Child[] = []
@@ -79,7 +81,7 @@ describe("ownedWalletStore", () => {
 	})
 
 	// Another worktree's run on the same host may reap the killed child's store first, so its survival is not asserted.
-	it.skipIf(!hasProc)("reaps a SIGKILLed creator's store at the next creation and keeps a live creator's", async () => {
+	it.skipIf(!reapsShm)("reaps a SIGKILLed creator's store at the next creation and keeps a live creator's", async () => {
 		const killed = child("", keepAlive)
 		const killedDir = await firstLine(killed)
 		try {
@@ -97,15 +99,19 @@ describe("ownedWalletStore", () => {
 			expect(await live.exited).toBe(143)
 			expect(existsSync(liveDir)).toBe(false)
 		} finally {
-			rmSync(killedDir, { recursive: true, force: true })
+			// Once reaped, the name is free for another uid to take, and removing that entry throws EPERM.
+			try {
+				rmSync(killedDir, { recursive: true, force: true })
+			} catch {}
 		}
 	})
 })
 
 describe("reapDeadStores", () => {
 	it.skipIf(!hasProc)("removes only a dead creator's unheld directory, in a root no other uid can rename in", async () => {
-		// The space checks that a `maps` path is read whole.
-		const root = mkdtempSync(join(tmpdir(), "reap test-"))
+		// On overlayfs before Linux 6.8, `maps` names the backing file, so a mapping there reads as unheld. The space
+		// checks that a `maps` path is read whole; the name never matches a store, so no real reap touches it.
+		const root = mkdtempSync(join(reapsShm ? "/dev/shm" : tmpdir(), "reap test-"))
 		const outside = mkdtempSync(join(tmpdir(), "reap-outside-"))
 		try {
 			writeFileSync(join(outside, "keep"), "x")
@@ -148,6 +154,21 @@ describe("reapDeadStores", () => {
 			rmSync(root, { recursive: true, force: true })
 			rmSync(outside, { recursive: true, force: true })
 		}
+	})
+})
+
+describe("isGuarded", () => {
+	it("trusts a root only where no other uid can rename its entries", () => {
+		const me = 1000
+		const cases: [mode: number, owner: number, trusted: boolean][] = [
+			[0o41777, 0, true],
+			[0o41777, me, true],
+			[0o41777, 1001, false],
+			[0o40700, me, true],
+			[0o40770, me, false],
+			[0o40700, 1001, false],
+		]
+		for (const [mode, owner, trusted] of cases) expect(isGuarded({ mode, uid: owner }, me)).toBe(trusted)
 	})
 })
 
