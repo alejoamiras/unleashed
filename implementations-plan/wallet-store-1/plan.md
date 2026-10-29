@@ -7,10 +7,27 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: approved by the final Codex pass; awaiting the orchestrator
+status: completed (PR #53)
 base: main 2aaec3a
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
+
+## Outcome
+
+- **Status:** completed; delivered in PR #53 (one arc), awaiting the orchestrator's merge. Closes #52.
+- **Shipped:** pid-first store names and `reapDeadStores` in `packages/bridge-core/scripts/wallet-store.ts`, called
+  before every store creation, with the root, pid, `lstat` owner and fd/cwd/`maps` holder guards; `isGuarded`
+  exported for its table test; T1, T2 and the table in `wallet-store.test.ts`.
+- **Changed in review:** planning added `maps`, the root guard and its owner condition, and the test hardening.
+  Implementation round 1 pinned the guard in a table, moved T2's root to `/dev/shm`, gated T1 on a tmpfs store root,
+  and fixed two test cleanups. Rejected: keeping every candidate while an unreadable process lives, a lock protocol,
+  an ancestor check (ledger D3–D5).
+- **Lessons:** none promoted; `lessons.md` is at its budget. The `/proc` facts (`Bun.mmap` holds by mapping alone,
+  `sd-pam` and zombies are unreadable, overlayfs before Linux 6.8 shows backing paths in `maps`) live in the
+  module's comments, `recon.md` and `lessons/phase-1.md`.
+- **Known limits:** #54, #55.
+- **Open items:** none. The owner's one step: remove the old pid-less `unleashed-*` stores on shared hosts once.
+- **Seeds:** the `/goal` and `/loop` seeds at the end are retired; they are history, not instructions.
 
 # wallet-store-1: reap the wallet stores a killed run leaves
 
