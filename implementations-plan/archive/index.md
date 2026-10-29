@@ -52,6 +52,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [send-copy-1](send-copy-1/plan.md) — archived — send-copy-1 — testnet send wording, and two refusals before any wallet prompt
 - [send-wizard-ux](send-wizard-ux/plan.md) — archived — Send wizard UX redesign
 - [swap-fuel](swap-fuel/plan.md) — archived — swap-fuel — bridge-and-fuel on the live Sepolia ↔ Aztec testnet bridge
+- [terms-1](terms-1/plan.md) — archived — terms-1 — the mainnet Terms of Use and Privacy Policy, and a wallet-signed acceptance gate in front of the mainnet app
 - [tools-console](tools-console/plan.md) — archived — Tools Console — the shell around the Send wizard
 - [tools-recovery](tools-recovery/plan.md) — archived — tools-recovery — the three stuck-record recoveries, identity-bound
 - [tools-two-network](tools-two-network/plan.md) — archived — Two-network tools deployment (mainnet + testnet) — v3
