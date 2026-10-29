@@ -4,12 +4,12 @@
  * new rows costs one batch for those rows only; a read that fails leaves what was read standing;
  * a read that is superseded never lands.
  */
-import { readErc20Balances } from "@unleashed/sdk/protocol"
 import type { Address, PublicClient } from "viem"
 import { type Ref, shallowRef, watch } from "vue"
 import type { SelectableToken } from "@/lib/send-model"
+import { readBalancesOn } from "./useEthereumReader"
 
-/** A remote list can run to hundreds of tokens; one batch stays bounded to what a screen shows. */
+/** A remote list can run to hundreds of tokens; the batch, one `eth_call`, stays bounded to what a screen shows. */
 const MAX_ROWS = 50
 
 export interface RowBalancesDeps {
@@ -37,7 +37,7 @@ export function useRowBalances(deps: RowBalancesDeps): UseRowBalancesHandle {
 		const owner = deps.owner()
 		if (!pub || !owner || rows.length === 0) return
 		try {
-			const got = await readErc20Balances(
+			const got = await readBalancesOn(
 				pub,
 				owner,
 				rows.map((r) => r.address),
