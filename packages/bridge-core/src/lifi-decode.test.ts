@@ -264,9 +264,12 @@ describe("lifi-decode: refusals", () => {
 
 	it("refuses a LI.FI fuel swap on a chain where LI.FI gas swaps are not enabled", () => {
 		const c = mainnetCase()
+		const plain = withoutFuel(c)
 		onLiveEthereum(() => {
 			expect(refusalOf(verifyRoute(c.tx, c.expected))?.field).toBe("fuel.provider")
 			expect(refusalOf(verifyComposeMessage(compose.message, c.expected))?.field).toBe("fuel.provider")
+			expect(refusalOf(verifyRoute(plain.route.tx, plain.route.expected)), "the route without fuel").toBeUndefined()
+			expect(refusalOf(verifyComposeMessage(plain.message, plain.route.expected)), "its compose message").toBeUndefined()
 		})
 		expect(refusalOf(verifyRoute(c.tx, c.expected))).toBeUndefined()
 	})
@@ -399,6 +402,22 @@ function buildModel(c: RouteCase): Model {
 	const tx = { values: { chainId: c.tx.chainId, from: c.tx.from, to: c.tx.to, value: c.tx.value } }
 	const nodes = Object.fromEntries(built.map((b) => [b.spec.name, b.state]))
 	return { c, specs, state: structuredClone({ tx, approval: { values: { ...c.tx.approval } }, nodes }) }
+}
+
+/** A route and its compose message with the gas leg removed: no slice, no swap, every enclosing layer re-encoded. */
+function withoutFuel(c: RouteCase): { route: RouteCase; message: Hex } {
+	const m = buildModel(c)
+	const state = structuredClone(m.state)
+	const router = state.nodes.router.values as { intent: Values; swapData: Hex }
+	Object.assign(router.intent, { fuelSlice: 0n, fuelRecipient: zeroHash, fuelSecretHash: zeroHash, minFuelOutput: 0n })
+	router.swapData = "0x"
+	const specs = m.specs.filter((s) => s.name !== "fuelSwap" && s.name !== "fuelFee")
+	const route = encodeModel({ ...m, specs }, state)
+	const composeMsg = specs.find((s) => s.name === "message")?.encode(state.nodes.message.values) as Hex
+	return {
+		route: { ...route, expected: { ...route.expected, fuel: undefined } },
+		message: concat([slice(compose.message as Hex, 0, 76), composeMsg]),
+	}
 }
 
 function encodeModel(m: Model, state: State): RouteCase {

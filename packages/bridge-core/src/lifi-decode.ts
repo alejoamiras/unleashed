@@ -341,7 +341,7 @@ function bookFor(field: string, chainId: number): LifiChainBook {
 // Each layer decoder checks the selector first and the canonical re-encoding last; a failure names the layer.
 
 /** A shared decoder's result, or its refusal under the field it names. */
-function decoded<T extends object>(r: T | { field: string; reason: string }): T {
+function unwrap<T extends object>(r: T | { field: string; reason: string }): T {
 	if ("reason" in r && "field" in r) return refuse(r.field, r.reason)
 	return r as T
 }
@@ -413,7 +413,7 @@ function checkOurRouterCall(x: RouteExpectation): DecodedRouterCall & { fuelSwap
 		return ours
 	}
 	const venue = fuelVenueOf(x)
-	const fuelSwap = decoded(decodeFuelSwap(ours.swapData))
+	const fuelSwap = unwrap(decodeFuelSwap(ours.swapData))
 	eq("fuelSwap._receiver", fuelSwap.receiver, x.router)
 	eq("fuelSwap._minAmountOut", fuelSwap.minAmountOut, ours.intent.minFuelOutput)
 	const issue = fuelSwapIssue(fuelSwap, {
@@ -466,7 +466,7 @@ function checkSourceSwaps(swaps: readonly LifiSwapData[], x: RouteExpectation, s
 	eq(f("receivingAssetId"), s.receivingAssetId, x.srcToken)
 	eq(f("fromAmount"), s.fromAmount, x.srcAmount)
 	eq(f("requiresDeposit"), s.requiresDeposit, true)
-	const fee = decoded(decodeFeeCall(s.callData, "fee"))
+	const fee = unwrap(decodeFeeCall(s.callData, "fee"))
 	eq("fee._token", fee.token, x.srcToken)
 	eq("fee._distributions.length", fee.distributions.length, 1)
 	const amount = fee.distributions[0].amount
@@ -601,7 +601,7 @@ function checkRouterCallBytes(data: Hex, ours: ReturnType<typeof checkOurRouterC
 	const actual = decodeRouterCall(data)
 	equalTree("router.intent", actual.intent, ours.intent)
 	if (ours.fuelSwap && actual.swapData !== "0x") {
-		const swap = decoded(decodeFuelSwap(actual.swapData))
+		const swap = unwrap(decodeFuelSwap(actual.swapData))
 		eq("fuelSwap.selector", swap.selector, ours.fuelSwap.selector)
 		checkFeeCallBytes(swap, ours.fuelSwap)
 		equalTree("fuelSwap", swap.args, ours.fuelSwap.args)
@@ -617,7 +617,7 @@ function checkFeeCallBytes(actual: FuelSwap, ours: FuelSwap): void {
 	const want = fuelFeeCall(ours)
 	const got = fuelFeeCall(actual)
 	if (!want || !got || "reason" in want) return
-	equalTree("fuelFee", decoded(got).args, want.args)
+	equalTree("fuelFee", unwrap(got).args, want.args)
 }
 
 function checkRoute(tx: RouteTx, x: RouteExpectation): DecodedRoute {

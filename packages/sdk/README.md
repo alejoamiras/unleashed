@@ -149,9 +149,9 @@ nothing was sent.
 - **Token bridge**: any ERC-20, listed in `net.bridge.tokens` or not, through `resolveToken`. A first-time token's
   portal is created by its deposit and its L2 token by its first claim. Fee-on-transfer tokens and amounts above
   `uint128` are refused on chain; rebasing tokens are unsupported and not detected.
-- **Gas**: the fee asset at par, or a token the network's venue prices: a pinned swapper on testnet, LI.FI through
-  allow-listed venues on mainnet. `probeFuel` gives the rate; a token no venue prices is refused before signing
-  (`no-fuel-route`).
+- **Gas**: the fee asset at par, or a token the network's venue prices: a pinned swapper on testnet; LI.FI's
+  allow-listed venues are taken on a local sandbox's chains only (`LIFI_FUEL_CHAIN_IDS`). `probeFuel` gives the rate;
+  a token no venue prices is refused before signing (`no-fuel-route`).
 
 ## Content Security Policy
 
@@ -238,7 +238,7 @@ artifact statically (the same test).
 | `send-generation.ts` / `send-flow.ts` / `legacy-router.ts` | What a send binds to (read off a manifest) and the L1 leg for every intent — token, token+gas, gas-only — through the deposit router: `runSend` signs the `DepositWitness` (it commits to the fuel quote's `swapData`), sends `bridgeWithPermit`, and `readSendReceiptLeaves` reads the leaves through `readRouterDeposit` (`router-receipt.ts`), the one `Deposited` parser. `legacy-router.ts` reads the retired `SwapBridgeRouter`'s receipts for records still in flight, through its frozen calls and events in `legacy-router-abi.ts`; nothing sends through it. The portal is never taken from a caller. |
 | `hub-l2.ts` | The L2 leg: `claimViaHub` (register-if-first, decided at claim time by `token_for`, race-tolerant), `exitViaHub` / `preflightHubExit` / `hubExitsPaused` (fail-closed) for L2→L1. |
 | `factory-registry.ts` | The factory's frozen registration and the hub's registration view, read together. |
-| `fuel-quote.ts` | The router's fuel leg: LI.FI's same-chain quote on mainnet (allow-listed venues only) or `TestnetFuelSwapper`'s fixed rate elsewhere, with the signed floor written into the swap's own minimum; `manifestFuelProvider` picks the one a manifest names. |
+| `fuel-quote.ts` | The router's fuel leg: LI.FI's same-chain quote (allow-listed venues, on `LIFI_FUEL_CHAIN_IDS` only) or `TestnetFuelSwapper`'s fixed rate, with the signed floor written into the swap's own minimum; `manifestFuelProvider` picks the one a manifest names. |
 | `flows.ts` / `l1-receipt.ts` / `l1-to-l2-readiness.ts` / `chain-scan.ts` | `consumeWithdrawal` + `isOutboxMessageConsumed` for exits and the `L1Ctx` every flow takes; the resilient receipt wait; when an L1→L2 message is consumable; budgeted, reorg-checked scans that report "incomplete", never absence. |
 | `router-receipt.ts` | `readRouterDeposit`: the router's own `Deposited` in a mined transaction, each leg authenticated by its portal's event and the Inbox leaf recomputed from the intent. |
 | `records.ts` (root) | The protocol facts of a transfer record (`JournalTokenBlock`). |

@@ -98,6 +98,7 @@ const OUTSIDE: [string, string, Case][] = [
 		(s, x) => [s, { ...x, venue: { provider: "lifi", tool: "nordstern" } }],
 	],
 	["tool without a proven venue", "fuel.tool", (s, x) => [s, { ...x, venue: { provider: "lifi", tool: "bitget" } }]],
+	["proven tool on a chain without its venue", "fuel.tool", (s, x) => [s, { ...x, chainId: 8453 }]],
 	["tool named after a prototype key", "fuel.tool", (s, x) => [s, { ...x, venue: { provider: "lifi", tool: "constructor" } }]],
 	[
 		"venue fed the whole slice",

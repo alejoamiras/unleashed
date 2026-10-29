@@ -93,7 +93,7 @@ function assertStaticRoots(m: ManifestV2, fuel: ManifestFuelRoute | undefined): 
 const HEX = /^0x[0-9a-f]*$/i
 const keysOf = (o: object) => Object.keys(o).filter((k) => (o as Record<string, unknown>)[k] !== undefined)
 
-/** One parsed manifest tree: object keys in any order, `0x` hex in any case, everything else exact. */
+/** One parsed manifest tree: object keys in any order, an `undefined` key as absent, `0x` hex in any case, else exact. */
 function sameTree(a: unknown, b: unknown): boolean {
 	if (typeof a === "string" && typeof b === "string") return HEX.test(a) && HEX.test(b) ? same(a, b) : a === b
 	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return a === b

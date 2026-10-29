@@ -1,7 +1,7 @@
 /**
  * Fuel quotes for the router's swap leg: what a slice of the deposit token buys in the fee asset, and the
- * `swapData` the router hands its `SWAP_TARGET`. Two providers answer one shape: LI.FI's same-chain quote (mainnet)
- * and `TestnetFuelSwapper`'s fixed rate (everywhere else). The floor is always `signedMinFuelOutput` of the quote and
+ * `swapData` the router hands its `SWAP_TARGET`. Two providers answer one shape: LI.FI's same-chain quote (taken on
+ * `LIFI_FUEL_CHAIN_IDS` only) and `TestnetFuelSwapper`'s fixed rate (where the manifest lists one). The floor is always `signedMinFuelOutput` of the quote and
  * is written into the call's `_minAmountOut`, so the facet checks the floor the router checks (LI.FI's own
  * `toAmountMin` can never equal it: the floor never drops below the claim minimum). I/O is injected.
  */

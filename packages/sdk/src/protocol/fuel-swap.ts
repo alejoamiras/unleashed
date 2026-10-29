@@ -63,7 +63,7 @@ export interface FuelSwap {
 /** The venue a quote names: LI.FI's tool, or the manifest's testnet swapper (required; a missing one is refused). */
 export type FuelSwapVenue = { provider: "lifi"; tool: string } | { provider: "testnetSwapper"; swapper?: Address }
 
-/** What the swap must do, from the router's intent and the manifest; never from the provider. */
+/** What the swap must do, from the router's intent and the manifest; the provider's tool only picks a pinned venue. */
 export interface FuelSwapExpectation {
 	/** The router's L1, whose LI.FI book pins the fee and venue steps. */
 	chainId: number
@@ -129,7 +129,6 @@ function firstMismatch(checks: readonly Check[]): FuelSwapIssue | undefined {
 	return undefined
 }
 
-/** LI.FI's fee step: its forwarder, the slice's token in and out, the whole slice offered, one share within the cap. */
 function feeStepIssue(step: LifiSwapData, fee: FeeCall, x: FuelSwapExpectation, forwarder: Address): FuelSwapIssue | undefined {
 	const at = (k: string) => `fuelSwap._swapData[0].${k}`
 	const amount = fee.distributions[0]?.amount ?? 0n
@@ -149,7 +148,6 @@ function feeStepIssue(step: LifiSwapData, fee: FeeCall, x: FuelSwapExpectation, 
 	)
 }
 
-/** The swap into the fee asset: the venue's pinned contract, the slice's token, the slice less LI.FI's fee. */
 function swapStepIssue(step: LifiSwapData, at: (k: string) => string, x: FuelSwapExpectation, venue: Address, fee: bigint) {
 	return firstMismatch([
 		[at("callTo"), step.callTo, venue],
@@ -186,7 +184,7 @@ export function fuelSwapIssue(swap: FuelSwap, x: FuelSwapExpectation): FuelSwapI
 	} catch (e) {
 		return { field: "expected.l1ChainId", reason: errorText(e) }
 	}
-	if (typeof venue !== "string") return venue
+	if (typeof venue === "object") return venue
 	const steps = swap.steps
 	const lifi = x.venue.provider === "lifi"
 	// The facet returns each step's leftover input to `_receiver`, so a longer route would strand intermediates there.
