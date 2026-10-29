@@ -528,7 +528,7 @@ panel found none that is reachable (D86).
 Two PRs: 6.1 and 6.2 change the SDK and the journal and leave the app's behaviour as it is; 6.3 ports the claims and
 carries the close-out.
 
-**Phase 6.1: the SDK's claim entries (PR 1).**
+**Phase 6.1: the SDK's claim entries (PR 1).** ✓
 - Events. All additive except `arrival`, `claim-requested` and `claim-sent`, which change before the first publish:
   - `deposit-recovery`: `searching` before a hash-less record's search, `reading` (txHash) before the receipt read,
     `waiting` (txHash) when a direct read finds the deposit unmined; the signal is checked before the run waits (the
@@ -567,7 +567,7 @@ carries the close-out.
 - Validation gate: `bun run lint`, `bun run typecheck:all`, `bun run test:all`, `bun run --cwd packages/sdk
   pack:check`, the sandbox integration suite. Layers: unit, integration.
 
-**Phase 6.2: the journal's claim writer and record views (PR 1).**
+**Phase 6.2: the journal's claim writer and record views (PR 1).** ✓
 - `claim-view.ts` (bridge-core): `claimView(rec): DepositRecord | undefined`. Schema 3 as stored; schema 4 without
   `route`, as schema 3; schema 2 with `assetKind: "fee-juice"` and a fuel block as intent `gas`, without
   `assetKind`. Anything else is undefined (D86).
@@ -593,7 +593,7 @@ carries the close-out.
   is refused. The interleaving over the in-memory locks is tested in 6.3, with the writers that take them.
 - Validation gate: base commands; `bun run test:all`. Layer: unit.
 
-**Phase 6.3: the app's claims on the SDK (PR 2, with the close-out).**
+**Phase 6.3: the app's claims on the SDK (PR 2, with the close-out).** ✓
 - `useBridgeJournal.ts` keeps what is not the claim's: `claimTarget`, the malformed-hash and recipient guards, the
   token-block check and wallet grant (`prepareSendLane`), the unseal and its secret cache, the record lock and its
   release between receipt rounds, the generation, the resume selection, the claimed-by-other revalidation's stop,
@@ -1096,6 +1096,10 @@ Arc a6, PR 2 (`git diff bc5e585..HEAD`):
   - Only an unsent record skipped the unseal on an explicit watch-only run: such a run is no longer interactive.
   - The gas-timeout test stored no hash: it now keeps the sent hash and hands it to the retry.
 - **Round 3, Codex: APPROVE.** No new findings; it checked the restart's cancellation and cleanup paths.
+- **Gates on the final code (e3feba5).** `audit:tools`, `test:all`, the jsdom e2e and the sandbox integration suite
+  (61 tests) are green. The browser suite at retry 0 passed 44 of 44 in 3224 s. The before run, on PR 1's head, took
+  3581 s and failed activity cell 40: both receipts showed, but one record lacked its claim hash, a cross-tab lost
+  write under today's unlocked claim writer.
 - **The screenshot tour** reached all five states through real flows. Everything else it flagged is today's
   rendering:
   - the run template after fee-stop copy;
