@@ -82,19 +82,23 @@ describe("ownedWalletStore", () => {
 	it.skipIf(!hasProc)("reaps a SIGKILLed creator's store at the next creation and keeps a live creator's", async () => {
 		const killed = child("", keepAlive)
 		const killedDir = await firstLine(killed)
-		expect(basename(killedDir)).toMatch(new RegExp(`^unleashed-${killed.proc.pid}-test-`))
-		killed.proc.kill("SIGKILL")
-		await killed.exited
-		const live = child("", keepAlive)
-		const liveDir = await firstLine(live)
-		const next = child("", "")
-		await firstLine(next)
-		expect(await next.exited).toBe(0)
-		expect(existsSync(killedDir)).toBe(false)
-		expect(existsSync(liveDir)).toBe(true)
-		live.proc.kill("SIGTERM")
-		expect(await live.exited).toBe(143)
-		expect(existsSync(liveDir)).toBe(false)
+		try {
+			expect(basename(killedDir)).toMatch(new RegExp(`^unleashed-${killed.proc.pid}-test-`))
+			killed.proc.kill("SIGKILL")
+			await killed.exited
+			const live = child("", keepAlive)
+			const liveDir = await firstLine(live)
+			const next = child("", "")
+			await firstLine(next)
+			expect(await next.exited).toBe(0)
+			expect(existsSync(killedDir)).toBe(false)
+			expect(existsSync(liveDir)).toBe(true)
+			live.proc.kill("SIGTERM")
+			expect(await live.exited).toBe(143)
+			expect(existsSync(liveDir)).toBe(false)
+		} finally {
+			rmSync(killedDir, { recursive: true, force: true })
+		}
 	})
 })
 
