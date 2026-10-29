@@ -126,8 +126,8 @@ No state crosses passes. The worker restocks after the first pass that passed it
   instead of 56), which needs a cursor committed atomically, rollback and dedupe rules (Codex traced both hazards)
   for reads that fit the limits (F5, F7). Reopen if PublicNode throttles the Worker.
 - D10. Passes are sequential: `relayRun` awaits each pass, so no pass starts while one is in flight. A slow pass or a
-  late invocation drops the slots it missed rather than running them back to back: a pass starts only at a slot,
-  the next not yet started after the previous pass ends. A run too late for any pass logs `late`.
+  late invocation drops the slots it missed rather than running them back to back: after the first pass, the next
+  starts at the first slot not yet started when the previous pass ends. A run too late for any pass logs `late`.
 - D11. A send cannot be bounded from the relayer: its receipt waits sit in the out-of-scope fill path (F8). So the
   run bounds the start of each try: with under 25 s left before `runEnd` (two 12 s slots and a second of polling, a
   heuristic for normal pace) the pass logs `late` and sends nothing. The passes at 0, 15 and 30 s can send; the
@@ -243,6 +243,7 @@ for four passes a minute and no `failed` naming the window.
 | Codex ask34, resumed again | **approve** | the three conditions verified, no Phase 1 regression | none |
 | Codex fix loop 1 (`01a1890f`) | 2 low | the run's comments say it starts nothing after its end, not that it ends (an admitted send is awaited); two narrating comments deleted | none |
 | Opus diff review | 8 low or nit | a pass starts only at a slot (D10); an in-flight read refused at the deadline (D8); `late` for a run with no pass; the live test two blocks below the head; a failed-first-pass worker test; §1 case 1 widened; D5 corrected; wording | a guard for finite deadlines over 2³¹ − 1 ms (no caller); the lagging-backend retry ships as known limit 4 (gas only) |
+| Codex fix loop 2 (resumed) | 1 low | the schedule comment and D10 say "after the first pass": a late first pass starts at once | none |
 
 ## Seeds
 

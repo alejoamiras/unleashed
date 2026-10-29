@@ -19,3 +19,7 @@
   fill the previous pass landed can try that relay again, gas only. Rejected: a guard for finite deadlines over
   2³¹ − 1 ms, which no caller passes (`Infinity` skips the timer).
 - `pkill -f "<pattern>"` in a command whose own text holds the pattern kills that command's shell (exit 144).
+- Codex fix loop round 2 (resumed): one low finding, accepted: "a pass starts only at a slot" was false for a late
+  first pass, which starts at once; the comment and D10 now say "after the first pass". Its traces: no pass is
+  admitted with under 5 s left (53,000 ms admissible, 53,001 not), no overlap, no unhandled rejection from the
+  post-read refusal, and a nonnegative `late` delay.

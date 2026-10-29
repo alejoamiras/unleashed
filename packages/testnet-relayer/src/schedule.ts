@@ -16,7 +16,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 /**
  * Runs `pass` in the slots `scheduledTime + k × PASS_INTERVAL_MS`, each after the previous pass has ended, dropping
  * the slots a late start or a slow pass missed, and stops after a `refused` pass. Returns each pass's summary.
- * A pass starts only at a slot: one that overran a slot waits for the next, never runs back to back with it.
+ * After the first pass, a pass that overran a slot is followed at the next slot, never back to back with it.
  */
 export async function relayRun(pass: (bounds: PassBounds) => Promise<RunSummary>, scheduledTime: number): Promise<RunSummary[]> {
 	const runEnd = scheduledTime + RUN_MS
