@@ -15,7 +15,8 @@
 		"worker:preview": "bun scripts/worker.ts preview"
 	},
 	"dependencies": {
-		"@unleashed/design": "workspace:*"
+		"@unleashed/design": "workspace:*",
+		"@unleashed/legal": "workspace:*"
 	},
 	"devDependencies": {
 		"@playwright/test": "1.63.0",

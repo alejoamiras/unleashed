@@ -15,6 +15,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@unleashed/design": "workspace:*",
+        "@unleashed/legal": "workspace:*",
       },
       "devDependencies": {
         "@playwright/test": "1.63.0",
@@ -51,6 +52,7 @@
         "@nulo-sh/wallet-sdk-schema-patch": "0.3.0",
         "@unleashed/bridge-core": "workspace:*",
         "@unleashed/design": "workspace:*",
+        "@unleashed/legal": "workspace:*",
         "@unleashed/sdk": "workspace:*",
         "viem": "^2.52.2",
         "vue": "^3.5.38",
@@ -115,6 +117,14 @@
       },
       "peerDependencies": {
         "vue": "^3.5.38",
+      },
+    },
+    "packages/legal": {
+      "name": "@unleashed/legal",
+      "version": "0.1.0",
+      "devDependencies": {
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.9",
       },
     },
     "packages/sdk": {
@@ -738,6 +748,8 @@
     "@unleashed/design": ["@unleashed/design@workspace:packages/design"],
 
     "@unleashed/landing": ["@unleashed/landing@workspace:apps/landing"],
+
+    "@unleashed/legal": ["@unleashed/legal@workspace:packages/legal"],
 
     "@unleashed/sdk": ["@unleashed/sdk@workspace:packages/sdk"],
 

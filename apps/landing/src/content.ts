@@ -3,7 +3,10 @@
  * allowlist without pulling in page code. A new experiment is a new entry in EXPERIMENTS.
  */
 
-/** Every destination the page links to. A link outside this object fails the unit tests and the build guard. */
+/**
+ * Every external destination the landing page links to. The build guard also allows the legal pages
+ * (src/legal-pages.ts) and their providers' policy links; any other link fails it and the unit tests.
+ */
 export const LINKS = {
 	app: "https://testnet.app.unleashed.systems",
 	source: "https://github.com/alejoamiras/unleashed",
