@@ -18,7 +18,8 @@ budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 - **Shipped:** `keyed-env.ts` and `keyed-run.ts` (`runKeyed`, `keyedNodeUrl`); all 14 composers on them; the five
   known mid-run prints redacted; the `keyed-runs.test.ts` guard. On the orchestrator's steer, A1 reversed: the five
   L1-keyed entries (`verify-l1`, `pause-factory`, `fill-testnet`, `deploy-seed-tokens`, `lifi-fixtures`) run through
-  `runKeyed` too, and the guard fails any script entry that reads a `KEYED_ENV` name without it. Closes #46, #49.
+  `runKeyed` too, `lifi-fixtures` captures and redacts forge's output, and the guard fails any script entry that
+  reads a `KEYED_ENV` name without it. Closes #46, #49.
 - **Changed in review:** implementation round 1 added the `inspect` string-cut lift, the escaped-error handlers, the
   guard's keyed-host and raw-key alternatives, and kept the verify-l1 case local. Rejected in planning: a global
   `console` wrapper and an import-graph guard (D1, D2).

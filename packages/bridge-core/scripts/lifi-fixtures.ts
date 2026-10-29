@@ -33,9 +33,10 @@ import { buildAcrossV4Deposit, encodeLifiReceiverMessage } from "../src/across-v
 import { type DEPOSIT_INTENT_COMPONENTS, DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
 import { LIFI_SWAP_DATA_COMPONENTS, type LifiSwapData } from "../src/lifi-abi"
 import { LIFI_INTEGRATOR } from "../src/lifi-gas"
+import { redactSecrets } from "./keyed-env"
 import { runKeyed } from "./keyed-run"
 import { MAINNET, recordMainnetQuotes } from "./lifi-fixtures-mainnet"
-import { resolveBin, run } from "./run"
+import { RunError, resolveBin, run } from "./run"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..")
@@ -403,9 +404,11 @@ type Command = keyof typeof FORK_SUITES
 
 function forge(args: string[]): void {
 	const bin = resolveBin("forge", { envVar: "FORGE_BIN", candidates: [], prefer: "path" })
-	run(bin, args, {
+	// Captured, not inherited: a fork that cannot reach its provider may print the keyed RPC URL.
+	const result = run(bin, args, {
 		cwd: EVM_ROOT,
-		stdio: "inherit",
+		check: false,
+		maxBuffer: 256 * 1024 * 1024,
 		env: {
 			...process.env,
 			BASE_SEPOLIA_RPC_URL: BASE_SEPOLIA_RPC,
@@ -416,6 +419,11 @@ function forge(args: string[]): void {
 			LIFI_RECORD: "1",
 		},
 	})
+	process.stdout.write(redactSecrets(result.stdout))
+	process.stderr.write(redactSecrets(result.stderr))
+	if (result.code !== undefined || result.signal !== null || result.exitCode !== 0) {
+		throw new RunError(bin, args.length, { ...result, stdout: "", stderr: "" })
+	}
 }
 
 function commandsFrom(argv: string[]): Command[] {

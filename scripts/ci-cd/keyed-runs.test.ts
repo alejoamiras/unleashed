@@ -14,7 +14,7 @@ const ROOT = join(import.meta.dir, "..", "..")
 const COMPOSER = /\brequireDrpcNodeUrl\b|lb\.drpc\.(?:live|org)|\benv\.DRPC_API_KEY\b/
 const ALLOWED_COMPOSERS = ["packages/bridge-core/src/drpc-node.ts", "packages/bridge-core/scripts/keyed-run.ts"]
 // A CLI entry: a direct-invocation guard, or a top-level call of the script's main.
-const ENTRY = /import\.meta\.main|\bisMain\b|\bisDirectInvocation\b|^(?:await )?main\(\)|^runKeyed\(/m
+const ENTRY = /import\.meta\.main|\bisMain\b|\bisDirectInvocation\b|^(?:await |void )?main\(\)|^runKeyed\(/m
 const KEYED_SUFFIX = /_(?:KEY|SECRET|SECRET_[A-Z]+|RPC|RPC_URL|TOKEN)$/
 const PUBLIC_NAMES = new Set([
 	"DEPLOYER_SALT", // a deployed account's salt
@@ -60,7 +60,7 @@ export function keyedNames(text: string): string[] {
 export function keyedEntries(sources: ReadonlyMap<string, string>): [path: string, text: string][] {
 	const keyed = new Set<string>(KEYED_ENV)
 	return [...sources].filter(
-		([path, text]) => /^(apps|packages)\/[^/]+\/scripts\//.test(path) && ENTRY.test(text) && keyedNames(text).some((name) => keyed.has(name)),
+		([path, text]) => /^(?:(?:apps|packages)\/[^/]+\/)?scripts\//.test(path) && ENTRY.test(text) && keyedNames(text).some((name) => keyed.has(name)),
 	)
 }
 
@@ -94,11 +94,12 @@ test("the entry rule flags a script entry that reads a keyed value without runKe
 	const read = "const rpc = process.env.SEPOLIA_RPC_URL"
 	const sources = new Map([
 		["packages/x/scripts/bare.ts", `${read}\nif (import.meta.main) await main()`],
+		["scripts/ci-cd/void.ts", `${read}\nvoid main().catch(() => process.exit(1))`],
 		["packages/x/scripts/keyed.ts", `${read}\nif (import.meta.main) runKeyed(main)`],
 		["packages/x/scripts/library.ts", `export function rpc(): string | undefined {\n\treturn process.env.SEPOLIA_RPC_URL\n}`],
 		["packages/x/scripts/keyless.ts", "main().catch(() => process.exit(1))"],
 	])
-	expect(unkeyed(keyedEntries(sources))).toEqual(["packages/x/scripts/bare.ts"])
+	expect(unkeyed(keyedEntries(sources))).toEqual(["packages/x/scripts/bare.ts", "scripts/ci-cd/void.ts"])
 })
 
 test("every script entry that reads a keyed value runs through runKeyed", () => {
