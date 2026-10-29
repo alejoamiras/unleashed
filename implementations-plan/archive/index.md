@@ -51,3 +51,4 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [tools-recovery](tools-recovery/plan.md) — archived — tools-recovery — the three stuck-record recoveries, identity-bound
 - [tools-two-network](tools-two-network/plan.md) — archived — Two-network tools deployment (mainnet + testnet) — v3
 - [unleashed-reskin](unleashed-reskin/plan.md) — archived — unleashed-reskin — Dead Channel A′ look, honest wallet voice, SIGNAL/NOISE faucet
+- [wallet-store-1](wallet-store-1/plan.md) — archived — wallet-store-1 — pid-named wallet stores and a guarded reap of dead creators' stores
