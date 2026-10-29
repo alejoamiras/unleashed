@@ -7,14 +7,14 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: completed (a1 #28, a2 #A2PR)
+status: completed (a1 #28, a2 #84)
 base: main @ fb90e36 (a1); main @ e1d1c4c (a2 re-plan)
 budget: "recon: 2 Sonnet explorers; code-review: off; Codex gpt-6.1-sol at high for audits and fix loops, at max for the drafting rounds"
 ---
 
 ## Outcome
 
-- **Status:** completed; a1 merged as #28, a2 delivered in PR #A2PR (a draft until the owner approves its after
+- **Status:** completed; a1 merged as #28, a2 delivered in PR #84 (a draft until the owner approves its after
   shots), awaiting the orchestrator's merge. Delivers ask7.
 - **Shipped:** a1, the Terms of Use and the Privacy Policy, served by the landing at `/terms` and `/privacy`
   (`packages/legal`). a2, the mainnet app's wallet-signed acceptance gate: `apps/tools/src/legal/`
