@@ -19,7 +19,8 @@ function endpoint(tag: Hex, fail?: { at: number; with: "error" | "null" } | "dow
 		async request({ method, params }: { method: string; params?: unknown }) {
 			if (method !== "eth_getLogs") throw refusal(-32601, "method not found")
 			if (fail === "down") throw refusal(-32000, "endpoint down")
-			const { fromBlock, toBlock } = (params as [{ fromBlock: Hex; toBlock: Hex }])[0]
+			const { address, fromBlock, toBlock } = (params as [{ address?: string; fromBlock: Hex; toBlock: Hex }])[0]
+			if (address?.toLowerCase() !== WETH) throw refusal(-32602, "the filter lost its address")
 			const [from, to] = [BigInt(fromBlock), BigInt(toBlock)]
 			calls.push([from, to])
 			if (to - from > limit) throw refusal(-32614, `eth_getLogs is limited to a ${limit} range`)
@@ -53,14 +54,14 @@ describe("cappedLogs", () => {
 		const capped = endpoint("0x01")
 		const transport = fallback([endpoint("0x00", "down").transport, cappedLogs(capped.transport, 200)])
 
-		const logs = await scan(transport, 1_000n, 2_999n)
-		expect(logs.map((l) => l.blockNumber)).toEqual(blocks(1_000n, 2_999n))
-		expect(capped.calls).toHaveLength(10)
+		const logs = await scan(transport, 1_000n, 3_049n)
+		expect(logs.map((l) => l.blockNumber)).toEqual(blocks(1_000n, 3_049n))
+		expect(capped.calls).toHaveLength(11)
 		capped.calls.forEach(([from, to], i) => {
 			expect(to - from + 1n).toBeLessThanOrEqual(200n)
 			expect(from).toBe(i === 0 ? 1_000n : capped.calls[i - 1][1] + 1n)
 		})
-		expect(capped.calls.at(-1)?.[1]).toBe(2_999n)
+		expect(capped.calls.at(-1)).toEqual([3_000n, 3_049n])
 
 		capped.calls.length = 0
 		expect(await scan(transport, 5_000n, 5_149n)).toHaveLength(150)
@@ -85,8 +86,8 @@ describe("cappedLogs", () => {
 })
 
 /**
- * Base Sepolia's keyless RPCs, opt-in: `RPC_CAPS_LIVE=1`. Each catalogued cap is served and the next wider range is
- * refused with the endpoint's own code, never answered short; the official endpoint's split answer equals
+ * Base Sepolia's keyless RPCs, opt-in: `RPC_CAPS_LIVE=1`. Each catalogued cap is served and a range two blocks past
+ * it is refused with the endpoint's own code, never answered short; the official endpoint's split answer equals
  * PublicNode's single answer over a recent range. A cap the endpoint moves fails here first.
  */
 describe.skipIf(!process.env.RPC_CAPS_LIVE)("cappedLogs against Base Sepolia's keyless RPCs", () => {

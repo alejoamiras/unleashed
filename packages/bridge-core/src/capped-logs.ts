@@ -4,7 +4,6 @@ const QUANTITY = /^0x[0-9a-f]+$/i
 
 type LogQuery = { filter: Record<string, unknown>; from: bigint; to: bigint }
 
-/** The numbered range of an `eth_getLogs` request that spans more than `cap` blocks; `undefined` for any other request. */
 function overCap(args: { method: string; params?: unknown }, cap: bigint): LogQuery | undefined {
 	if (args.method !== "eth_getLogs" || !Array.isArray(args.params) || args.params.length !== 1) return undefined
 	const filter: unknown = args.params[0]

@@ -13,7 +13,7 @@ afterEach(() => {
 
 const rpc = (body: object) => new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
-/** One log per block of `[from, to]`, refused past 200 blocks as `sepolia.base.org` refuses it. */
+/** One log per block of `[from, to]`, refused when `to − from > 200` as `sepolia.base.org` refuses it. */
 function logsAnswer(id: number, url: string, filter: { fromBlock: string; toBlock: string }) {
 	const [from, to] = [BigInt(filter.fromBlock), BigInt(filter.toBlock)]
 	if (url === OFFICIAL && to - from > 200n) {

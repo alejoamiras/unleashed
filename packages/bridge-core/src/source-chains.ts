@@ -35,7 +35,8 @@ export const SOURCE_CHAINS: Readonly<Record<number, SourceChain>> = {
 		rpcUrls: ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"],
 		// As measured: PublicNode refuses `to − from > 50,000` (-32701) and answers of over 20,000 logs (-32602); the
 		// official endpoint refuses `to − from > 200` (-32614). PublicNode keeps logs and receipts for about the last
-		// 11 days of blocks only, and answers older ones as `[]` and `null` without an error.
+		// 11 days of blocks; for the half-million blocks before that it answers `[]` and `null` without an error, and
+		// it refuses older ranges (4444).
 		maxLogBlocks: { "https://base-sepolia-rpc.publicnode.com": 50_000, "https://sepolia.base.org": 200 },
 	},
 	8453: { chainId: 8453, name: "Base", nativeSymbol: "ETH", l1ChainId: ETHEREUM, rpcUrls: [] },
