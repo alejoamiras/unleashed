@@ -8,8 +8,9 @@ run that fills at most one deposit. It keeps no state between runs: a crash or a
 later run cannot redo while the deposit is fillable.
 
 The Worker answers nothing over HTTP (no route, no `workers.dev` URL), refuses any chain but Base Sepolia (84532)
-and Sepolia (11155111) before any other read, and refuses a key that does not derive `TESTNET_FILLER`. The fill
-itself is `fillSourceDeposit` from `@unleashed/bridge-core/across-fill`, the same code `fill-testnet.ts` runs.
+and Sepolia (11155111) before any other read, and refuses a key that does not derive `TESTNET_FILLER`
+(`packages/bridge-core/src/across-self-built.ts`): this Worker's own key, never the canary's. The fill itself is
+`fillSourceDeposit` from `@unleashed/bridge-core/across-fill`, the same code `fill-testnet.ts` runs.
 
 ## What it fills
 
@@ -92,18 +93,17 @@ The agent never holds the key; every step below is the owner's.
    packages/testnet-relayer/testnet-relayer.env.example --slug relayer-address -- bun
    packages/testnet-relayer/scripts/relayer.ts address`. The owner runs `op-remote create <host> <id>`, which
    generates the key into 1Password, and approves; the run prints the address, never the key. `TESTNET_FILLER` is
-   then set to that address in its own PR.
+   pinned to that address in its own PR. A rotated key repeats this step, the pin and step 2's secret; a send that
+   names the old key is filled by `scripts/relayer.ts once` with the old key, from a checkout before the pin moved.
 2. **Create the Worker.** In the Cloudflare dashboard, create it from Workers Builds with the settings in
    [`wrangler.jsonc`](wrangler.jsonc)'s header (root directory `packages/testnet-relayer`), and paste the key from
    1Password into the secret `RELAYER_PRIVATE_KEY`. Cron runs need Workers Paid: a run that fills makes up to about
    a hundred subrequests, and the free plan allows 50 and 10 ms of CPU.
 3. **Fund it** on Sepolia: about 0.02 ETH, and 20 USDC from faucet.circle.com. It needs nothing on Base Sepolia.
-4. **Check it.** Once `TESTNET_FILLER` names the key, send USDC from Base Sepolia in the testnet app and look for
-   `filled` in the Worker's logs.
+4. **Check it.** Send USDC from Base Sepolia in the testnet app and look for `filled` in the Worker's logs.
 5. **Run it.** Top up on `low-inventory`. To stop it, remove the cron trigger in the dashboard. While the Worker is
    down, a keyed run of `bun packages/testnet-relayer/scripts/relayer.ts once` on the same template fills one
    deposit per call from the owner's machine, with the same code.
-
 6. **Restock (optional).** Upgrade a Circle developer account for the faucet API (Circle: "requires upgrading to
    mainnet"). Create a Restricted Access key with no permission on any product but the one the drip endpoint needs
    (it sits in the Wallets API reference), in whichever environment, TEST or LIVE, the endpoint accepts (Circle keeps
@@ -113,8 +113,10 @@ The agent never holds the key; every step below is the owner's.
    rises by the drip; `restock-refused` names Circle's code. Delete the secret to turn it off. The manual faucet stays
    the fallback.
 
-Until `TESTNET_FILLER` names the key, the Worker refuses every run: its key does not derive the filler, and no run
-restocks.
+A secret that does not derive `TESTNET_FILLER`, as in a rotation half done, makes the Worker refuse every run, and no
+run restocks. A send built before the pin moved names the canary, which the Worker ignores (`relayer`): fill it by
+hand with `fill-testnet.ts` and the canary key while more than 120 s of its window remain, since it refuses a fill
+closer to `fillDeadline`. From then on `fill-testnet.ts` fills the canary's own deposits only.
 
 ## Scripts
 

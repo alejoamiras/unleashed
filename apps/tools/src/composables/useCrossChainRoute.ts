@@ -95,7 +95,7 @@ export interface CrossChainRoute {
 	fillDeadline: number
 	/** Across's own bounds on the amount; null on fixed terms, which nobody quoted. */
 	limits: AcrossLimits | null
-	/** `fixed`: the deposit rides `selfBuiltTerms`, held for one filler who fills it by hand. */
+	/** `fixed`: the deposit rides `selfBuiltTerms`, held for `TESTNET_FILLER`, which the testnet relayer fills. */
 	terms: "quoted" | "fixed"
 }
 

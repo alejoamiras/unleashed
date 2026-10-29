@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { DEPOSIT_ROUTER_ABI, decodeRouterMessage, depositsIn, type SourceDeposit } from "@unleashed/bridge-core/across-fill"
+import { DEPOSIT_ROUTER_ABI, decodeRouterMessage, depositsIn, type SourceDeposit, TESTNET_FILLER } from "@unleashed/bridge-core/across-fill"
 import { LIFI_RECEIVER_MESSAGE_PARAMS } from "@unleashed/bridge-core"
 import { type Address, decodeAbiParameters, encodeAbiParameters, encodeFunctionData, type Hex, pad, zeroAddress } from "viem"
 import { describe, expect, it } from "vitest"
@@ -9,7 +9,7 @@ import { appDeposit, LEGACY_ROUTER, USER } from "../test/app-deposit"
 import { type RelayerRoute, testnetRoute } from "./route"
 import { classify, MAX_MESSAGE_BYTES } from "./select"
 
-const FILLER = "0x7A4f7Be599Afa3AfB0A41bb1D44762Ce441f8fAc"
+const FILLER = TESTNET_FILLER
 const route: RelayerRoute = testnetRoute(manifest, FILLER)
 const STRANGER = pad("0xbad", { size: 32 })
 
