@@ -46,8 +46,8 @@ const block = {
 	uncles: [],
 }
 
-/** A Sepolia endpoint recording every method. Its `eth_fillTransaction` answer, which a send that asked for it would sign,
- *  names chain 1, nonce 7 and 10^7 gas at 10^6 gwei with a fee payer signature. */
+/** A Sepolia endpoint recording every method. Its fill answer carries a fee payer signature, which makes viem keep the
+ *  answer's gas and fees over the request's. */
 function endpoint(o: { estimate?: bigint; priority?: bigint; pending?: () => number } = {}) {
 	const methods: string[] = []
 	const raws: Hex[] = []
@@ -129,6 +129,10 @@ describe("withGasTerms", () => {
 		}
 		await expect(costly.bounded(sepolia(), ceiling).sendTransaction({ to: POOL, data: "0x1234" })).rejects.toThrow(/over the ceiling/)
 		expect(costly.methods).not.toContain("eth_getTransactionCount")
+		expect(costly.raws).toHaveLength(0)
+		const affordable = endpoint()
+		await affordable.bounded(sepolia(), ceiling).sendTransaction({ to: POOL, data: "0x1234" })
+		expect(affordable.raws).toHaveLength(1)
 		let reads = 0
 		const flaky = endpoint({
 			pending: () => {
@@ -137,7 +141,7 @@ describe("withGasTerms", () => {
 				return 7
 			},
 		})
-		await expect(flaky.bounded().sendTransaction({ to: POOL, data: "0x1234" })).rejects.toThrow()
+		await expect(flaky.bounded().sendTransaction({ to: POOL, data: "0x1234" })).rejects.toThrow(/backend unavailable/)
 		expect(flaky.raws).toHaveLength(0)
 		await flaky.bounded().sendTransaction({ to: POOL, data: "0x1234" })
 		expect(flaky.signed()).toMatchObject([{ chainId: SEPOLIA_ID, nonce: 7 }])
