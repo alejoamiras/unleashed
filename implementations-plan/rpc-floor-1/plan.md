@@ -154,7 +154,7 @@ trusted to report what they hold honestly, as today (Security).
 
 ## Phases (arc a1)
 
-### Phase 1: per-endpoint history, routed by the fallback
+### Phase 1: per-endpoint history, routed by the fallback ✓
 
 1. In `source-chains.ts`, add `logRetentionBlocks` and its Base Sepolia value, and rewrite the retention comment as
    its measured basis. In `network-targets.ts`, add ethPandaOps to `SEPOLIA_READ_RPCS` with a one-line reason.
@@ -200,6 +200,7 @@ trusted to report what they hold honestly, as today (Security).
 | D2 | Sepolia's old logs | add ethPandaOps second: the list holds no Sepolia endpoint that keeps them (fact 1) | fail closed plus an "unreadable" state: leaves #75's 1.4-day stuck flow and needs the owner; ethPandaOps first: slower on busy ranges, and PublicNode is the reader the earlier probe validated |
 | D3 | Old receipts | `receiptOrNext`: hop only when both probes succeed and the endpoint reports the transaction mined at least 1,000 blocks below its head, never on the last URL. Residual: a receipt still missing 1,000 blocks after mining, with the last URL failing, rejects polling | hop on every `null`, or on any mined transaction: a lagging receipt then rejects `waitForTransactionReceipt` when the last endpoint fails (fact 8); a per-endpoint receipt floor: needs a home for the L1's endpoint facts |
 | D4 | Base's empty band | declared retention per URL (3,000,000), checked against the endpoint's head | an absolute floor block: wrong as soon as PublicNode prunes again; no guard: reachable once D2 lands (#78's reopen condition), with a final `not-sent` as its worst case (fact 6); runtime completeness checks: a new policy for a measured, guarded band |
+| D6 | Deviations found while building | (a) the bridge-core live check compares 2,000 blocks, because WETH is sparse at head − 3,000,000 and 200 blocks can be empty on both; (b) the mainnet bundle is not byte-identical: it already carried the testnet URLs as inert data, so the proof is `verify:build-target mainnet`, an identical `_headers` and the changed chunks listed in `lessons/phase-1.md`; (c) the polling case sets `checkReplacement: false`, since replacement checks read blocks, not receipts | — |
 | D5 | Records past every reader's history | stay `incomplete` (as today); closed `known-limit` issue at close-out: missing prerequisite, a keyless Base reader serving blocks below 46,500,000; reopen on a user report, such a reader, or a mainnet source with a keyless RPC | an "unreadable" state or stopping the watcher: a visible change for a record about 12 days unwatched |
 
 ## Audit verdicts
