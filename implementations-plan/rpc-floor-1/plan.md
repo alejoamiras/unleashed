@@ -240,6 +240,8 @@ Same-family review (Opus, alongside round 1): 4 Low, no correctness bug in the w
 | O3 | The retention comment commits to a step-pruning model the evidence does not show (plausible) | fixed: the comment and I1 say the boundary's cause is unknown and a resync can move it; only the live check detects a shrink |
 | O4 | Three comments: "blocks" meant block reads; `HEAD`'s doc described `OLD`; the stub's doc was stale | fixed |
 
+**Implementation round 2 (resumed Codex): clean.** O1–O4 verified, no regression. Converged in 2 rounds.
+
 ## Delivery
 
 One arc, one PR against `main`: a1 = phase 1 plus the close-out commits, `Closes #75`, code review `off`. Branch
