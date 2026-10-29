@@ -4,3 +4,9 @@
 - 2026-10-29 phase 2: Codex round 1 conditional approve; plan revised (gate moved to the wizard's preflight)
 - 2026-10-29 phase 2: Opus critique conditional approve, folded in; final fresh Codex pass started
 - 2026-10-29 phase 3: final fresh Codex pass conditional approve; conditions adopted; resumed: approve
+- 2026-10-29 approved by the orchestrator as committed (D4 included); a1 implementation started
+- 2026-10-29 P1 gate green: lint, typecheck:all, test:tools (125 files, 1674 tests)
+- 2026-10-29 P2 gate: lint, typecheck:all, test:e2e green; test:all green except tools' untouched bridge-generation.test.ts timing out at 5 s under host load (load avg ~140), which passes alone and in the full test:tools run (125 files, 1682 tests); counted as the host
+- 2026-10-29 environment: the worktree's forge out/ predated FuelOnlyGate (sdk code-pins ENOENT); rebuilt with `forge build`
+- 2026-10-29 audit:tools green; Codex round 1: 1 material finding (receipt race), fixed in a11c5d5 with its regression
+- 2026-10-29 Opus leg: no material findings, nits in 36207f5; Codex round 2: NO MATERIAL FINDINGS (converged in 2 rounds)

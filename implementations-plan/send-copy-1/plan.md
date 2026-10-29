@@ -179,6 +179,9 @@ Export `assertDepositsOpen`; add `check`; call it from `preflight`; drop `pauseC
 - Codex final fresh pass (gpt-6.1-sol, high): conditional approve; both conditions adopted (F1 the snapshot guard
   after the gate on every intent, F2 reset a stale "declined" on refusal, each with its test). D5, D6 upheld.
   Resumed on the revision: **approve**.
+- Implementation, Codex fix loop (gpt-6.1-sol, high): round 1, one material finding (a receipt deferred by the
+  check's hold replaced the review after its guard; fixed with its regression); round 2, **no material findings**.
+  Opus beside round 1: no material findings, nits taken. Detail: `lessons/phase-1.md`.
 
 ## Delivery
 
