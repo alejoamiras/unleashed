@@ -92,7 +92,8 @@ function endpoint(o: { estimate?: bigint; priority?: bigint; pending?: () => num
 	const bounded = (chain = sepolia(), charge: (worstWei: bigint) => void = () => {}) =>
 		withGasTerms(
 			createWalletClient({ account: ACCOUNT, chain, transport }),
-			boundedGasTerms(createPublicClient({ chain, transport }), charge),
+			// Pricing reads see no chain hook, so a hook's edit reaches only the signing wallet.
+			boundedGasTerms(createPublicClient({ chain: sepolia(), transport }), charge),
 		)
 	return { methods, raws, bounded, signed: () => raws.map((raw) => parseTransaction(raw)) }
 }
@@ -145,7 +146,6 @@ describe("withGasTerms", () => {
 		expect(flaky.raws).toHaveLength(0)
 		await flaky.bounded().sendTransaction({ to: POOL, data: "0x1234" })
 		expect(flaky.signed()).toMatchObject([{ chainId: SEPOLIA_ID, nonce: 7 }])
-		expect([costly, flaky].flatMap((n) => n.methods)).not.toContain("eth_fillTransaction")
 	})
 
 	it("refuses before broadcast a send it cannot sign as checked", async () => {

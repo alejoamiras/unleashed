@@ -80,7 +80,8 @@ type Pinned = GasTerms & { chainId: number; type: "eip1559" }
 
 type SignedFields = Partial<Omit<Pinned, "type">> & { type?: string; to?: string | null; data?: string; value?: bigint }
 
-/** Both sides of the signature check in one form: `parseTransaction` omits zero numbers and empty data, and lower-cases `to`. */
+/** Both sides of the signature check in one form: `parseTransaction` omits a zero gas, fee or value and empty data, and
+ *  lower-cases `to`. */
 const comparable = (t: SignedFields) => ({
 	chainId: t.chainId ?? 0,
 	nonce: t.nonce ?? 0,
