@@ -4,3 +4,5 @@
 - 2026-10-29 Codex round 1: reject, 7 findings; 6 adopted (1 with a different fix), rejections recorded; plan revised
 - 2026-10-29 Codex round 2 (resumed): conditional approve; 4 conditions applied, ancestor check rejected; ledger folded (D1-D8)
 - 2026-10-29 final fresh Codex pass: conditional approve, 4 conditions applied; resumed verification: approve
+- 2026-10-29 plan report written (LEAD_DONE); auto-continue: no owner ask, arc 1 starts
+- 2026-10-29 phase 1 gate green: lint, typecheck:all, wallet-store.test.ts 7/7, test:all, audit:tools; 4 mutation checks caught

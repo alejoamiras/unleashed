@@ -135,7 +135,7 @@ export function reapDeadStores(root: string): void
 
 ## Phases (arc a1)
 
-### Phase 1: pid-named stores and the reap
+### Phase 1: pid-named stores and the reap ✓
 
 1. In `wallet-store.ts`, add the pid to the name in `freshDir`. Add `reapDeadStores` and its helpers, and call it in
    `ownedWalletStore` before `freshDir`. Update the module's doc comments.
