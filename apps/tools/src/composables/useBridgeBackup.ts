@@ -1,7 +1,6 @@
 import {
 	type AnyJournalRecord,
 	type BridgeBackupFile,
-	feeJuiceAddress,
 	isCrossChainRecord,
 	isSealTrusted,
 	markSealTrusted,
@@ -11,6 +10,7 @@ import {
 	recoveryKeyMessage,
 	sealBridgeBackup,
 } from "@unleashed/bridge-core"
+import { feeJuiceAddress } from "@unleashed/sdk/protocol"
 import { NETWORK } from "@/lib/network"
 import { FUEL_PORTAL } from "@/contracts/bridge-generation"
 import { sendView } from "@/lib/crosschain-activity"

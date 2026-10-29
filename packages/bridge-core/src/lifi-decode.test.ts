@@ -18,10 +18,16 @@ import {
 	zeroHash,
 } from "viem"
 import { describe, expect, it } from "vitest"
-import { ACROSS_V4_FACET_ABI, buildAcrossV4Deposit, START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR } from "./across-v4"
-import { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
-import { LIFI_RECEIVER_MESSAGE_PARAMS, type LifiSwapData, SWAP_TOKENS_MULTIPLE_V3_ABI, SWAP_TOKENS_SINGLE_V3_ABI } from "./lifi-abi"
-import { lifiBook } from "./lifi-addresses"
+import { ACROSS_V4_FACET_ABI, buildAcrossV4Deposit } from "./across-v4"
+import {
+	START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR,
+	DEPOSIT_ROUTER_ABI,
+	LIFI_RECEIVER_MESSAGE_PARAMS,
+	type LifiSwapData,
+	SWAP_TOKENS_MULTIPLE_V3_ABI,
+	SWAP_TOKENS_SINGLE_V3_ABI,
+	lifiBook,
+} from "@unleashed/sdk/protocol"
 import {
 	acrossDepositFor,
 	decodeRouterMessage,

@@ -5,9 +5,8 @@
  */
 import { type Address, encodeFunctionData, type Hex, zeroHash } from "viem"
 import { acrossV4Call, buildAcrossV4Deposit } from "./across-v4"
-import { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi"
-import { acrossDepositFor, type RouteExpectation, type RouterIntent, type RouteTx } from "./lifi-decode"
-import { PRIVATE_FPC_ADDRESS } from "./private-fuel"
+import { DEPOSIT_ROUTER_ABI, type RouterIntent, PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
+import { acrossDepositFor, type RouteExpectation, type RouteTx } from "./lifi-decode"
 
 /** The legs of one deposit, as the claims rebuild them. */
 export interface CrossChainLegs {

@@ -16,8 +16,8 @@ vi.mock("./deposit-flow", () => ({
 		}
 	},
 }))
-vi.mock("@/lib/wallet-features", () => ({
-	DAPP_SELF_PAY_FEATURE: "dapp-self-pay",
+vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
 	walletSupports: async () => h.selfPay,
 }))
 

@@ -569,6 +569,87 @@ Each row: the decision, its source, the rejected view with its reason.
   words and decimals and an async derivation (`hub-token.ts:36`), which `capabilitiesFor(net, Address[])` lacked.
   Rejected: an async `capabilitiesFor` with `Reads`, which would resolve the token a second time beside the quote.
 
+- **D33 A workspace-only `./l1` entry for Workers.** esbuild resolves every member of a barrel it reaches, so the
+  testnet relayer's Worker could not import one ABI from `./protocol` without the Aztec graph (`tty`). `./l1` names the
+  viem-only slice (the router and LI.FI ABIs, the LI.FI book and gas table); the SDK is `"sideEffects": false`.
+  bridge-core's bundle guard walks whole SDK entries.
+- **D34 bridge-core re-exports nothing it moved, the relayer included.** `across-fill`'s re-exports of
+  `DEPOSIT_ROUTER_ABI` and `lifiBook` went with D17; the relayer imports them from `@unleashed/sdk/l1`.
+- **D35 Workspace entries for the two artifacts.** `./artifacts` (the hub, eager) and `./private-fpc-artifact` (lazy)
+  keep their split; which of them a published entry exposes is 2.2's staging decision.
+- **D36 The frozen manifests stay bridge-core's fixtures.** The moved SDK tests that read
+  `fixtures/sandbox-manifest.json` and `test/fixtures/mainnet-bridge.placeholder.json` read them by relative path;
+  bridge-core's script tests are their other readers.
+- **D37 The layout guarantee for the SDK is its own imports test.** `src/imports.test.ts` scans the shipped source:
+  no Node built-in, and every bare import is a declared runtime dependency that resolves from the SDK. It replaces
+  extending bridge-core's `layout-identity.test.ts`, which resolves assets rather than imports.
+- **D38 `tsconfig.build.json` arrives with the build.** 2.1 lists it; it lands in 2.2 with `stage.ts`, its only user.
+- **D39 Six error codes beyond the sketch.** `invalid-request` (a malformed argument), `invalid-network` (a `Network`
+  `parseNetwork` did not build), `fetch-unavailable` (a LI.FI venue with no `fetch`), `read-failed` (an RPC read the
+  run cannot do without), `approval-failed` (the Permit2 approval reverted or never confirmed) and `aborted` (the
+  caller's signal, honoured only where nothing is in flight). Each carries `submission` and `retry` like the rest.
+- **D40 `parseNetwork` runs every trust-root check.** The node anchoring, the derivations and the on-chain bindings
+  and code pins all run at parse; a parsed `Network` is the proof (a module-private `WeakSet`), and every entry point
+  refuses one it did not build. Re-parsing is how a long-lived integrator re-checks.
+- **D41 Private gas ceilings price from the node until the caller says otherwise.** `quoteBridge` takes
+  `gas.maxFees` (the integrator's wallet quote, `walletMaxFees` in the app) and otherwise the node's worst predicted
+  fees; the claim re-prices from the wallet before it spends anything.
+- **D42 `capabilitiesFor` is in the root entry, re-exported by `./bridge`.** A gas-only integrator needs a grant
+  without loading the hub artifact. It grants claims only: no exit, no authwit.
+- **D43 The tarball holds only what the five published entries reach.** `stage.ts` emits from those entries, copies
+  the three JSON assets they import with their digests checked, and derives the peers (exact at the Aztec pins,
+  `viem` a caret range) and `zod` as the one dependency. `./artifacts`, `./private-fpc-artifact`, `./l1` and
+  `./internal` stay workspace-only. The consumer fixture installs frozen under the committed gate; only a relock
+  re-checks it.
+- **D44 Exits stay out of v1 (owner answer P3-05: only if modest).** They are not: an exit is the L2 burn under an
+  authwit, a proving wait of up to an epoch, the Outbox witness, the L1 consume racing relayers (`consumedByOther`),
+  a private exit's fee ceiling, and a record and resume for each step. That is a second lane the size of
+  `claimToken` with its own sandbox cells, and no arc here moves the app's exit engine. The app keeps its exit code.
+- **D45 `verify-l1` measures against the SDK's pins.** It hashes the deployed runtime with the SDK's `pinOfBuild` /
+  `deployedHash` and also requires its fresh build to equal the SDK's `CODE_PINS`, so a deployment it passes is one
+  `parseNetwork` accepts. The bindings it shares with `parseNetwork` come from the SDK's `trust-roots.ts`.
+- **D46 `findDepositTx` filters on the payer for every record that names its signer.** A published secret hash can
+  be replayed by anyone; without the filter, look-alikes past the candidate cap keep a token record's search
+  incomplete just as they would a gas-only one's.
+- **D47 A fee stop is a code; its words belong to the host.** The ladder throws `FeeStopError(stop)` and returns
+  `{ kind: "stop", stop }`; the claims surface it as `BridgeError("fee-stop", …, { stop })`, retry "never" for the
+  stops no wait lifts (a malformed hash, FPC drift, a missing salt or secret, a floor) and "after-wait" otherwise. The
+  app maps each code to today's sentence in `fee-stop-copy.ts`, pinned by a table test.
+- **D48 The claims persist through the caller, in call order.** The ladder writes through a store whose merge is
+  synchronous; the SDK's store applies the patch to the claim's record at once and queues the caller's `persist`, and
+  every hub seam (`onRegisterSend`, `onRegistered`, `onClaimSend`) is awaited, so the latch it writes is persisted
+  before the wallet is asked. A failed persist surfaces at the next awaited one.
+- **D49 A token claim settles only after the gas it bridged.** A public claim paid from held gas leaves the bridged Fee
+  Juice unspent; `claimToken` claims it on its own before the record completes, so no completed record strands gas.
+- **D50 The self-pay floor of a direct Fee Juice claim is `feeJuice.minFj`.** The route's `minFuelFj` is the send
+  budget; the claim floor is the manifest's Fee Juice floor, as in the app.
+- **D51 A code pin groups each immutable's copies.** The compiler writes an immutable at every place it is read;
+  `deployedHash` masks them per immutable and refuses a runtime whose copies of one immutable disagree, which a
+  genuine constructor never writes. `verify-l1` and `parseNetwork` share the rule.
+- **D52 Secrets travel with every persist and never in a record.** `persist(record, secrets)` gets the run's secrets on
+  every call, so a store that keeps the latest call alone never loses them. The ladder sees `fuelSalt` through a view;
+  what it writes back drops it. A claim's failed persist is `persist-failed`, retry "safe": nothing was sent after the
+  last record the caller holds.
+- **D53 After the deposit hash is persisted, a deposit error is retry "never".** The money is on its way; calling
+  `depositFuel` or `depositToken` again would send a second deposit. Its message names `claimFuel`/`claimToken`, which
+  resume from the record.
+- **D54 A token claim whose bridged gas can never be claimed settles, saying why.** A permanent failure of the
+  leftover gas claim settles the record with `gasLeft`; a transient one keeps the record open and names the landed
+  token claim.
+- **D55 A claim attempt without a hash ages out.** A latch the SDK persisted before the wallet answered blocks a second
+  send until the message's nullifier answers or `PRIVATE_ATTEMPT_STALE_MS` passes, for the token claim and for the
+  public gas claim beside it.
+- **D56 Only the SDK's own quotes and frozen networks reach a send.** `depositFuel`/`depositToken` refuse a quote
+  `quoteFuel`/`quoteBridge` did not return, and every quote, resolved token, network, manifest and bundled pin is
+  deep-frozen. The deposits are `async`, so a refusal rejects the promise and never throws past a `.catch`.
+  `parseNetwork` refuses a route whose fuel floor is under the claim floor (D50), which no claim could pay from.
+- **D58 Every registration is latched before its prompt.** One paid from held credit persists `claimAttempt` before
+  the wallet is asked and lifts it with the hash; a gas attempt latched without its hash is settled by its message's
+  nullifier on the private path too, so a claim pays from the credit a landed registration left.
+- **D57 The SDK does not pin mainnet's guardian yet.** A hostile manifest can name a genuine-code generation someone
+  else deployed, whose guardian can pause it (a delay, never a transfer). The owner's guardian is pinned once the
+  mainnet generation exists (`follow-ups.md`, `OWNER-ASKS.md`).
+
 ## Audit verdicts
 
 Codex ran `gpt-6.1-sol` at high; every finding was verified against the tree and accepted. `lessons/phase-0.md` logs
@@ -614,6 +695,26 @@ Arc a1, the implementation (`git diff fb90e36..HEAD`):
 - **Round 3, Codex (same session): no new material finding** on the one fix after round 2 (strict `verify-l1` refused
   `FuelOnlyGate`'s artifact, which records no immutables; an absent map is now an empty mask). It tightened the fix's
   comment. Closed at the three-round cap.
+
+Arc a2, the implementation (`git diff origin/main...HEAD`):
+
+- **Round 1, Codex (fresh session): 2 High, 3 Medium; all verified and fixed with tests.** The private fuel salt
+  reached persisted records (D52); a hashless public gas attempt blocked a token claim for good (D55); recovery
+  refused a first deposit's frozen metadata (the token block is rebuilt from the factory's registration when no
+  registration was persisted); the standalone gas claim sent before persisting its attempt; a claim's failed persist
+  said retry "never" (D52).
+- **Round 1, Opus 5.5 (beside it): 3 High, 1 Medium, 4 Low.** Immutable copies that disagree passed a pin (D51); two
+  deposit errors after the hash said retry "safe" (D53); the secrets left the record after the first persist (D52);
+  quote and network objects were mutable between check and send (D56); the packaged manifest lacked `license` and
+  `repository`, and `pack-check` passed the whole environment to its subprocesses (fixed). The mainnet guardian
+  is not pinned (D57). Known limits: #43 (the reconcile window), #44 (one dropped registration read), #45 (retired
+  routers' leaves). A sub-reviewer found no drift in the moved fee ladder.
+- **Round 2, Codex (same session resumed): 1 High, 2 Medium; all verified and fixed with tests.** A private gas attempt
+  whose registration landed without its hash re-minted the spent message for good (D58); a registration paid from held
+  credit was prompted before anything was persisted (D58); a quote's nested gas leg stayed writable (D56). Fixing them
+  found two more: the deposits threw their refusals synchronously, and the token claim handed the fee ladder the record
+  as the call opened it. All five round-1 fixes held.
+- **Round 3, Codex (same session): no new material finding.** All three round-2 fixes hold. Converged.
 
 ## Delivery
 

@@ -5,11 +5,11 @@ import {
 	type DepositEnvelopeV2,
 	deriveCrossChainDepositStage,
 	openDepositEnvelope,
-	predictPortal,
 	recoveryKeyFromSignature,
 	recoveryKeyMessage,
 	type SendDepositRecord,
 } from "@unleashed/bridge-core"
+import { predictPortal } from "@unleashed/sdk/protocol"
 import type { Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, SEPOLIA, signatureOf, USER } from "@/test/crosschain"

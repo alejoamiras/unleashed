@@ -19,14 +19,9 @@ import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { OutboxContract } from "@aztec-labs/ethereum/contracts"
 import { computeL2ToL1MembershipWitness } from "@aztec-labs/stdlib/messaging"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import {
-	type JournalTokenBlock,
 	type L1Ctx,
-	PORTAL_FACTORY_ABI,
-	PRIVATE_FPC_ADDRESS,
-	PRIVATE_HUB_EXIT_GAS,
-	type SendWithdrawRecord,
-	TOKEN_PORTAL_ABI,
 	awaitL1Receipt,
 	consumeWithdrawal,
 	exitViaHub,
@@ -34,15 +29,23 @@ import {
 	hubExitsPaused,
 	hubTokenFor,
 	isOutboxMessageConsumed,
-	makeProvisionalWithdrawId,
 	preflightHubExit,
+	clampGas,
+	walletMaxFees,
+} from "@unleashed/sdk/internal"
+import {
+	PORTAL_FACTORY_ABI,
+	PRIVATE_FPC_ADDRESS,
+	PRIVATE_HUB_EXIT_GAS,
+	TOKEN_PORTAL_ABI,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
-} from "@unleashed/bridge-core"
+} from "@unleashed/sdk/protocol"
+import { type SendWithdrawRecord, makeProvisionalWithdrawId } from "@unleashed/bridge-core"
 import { decodeFunctionData } from "viem"
 import { type Ref, ref } from "vue"
 import { HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
-import { clampGas, walletMaxFees } from "@/lib/wallet-fee-budget"
+import { appNode } from "@/lib/aztec-node"
 import { NETWORK } from "@/lib/network"
 import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
@@ -98,10 +101,10 @@ export function buildExitSendOpts(from: AztecAddress) {
 export async function privateExitFee(aztec: unknown, from: AztecAddress, approvedCeiling?: bigint) {
 	const [credit, maxFees] = await Promise.all([
 		readFeeJuiceOrNull("private FJ", () => readPrivateFeeJuiceBalance(aztec, from)),
-		walletMaxFees(aztec, from, PRIVATE_HUB_EXIT_GAS).catch(() => null),
+		walletMaxFees(appNode(), aztec, from, PRIVATE_HUB_EXIT_GAS).catch(() => null),
 	])
 	if (maxFees === null) throw new ExitNeedsPrivateGasError("unverifiable")
-	const limits = clampGas(PRIVATE_HUB_EXIT_GAS)
+	const limits = clampGas(appNode(), PRIVATE_HUB_EXIT_GAS)
 	const ceiling = privateFpcFeeLimit(limits, maxFees)
 	// The FPC keeps the whole ceiling: a price above what the review showed is a fee nobody approved.
 	if (approvedCeiling !== undefined && ceiling > approvedCeiling) throw new ExitNeedsPrivateGasError("repriced")

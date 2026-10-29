@@ -1,4 +1,4 @@
-import { lifiBook } from "@unleashed/bridge-core"
+import { lifiBook } from "@unleashed/sdk/protocol"
 import { flushPromises, mount } from "@vue/test-utils"
 import { encodeFunctionData, erc20Abi } from "viem"
 import { beforeEach, describe, expect, it, vi } from "vitest"

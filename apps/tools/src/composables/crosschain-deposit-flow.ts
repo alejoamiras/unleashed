@@ -9,13 +9,13 @@
 import {
 	type CrossChainDepositRecord,
 	crossChainAmountWindow,
-	ERC20_ABI,
 	type EncryptionKey,
 	isSealTrusted,
 	markSealTrusted,
 	sealCrossChainDepositRecord,
 	verifyRoute,
 } from "@unleashed/bridge-core"
+import { ERC20_ABI } from "@unleashed/sdk/protocol"
 import { type Address, type Chain, encodeFunctionData, type Hex, type PublicClient, type WalletClient } from "viem"
 import { approvalConfirmedLine } from "@/lib/crosschain-steps"
 import { NETWORK } from "@/lib/network"

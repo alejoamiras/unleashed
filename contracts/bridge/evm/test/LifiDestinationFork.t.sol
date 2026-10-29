@@ -16,9 +16,9 @@ import {DepositPermit} from "./mocks/DepositPermit.sol";
 /// USDC clone, at the block `lifi-fixtures.ts mainnet` recorded. The Ethereum-origin entry runs the same swap behind a
 /// user's signature to the real Permit2. Needs an archive `ETH_RPC_URL`; skips without one.
 contract LifiDestinationFork is MainnetLifiFork {
-    /// `LIFI_TO_CONTRACT_GAS_LIMIT` in packages/bridge-core/src/lifi-gas.ts.
+    /// `LIFI_TO_CONTRACT_GAS_LIMIT` in packages/sdk/src/protocol/lifi-gas.ts.
     uint256 internal constant LIFI_TO_CONTRACT_GAS_LIMIT = 1_000_000;
-    /// The only entry of `LIFI_DENY_EXCHANGES` in packages/bridge-core/src/lifi-gas.ts.
+    /// The only entry of `LIFI_DENY_EXCHANGES` in packages/sdk/src/protocol/lifi-gas.ts.
     string internal constant LIFI_DENIED_EXCHANGE = "bitget";
     /// Across fills in seconds; the warp takes the larger of this and the quoted rail ETA.
     uint256 internal constant ACROSS_FILL_SECONDS = 10;

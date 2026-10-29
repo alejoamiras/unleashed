@@ -1,7 +1,7 @@
 /** Another submitter consuming a PUBLIC deposit the page journaled: the sandbox relayer, from the
  *  record's unsealed claim material (a private record seals its secret, so it cannot be relayed). */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import type { SendResult } from "@unleashed/bridge-core"
+import type { SendResult } from "@unleashed/sdk/internal"
 import { claim } from "@unleashed/bridge-core/sandbox"
 import type { ActorHandle } from "../fixtures/test"
 import type { JournalDeposit } from "./journal"

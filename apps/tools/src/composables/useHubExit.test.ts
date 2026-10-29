@@ -59,8 +59,8 @@ vi.mock("@/contracts/bridge-generation", () => ({
 	rebuildHubTokenInstance: vi.fn(async () => ({ address: { toString: () => h.L2_TOKEN } })),
 }))
 
-vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/bridge-core")>()),
+vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
 	hubAt: () => ({ address: h.HUB_ADDR }),
 	hubExitsPaused: h.exitsPaused,
 	hubTokenFor: async () => h.hubBinding.value,

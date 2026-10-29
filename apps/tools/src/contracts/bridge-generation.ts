@@ -6,14 +6,12 @@ import {
 	deriveHubTokenInstance,
 	deriveManifestHub,
 	type HubTokenWords,
-	legacyRoutersOf,
 	type ManifestToken,
 	type ManifestV2,
 	parseManifestV2,
-	type SendGeneration,
-	sendGenerationOf,
-} from "@unleashed/bridge-core"
-import { tokenBridgeHubArtifact } from "@unleashed/bridge-core/artifacts"
+} from "@unleashed/sdk/protocol"
+import { legacyRoutersOf, type SendGeneration, sendGenerationOf } from "@unleashed/sdk/internal"
+import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
 import rawTestnetConfig from "../../public/testnet-bridge.json"
 
 /*

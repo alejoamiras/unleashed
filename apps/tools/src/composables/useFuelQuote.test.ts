@@ -1,4 +1,4 @@
-import { FUEL_SWAP_SELECTORS } from "@unleashed/bridge-core"
+import { FUEL_SWAP_SELECTORS } from "@unleashed/sdk/protocol"
 import { type Address, BaseError, ContractFunctionRevertedError, type PublicClient, size, slice } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NO_GAS_ROUTE } from "@/lib/send-model"

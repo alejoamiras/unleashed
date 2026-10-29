@@ -44,7 +44,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
           # Positive-only, no `!` negations (dorny's `some`-quantifier footgun). The built target
-          # whole; its workspace libraries by src + manifest; the hub artifact bridge-core bundles
+          # whole; its workspace libraries by src + manifest; the hub artifact the SDK bundles
           # from contracts/. Pinned by scripts/ci-cd/behavior-gating.test.ts.
           filters: |
             tools:
@@ -53,6 +53,8 @@ jobs:
               - 'packages/bridge-core/package.json'
               - 'packages/design/src/**'
               - 'packages/design/package.json'
+              - 'packages/sdk/src/**'
+              - 'packages/sdk/package.json'
               - 'contracts/bridge/aztec/token_bridge_hub/target/**'
               - '.github/workflows/_build-tools.yml'
             landing:

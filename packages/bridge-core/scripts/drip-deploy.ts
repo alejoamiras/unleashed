@@ -19,11 +19,14 @@ import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifac
 import type { Address, Hex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { FAUCET_DRIPPER_SALT, FAUCET_TOKENS, type FaucetToken } from "../src/faucet-catalog"
-import { predictedWorstMinFees, preexistingFeeJuicePayment } from "../src/fee-juice"
-import type { L1Ctx } from "../src/flows"
-import { planPublicFuelDeposit } from "../src/fuel"
-import type { ManifestV2 } from "../src/manifest-v2"
-import { PUBLIC_FUEL_CLAIM_GAS } from "../src/private-fuel"
+import {
+	predictedWorstMinFees,
+	preexistingFeeJuicePayment,
+	planPublicFuelDeposit,
+	type ManifestV2,
+	PUBLIC_FUEL_CLAIM_GAS,
+} from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import {
 	assertFundingDestination,
 	type Claimable,

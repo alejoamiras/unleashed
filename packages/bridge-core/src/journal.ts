@@ -23,6 +23,7 @@
  * lives under one key only.
  */
 
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import type { Address, Hex } from "viem"
 import { validateAnyBackupRecord, validateCrossChainRecord } from "./backup"
 
@@ -183,24 +184,6 @@ export interface WithdrawJournalRecord extends JournalBase {
 	/** The Aztec account that sent the exit, recorded when the record is built. Display-only; never
 	 *  read by a claim, exit or recovery path. Absent on records written before the field existed. */
 	sender?: string
-}
-
-/**
- * The token a schema-3 record moves, copied from the factory's frozen registration record once the
- * L1 receipt exists (the pre-receipt copy is the app's prediction; the receipt rewrite is what the
- * L2 side is claimed against). `portal` here and `JournalBase.portal` are the same clone.
- */
-export interface JournalTokenBlock {
-	erc20: string
-	portal: string
-	l2Token: string
-	nameWord: string
-	symbolWord: string
-	decimals: number
-	displaySymbol: string
-	/** From the factory's `PortalCreated`/`registrationOf` — the `register` leaf a first claim consumes. */
-	registerKey?: string
-	registerIndex?: string
 }
 
 /** What a send intends: the token leg, the token leg plus a gas slice, or gas only (no token block). */

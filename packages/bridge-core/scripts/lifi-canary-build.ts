@@ -9,14 +9,20 @@ import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, encodeFunctionData, type Hex, zeroHash } from "viem"
 import type { RailTerms } from "../src/across-self-built"
-import { deriveTokenClaimSecret } from "../src/claim-secret"
+import {
+	deriveTokenClaimSecret,
+	DEPOSIT_ROUTER_ABI,
+	proposeGasShare,
+	type DepositWitness,
+	depositWitness,
+	depositWitnessPermitTypedData,
+	type RouterIntent,
+	deriveBridgeSecret,
+	PRIVATE_FPC_ADDRESS,
+} from "@unleashed/sdk/protocol"
 import { acrossRouteTx, bridgeFromCallerCall as routerCall } from "../src/crosschain-route"
-import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import { type FuelQuoteProvider, withFuelFloor } from "../src/fuel-quote"
-import { proposeGasShare } from "../src/gas-share"
-import { type DepositWitness, depositWitness, depositWitnessPermitTypedData } from "../src/l1"
-import { type DecodedRoute, type RouteExpectation, type RouterIntent, type RouteTx, verifyRoute } from "../src/lifi-decode"
-import { deriveBridgeSecret, PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
+import { type FuelQuoteProvider, withFuelFloor } from "@unleashed/sdk/internal"
+import { type DecodedRoute, type RouteExpectation, type RouteTx, verifyRoute } from "../src/lifi-decode"
 import { type CanaryBindings, CanaryRefusal, type CanaryRowShape, recoveryFloor } from "./lifi-canary-plan"
 
 /** What a row's claims need and its record never shows. */

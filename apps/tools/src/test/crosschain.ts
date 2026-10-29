@@ -1,5 +1,7 @@
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { lifiBook, TESTNET_FILLER, testnetSwapperFuelProvider } from "@unleashed/bridge-core"
+import { lifiBook } from "@unleashed/sdk/protocol"
+import { TESTNET_FILLER } from "@unleashed/bridge-core"
+import { testnetSwapperFuelProvider } from "@unleashed/sdk/internal"
 import { type Address, type Hex, keccak256, toBytes } from "viem"
 import { vi } from "vitest"
 import { type CrossChainAsk, type CrossChainRoute, quoteCrossChainRoute, type RouteDeps } from "@/composables/useCrossChainRoute"

@@ -16,17 +16,24 @@ import {
 	type CrossChainDiscoveryContext,
 	type DiscoveryReads,
 	discoverCrossChain,
+} from "../src/crosschain-discovery"
+import {
 	readRouterDeposit,
 	type InboxEventShape,
-} from "../src/crosschain-discovery"
-import { DEPOSIT_ROUTER_ABI } from "../src/deposit-router-abi"
-import type { L1Ctx } from "../src/flows"
+	type L1Ctx,
+	type FuelQuoteProvider,
+	testnetSwapperFuelProvider,
+} from "@unleashed/sdk/internal"
+import {
+	DEPOSIT_ROUTER_ABI,
+	hashDepositWitness,
+	PERMIT_DEADLINE_SECONDS,
+	type RouterIntent,
+	type ManifestV2,
+	PRIVATE_FPC_ADDRESS,
+} from "@unleashed/sdk/protocol"
 import type { CrossChainDepositRecord } from "../src/journal"
-import { type FuelQuoteProvider, testnetSwapperFuelProvider } from "../src/fuel-quote"
-import { hashDepositWitness, PERMIT_DEADLINE_SECONDS } from "../src/l1"
-import { acrossDepositFor, type RouteExpectation, type RouterIntent, type RouteTx } from "../src/lifi-decode"
-import type { ManifestV2 } from "../src/manifest-v2"
-import { PRIVATE_FPC_ADDRESS } from "../src/private-fuel"
+import { acrossDepositFor, type RouteExpectation, type RouteTx } from "../src/lifi-decode"
 import { type AcrossClient, type AcrossLimits, acrossSuggestedFees } from "../src/across-api"
 import { type RailTerms, SELF_BUILT_FILL_WINDOW_S, selfBuiltTerms } from "../src/across-self-built"
 import {

@@ -2,28 +2,27 @@ import {
 	type DepositEnvelopeV2,
 	type DepositJournalRecord,
 	JOURNAL_KEY,
-	type JournalTokenBlock,
 	type KV,
 	type SendDepositRecord,
 	type SendWithdrawRecord,
 	type WithdrawJournalRecord,
-	feeJuiceAddress,
 	isSealTrusted,
 	loadJournal,
 	markSealTrusted,
 	removeRecord,
-	predictPortal,
 	recoveryKeyFromSignature,
 	rekeyRecord,
 	sealDepositEnvelope,
 	upsertRecord,
 } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GrantOutcome } from "@/lib/send-model"
 import { stepperPhases } from "@/lib/bridge-steps"
 import { memoryJournalLocks } from "@/lib/journal-locks"
 import { recordState } from "@/lib/record-policy"
-import type { DepositSearch } from "./deposit-reconcile"
+import type { DepositSearch } from "@unleashed/sdk/internal"
 import type { ExitSearch } from "./exit-attach"
 
 vi.mock("@/contracts/bridge-generation", () => ({ FUEL_PORTAL: "0xfd05ee8687d4ca828ba3d26ef04b80dd1348e5bd" }))
@@ -39,8 +38,6 @@ import {
 	currentRecord,
 	deploymentMatches,
 	discard,
-	isMsgConsumed,
-	isMsgNotReady,
 	markApproveOutcome,
 	markSessionLive,
 	rekeyJournalRecord,
@@ -1070,27 +1067,6 @@ describe("useBridgeJournal engine", () => {
 		releaseA()
 		await Promise.all([a, b])
 		expect(order).toEqual(["a-start", "c-start", "a-end", "b-start"])
-	})
-})
-
-describe("isMsgNotReady / isMsgConsumed — the 5.0.0 L1→L2 message-state split", () => {
-	// The two upstream (@aztec-labs/stdlib) shapes must map to OPPOSITE conditions: not-anchored keeps
-	// polling; nullified settles. Conflating them strands funds either way.
-	const NOT_READY = "No L1 to L2 message found for message hash 0xabc"
-	const CONSUMED = "No non-nullified L1 to L2 message found for message hash 0xabc"
-
-	it("not-ready shape ⇒ isMsgNotReady only", () => {
-		expect(isMsgNotReady(NOT_READY)).toBe(true)
-		expect(isMsgConsumed(NOT_READY)).toBe(false)
-	})
-	it("consumed (nullified) shape ⇒ isMsgConsumed only (NOT isMsgNotReady)", () => {
-		expect(isMsgConsumed(CONSUMED)).toBe(true)
-		expect(isMsgNotReady(CONSUMED)).toBe(false)
-	})
-	it("kernel/pxe not-ready wordings stay in isMsgNotReady", () => {
-		expect(isMsgNotReady("l1_to_l2_msg_exists returned false")).toBe(true)
-		expect(isMsgNotReady("message not in state")).toBe(true)
-		expect(isMsgConsumed("l1_to_l2_msg_exists returned false")).toBe(false)
 	})
 })
 

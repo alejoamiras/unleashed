@@ -1,7 +1,7 @@
 import { encodeAbiParameters, encodeEventTopics, type Hex } from "viem"
 import { describe, expect, it, vi } from "vitest"
-import type { L1Ctx } from "../src/flows"
-import { FeeJuicePortalAbi, type FuelDepositPlan } from "../src/fuel"
+import type { L1Ctx } from "@unleashed/sdk/internal"
+import { FeeJuicePortalAbi, type FuelDepositPlan } from "@unleashed/sdk/protocol"
 import { depositFeeJuicePublic } from "./fee-juice-l2"
 
 const ASSET = `0x${"a5".repeat(20)}` as const

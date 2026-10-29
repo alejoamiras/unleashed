@@ -1,7 +1,7 @@
 /**
  * Fail-closed PrivateFPC gate: reconcile the live network, the installed fee-payment artifact, and
- * the per-network canonical descriptor (`src/private-fpc-canonical.json` for testnet,
- * `src/private-fpc-canonical-mainnet.json` for Alpha/mainnet — selected by the LIVE node's identity,
+ * the per-network canonical descriptor (the SDK's `private-fpc-canonical.json` for testnet,
+ * `private-fpc-canonical-mainnet.json` for Alpha/mainnet — selected by the LIVE node's identity,
  * never a flag) before ANY fund-moving private-fuel step. The FPC address is bytecode +
  * @aztec-version + salt specific — depositing real Fee Juice to an address derived from the wrong
  * artifact is an UNRECOVERABLE loss.
@@ -45,7 +45,7 @@ import { getContractClassFromArtifact, getContractInstanceFromInstantiationParam
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
 
 import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
-import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
+import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
 
 type GateNetwork = "testnet" | "mainnet"
 
@@ -106,7 +106,7 @@ type LiveNodeInfo = { nodeVersion: string; l1ChainId: number; rollupVersion: num
  *  flag, so an operator pointing at the wrong node can't pick the wrong pins. No match = STOP. */
 function selectDescriptor(here: string, info: LiveNodeInfo): FpcDescriptor {
 	const descriptors = ["private-fpc-canonical.json", "private-fpc-canonical-mainnet.json"].map(
-		(f) => JSON.parse(readFileSync(join(here, "..", "src", f), "utf8")) as FpcDescriptor,
+		(f) => JSON.parse(readFileSync(join(here, "..", "..", "sdk", "src", "protocol", f), "utf8")) as FpcDescriptor,
 	)
 	const descriptor = descriptors.find((d) => d.network.l1ChainId === info.l1ChainId && d.network.rollupVersion === info.rollupVersion)
 	if (!descriptor) {

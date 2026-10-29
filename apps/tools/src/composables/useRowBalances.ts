@@ -4,7 +4,7 @@
  * new rows costs one batch for those rows only; a read that fails leaves what was read standing;
  * a read that is superseded never lands.
  */
-import { readErc20Balances } from "@unleashed/bridge-core"
+import { readErc20Balances } from "@unleashed/sdk/protocol"
 import type { Address, PublicClient } from "viem"
 import { type Ref, shallowRef, watch } from "vue"
 import type { SelectableToken } from "@/lib/send-model"

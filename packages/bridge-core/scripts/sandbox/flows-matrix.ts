@@ -6,14 +6,24 @@ import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TestERC20Abi } from "@aztec-foundation/l1-artifacts"
 import type { Address, Hex } from "viem"
-import { TOKEN_PORTAL_ABI } from "../../src/factory-abi"
-import { consumeWithdrawal, isOutboxMessageConsumed } from "../../src/flows"
-import { proposeGasShare } from "../../src/gas-share"
-import { exitViaHub, type HubExitParams, preflightHubExit } from "../../src/hub-l2"
-import type { JournalTokenBlock } from "../../src/journal"
-import type { ManifestToken } from "../../src/manifest-v2"
-import { deriveBridgeSecret, ownGasTxs, PRIVATE_FPC_ADDRESS, PRIVATE_HUB_CLAIM_GAS } from "../../src/private-fuel"
-import { manifestFuelProvider } from "../../src/fuel-quote"
+import {
+	TOKEN_PORTAL_ABI,
+	proposeGasShare,
+	type ManifestToken,
+	deriveBridgeSecret,
+	ownGasTxs,
+	PRIVATE_FPC_ADDRESS,
+	PRIVATE_HUB_CLAIM_GAS,
+} from "@unleashed/sdk/protocol"
+import {
+	consumeWithdrawal,
+	isOutboxMessageConsumed,
+	exitViaHub,
+	type HubExitParams,
+	preflightHubExit,
+	manifestFuelProvider,
+} from "@unleashed/sdk/internal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import { waitForL1ToL2Message } from "../generation"
 import { ensureRouterPermit2 } from "../script-l1"
 import { planFuelLeg } from "../script-send"

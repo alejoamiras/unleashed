@@ -2,7 +2,7 @@
 
 The hub's TXE suite (`src/test/*.nr`, 65 named tests in `txe-manifest.txt`) runs the real contract
 against injected L1→L2 messages. Every property that crosses the L1↔L2 boundary has a counterpart on
-the L1 side (`contracts/bridge/evm/test`) or in `packages/bridge-core`; this map is how a reviewer
+the L1 side (`contracts/bridge/evm/test`) or in `packages/sdk`; this map is how a reviewer
 checks that a property is pinned on BOTH ends, not asserted on one and assumed on the other.
 
 The TXE cannot run the protocol class-registry path (`publish_contract_instance_for_public_execution`),

@@ -50,8 +50,11 @@ on these inputs, so they move only with a new generation.
 ## The pin surface
 
 - `@aztec-labs/*` and `@aztec-foundation/*` exact pins in `apps/tools/package.json`,
-  `packages/bridge-core/package.json` and `contracts/bridge/aztec/txe-server/package.json`, each scope
-  at its own version (above). `packages/bridge-core` pins stock `viem` at exactly the version the
+  `packages/bridge-core/package.json`, `packages/sdk/package.json` and
+  `contracts/bridge/aztec/txe-server/package.json`, each scope at its own version (above). The SDK's
+  published peers follow its pins; its consumer fixture (`packages/sdk/test/consumer/package.json`)
+  declares the same pins and is relocked with `bun scripts/pack-check.ts --relock` from `packages/sdk`
+  (a relock re-checks the release-age gate, so it takes the same temporary excludes). `packages/bridge-core` pins stock `viem` at exactly the version the
   line depends on (`2.57.1` on 6.0.0), so `flows.ts`'s `OutboxContract` client shares the Aztec
   packages' copy; move it with the line.
 - The three packages the Nulo wallet's repository publishes, at the versions published for the new line.
@@ -81,7 +84,7 @@ on these inputs, so they move only with a new generation.
   and `@aztec-foundation/noir-acvm_js`; without it `initAbi()` and `abiEncode()` land in different module scopes
   and the wasm instance never resolves. Re-check it when the packages' entry layout changes.
 - **Hub ↔ factory, a circular binding deployed as one unit.** The hub's address is salted with the
-  factory's (`salt = Fr(factory)`, `deriveManifestHub` in `packages/bridge-core/src/manifest-v2.ts`)
+  factory's (`salt = Fr(factory)`, `deriveManifestHub` in `packages/sdk/src/protocol/manifest-v2.ts`)
   and the factory's constructor takes the hub; the router binds the factory and the `FeeJuicePortal`
   as immutables. `scripts/generation.ts` predicts the factory from the deployer's pending nonce and
   refuses to broadcast if it moved. A reset or any class-id shift below means a whole new generation.
@@ -100,7 +103,7 @@ on these inputs, so they move only with a new generation.
   Both name the labs version, never the foundation one: on this line, `~/.aztec/versions/6.0.0`
   (`aztec-up install 6.0.0`).
 - **Canonical PrivateFPC**: the address and the digest are pinned in
-  `packages/bridge-core/src/private-fuel.ts` (`PRIVATE_FPC_ADDRESS`, `PRIVATE_FPC_SALT = 0x…01`) and
+  `packages/sdk/src/protocol/private-fuel.ts` (`PRIVATE_FPC_ADDRESS`, `PRIVATE_FPC_SALT = 0x…01`) and
   `private-fpc-canonical.json` (`expectedAddress`, the artifact sha256, the human-curated
   `compatibleNodeVersions` keyed by digest, the network identity pins). `private-fuel.test.ts`
   re-derives the address from the installed artifact at that salt with deployer zero, and holds
@@ -115,7 +118,7 @@ on these inputs, so they move only with a new generation.
     the digest's compatibility entry, the identity pins, the artifact digest and the descriptor's
     coherence with the constants. At the pinned address, absence is green, and a published instance
     must carry the expected original and current class. An RPC failure is an error, never absence.
-  - **The line table** (`packages/bridge-core/src/aztec-line.ts`) keys each L1 chain to its line's
+  - **The line table** (`packages/sdk/src/protocol/aztec-line.ts`) keys each L1 chain to its line's
     descriptor: mainnet to `private-fpc-canonical-mainnet.json` (its own identity pins), every other
     chain to the installed one. A line is supported only while its descriptor's `aztecVersion` is the
     installed one; every send on another line is refused before signing, and a manifest's

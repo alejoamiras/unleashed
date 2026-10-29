@@ -21,19 +21,16 @@ import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas, type GasFees } from "@aztec-labs/stdlib/gas"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { predictedWorstMinFees } from "../src/fee-juice"
-import type { L1Ctx } from "../src/flows"
-import type { HubClaimOutcome } from "../src/hub-l2"
 import {
+	predictedWorstMinFees,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_HUB_CLAIM_GAS,
 	PRIVATE_HUB_REGISTER_GAS,
 	deriveBridgeSecret,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
-} from "../src/private-fuel"
-import type { SendResult } from "../src/send-flow"
-import { runSend } from "../src/send-flow"
+} from "@unleashed/sdk/protocol"
+import { type L1Ctx, type HubClaimOutcome, type SendResult, runSend } from "@unleashed/sdk/internal"
 import { runFpcGate } from "./check-fpc-version"
 import { type FueledClaimResult, settleFueledClaim } from "./fuel-claim-l2"
 import { requirePinnedSigner } from "./live-intent"

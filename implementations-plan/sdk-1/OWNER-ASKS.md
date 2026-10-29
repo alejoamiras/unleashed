@@ -147,3 +147,13 @@ credential. Options: **A (recommended)** you publish the first version from your
 prompt (no stored token), then name the workflow and its `npm-publish` environment as the trusted publisher; **B** a
 short-lived granular token, used once and deleted. Either way, every later version goes through the workflow with
 provenance.
+
+## §7 The mainnet guardian the SDK pins
+
+**What ships now.** `parseNetwork` holds mainnet's factory, router and gate to this release's code, not to their
+owner. A manifest naming a genuine-code generation that someone else deployed passes, and its guardian can pause it: a
+delay, never a transfer.
+
+Options: **A (recommended)** pin the guardian address once the mainnet generation exists (the factory's and the gate's
+`owner()`, the hub's L2 guardian) and ship it in an SDK release; moving the guardian later, to a multisig say, then
+needs a release first. **B** leave it unpinned and rely on integrators shipping the bundled manifest.

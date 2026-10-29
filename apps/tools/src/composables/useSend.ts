@@ -13,30 +13,28 @@ import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
+import { type EncryptionKey, type SendDepositRecord, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import {
-	type EncryptionKey,
-	type JournalTokenBlock,
 	type L1Ctx,
 	type Registration,
-	type SendDepositRecord,
 	type SendGasLeg,
 	type SendOpts,
 	type SendParams,
 	type SendResult,
 	type SendStage,
-	PERMIT_DEADLINE_SECONDS,
-	claimSendOpts,
+	probeHubClaim,
 	claimViaHub,
-	deriveBridgeSecret,
-	deriveTokenClaimSecret,
 	hubAt,
 	hubTokenFor,
-	isProvisionalRecordId,
 	l1ToL2MessageReadiness,
-	makeProvisionalDepositId,
 	readRegistration,
 	runSend,
-} from "@unleashed/bridge-core"
+	classifyClaimReceipt,
+	findDepositTx,
+	hubMessageState,
+} from "@unleashed/sdk/internal"
+import { PERMIT_DEADLINE_SECONDS, PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret } from "@unleashed/sdk/protocol"
 import type { Hex, PublicClient } from "viem"
 import { type Ref, effectScope, ref, watch } from "vue"
 import {
@@ -48,7 +46,6 @@ import {
 	TOKEN_CLASS_ID,
 	rebuildHubTokenInstance,
 } from "@/contracts/bridge-generation"
-import { classifyClaimReceipt } from "@/lib/claim-receipt"
 import { buildSendRecord, fuelBlockOf, previewBlock, type RecordInputs, sealBindingOf, tokenClaimAmount } from "@/lib/send-record"
 
 export { previewBlock }
@@ -61,11 +58,9 @@ import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
 import { appWatchDeps } from "./crosschain-deposit-flow"
 import { resumeCrossChainWatches } from "./crosschain-watch"
-import { findDepositTx } from "./deposit-reconcile"
 import { readClientFor } from "./useEthereumReader"
 import { sliceSwapData } from "./useFuelQuote"
-import { reconcileFuelConsumed } from "./fuel-recovery"
-import { hubMessageState } from "@/lib/message-nullifier"
+import { reconcileFuelConsumed, fuelOverrideActive, launchStandaloneFuelClaim } from "./fuel-recovery"
 import { resolveToolsTarget } from "@/lib/network-targets"
 import {
 	type ClaimRecord,
@@ -92,8 +87,6 @@ import {
 	resolveHubClaimSendOpts,
 	sealPrivateRecord,
 } from "./deposit-flow"
-import { fuelOverrideActive, launchStandaloneFuelClaim } from "./fuel-recovery"
-import { type FuelClaimRetry, simulateFeePayload } from "./fuelClaim"
 import { useBridgeWallet } from "./useBridgeWallet"
 import { useL1Wallet } from "./useL1Wallet"
 import { withOperation } from "./useOpsInFlight"
@@ -207,6 +200,7 @@ export function ensureSendJournalDeps(): void {
 						chainId: MANIFEST_CHAIN.l1ChainId,
 						router: SEND_GENERATION.router,
 						legacyRouters: LEGACY_ROUTERS,
+						privateFpc: PRIVATE_FPC_ADDRESS,
 						chainEpoch: () => l1.chainChanges.value,
 					})
 				: Promise.resolve("incomplete" as const),
@@ -408,36 +402,6 @@ function hubClaimSeams(id: string, fee: Extract<HubClaimFee, { kind: "opts" }>) 
 		},
 	}
 	return { seams, fuelOnRegistration }
-}
-
-type HubContract = ReturnType<typeof hubAt>
-type ProbeParams = Parameters<typeof claimViaHub>[1]
-
-/**
- * The consumability probe. A FIRST claim cannot be simulated - registering enqueues the derived
- * Token's constructor, which no wallet can build against an instance it does not hold yet - so
- * for an unregistered token the fuel the registration spends is probed on its own (the fee's
- * setup as a whole transaction) and otherwise the checkpoint gate is the only readiness
- * authority. A registered token probes the real claim, which is what makes the engine wait out a
- * message that has not folded into the L2 yet.
- */
-async function probeHubClaim(
-	hub: HubContract,
-	p: ProbeParams,
-	opts: Record<string, unknown>,
-	aztec: unknown,
-	retry?: FuelClaimRetry,
-): Promise<unknown> {
-	if (!(await hubTokenFor(hub, p.token.erc20, p.from))) {
-		const registerFee = opts.registerFee as { paymentMethod: unknown } | undefined
-		return registerFee ? simulateFeePayload(aztec, AztecAddress.fromStringUnsafe(p.recipient), registerFee, retry) : {}
-	}
-	const to = AztecAddress.fromStringUnsafe(p.recipient)
-	const l2Token = AztecAddress.fromStringUnsafe(p.token.l2Token)
-	const call = p.isPrivate
-		? hub.methods.claim_private(l2Token, to, p.amount, p.claimValue, new Fr(p.leafIndex))
-		: hub.methods.claim_public(l2Token, to, p.amount, p.claimValue, new Fr(p.leafIndex))
-	return call.simulate(claimSendOpts(opts) as never)
 }
 
 interface SendActors {

@@ -3,14 +3,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type Address, decodeFunctionData, type Hex, toFunctionSelector } from "viem"
 import { describe, expect, it } from "vitest"
-import {
-	ACROSS_V4_FACET_ABI,
-	type AcrossV4DepositParams,
-	buildAcrossV4Deposit,
-	encodeLifiReceiverMessage,
-	START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR,
-} from "./across-v4"
-import type { LifiSwapData } from "./lifi-abi"
+import { ACROSS_V4_FACET_ABI, type AcrossV4DepositParams, buildAcrossV4Deposit, encodeLifiReceiverMessage } from "./across-v4"
+import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR, type LifiSwapData } from "@unleashed/sdk/protocol"
 
 // The vector LifiTestnetRailFork sends through LI.FI's real Base Sepolia Diamond and fills on Sepolia.
 const FIXTURE = join(

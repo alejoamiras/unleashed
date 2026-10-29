@@ -3,7 +3,7 @@
  * strip and the Drip card share this module's state: one in-flight lock, the per-call amount, and
  * `feeAssetMinted`, which the Send wizard watches to refresh its balances after a mint on either tab.
  */
-import { awaitL1Receipt } from "@unleashed/bridge-core"
+import { awaitL1Receipt } from "@unleashed/sdk/internal"
 import { type Address, erc20Abi, type Log, parseEventLogs, type WalletClient, zeroAddress } from "viem"
 import { computed, type ComputedRef, type Ref, readonly, ref, shallowRef, watch } from "vue"
 import { FUEL_ASSET, FUEL_ASSET_HANDLER } from "@/contracts/bridge-generation"

@@ -9,7 +9,7 @@
  */
 import type { Address } from "viem"
 import z from "zod"
-import { cappedFetchBytes } from "./capped-fetch"
+import { cappedFetchBytes } from "@unleashed/sdk/protocol"
 import type { KV } from "./journal"
 
 /**

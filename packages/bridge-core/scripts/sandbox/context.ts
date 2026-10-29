@@ -10,20 +10,30 @@ import { TestERC20Abi } from "@aztec-foundation/l1-artifacts"
 import { Gas, type GasUsed } from "@aztec-labs/stdlib/gas"
 import { PrivateFPCContract } from "@alejoamiras/private-fee-juice/artifacts/private"
 import type { Address, Hex } from "viem"
-import { predictedWorstMinFees, publicFeeJuicePayment } from "../../src/fee-juice"
-import type { L1Ctx } from "../../src/flows"
-import { claimViaHub, type HubClaimOutcome } from "../../src/hub-l2"
-import type { JournalTokenBlock } from "../../src/journal"
-import type { BridgeBlock, ManifestToken, ManifestV2 } from "../../src/manifest-v2"
 import {
+	predictedWorstMinFees,
+	publicFeeJuicePayment,
+	type BridgeBlock,
+	type ManifestToken,
+	type ManifestV2,
 	deriveBridgeSecret,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_HUB_EXIT_GAS,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
 	privateMintAndPayFee,
-} from "../../src/private-fuel"
-import { type FuelRoute, runSend, type SendGasLeg, type SendParams, type SendResult } from "../../src/send-flow"
+} from "@unleashed/sdk/protocol"
+import {
+	type L1Ctx,
+	claimViaHub,
+	type HubClaimOutcome,
+	type FuelRoute,
+	runSend,
+	type SendGasLeg,
+	type SendParams,
+	type SendResult,
+} from "@unleashed/sdk/internal"
+import type { JournalTokenBlock } from "@unleashed/sdk"
 import type { CalibrationSample } from "../calibration"
 import { feeJuiceFor } from "../fee-juice-l2"
 import { type L2Ctx, waitForL1ToL2Message } from "../generation"

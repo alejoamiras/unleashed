@@ -51,10 +51,11 @@ function filtersOf(workflow: string): Record<string, string[]> {
   throw new Error(`no dorny/paths-filter step found in ${workflow}`)
 }
 
-/** A gate's pattern set must whole-package the target and src+manifest every transitive dep lib. */
+/** A gate's pattern set must whole-package the target and src+manifest every transitive dep lib not gated whole. */
 function assertGraphCovered(patterns: string[], target: string, label: string) {
   expect(patterns, `${label}: target '${target}' must be whole-package gated`).toContain(`${dirOf(target)}/${target}/**`)
   for (const dep of transitiveDeps(target)) {
+    if (patterns.includes(`packages/${dep}/**`)) continue
     expect(patterns, `${label}: dep lib '${dep}' src must be gated`).toContain(`packages/${dep}/src/**`)
     expect(patterns, `${label}: dep lib '${dep}' package.json must be gated`).toContain(`packages/${dep}/package.json`)
   }
@@ -147,11 +148,11 @@ describe("CI behavior-gating guard", () => {
     }
   })
 
-  test("the tools build covers the tools graph, the files bridge-core bundles from outside it, and its workflow", () => {
+  test("the tools build covers the tools graph, the files its libraries bundle from outside it, and its workflow", () => {
     const tools = filtersOf("pr-quick.yml")["tools"]
     assertGraphCovered(tools, "tools", "tools")
-    const outside = importsOutside("bridge-core")
-    expect(outside.length, "bridge-core bundles the hub artifact from contracts/").toBeGreaterThan(0)
+    expect(importsOutside("sdk").length, "the SDK bundles the hub artifact from contracts/").toBeGreaterThan(0)
+    const outside = transitiveDeps("tools").flatMap(importsOutside)
     for (const path of outside) {
       expect(tools.some((pattern) => new Bun.Glob(pattern).match(path)), `tools must gate ${path}`).toBe(true)
     }
@@ -173,12 +174,13 @@ describe("CI behavior-gating guard", () => {
     expect(pin("landing")).toBe(pin("tools"))
   })
 
-  test("bridge-contracts covers the contracts, the harness package, the testnet relayer, their graphs, and the adopted manifests", () => {
+  test("bridge-contracts covers the contracts, the harness package, the SDK, the testnet relayer, their graphs, and the adopted manifests", () => {
     const contracts = filtersOf("bridge-contracts.yml")["contracts"]
     expect(contracts, "the Solidity + Noir sources").toContain("contracts/bridge/**")
     assertGraphCovered(contracts, "bridge-core", "bridge-contracts")
-    // Its one workspace dependency is bridge-core, gated whole by the line above.
-    expect(contracts, "the relayer's two-anvil suite runs in the forge job").toContain("packages/testnet-relayer/**")
+    expect(contracts, "the ABI pins and the integration suite's flows").toContain("packages/sdk/**")
+    // The relayer's two-anvil suite runs in the forge job.
+    assertGraphCovered(contracts, "testnet-relayer", "bridge-contracts")
     for (const manifest of ["apps/tools/public/testnet-bridge.json", "apps/tools/public/mainnet-bridge.json"]) {
       expect(contracts, "a manifest bump is the frontend adopting a generation — the round trips must re-run").toContain(manifest)
     }

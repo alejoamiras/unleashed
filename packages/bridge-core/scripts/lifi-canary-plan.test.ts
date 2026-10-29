@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { ManifestV2 } from "../src/manifest-v2"
+import type { ManifestV2 } from "@unleashed/sdk/protocol"
 import { ROUTER, routedManifest, SWAPPER } from "./lifi-canary-fixture"
 import {
 	assertCanaryPreconditions,

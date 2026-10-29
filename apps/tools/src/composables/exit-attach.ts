@@ -10,7 +10,8 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { computeL2ToL1MessageHash } from "@aztec-labs/stdlib/hash"
-import { type SendWithdrawRecord, withdrawContentHash } from "@unleashed/bridge-core"
+import type { SendWithdrawRecord } from "@unleashed/bridge-core"
+import { withdrawContentHash } from "@unleashed/sdk/protocol"
 
 const ZERO_L1 = `0x${"0".repeat(40)}`
 

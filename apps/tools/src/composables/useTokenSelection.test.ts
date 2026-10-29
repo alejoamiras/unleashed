@@ -9,7 +9,8 @@
  * PXO is portal-only.
  */
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
-import { ERC20_ABI, type Registration } from "@unleashed/bridge-core"
+import { ERC20_ABI } from "@unleashed/sdk/protocol"
+import type { Registration } from "@unleashed/sdk/internal"
 import { type Address, encodeFunctionData, type Hex, numberToHex, pad, type PublicClient, stringToHex } from "viem"
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
 import rawManifest from "../../../../packages/bridge-core/fixtures/sandbox-manifest.json"
@@ -17,16 +18,17 @@ import type { SelectableToken } from "@/lib/send-model"
 import { useTokenSelection } from "./useTokenSelection"
 
 vi.mock("@/contracts/bridge-generation", async () => {
-	const bc = await import("@unleashed/bridge-core")
+	const protocol = await import("@unleashed/sdk/protocol")
+	const internal = await import("@unleashed/sdk/internal")
 	const { AztecAddress } = await import("@aztec-labs/aztec.js/addresses")
-	const m = bc.parseManifestV2((await import("../../../../packages/bridge-core/fixtures/sandbox-manifest.json")).default)
+	const m = protocol.parseManifestV2((await import("../../../../packages/bridge-core/fixtures/sandbox-manifest.json")).default)
 	const bridge = m.bridge
 	if (!bridge) throw new Error("the sandbox fixture must carry a bridge")
 	const hub = AztecAddress.fromStringUnsafe(bridge.l2.hub.address)
 	return {
-		SEND_GENERATION: bc.sendGenerationOf(m, bridge),
+		SEND_GENERATION: internal.sendGenerationOf(m, bridge),
 		rebuildHubTokenInstance: (erc20: string, words: { nameWord: string; symbolWord: string; decimals: number }) =>
-			bc.deriveHubTokenInstance(hub, erc20, words, bridge.l2.tokenClassId),
+			protocol.deriveHubTokenInstance(hub, erc20, words, bridge.l2.tokenClassId),
 	}
 })
 

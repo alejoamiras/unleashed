@@ -4,15 +4,10 @@
  * runs before it trusts a generation.
  */
 import { type Abi, type Address, type Chain, defineChain, type Hex } from "viem"
-import { PORTAL_FACTORY_ABI } from "../src/factory-abi"
-import type { L1Ctx } from "../src/flows"
-import { ensurePermit2Allowance } from "../src/l1"
-import { predictPortal } from "../src/portal-address"
+import { PORTAL_FACTORY_ABI, ensurePermit2Allowance, predictPortal } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import { sourceChain } from "../src/source-chains"
 import { retried } from "../src/retried"
-
-/** Uniswap's Permit2, created at this one address on every chain the bridge reaches (the sandbox installs it there). */
-export const CANONICAL_PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3"
 
 /** Minimal ERC20 surface the scripts touch. A superset per consumer is harmless — viem only
  *  encodes the functions actually called. */
@@ -50,16 +45,6 @@ export const FACTORY_CONSTANTS_ABI = [
 	{ type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 	{ type: "function", name: "INBOX", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
 	{ type: "function", name: "ROLLUP_VERSION", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-] as const
-
-/** The implementation's frozen pointers. A clone has no storage and no initializer, so these are the
- *  whole of what every token's portal delegates into — read them on the implementation itself. */
-export const PORTAL_IMPL_CONSTANTS_ABI = [
-	{ type: "function", name: "FACTORY", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "INBOX", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "OUTBOX", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "ROLLUP_VERSION", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-	{ type: "function", name: "L2_HUB", stateMutability: "view", inputs: [], outputs: [{ type: "bytes32" }] },
 ] as const
 
 /** `TestnetFuelSwapper`'s operator surface. */

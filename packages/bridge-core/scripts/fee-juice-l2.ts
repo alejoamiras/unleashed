@@ -7,10 +7,18 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import { Gas, type GasFees } from "@aztec-labs/stdlib/gas"
 import type { Address, Hex } from "viem"
-import { type FeeJuiceClaim, predictedWorstMinFees, publicFeeJuicePayment } from "../src/fee-juice"
-import type { L1Ctx } from "../src/flows"
-import { FeeJuicePortalAbi, type FuelDepositPlan, type FuelDepositReceipt, feeJuiceDepositArgs, parseFeeJuiceDeposit } from "../src/fuel"
-import { PUBLIC_FUEL_CLAIM_GAS } from "../src/private-fuel"
+import {
+	type FeeJuiceClaim,
+	predictedWorstMinFees,
+	publicFeeJuicePayment,
+	FeeJuicePortalAbi,
+	type FuelDepositPlan,
+	type FuelDepositReceipt,
+	feeJuiceDepositArgs,
+	parseFeeJuiceDeposit,
+	PUBLIC_FUEL_CLAIM_GAS,
+} from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed/sdk/internal"
 import { approveExact } from "./script-l1"
 
 /**

@@ -1,8 +1,6 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { describe, expect, it } from "vitest"
-import { deriveHubTokenInstance } from "./hub-token"
-import { deriveManifestHub, type ManifestV2 } from "./manifest-v2"
-import { predictPortal } from "./portal-address"
+import { deriveHubTokenInstance, deriveManifestHub, type ManifestV2, predictPortal } from "@unleashed/sdk/protocol"
 import { assertFaucetCandidateShape, assertZeroSeed } from "./promotion"
 
 const FACTORY = "0x3333333333333333333333333333333333333333"

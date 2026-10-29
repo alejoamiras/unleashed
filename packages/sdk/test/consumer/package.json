@@ -1,0 +1,21 @@
+{
+	"name": "unleashed-sdk-consumer",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@alejoamiras/private-fee-juice": "6.0.0",
+		"@aztec-foundation/aztec-standards": "6.0.0",
+		"@aztec-foundation/l1-artifacts": "6.0.0",
+		"@aztec-labs/aztec.js": "6.0.0",
+		"@aztec-labs/constants": "6.0.0",
+		"@aztec-labs/ethereum": "6.0.0",
+		"@aztec-labs/foundation": "6.0.0",
+		"@aztec-labs/stdlib": "6.0.0",
+		"viem": "2.57.1",
+		"zod": "4.4.3"
+	},
+	"devDependencies": {
+		"@types/node": "24.13.3",
+		"typescript": "6.0.3"
+	}
+}

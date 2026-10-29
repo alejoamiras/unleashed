@@ -127,16 +127,16 @@ jobs:
           fi
           exit "$fail"
 
-      # The hand-written ABI consts bridge-core ships to the browser are pinned against the forge
-      # artifacts by vitest — which the unit-test job runs WITHOUT artifacts (it skips). This is the
-      # one place both exist.
-      - name: ABI pins (bridge-core ↔ forge artifacts)
+      # The hand-written ABI consts and the runtime code pins the SDK ships are pinned against the
+      # forge artifacts by vitest — which the unit-test job runs WITHOUT artifacts (it skips). This is
+      # the one place both exist.
+      - name: ABI and code pins (SDK ↔ forge artifacts)
         run: |
           # The pin suites skip when the artifacts are absent; here that would be a silent pass.
-          test -f contracts/bridge/evm/out/PortalFactory.sol/PortalFactory.json
-          test -f contracts/bridge/evm/out/TokenPortalImpl.sol/TokenPortalImpl.json
-          test -f contracts/bridge/evm/out/DepositRouter.sol/DepositRouter.json
-          bun run --cwd packages/bridge-core test -- factory-abi deposit-router-abi
+          for c in PortalFactory TokenPortalImpl DepositRouter FuelOnlyGate TestnetFuelSwapper; do
+            test -f "contracts/bridge/evm/out/$c.sol/$c.json"
+          done
+          bun run --cwd packages/sdk test -- factory-abi deposit-router-abi code-pins
 
       # The testnet relayer's run against two anvils, the pool and USDC mocks from the build above placed at
       # their real testnet addresses. It boots and reaps its own anvils.

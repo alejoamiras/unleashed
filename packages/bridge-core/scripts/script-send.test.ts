@@ -1,9 +1,7 @@
 import { type Address, decodeFunctionData } from "viem"
 import { describe, expect, it, vi } from "vitest"
-import type { JournalTokenBlock } from "../src/journal"
-import { SWAP_TOKENS_SINGLE_V3_ABI } from "../src/lifi-abi"
-import type { BridgeBlock, ManifestToken, ManifestV2 } from "../src/manifest-v2"
-import { predictPortal } from "../src/portal-address"
+import type { JournalTokenBlock } from "@unleashed/sdk"
+import { SWAP_TOKENS_SINGLE_V3_ABI, type BridgeBlock, type ManifestToken, type ManifestV2, predictPortal } from "@unleashed/sdk/protocol"
 import { claimTokenBlock, planFuelLeg, selectToken } from "./script-send"
 
 const addr = (byte: string) => `0x${byte.repeat(20)}` as Address

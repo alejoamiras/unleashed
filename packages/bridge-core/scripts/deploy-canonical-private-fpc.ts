@@ -14,7 +14,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { PrivateFPCContract } from "@alejoamiras/private-fee-juice/artifacts/private"
-import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "../src/private-fuel"
+import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
 import { createL2Wallet, createNode, stopwatch } from "./script-bootstrap"
 
 export interface PrivateFpcPrepareContext {

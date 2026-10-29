@@ -7,7 +7,7 @@
  * Every read runs under an EPOCH, so a result for an address the user has already typed past can
  * never land on top of the current one.
  */
-import { readErc20Metadata } from "@unleashed/bridge-core"
+import { readErc20Metadata } from "@unleashed/sdk/protocol"
 import type { Address, PublicClient } from "viem"
 import { type Ref, shallowRef, watch } from "vue"
 import { logoKeyOf, type SelectableToken, type TokenIdentity } from "@/lib/send-model"

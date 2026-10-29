@@ -1,0 +1,381 @@
+/**
+ * What every claim shares: the checks before any prompt, the resume of a record that lost its deposit hash or its
+ * leaves, the arrival gates reported as events, and the claim's receipt watch. Each new fact is persisted before the
+ * event that names it, and persists run one at a time in call order.
+ */
+import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
+import { TxHash } from "@aztec-labs/aztec.js/tx"
+import type { Wallet } from "@aztec-labs/aztec.js/wallet"
+import type { Hex } from "viem"
+import { BridgeError, refusal, type Submission } from "../errors.ts"
+import { type Emit, eventEmitter, type Leaves } from "../events.ts"
+import { assertNetwork, type Network, type Reads } from "../network.ts"
+import { aztecLineOf } from "../protocol/aztec-line.ts"
+import type { DepositRecord } from "../records.ts"
+import type { DepositSecrets, RunOptions } from "../run.ts"
+import { untilAborted } from "../run.ts"
+import {
+	type ArrivalGateState,
+	awaitClaimSimulate,
+	awaitL2BlockCountdown,
+	awaitMessageCheckpoints,
+	classifyConsumable,
+	type GateClock,
+} from "./arrival.ts"
+import { classifyClaimReceipt } from "./claim-receipt.ts"
+import { findDepositTx } from "./deposit-reconcile.ts"
+import { readDepositLeaves } from "./deposit-recovery.ts"
+import { type FeeStop, FeeStopError } from "./fee-stop.ts"
+import type { FeeLadderEnv } from "./fee-env.ts"
+import { readPrivateFeeJuice, readPublicFeeJuice } from "./fee-juice-balance.ts"
+import { awaitL1Receipt } from "./l1-receipt.ts"
+import { l1ToL2MessageReadiness } from "./l1-to-l2-readiness.ts"
+import type { TokenMessageState } from "./message-nullifier.ts"
+import { type FuelRoute, readSendInbox, type SendResult } from "./send-flow.ts"
+import { legacyRoutersOf } from "./send-generation.ts"
+
+/** The Aztec side of a claim: the wallet that signs it and the account the deposit names. */
+export interface AztecSigner {
+	wallet: Wallet
+	account: AztecAddress
+}
+
+export interface ClaimOptions extends RunOptions {
+	/** The salts the deposit's `persist` stored: a private claim needs them, and no record or event carries them. */
+	secrets?: DepositSecrets
+}
+
+export interface ClaimOutcome {
+	record: DepositRecord
+	via: "claim" | "claimed-elsewhere"
+	txHash?: string
+	/** A public token + gas claim settled while its bridged gas could not pay for a claim of its own: the tokens
+	 *  landed, and this says why the Fee Juice message stays unclaimed. */
+	gasLeft?: BridgeError
+}
+
+export interface ClaimLeg {
+	net: Network
+	r: Reads
+	aztec: AztecSigner
+	run: ClaimOptions
+	route: FuelRoute
+	record: DepositRecord
+	emit: Emit
+	persisted: Promise<void>
+}
+
+/** Every claim follows a submitted deposit: a failure from here on names a transfer that reached a chain. */
+const SUBMITTED: Submission = "submitted"
+const RECEIPT_POLL_MS = 4000
+const RECEIPT_POLLS = 450
+const DROPPED_STRIKES = 3
+
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+async function assertAztecNetwork(net: Network, aztec: AztecSigner): Promise<void> {
+	let info: { chainId: { toBigInt(): bigint }; version: { toBigInt(): bigint } }
+	try {
+		info = await aztec.wallet.getChainInfo()
+	} catch (e) {
+		throw refusal("read-failed", `the Aztec wallet did not say which network it is on: ${messageOf(e)}`, "safe", e)
+	}
+	if (info.chainId.toBigInt() === BigInt(net.l1ChainId) && info.version.toBigInt() === BigInt(net.rollupVersion)) return
+	throw refusal("wrong-aztec-network", `the Aztec wallet is not on ${net.name}`, "safe")
+}
+
+function assertRecordOf(net: Network, rec: DepositRecord, intent: "gas" | "token", account: AztecAddress): FuelRoute {
+	const gasOnly = rec.intent === "gas"
+	if (gasOnly !== (intent === "gas")) throw refusal("invalid-request", `this is a ${rec.intent} deposit; claim it with the other entry`)
+	if (rec.chainId !== net.l1ChainId) throw refusal("invalid-request", `the record belongs to chain ${rec.chainId}, not ${net.name}`)
+	const route = gasOnly ? net.fuel : net.bridge
+	const binding = gasOnly ? net.fuel.feeJuicePortal : net.bridge?.hub
+	const bound = gasOnly ? rec.portal : rec.bridge
+	if (!route || !binding || bound.toLowerCase() !== binding.toLowerCase())
+		throw refusal("invalid-request", `the record was not made on ${net.name}'s current deployment`)
+	// The claim secret is bound to the recipient: no other account can spend the message.
+	if (rec.recipient.toLowerCase() !== account.toString().toLowerCase())
+		throw refusal("invalid-request", "the record names another Aztec account as its recipient")
+	return route
+}
+
+/** Every check a claim makes before it reads anything else: the network, the line, the record and the wallet. */
+export async function openClaim(
+	net: Network,
+	r: Reads,
+	aztec: AztecSigner,
+	rec: DepositRecord,
+	run: ClaimOptions,
+	intent: "gas" | "token",
+): Promise<ClaimLeg> {
+	assertNetwork(net)
+	if (!aztecLineOf(net.l1ChainId).supported) throw refusal("unsupported-line", `this release does not run ${net.name}'s Aztec line`)
+	const route = assertRecordOf(net, rec, intent, aztec.account)
+	await assertAztecNetwork(net, aztec)
+	return { net, r, aztec, run, route, record: rec, emit: eventEmitter(rec.id, run.onEvent), persisted: Promise.resolve() }
+}
+
+/** Applies `patch` and persists it after every earlier persist of this claim. */
+export function persistClaim(leg: ClaimLeg, patch: Partial<DepositRecord>): Promise<void> {
+	leg.record = { ...leg.record, ...patch, updatedAt: Date.now() } as DepositRecord
+	const record = leg.record
+	// A claim resumes from whatever the caller last stored, so a refused write never makes the next call unsafe.
+	const persisted = leg.persisted.then(async () => {
+		try {
+			await leg.run.persist(record, leg.run.secrets)
+		} catch (e) {
+			throw new BridgeError("persist-failed", "the caller's storage refused the record", SUBMITTED, "safe", { cause: e })
+		}
+	})
+	// A latch may persist without awaiting; its failure surfaces at the next awaited persist, never as an unhandled one.
+	persisted.catch(() => undefined)
+	leg.persisted = persisted
+	return persisted
+}
+
+/** A record the caller already holds as complete: reported again, nothing read or sent. */
+export function settledAlready(leg: ClaimLeg): ClaimOutcome | undefined {
+	if (leg.record.completedAt === undefined) return undefined
+	const via = leg.record.claimedByOther ? "claimed-elsewhere" : "claim"
+	leg.emit({ type: "settled", via })
+	return { record: leg.record, via }
+}
+
+/** The ladder's view of this claim: its store is the claim's record, persisted through the caller in call order. */
+export function ladderEnvOf(leg: ClaimLeg): FeeLadderEnv {
+	const own = (id: string) => id === leg.record.id
+	const budget = leg.net.manifest.bridge?.l1.fuel
+	// The ladder rebuilds a private claim from `fuel.bridgeSecretSalt`. It reads the caller's sealed salt there, and no
+	// write of it reaches `persist`: the salt travels in `DepositSecrets` alone.
+	const salt = leg.run.secrets?.fuelSalt?.toString()
+	const view = (): DepositRecord =>
+		salt && leg.record.fuel ? { ...leg.record, fuel: { ...leg.record.fuel, bridgeSecretSalt: salt } } : leg.record
+	const write = (patch: Partial<DepositRecord>) => {
+		if (!patch.fuel) return persistClaim(leg, patch)
+		const { bridgeSecretSalt: _sealed, ...fuel } = patch.fuel
+		const kept = leg.record.fuel?.bridgeSecretSalt
+		return persistClaim(leg, { ...patch, fuel: kept === undefined ? fuel : { ...fuel, bridgeSecretSalt: kept } })
+	}
+	return {
+		records: {
+			current: (id) => (own(id) ? view() : undefined),
+			mergeWhen: (id, when, patch) => {
+				if (!own(id) || !when(view())) return false
+				write(patch(view()) as Partial<DepositRecord>)
+				return true
+			},
+			merge: (id, patch) => {
+				if (own(id)) write(patch as Partial<DepositRecord>)
+			},
+		},
+		node: leg.r.aztecNode,
+		privateFpc: leg.net.privateFpc,
+		fuel: budget ? { minFuelFj: budget.minFuelFj } : undefined,
+		minFloorFj: BigInt(leg.net.manifest.feeJuice.minFj),
+		readPublicFeeJuice,
+		readPrivateFeeJuice: (wallet, account) => readPrivateFeeJuice(leg.net.privateFpc, wallet, account),
+		log: () => undefined,
+	}
+}
+
+/** The record settled: persisted complete, then reported. */
+export async function settle(leg: ClaimLeg, via: ClaimOutcome["via"], txHash?: string, gasLeft?: BridgeError): Promise<ClaimOutcome> {
+	await persistClaim(leg, { completedAt: Date.now(), ...(via === "claimed-elsewhere" ? { claimedByOther: true } : {}) })
+	leg.emit({ type: "settled", via, ...(txHash ? { txHash } : {}) })
+	return { record: leg.record, via, ...(txHash ? { txHash } : {}), ...(gasLeft ? { gasLeft } : {}) }
+}
+
+/** A record that never stored its deposit's hash finds it on Ethereum, verified by calldata and receipt. */
+async function recoverDepositTx(leg: ClaimLeg): Promise<void> {
+	const { net, r, record } = leg
+	const legacyRouters = record.intent === "gas" || !net.manifest.bridge ? [] : legacyRoutersOf(net.manifest.bridge)
+	const found = await findDepositTx(record, r.l1 as never, {
+		chainId: net.l1ChainId,
+		router: leg.route.router,
+		legacyRouters,
+		privateFpc: net.privateFpc,
+	})
+	if (typeof found === "object") return persistClaim(leg, { depositTxHash: found.txHash })
+	const retry = found === "ambiguous" ? "never" : "after-wait"
+	throw new BridgeError("deposit-not-found", `no single deposit for this record was found on Ethereum (${found})`, "unknown", retry)
+}
+
+function leavesPatch(record: DepositRecord, res: Partial<SendResult>): { patch: Partial<DepositRecord>; leaves: Leaves } {
+	const token = res.tokenLeafIndex !== undefined && res.tokenMessageHashHex
+	const fuel = res.fuelLeafIndex !== undefined && res.fuelMessageHashHex && record.fuel
+	const patch: Partial<DepositRecord> = {
+		...(token ? { leafIndex: res.tokenLeafIndex?.toString(), messageHash: res.tokenMessageHashHex } : {}),
+		...(fuel
+			? {
+					fuel: {
+						...(record.fuel as NonNullable<DepositRecord["fuel"]>),
+						leafIndex: res.fuelLeafIndex?.toString(),
+						messageHash: res.fuelMessageHashHex,
+						received: (res.fuelReceived ?? 0n).toString(),
+					},
+					...(record.intent === "gas" ? { leafIndex: res.fuelLeafIndex?.toString() } : {}),
+				}
+			: {}),
+	}
+	const leaves: Leaves = {
+		...(token ? { token: { leafIndex: res.tokenLeafIndex as bigint, messageHash: res.tokenMessageHashHex as Hex } } : {}),
+		...(fuel
+			? {
+					fuel: {
+						leafIndex: res.fuelLeafIndex as bigint,
+						messageHash: res.fuelMessageHashHex as Hex,
+						received: res.fuelReceived ?? 0n,
+					},
+				}
+			: {}),
+	}
+	return { patch, leaves }
+}
+
+const hasLeaves = (rec: DepositRecord) => (rec.intent === "gas" ? !!rec.fuel?.leafIndex : !!rec.leafIndex)
+
+/** A record that crashed before its receipt was read takes its leaves from the mined deposit. */
+async function recoverLeaves(leg: ClaimLeg): Promise<void> {
+	const hash = leg.record.depositTxHash as Hex
+	const receipt = (await untilAborted(awaitL1Receipt(leg.r.l1 as never, hash), leg.run, SUBMITTED).catch((e) => {
+		if (e instanceof BridgeError) throw e
+		if (e instanceof Error && /reverted on-chain/.test(e.message))
+			throw new BridgeError("deposit-reverted", `the deposit ${hash} reverted; nothing moved`, SUBMITTED, "never", { cause: e })
+		throw new BridgeError("receipt-timeout", `the deposit ${hash} is not confirmed yet`, SUBMITTED, "after-wait", { cause: e })
+	})) as { logs: unknown[] }
+	let inbox: Awaited<ReturnType<typeof readSendInbox>>
+	try {
+		inbox = await readSendInbox(leg.r.l1 as never, leg.route)
+	} catch (e) {
+		throw new BridgeError("read-failed", `could not read the Inbox the deposit ${hash} wrote to`, SUBMITTED, "after-wait", { cause: e })
+	}
+	let res: Partial<SendResult>
+	try {
+		const legacyRouters = leg.net.manifest.bridge ? legacyRoutersOf(leg.net.manifest.bridge) : []
+		res = await readDepositLeaves(leg.record, receipt.logs as never, leg.r.l1 as never, leg.route, legacyRouters, inbox)
+	} catch (e) {
+		throw new BridgeError("receipt-mismatch", `the deposit ${hash} did not carry this transfer`, SUBMITTED, "never", { cause: e })
+	}
+	const { patch, leaves } = leavesPatch(leg.record, res)
+	await persistClaim(leg, patch)
+	leg.emit({ type: "deposit-confirmed", leaves })
+}
+
+/** The deposit facts a claim stands on, recovered from Ethereum when the record lost them. */
+export async function ensureDepositFacts(leg: ClaimLeg): Promise<void> {
+	if (!leg.record.depositTxHash) await recoverDepositTx(leg)
+	if (!hasLeaves(leg.record)) await recoverLeaves(leg)
+}
+
+function clockOf(run: RunOptions): GateClock {
+	return {
+		wait: (ms) => untilAborted(new Promise<void>((resolve) => setTimeout(resolve, ms)), run, SUBMITTED),
+		moved: () => run.signal?.aborted === true,
+	}
+}
+
+/** Reports one arrival reading, once per change. */
+function arrivalReporter(leg: ClaimLeg) {
+	let last = ""
+	return (stage: "counting" | "unfolded" | "wallet-sync", counts: { blocksLeft?: number; checkpointsLeft?: number } = {}) => {
+		const key = `${stage}:${counts.blocksLeft ?? ""}:${counts.checkpointsLeft ?? ""}`
+		if (key === last) return
+		last = key
+		leg.emit({ type: "arrival", stage, ...counts })
+	}
+}
+
+/**
+ * Waits through the countdown, the checkpoint gate and the claim simulate. Resolves "ready" once the simulate passes,
+ * "claimed-elsewhere" when the message's nullifier is already on chain. `nullifier` reads it ("unknown" when it
+ * cannot).
+ */
+export async function awaitClaimable(
+	leg: ClaimLeg,
+	hashes: readonly string[],
+	simulate: () => Promise<unknown>,
+	nullifier: () => Promise<TokenMessageState>,
+): Promise<"ready" | "claimed-elsewhere"> {
+	const { r, run } = leg
+	const clock = clockOf(run)
+	const report = arrivalReporter(leg)
+	const reads = {
+		l2BlockNumber: async () => Number(await r.aztecNode.getBlockNumber()),
+		messageReadiness: (h: string) => l1ToL2MessageReadiness(r.aztecNode as never, h),
+	}
+	let gate: ArrivalGateState = { simulateStart: 0, counted: false, preGated: false }
+	gate = await awaitL2BlockCountdown(leg.record.depositL2Block, reads, clock, gate, {
+		block: (_, left) => left > 0 && report("counting", { blocksLeft: left }),
+	})
+	gate = await awaitMessageCheckpoints(hashes, reads, clock, gate, {
+		unfolded: () => report("unfolded"),
+		checkpointsLeft: (left) => report("counting", { checkpointsLeft: left }),
+	})
+	const verdict = await awaitClaimSimulate(simulate, (e) => classifyConsumable(e, nullifier), clock, gate, {
+		// Only a refused simulate means the wallet lags the chain; a first pass is not a wait.
+		notReady: () => report("wallet-sync"),
+	})
+	if (verdict === "ready") {
+		leg.emit({ type: "claimable" })
+		return verdict
+	}
+	if (verdict === "claimed-elsewhere") return verdict
+	if (verdict === "invalid")
+		throw new BridgeError("message-invalid", "the record's message is not the one its facts describe", SUBMITTED, "never")
+	if (verdict === "moved") throw new BridgeError("aborted", "the caller stopped waiting", SUBMITTED, "after-wait")
+	throw new BridgeError("message-timeout", "the deposit's message has not become claimable yet", SUBMITTED, "after-wait")
+}
+
+/** What a sent claim's receipt says, with a dropped transaction confirmed by consecutive readings. */
+export type ClaimFate = "success" | "reverted" | "dropped"
+
+/** Watches a claim transaction until it lands, reverts or drops. Proposed is reported once and is not settlement. */
+export async function watchClaim(leg: ClaimLeg, txHash: string): Promise<ClaimFate> {
+	const clock = clockOf(leg.run)
+	let dropped = 0
+	let proposed = false
+	for (let i = 0; i < RECEIPT_POLLS; i++) {
+		const receipt = await leg.r.aztecNode.getTxReceipt(TxHash.fromString(txHash)).catch(() => undefined)
+		const fate = receipt === undefined ? "pending" : classifyClaimReceipt(receipt as never)
+		if (fate === "success" || fate === "reverted") return fate
+		dropped = fate === "dropped" ? dropped + 1 : 0
+		if (dropped >= DROPPED_STRIKES) return "dropped"
+		if (fate === "proposed" && !proposed) {
+			proposed = true
+			leg.emit({ type: "claim-proposed", txHash })
+		}
+		await clock.wait(RECEIPT_POLL_MS)
+	}
+	throw new BridgeError("receipt-timeout", `the claim ${txHash} has not landed yet`, SUBMITTED, "after-wait")
+}
+
+/** Stops no wait can lift: the record or the deployment itself is wrong for this claim. */
+const PERMANENT_STOPS: ReadonlySet<FeeStop> = new Set<FeeStop>([
+	"malformed-claim-hash",
+	"fpc-drift",
+	"missing-salt",
+	"missing-secret",
+	"private-fuel-missing",
+	"no-claimable-fuel",
+	"floor-unconfigured",
+	"below-claim-floor",
+	"below-fuel-floor",
+	"record-predates-send",
+	"deposit-reverted",
+	"no-bridge",
+])
+
+/** A fee ladder's stop as the public error, its code kept for the caller's own copy; anything else unchanged. */
+export function asBridgeError(e: unknown): unknown {
+	if (!(e instanceof FeeStopError)) return e
+	const retry = PERMANENT_STOPS.has(e.stop) ? "never" : "after-wait"
+	return new BridgeError("fee-stop", `the claim cannot be paid for now: ${e.stop}`, SUBMITTED, retry, { cause: e, stop: e.stop })
+}
+
+/** Every claim failure as a `BridgeError`: a stop keeps its code, and an error no step classified is a read that
+ *  failed before anything new was sent, so the same call may run again once the chain or the wallet answers. */
+export function asClaimError(e: unknown): BridgeError {
+	const mapped = asBridgeError(e)
+	if (mapped instanceof BridgeError) return mapped
+	return new BridgeError("read-failed", `the claim could not be prepared: ${messageOf(e)}`, SUBMITTED, "after-wait", { cause: e })
+}
