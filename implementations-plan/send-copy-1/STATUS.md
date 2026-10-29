@@ -1,0 +1,6 @@
+- 2026-10-29 phase 0: briefs, issue #40 and page 6/7 records read; worktree adopted and registered
+- 2026-10-29 phase 0.4: recon done (one Sonnet explorer); recon.md written
+- 2026-10-29 phase 1: plan drafted; OWNER-ASKS §1 (cross-chain pause) recorded
+- 2026-10-29 phase 2: Codex round 1 conditional approve; plan revised (gate moved to the wizard's preflight)
+- 2026-10-29 phase 2: Opus critique conditional approve, folded in; final fresh Codex pass started
+- 2026-10-29 phase 3: final fresh Codex pass conditional approve; conditions adopted; resumed: approve
