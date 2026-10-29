@@ -7,10 +7,24 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: implemented; Codex fix loop converged in 2 rounds
+status: completed (PR #48)
 base: main 1f5455f
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
+
+## Outcome
+
+- **Status:** completed; delivered in PR #48 (one arc), awaiting the orchestrator's merge.
+- **Shipped:** `keyed-env.ts` and `keyed-run.ts` (`runKeyed`, `keyedNodeUrl`); all 14 composers on them; the five
+  known mid-run prints redacted; the `keyed-runs.test.ts` guard. Closes #46.
+- **Changed in review:** implementation round 1 added the `inspect` string-cut lift, the escaped-error handlers, the
+  guard's keyed-host and raw-key alternatives, and kept the verify-l1 case local. Rejected in planning: a global
+  `console` wrapper and an import-graph guard (D1, D2).
+- **Lessons:** none promoted. The two Bun gotchas (console bypasses `process.stderr.write`; `inspect` cuts strings at
+  10 000 characters) live in `keyed-run.ts`'s comments and in `recon.md`, and `lessons.md` is at its budget.
+- **Known limits:** #50.
+- **Open items:** #49.
+- **Seeds:** the `/goal` and `/loop` seeds at the end are retired; they are history, not instructions.
 
 # keyed-logs-1: one redacted entry for every keyed script
 
