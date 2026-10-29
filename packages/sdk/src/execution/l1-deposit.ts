@@ -89,7 +89,9 @@ const chainOf = (net: Network): Chain => ({
 	rpcUrls: { default: { http: [] } },
 })
 
-async function assertOpen(net: Network, r: Reads, intent: DepositPlan["intent"]): Promise<void> {
+/** Refuses (`paused`, nothing sent) when the contract gating `intent`'s deposits has them paused: the factory, or the
+ *  fuel gate on a network without a token bridge. A failed read throws as the read failed. */
+export async function assertDepositsOpen(net: Network, r: Reads, intent: DepositPlan["intent"]): Promise<void> {
 	const gate = (intent === "gas" ? (net.bridge?.factory ?? net.manifest.fuelRoute?.gate) : net.bridge?.factory) as Address
 	const paused = await r.l1.readContract({ address: gate, abi: PORTAL_FACTORY_ABI, functionName: "depositsPaused" })
 	if (paused) throw refusal("paused", `deposits on ${net.name} are paused`, "after-wait")
@@ -356,7 +358,7 @@ export async function depositL1(net: Network, r: Reads, wallet: WalletClient, pl
 	const route = routeOf(net, plan.intent)
 	const account = await accountOf(wallet)
 	await assertWalletChain(wallet, net)
-	if (plan.pauseCheck !== false) await assertOpen(net, r, plan.intent)
+	if (plan.pauseCheck !== false) await assertDepositsOpen(net, r, plan.intent)
 	const swapData = plan.gas ? await swapDataFor(net, r, plan.token, plan.gas.fuelAmount, plan.gas.minFuelOutput) : "0x"
 	const { params, secrets } = paramsOf(net, plan, swapData)
 	let s: PreparedSend
