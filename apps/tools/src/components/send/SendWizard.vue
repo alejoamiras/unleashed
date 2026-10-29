@@ -1162,10 +1162,11 @@ function adoptRunRecord(): void {
 watch(journal.listedRecords, adoptRunRecord)
 
 /**
- * The gas gate is re-read at CONFIRM, not trusted from when the amount step opened: gas spent
- * elsewhere meanwhile would strand the deposit at its claim. The read holds the buttons but leaves
- * the review live, so an account or chain that moves under it stands it down as usual; only a
- * review still standing when the read returns goes on to sign.
+ * An Ethereum send first passes the bridge check; then the gas gate is re-read at CONFIRM, not
+ * trusted from when the amount step opened: gas spent elsewhere meanwhile would strand the deposit
+ * at its claim. Each read holds the buttons but leaves the review live, so an account or chain that
+ * moves under it stands it down as usual; only a review still standing when the reads return goes on
+ * to sign.
  */
 async function preflight(snapshot: ReviewSnapshot): Promise<boolean> {
 	const target = snapshot.plan

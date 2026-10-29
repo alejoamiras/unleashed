@@ -808,8 +808,9 @@ const sendReads = (l1: SendDeps["l1"]): Reads => ({ l1: l1.publicClient as unkno
 
 /**
  * The confirm's check, before any prompt: the bridge's trust roots (read once per session, then cached) and the
- * route's pause. It fails closed: a read that throws is a bridge this app could not check. A wallet that moved chain
- * keeps its own sentence.
+ * route's pause. It fails closed: a read that throws is a bridge this app could not check. A wallet on another chain
+ * at the session's first check keeps its own sentence; later ones read through the cache, and the send's own chain
+ * check still refuses it before a signature.
  */
 async function bridgeRefusal(plan: SendPlan, l1: SendDeps["l1"]): Promise<string | null> {
 	const reads = sendReads(l1)

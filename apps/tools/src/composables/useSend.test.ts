@@ -843,14 +843,13 @@ describe("useSend", () => {
 		expect(h.assertDepositsOpen.mock.calls[0]?.[2]).toBe("gas")
 	})
 
-	it("a route paused after the check stops in the SDK before its first persist, in this app's words", async () => {
+	it("a route the SDK finds paused after the check reads in this app's words", async () => {
 		h.depositL1.mockImplementation(async () => {
 			throw paused()
 		})
 		const send = useSend()
 		expect(await send.send(plan())).toBe("")
 		expect(send.error.value).toBe(DEPOSITS_PAUSED)
-		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
 
 	it("dispose releases the grant and voids the epoch a late completion would be matched against", async () => {

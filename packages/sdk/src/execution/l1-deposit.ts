@@ -47,9 +47,6 @@ export interface DepositPlan {
 	tokenBlock?: JournalTokenBlock
 	/** The hub has not registered the token yet: the first claim registers it. */
 	registers?: boolean
-	/** False skips the pause read, leaving a paused route to the router's own revert at the estimate, after the
-	 *  prompts. The public entries always read it. */
-	pauseCheck?: boolean
 }
 
 interface Leg {
@@ -358,7 +355,7 @@ export async function depositL1(net: Network, r: Reads, wallet: WalletClient, pl
 	const route = routeOf(net, plan.intent)
 	const account = await accountOf(wallet)
 	await assertWalletChain(wallet, net)
-	if (plan.pauseCheck !== false) await assertDepositsOpen(net, r, plan.intent)
+	await assertDepositsOpen(net, r, plan.intent)
 	const swapData = plan.gas ? await swapDataFor(net, r, plan.token, plan.gas.fuelAmount, plan.gas.minFuelOutput) : "0x"
 	const { params, secrets } = paramsOf(net, plan, swapData)
 	let s: PreparedSend
