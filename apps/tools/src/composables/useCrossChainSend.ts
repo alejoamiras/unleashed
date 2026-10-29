@@ -136,6 +136,7 @@ function noticeOf(quoted: QuotedRoute | null, error: string | null, destError: s
 	if (!quoted || quoted.outcome.kind === "route") return null
 	const o = quoted.outcome
 	if (o.kind === "refused") return { kind: "refused", field: o.field }
+	if (o.kind === "below-floor") return null
 	if (o.kind === "no-route")
 		return o.max === undefined
 			? { kind: "no-route" }
@@ -185,8 +186,12 @@ function askOf(deps: CrossChainSendDeps, e: SourceEntry, dest: ResolvedToken | n
 
 /** The same refusals the Ethereum-origin slice gets: no room for a token, under the claim minimum, or a private
  *  floor under the ceilings the claim sets aside. */
-function gasErrorOf(r: CrossChainRoute | null, a: CrossChainAsk | undefined, state: TokenState | undefined, gasShare: GasShare) {
+function gasErrorOf(q: QuotedRoute | null, state: TokenState | undefined, gasShare: GasShare) {
+	const o = q?.outcome
+	if (o?.kind === "below-floor") return gasMinimumShortfall(o.expectedOut, o.floor)
+	const r = o?.kind === "route" ? o.route : null
 	const g = r?.gas
+	const a = q?.ask
 	if (!r || !g || !a || !state) return null
 	if (a.intent === "token+gas" && g.fuelAmount >= r.minReceived) return GAS_TOO_SMALL
 	const short = FUEL ? gasMinimumShortfall(g.expectedOut, BigInt(FUEL.minFuelFj)) : null
@@ -312,7 +317,7 @@ export function useCrossChainSend(deps: CrossChainSendDeps): UseCrossChainSendHa
 		return f && a && !f.fixed ? feeCeilingOf(f, a.srcToken.decimals, { intent: a.intent, mainnet: IS_MAINNET }) : null
 	})
 	const notice = computed(() => noticeOf(quoted.value, core.error.value, destToken.selection.error.value))
-	const gasError = computed(() => gasErrorOf(route.value, quoted.value?.ask, dest.value?.state, deps.gasShare))
+	const gasError = computed(() => gasErrorOf(quoted.value, dest.value?.state, deps.gasShare))
 
 	/** The gas leg in the shape the Ethereum-origin plan carries it: the venue's estimate is the quote. */
 	function legOf(g: CrossChainGas): GasLegPlan {
@@ -322,7 +327,9 @@ export function useCrossChainSend(deps: CrossChainSendDeps): UseCrossChainSendHa
 
 	const loading = computed(() => {
 		if (!entry.value || notice.value) return false
-		return destToken.selection.loading.value || core.loading.value || (ask.value !== null && route.value === null)
+		// A slice under the claim minimum is an answer, not one still pending.
+		const answered = route.value !== null || quoted.value?.outcome.kind === "below-floor"
+		return destToken.selection.loading.value || core.loading.value || (ask.value !== null && !answered)
 	})
 
 	function planOf(r: CrossChainRoute, a: CrossChainAsk): SendPlan | null {

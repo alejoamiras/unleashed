@@ -337,7 +337,7 @@ function depositCopy(
 		permit: `your confirmation in ${wallet}`,
 		sign: "your signature — instant",
 		deposit: "usually under 1 min",
-		sync: "usually 1-4 min",
+		sync: "usually ~1 min",
 		register: "your signature + a few sec",
 		claim: rec.isPrivate && isSendRecord(rec) && rec.registerTxHash ? "a moment, then your signature" : "your signature + a few sec",
 		confirm: "usually 1-2 min",
@@ -432,7 +432,7 @@ type Estimates = Partial<Record<BridgePhase["key"], string>>
 /** Pending phases' hints: the chain's wait, or the user's signature for a phase that waits on one. */
 const DEPOSIT_ESTIMATES: Estimates = {
 	deposit: "~1 min",
-	sync: "~1–4 min",
+	sync: "~1 min",
 	register: "your signature + a few sec",
 	claim: "your signature + a few sec",
 	confirm: "~1–2 min",
