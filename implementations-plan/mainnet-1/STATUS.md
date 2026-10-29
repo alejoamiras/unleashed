@@ -16,3 +16,4 @@
 - 2026-10-28 a2 2.2 gate: doc-links 3/3; node-keys 2/2; lint ok
 - 2026-10-29 a2 round 1: Codex reject (2 High, 1 Low) and the Opus review (1 Medium, 5 Low) verified and fixed in 411b10d; lint, typecheck:all, touched unit tests, deployer-funding integration 1/1 (66 s) green; Codex round 2 running
 - 2026-10-29 a2 Codex loop: round 2 conditional approve (1 Medium, 1 Low; fixed in be4b79a), round 3 approve; loop closed at three rounds
+- 2026-10-29 a2 final gates on ae75d32 (origin/main with #41 merged): lint ok; typecheck:all ok; test:all exit 0; audit:tools exit 0; test:integration 52/52 (10 files) exit 0; doc-links/node-keys/published-packages 7/7; dry run = deployments.json
