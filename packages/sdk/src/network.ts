@@ -1,0 +1,157 @@
+/**
+ * A network the SDK will move funds on: a strictly parsed manifest whose every derivable address is re-derived, whose
+ * Aztec line this release runs, and whose deployed contracts are this release's builds bound to the rollup the Aztec
+ * node runs. Nothing else is a `Network`: every call that signs takes one and refuses an object not built here.
+ */
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
+import type { Address, PublicClient } from "viem"
+import { BridgeError, refusal } from "./errors.ts"
+import { mismatches, networkBindings } from "./execution/trust-roots.ts"
+import { fuelRouteOf, type ManifestFuelRoute, sendGenerationOf } from "./execution/send-generation.ts"
+import type { SendGeneration } from "./execution/send-flow.ts"
+import { aztecLineOf } from "./protocol/aztec-line.ts"
+import { CANONICAL_PERMIT2, MAINNET_L1, MAX_FUEL_SLIPPAGE_BPS } from "./protocol/l1-pins.ts"
+import { assertManifestTokensDerive, type ManifestToken, type ManifestV2, parseManifestV2 } from "./protocol/manifest-v2.ts"
+import { walletChainIdOf } from "./protocol/wallet-chain-id.ts"
+
+/** The reads every call makes. Nothing here signs. `fetch` reaches li.quest, which needs no key; the global one is
+ *  used when absent. */
+export interface Reads {
+	l1: PublicClient
+	aztecNode: AztecNode
+	fetch?: typeof fetch
+}
+
+export type Privacy = "public" | "private"
+
+/** Where gas-only deposits go: the router, its Permit2, the Fee Juice portal, and the budgets quotes floor against. */
+export interface FuelRoute extends ManifestFuelRoute {
+	registry: Address
+}
+
+/** Where token deposits go: the factory whose clones are the portals, and the hub the L2 tokens derive from. */
+export interface TokenRoute extends SendGeneration {
+	registry: Address
+	/** The tokens the manifest lists; any other ERC-20 still bridges, through `resolveToken`. */
+	tokens: readonly ManifestToken[]
+}
+
+export interface Network {
+	readonly name: string
+	readonly l1ChainId: number
+	readonly walletChainId: number
+	readonly rollupVersion: number
+	/** The canonical PrivateFPC of this network's Aztec line: private Fee Juice lands there and nowhere else. */
+	readonly privateFpc: string
+	readonly fuel: FuelRoute
+	/** Absent on a network that only sells gas. */
+	readonly bridge?: TokenRoute
+	readonly manifest: ManifestV2
+}
+
+const verified = new WeakSet<Network>()
+
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+function parsed(manifest: unknown): ManifestV2 {
+	try {
+		return parseManifestV2(manifest)
+	} catch (e) {
+		throw refusal("invalid-network", e instanceof Error ? e.message : String(e), "never", e)
+	}
+}
+
+function registryOf(m: ManifestV2): Address {
+	return (m.bridge?.l1.registry ?? m.fuelRoute?.registry) as Address
+}
+
+/** The checks that need no chain: the line, a route, the canonical Permit2, the slippage cap, mainnet's pins. */
+function assertStaticRoots(m: ManifestV2, fuel: ManifestFuelRoute | undefined): asserts fuel is ManifestFuelRoute {
+	const line = aztecLineOf(m.l1ChainId)
+	if (!line.supported)
+		throw refusal("unsupported-line", `L1 chain ${m.l1ChainId} runs Aztec ${line.version}, which this release does not`)
+	if (!fuel) throw refusal("invalid-network", `the ${m.network} manifest has no deposit route`)
+	if (!same(fuel.permit2, CANONICAL_PERMIT2)) throw refusal("invalid-network", `permit2 ${fuel.permit2} is not the canonical Permit2`)
+	if (fuel.slippageBps > MAX_FUEL_SLIPPAGE_BPS)
+		throw refusal("invalid-network", `slippage ${fuel.slippageBps} bps is above the ${MAX_FUEL_SLIPPAGE_BPS} bps this release allows`)
+	if (m.l1ChainId !== 1) return
+	const pinned = [
+		["registry", registryOf(m), MAINNET_L1.registry],
+		["feeJuice.portal", m.feeJuice.portal, MAINNET_L1.feeJuicePortal],
+		["feeJuice.asset", m.feeJuice.asset, MAINNET_L1.feeAsset],
+	] as const
+	for (const [label, got, want] of pinned)
+		if (!same(got, want)) throw refusal("invalid-network", `${label} ${got} is not mainnet's ${want}`)
+}
+
+/** The Aztec node names the rollup: its chain, version, registry and Fee Juice contracts must be the manifest's. */
+async function assertNodeRoots(m: ManifestV2, r: Reads): Promise<number> {
+	const [l1ChainId, info] = await Promise.all([r.l1.getChainId(), r.aztecNode.getNodeInfo()])
+	if (l1ChainId !== m.l1ChainId) throw refusal("wrong-chain", `the Ethereum reads are on chain ${l1ChainId}, not ${m.l1ChainId}`, "safe")
+	if (info.l1ChainId !== m.l1ChainId || walletChainIdOf(m.l1ChainId, info.rollupVersion) !== m.walletChainId) {
+		throw refusal(
+			"wrong-aztec-network",
+			`the Aztec node runs rollup ${info.rollupVersion} on chain ${info.l1ChainId}, not ${m.network}`,
+			"safe",
+		)
+	}
+	const a = info.l1ContractAddresses
+	const anchored = [
+		["registry", registryOf(m), a.registryAddress.toString()],
+		["feeJuice.portal", m.feeJuice.portal, a.feeJuicePortalAddress.toString()],
+		["feeJuice.asset", m.feeJuice.asset, a.feeJuiceAddress.toString()],
+	] as const
+	for (const [label, got, want] of anchored) {
+		if (!same(got, want)) throw refusal("invalid-network", `${label} ${got} is not the Aztec node's ${want}`)
+	}
+	return info.rollupVersion
+}
+
+async function assertDerivations(m: ManifestV2): Promise<void> {
+	try {
+		await assertManifestTokensDerive(m)
+	} catch (e) {
+		throw refusal("invalid-network", e instanceof Error ? e.message : String(e), "never", e)
+	}
+}
+
+async function assertChainRoots(m: ManifestV2, r: Reads): Promise<void> {
+	const bad = mismatches(await networkBindings(r.l1, m))
+	if (bad.length === 0) return
+	const why = bad.map((b) => `${b.label} is ${b.actual}, ${b.source} says ${b.expected}`).join("; ")
+	throw refusal("invalid-network", `the deployed contracts are not this release's network: ${why}`)
+}
+
+/**
+ * Parses a manifest and checks it against the chain. Refuses (`BridgeError`, nothing sent) a manifest that fails
+ * strict validation, has no deposit route, runs an Aztec line this release does not, names a non-canonical Permit2 or
+ * a slippage above `MAX_FUEL_SLIPPAGE_BPS`, disagrees with the Aztec node on its chain, rollup, registry or Fee Juice
+ * contracts (or with mainnet's pins), or whose deployed router, factory or gate, implementation and swapper are not
+ * this release's builds bound to the registry's canonical rollup.
+ */
+export async function parseNetwork(manifest: unknown, r: Reads): Promise<Network> {
+	const m = parsed(manifest)
+	const route = fuelRouteOf(m)
+	assertStaticRoots(m, route)
+	const rollupVersion = await assertNodeRoots(m, r)
+	await assertDerivations(m)
+	await assertChainRoots(m, r)
+	const registry = registryOf(m)
+	const net: Network = Object.freeze({
+		name: m.network,
+		l1ChainId: m.l1ChainId,
+		walletChainId: m.walletChainId,
+		rollupVersion,
+		privateFpc: m.privateFpc?.address ?? aztecLineOf(m.l1ChainId).privateFpc.address,
+		fuel: Object.freeze({ ...route, registry }),
+		...(m.bridge ? { bridge: Object.freeze({ ...sendGenerationOf(m, m.bridge), registry, tokens: m.bridge.tokens }) } : {}),
+		manifest: m,
+	})
+	verified.add(net)
+	return net
+}
+
+/** Refuses a `Network` that `parseNetwork` did not build. */
+export function assertNetwork(net: Network): void {
+	if (!verified.has(net)) throw new BridgeError("invalid-network", "this network was not built by parseNetwork", "none", "never")
+}

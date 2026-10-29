@@ -4,9 +4,9 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { siloNullifier } from "@aztec-labs/stdlib/hash"
 import { computeFeeJuiceMessageNullifier, L1Actor, L1ToL2Message, L2Actor } from "@aztec-labs/stdlib/messaging"
-import { deriveTokenClaimSecret, mintToPrivateContentHash, mintToPublicContentHash } from "@unleashed/sdk/protocol"
+import { deriveTokenClaimSecret, mintToPrivateContentHash, mintToPublicContentHash } from "../protocol/index.ts"
 import { describe, expect, it, vi } from "vitest"
-import { hubMessageState, recomputeTokenMessageHash, tokenMessageNullifier, tokenMessageState } from "./message-nullifier"
+import { hubMessageState, recomputeTokenMessageHash, tokenMessageNullifier, tokenMessageState } from "./message-nullifier.ts"
 
 const PORTAL = "0x8fa7ffaf818b7157823340cbf3e0c5b3f0a5a0c0"
 const HUB = `0x00${"1a".repeat(31)}`

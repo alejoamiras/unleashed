@@ -1,8 +1,12 @@
-import { DEPOSIT_ROUTER_ABI, PRIVATE_FPC_ADDRESS, LEGACY_ROUTER_ABI } from "@unleashed/sdk/protocol"
-import type { SendDepositRecord } from "@unleashed/bridge-core"
 import { encodeFunctionData } from "viem"
 import { describe, expect, it, vi } from "vitest"
-import { type DepositSearchOptions, findDepositTx, type ReconcileL1Client } from "./deposit-reconcile"
+import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
+import { LEGACY_ROUTER_ABI } from "../protocol/legacy-router-abi.ts"
+import { PRIVATE_FPC_ADDRESS } from "../protocol/private-fuel.ts"
+import type { DepositRecord } from "../records.ts"
+import { type DepositSearchOptions, findDepositTx, type ReconcileL1Client } from "./deposit-reconcile.ts"
+
+type SendDepositRecord = DepositRecord
 
 type Hex = `0x${string}`
 
@@ -159,6 +163,7 @@ const opts = (over: Partial<DepositSearchOptions> = {}): DepositSearchOptions =>
 	chainId: CHAIN,
 	router: DEPOSIT_ROUTER,
 	legacyRouters: [ROUTER],
+	privateFpc: PRIVATE_FPC_ADDRESS,
 	...over,
 })
 
@@ -196,14 +201,41 @@ function permitCalldata(intent: IntentFields, amount: bigint): Hex {
 	return encodeFunctionData({ abi: DEPOSIT_ROUTER_ABI, functionName: "bridgeWithPermit", args: [intent, "0x1234", amount, permit] })
 }
 
-/** A deposit-router send: its `Deposited` indexes both secret hashes, the calldata carries the intent. */
-const depositTx = (hash: Hex, block: bigint, intent: IntentFields, amount: bigint): FakeTx => ({
+/** A deposit-router send: its `Deposited` indexes both secret hashes and names its payer, the calldata carries the intent. */
+const depositTx = (hash: Hex, block: bigint, intent: IntentFields, amount: bigint, payer: Hex = SIGNER): FakeTx => ({
 	hash,
 	block,
 	emitter: DEPOSIT_ROUTER,
 	input: permitCalldata(intent, amount),
-	event: { name: "Deposited", args: { tokenSecretHash: intent.tokenSecretHash, fuelSecretHash: intent.fuelSecretHash } },
+	event: { name: "Deposited", args: { tokenSecretHash: intent.tokenSecretHash, fuelSecretHash: intent.fuelSecretHash, payer } },
 })
+
+const SIGNER = "0x7777777777777777777777777777777777777777" as Hex
+const STRANGER = "0x8888888888888888888888888888888888888888" as Hex
+
+/** A gas-only send: no token leg, the whole amount is the slice. */
+const GAS_INTENT: IntentFields = {
+	token: ERC20,
+	aztecRecipient: ZERO32,
+	tokenSecretHash: ZERO32,
+	isPrivate: false,
+	fuelSlice: 10n,
+	fuelRecipient: RECIPIENT,
+	fuelSecretHash: FUEL_SECRET_HASH,
+	minFuelOutput: 9n,
+}
+
+const gasRecord = (over: Record<string, unknown> = {}) =>
+	record({
+		intent: "gas",
+		token: undefined,
+		id: FUEL_SECRET_HASH,
+		secretHashHex: FUEL_SECRET_HASH,
+		secret: undefined,
+		amount: "10",
+		fuel: FUEL,
+		...over,
+	} as Partial<SendDepositRecord>)
 
 describe("findDepositTx — the deposit router", () => {
 	it("finds a token send, and a fueled one by both secret hashes and the summed amount", async () => {
@@ -243,6 +275,25 @@ describe("findDepositTx — the deposit router", () => {
 	it("a token record never matches a fueled intent carrying its hash", async () => {
 		const tx = { ...depositTx("0xa5", 520n, { ...FUELED_INTENT, fuelSecretHash: ZERO32 }, 100000000n) }
 		await expect(findDepositTx(record(), fakeChain([tx]).client, opts())).resolves.toBe("none")
+	})
+
+	it("a gas-only record is found by its fuel secret hash, on the deposit router alone", async () => {
+		const chain = fakeChain([depositTx("0xb1", 520n, GAS_INTENT, 10n), bridgeTx("0xb2", 530n)])
+		await expect(findDepositTx(gasRecord(), chain.client, opts())).resolves.toEqual({ txHash: "0xb1" })
+		const priv = { ...GAS_INTENT, isPrivate: true, fuelRecipient: PRIVATE_FPC_ADDRESS as Hex }
+		await expect(
+			findDepositTx(gasRecord({ isPrivate: true }), fakeChain([depositTx("0xb3", 520n, priv, 10n)]).client, opts()),
+		).resolves.toEqual({ txHash: "0xb3" })
+		const withToken = { ...GAS_INTENT, tokenSecretHash: FUEL_SECRET_HASH }
+		await expect(findDepositTx(gasRecord(), fakeChain([depositTx("0xb4", 520n, withToken, 10n)]).client, opts())).resolves.toBe("none")
+	})
+
+	it("a record that names its signer counts only that signer's deposits, before the candidate cap", async () => {
+		// Anyone can resend a published intent from their own account: the calldata and receipt verify all the same.
+		const lookAlikes = Array.from({ length: 9 }, (_, i) => depositTx(`0xc${i}` as Hex, 521n + BigInt(i), GAS_INTENT, 10n, STRANGER))
+		const chain = fakeChain([depositTx("0xb5", 520n, GAS_INTENT, 10n), ...lookAlikes])
+		await expect(findDepositTx(gasRecord({ sender: SIGNER }), chain.client, opts())).resolves.toEqual({ txHash: "0xb5" })
+		await expect(findDepositTx(gasRecord(), chain.client, opts())).resolves.toBe("incomplete")
 	})
 
 	it("one verified send on each router is ambiguous, not a guess", async () => {
@@ -344,11 +395,6 @@ describe("findDepositTx — a retired router", () => {
 	it("two verified transactions are ambiguous, not a guess", async () => {
 		const { client } = fakeChain([bridgeTx("0xaa", 520n), bridgeTx("0xab", 530n)])
 		await expect(findDepositTx(record(), client, opts())).resolves.toBe("ambiguous")
-	})
-
-	it("a gas-only record has no router token deposit to find", async () => {
-		const rec = record({ intent: "gas", token: undefined } as Partial<SendDepositRecord>)
-		await expect(findDepositTx(rec, fakeChain([bridgeTx("0xaa", 520n)]).client, opts())).resolves.toBe("none")
 	})
 
 	describe("incomplete — the search could not cover the window", () => {

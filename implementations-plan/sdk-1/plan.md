@@ -584,6 +584,45 @@ Each row: the decision, its source, the rejected view with its reason.
   no Node built-in, and every bare import is a declared runtime dependency that resolves from the SDK. It replaces
   extending bridge-core's `layout-identity.test.ts`, which resolves assets rather than imports.
 - **D38 `tsconfig.build.json` arrives with the build.** 2.1 lists it; it lands in 2.2 with `stage.ts`, its only user.
+- **D39 Six error codes beyond the sketch.** `invalid-request` (a malformed argument), `invalid-network` (a `Network`
+  `parseNetwork` did not build), `fetch-unavailable` (a LI.FI venue with no `fetch`), `read-failed` (an RPC read the
+  run cannot do without), `approval-failed` (the Permit2 approval reverted or never confirmed) and `aborted` (the
+  caller's signal, honoured only where nothing is in flight). Each carries `submission` and `retry` like the rest.
+- **D40 `parseNetwork` runs every trust-root check.** The node anchoring, the derivations and the on-chain bindings
+  and code pins all run at parse; a parsed `Network` is the proof (a module-private `WeakSet`), and every entry point
+  refuses one it did not build. Re-parsing is how a long-lived integrator re-checks.
+- **D41 Private gas ceilings price from the node until the caller says otherwise.** `quoteBridge` takes
+  `gas.maxFees` (the integrator's wallet quote, `walletMaxFees` in the app) and otherwise the node's worst predicted
+  fees; the claim re-prices from the wallet before it spends anything.
+- **D42 `capabilitiesFor` is in the root entry, re-exported by `./bridge`.** A gas-only integrator needs a grant
+  without loading the hub artifact. It grants claims only: no exit, no authwit.
+- **D43 The tarball holds only what the five published entries reach.** `stage.ts` emits from those entries, copies
+  the three JSON assets they import with their digests checked, and derives the peers (exact at the Aztec pins,
+  `viem` a caret range) and `zod` as the one dependency. `./artifacts`, `./private-fpc-artifact`, `./l1` and
+  `./internal` stay workspace-only. The consumer fixture installs frozen under the committed gate; only a relock
+  re-checks it.
+- **D44 Exits stay out of v1 (owner answer P3-05: only if modest).** They are not: an exit is the L2 burn under an
+  authwit, a proving wait of up to an epoch, the Outbox witness, the L1 consume racing relayers (`consumedByOther`),
+  a private exit's fee ceiling, and a record and resume for each step. That is a second lane the size of
+  `claimToken` with its own sandbox cells, and no arc here moves the app's exit engine. The app keeps its exit code.
+- **D45 `verify-l1` measures against the SDK's pins.** It hashes the deployed runtime with the SDK's `pinOfBuild` /
+  `deployedHash` and also requires its fresh build to equal the SDK's `CODE_PINS`, so a deployment it passes is one
+  `parseNetwork` accepts. The bindings it shares with `parseNetwork` come from the SDK's `trust-roots.ts`.
+- **D46 `findDepositTx` filters on the payer for every record that names its signer.** A published secret hash can
+  be replayed by anyone; without the filter, look-alikes past the candidate cap keep a token record's search
+  incomplete just as they would a gas-only one's.
+- **D47 A fee stop is a code; its words belong to the host.** The ladder throws `FeeStopError(stop)` and returns
+  `{ kind: "stop", stop }`; the claims surface it as `BridgeError("fee-stop", …, { stop })`, retry "never" for the
+  stops no wait lifts (a malformed hash, FPC drift, a missing salt or secret, a floor) and "after-wait" otherwise. The
+  app maps each code to today's sentence in `fee-stop-copy.ts`, pinned by a table test.
+- **D48 The claims persist through the caller, in call order.** The ladder writes through a store whose merge is
+  synchronous; the SDK's store applies the patch to the claim's record at once and queues the caller's `persist`, and
+  every hub seam (`onRegisterSend`, `onRegistered`, `onClaimSend`) is awaited, so the latch it writes is persisted
+  before the wallet is asked. A failed persist surfaces at the next awaited one.
+- **D49 A token claim settles only after the gas it bridged.** A public claim paid from held gas leaves the bridged Fee
+  Juice unspent; `claimToken` claims it on its own before the record completes, so no completed record strands gas.
+- **D50 The self-pay floor of a direct Fee Juice claim is `feeJuice.minFj`.** The route's `minFuelFj` is the send
+  budget; the claim floor is the manifest's Fee Juice floor, as in the app.
 
 ## Audit verdicts
 

@@ -71,7 +71,7 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { CANONICAL_PERMIT2 } from "./script-l1"
+import { CANONICAL_PERMIT2 } from "@unleashed/sdk/protocol"
 import { deployAccountIfAbsent, deployerSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { requireDrpcNodeUrl } from "../src/drpc-node"
 

@@ -166,6 +166,7 @@ vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
 	runSend: h.runSend,
 	claimViaHub: async () => ({ path: "claim", claimTxHash: "0xhubclaim" }),
+	probeHubClaim: async () => ({}),
 	hubAt: () => ({ methods: {} }),
 	hubTokenFor: async () => h.hubToken.value,
 	readRegistration: h.readRegistration,

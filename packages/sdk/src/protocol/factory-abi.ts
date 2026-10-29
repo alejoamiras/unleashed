@@ -152,3 +152,13 @@ export const TOKEN_PORTAL_ABI = [
 	{ type: "error", name: "InexactTransfer", inputs: [] },
 	{ type: "error", name: "ImplementationOnly", inputs: [] },
 ] as const
+
+/** The implementation's frozen pointers. A clone has no storage and no initializer, so these are the whole of what
+ *  every token's portal delegates into: read them on the implementation itself. */
+export const PORTAL_IMPL_CONSTANTS_ABI = [
+	{ type: "function", name: "FACTORY", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "INBOX", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "OUTBOX", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+	{ type: "function", name: "ROLLUP_VERSION", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+	{ type: "function", name: "L2_HUB", stateMutability: "view", inputs: [], outputs: [{ type: "bytes32" }] },
+] as const

@@ -5,15 +5,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 vi.mock("@aztec-labs/aztec.js/authorization", () => ({
 	SetPublicAuthwitContractInteraction: { create: async () => ({ request: async () => ({ noop: true }) }) },
 }))
-vi.mock("@aztec-labs/aztec.js/node", () => ({
-	createAztecNodeClient: () => ({ getNodeInfo: async () => ({ txsLimits: { gas: { daGas: 55_882, l2Gas: 6_540_000 } } }) }),
-}))
-vi.mock("@unleashed/sdk/protocol", () => ({
+vi.mock("../protocol/fee-juice.ts", () => ({
 	predictedWorstMinFees: async () => ({ feePerDaGas: 10n, feePerL2Gas: 20n }),
 }))
-vi.mock("@/lib/network", () => ({ NETWORK: { nodeUrl: "http://127.0.0.1:1" } }))
 
-import { clampGas, forgetWalletFees, walletMaxFees } from "./wallet-fee-budget"
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
+import { clampGas, forgetWalletFees, walletMaxFees as walletMaxFeesOn } from "./wallet-fee-budget.ts"
+
+const nodeWithMax = (daGas: number, l2Gas: number) =>
+	({ getNodeInfo: async () => ({ txsLimits: { gas: { daGas, l2Gas } } }) }) as unknown as AztecNode
+const node = nodeWithMax(55_882, 6_540_000)
+const walletMaxFees = (...a: [unknown, AztecAddress, { daGas: number; l2Gas: number }]) => walletMaxFeesOn(node, ...a)
 
 type Opts = { fee: { gasSettings: { gasLimits: { daGas: number; l2Gas: number }; maxFeesPerGas?: unknown; maxFeePerGas?: unknown } } }
 const account = AztecAddress.fromStringUnsafe(`0x${"11".repeat(32)}`)
@@ -44,7 +46,15 @@ describe("walletMaxFees", () => {
 		expect(settings?.maxFeesPerGas).toEqual({ feePerDaGas: 10n, feePerL2Gas: 20n })
 		expect(settings?.maxFeePerGas).toEqual({ feePerDaGas: 10n, feePerL2Gas: 20n })
 		expect(settings?.gasLimits, "clamped to the network's per-tx admission").toEqual({ daGas: 55_882, l2Gas: 2_000_000 })
-		expect(clampGas({ daGas: 100_000, l2Gas: 9_000_000 })).toEqual({ daGas: 55_882, l2Gas: 6_540_000 })
+		expect(clampGas(node, { daGas: 100_000, l2Gas: 9_000_000 })).toEqual({ daGas: 55_882, l2Gas: 6_540_000 })
+	})
+
+	it("limits are per node: a second network's maximum never clamps the first's", async () => {
+		const other = nodeWithMax(1_000, 1_000)
+		await walletMaxFeesOn(other, wallet("honors"), account, { daGas: 1, l2Gas: 1 })
+		expect(clampGas(other, { daGas: 5_000, l2Gas: 5_000 })).toEqual({ daGas: 1_000, l2Gas: 1_000 })
+		await walletMaxFees(wallet("honors"), account, { daGas: 1, l2Gas: 1 })
+		expect(clampGas(node, { daGas: 5_000, l2Gas: 5_000 })).toEqual({ daGas: 5_000, l2Gas: 5_000 })
 	})
 
 	it("a wallet that honors the cap prices at exactly the proposal — no padding for its users", async () => {

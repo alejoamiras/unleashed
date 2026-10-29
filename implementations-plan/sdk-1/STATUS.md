@@ -26,3 +26,6 @@
 - 2026-10-28 a1 1.4 gate: doc-links 3/3; 1.4 ✓
 - 2026-10-28 Codex round 2 no new material finding; round 3 on the verifier fix no new material finding; loop closed at three rounds
 - 2026-10-28 a2 2.1 written: packages/sdk with protocol/ and execution/ moved by git mv, router-receipt extracted, progress/status deleted, every importer migrated (app, bridge-core, sandbox, browser suite, relayer via ./l1), CI filters and pins; lint, typecheck:all, test:all, actionlint, ci-gating, ABI pins green; test:integration running
+- 2026-10-29 a2 2.1 test:integration 51/51 (9 files) on bfb526d plus early 2.3 files; 2.1 ✓
+- 2026-10-29 a2 2.2-2.4 written: build and pack check; L1 leg (parseNetwork trust roots, quotes, deposits, events, errors); L2 leg (claimFuel, claimToken, capabilitiesFor, the claim fee ladder moved with FeeStop codes, the app on its copy table); lint, typecheck:all, test:all, pack:check, actionlint, ci-gating green; sdk-flows gas cells 5/5 in the sandbox (434 s)
+

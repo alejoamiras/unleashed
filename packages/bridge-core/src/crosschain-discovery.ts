@@ -27,6 +27,7 @@ import {
 	type DepositedArgs,
 	type DepositedFacts,
 	type DepositExpectation,
+	depositExpectationOf,
 	type DepositLogContext,
 	depositFacts,
 	eventFrom,
@@ -532,21 +533,6 @@ function lastDeliveryBefore(logs: readonly RawLog[], from: number, isDelivery: (
 }
 
 // ── the intended deposit ─────────────────────────────────────────────────────
-
-/** The record facts a deposit's expectation is built from; every schema-3 and schema-4 deposit has them. */
-export type DepositRecordFacts = Pick<CrossChainDepositRecord, "chainId" | "isPrivate" | "recipient" | "secretHashHex" | "fuel"> &
-	({ intent: "gas" } | { intent: "token" | "token+gas"; token: { erc20: string } })
-
-/** What the router's `Deposited` must carry for a journal record, whichever chain the send started on. */
-export function depositExpectationOf(rec: DepositRecordFacts): DepositExpectation {
-	return {
-		l1ChainId: rec.chainId,
-		isPrivate: rec.isPrivate,
-		recipient: rec.recipient as Hex,
-		...(rec.intent === "gas" ? {} : { token: { erc20: rec.token.erc20 as Address, secretHash: rec.secretHashHex as Hex } }),
-		...(rec.fuel ? { fuel: { secretHash: rec.fuel.secretHashHex as Hex, fpc: rec.fuel.fpc as Hex | undefined } } : {}),
-	}
-}
 
 /** The router and the Executor are non-reentrant, so the last router `Deposited` before a completion
  *  marker inside its span is the one our execution produced. */

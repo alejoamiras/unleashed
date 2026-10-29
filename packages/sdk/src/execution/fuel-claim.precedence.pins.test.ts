@@ -1,13 +1,12 @@
 /**
  * Guard-PRECEDENCE pins for `buildFuelClaimInteraction`: when several fail-closed
  * guards would fire at once, the surfaced reason is the FIRST in the ladder — no-claimable → floor →
- * fee limit → (private) FPC drift → missing salt / (public) missing secret. `fuelClaim.test.ts` proves
+ * fee limit → (private) FPC drift → missing salt / (public) missing secret. `fuel-claim.test.ts` proves
  * each guard alone; these prove their order, which the per-branch split must keep.
  */
 
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import type { DepositJournalRecord } from "@unleashed/bridge-core"
 import { describe, expect, it, vi } from "vitest"
 
 vi.mock("@aztec-labs/aztec.js/contracts", () => ({
@@ -16,14 +15,26 @@ vi.mock("@aztec-labs/aztec.js/contracts", () => ({
 	}),
 	toSimulateOptions: vi.fn((o: unknown) => o),
 }))
-vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
+vi.mock("../protocol/private-fuel.ts", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../protocol/private-fuel.ts")>()),
 	privateMintAndPayFee: vi.fn(() => ({})),
-	publicFeeJuicePayment: vi.fn(() => ({})),
 	deriveBridgeSecret: vi.fn(() => Fr.fromString("0xdead")),
 }))
+vi.mock("../protocol/fee-juice.ts", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../protocol/fee-juice.ts")>()),
+	publicFeeJuicePayment: vi.fn(() => ({})),
+}))
 
-import { buildFuelClaimInteraction } from "./fuelClaim"
+import { PRIVATE_FPC_ADDRESS } from "../protocol/private-fuel.ts"
+import { FeeStopError } from "./fee-stop.ts"
+import { buildFuelClaimInteraction } from "./fuel-claim.ts"
+import type { DepositFuelBlock } from "../records.ts"
+
+type FuelClaimRecord = { isPrivate: boolean; fuel?: DepositFuelBlock }
+
+/** Nodes report no per-transaction maximum here, so limits pass through unclamped. */
+const NODE = { getNodeInfo: async () => ({}) } as never
+const FPC = PRIVATE_FPC_ADDRESS
 
 const RECIPIENT = AztecAddress.fromNumberUnsafe(0x1234)
 const ABOVE_FLOOR = "100000000000000000000"
@@ -33,7 +44,7 @@ const FLOOR = 11_000_000_000_000_000_000n
 const SPIKED_FEES = { feePerDaGas: 10n ** 30n, feePerL2Gas: 10n ** 30n }
 const DRIFTED_FPC = "0x0000000000000000000000000000000000000000000000000000000000000bad"
 
-const rec = (over: Record<string, unknown>, fuelOver: Record<string, unknown> = {}): DepositJournalRecord =>
+const rec = (over: Record<string, unknown>, fuelOver: Record<string, unknown> = {}): FuelClaimRecord =>
 	({
 		schema: 2,
 		id: "0xfuel",
@@ -58,15 +69,22 @@ const rec = (over: Record<string, unknown>, fuelOver: Record<string, unknown> = 
 			...fuelOver,
 		},
 		...over,
-	}) as DepositJournalRecord
+	}) as FuelClaimRecord
 
-async function reason(record: DepositJournalRecord, depsOver: Record<string, unknown> = {}): Promise<string> {
-	const built = await buildFuelClaimInteraction(record, { aztec: {}, recipient: RECIPIENT, minFloorFj: FLOOR, ...depsOver })
+async function reason(record: FuelClaimRecord, depsOver: Record<string, unknown> = {}): Promise<string> {
+	const built = await buildFuelClaimInteraction(record, {
+		aztec: {},
+		node: NODE,
+		privateFpc: FPC,
+		recipient: RECIPIENT,
+		minFloorFj: FLOOR,
+		...depsOver,
+	})
 	try {
 		await built.simulate()
 		return "<no stop>"
 	} catch (e) {
-		return e instanceof Error ? e.message : String(e)
+		return e instanceof FeeStopError ? e.stop : String(e)
 	}
 }
 
@@ -78,7 +96,7 @@ describe("buildFuelClaimInteraction — guard precedence under conflicts", () =>
 			maxFeesPerGas: SPIKED_FEES,
 		})
 		expect(conflict).toBe(only)
-		expect(only).toBe("This Fuel bridge has no claimable Fee Juice.")
+		expect(only).toBe("no-claimable-fuel")
 	})
 
 	it("PRIVATE: floor over fee limit, FPC drift and missing salt", async () => {
@@ -87,21 +105,21 @@ describe("buildFuelClaimInteraction — guard precedence under conflicts", () =>
 			maxFeesPerGas: SPIKED_FEES,
 		})
 		expect(conflict).toBe(floorOnly)
-		expect(floorOnly).not.toMatch(/fee limit|FPC|salt/)
+		expect(floorOnly).toBe("below-claim-floor")
 	})
 
 	it("PRIVATE: fee limit over FPC drift and missing salt", async () => {
 		const conflict = await reason(rec({ isPrivate: true }, { fpc: DRIFTED_FPC, bridgeSecretSalt: undefined }), {
 			maxFeesPerGas: SPIKED_FEES,
 		})
-		expect(conflict).toBe("The bridged gas can't cover this claim's fee limit right now (fees spiked). Try again shortly.")
+		expect(conflict).toBe("fee-limit-spiked")
 	})
 
 	it("PRIVATE: FPC drift over a missing salt", async () => {
 		const conflict = await reason(rec({ isPrivate: true }, { fpc: DRIFTED_FPC, bridgeSecretSalt: undefined }))
-		expect(conflict).toBe("Private fuel FPC address mismatch (version drift), refusing to claim. Reselect a mode.")
+		expect(conflict).toBe("fpc-drift")
 		const saltOnly = await reason(rec({ isPrivate: true }, { bridgeSecretSalt: undefined }))
-		expect(saltOnly).toBe("This private Fuel bridge is missing its recovery salt, cannot claim.")
+		expect(saltOnly).toBe("missing-salt")
 	})
 
 	it("PUBLIC: floor over fee limit and missing secret; fee limit over missing secret", async () => {
@@ -109,8 +127,8 @@ describe("buildFuelClaimInteraction — guard precedence under conflicts", () =>
 		const floorConflict = await reason(rec({}, { received: BELOW_FLOOR, secret: undefined }), { maxFeesPerGas: SPIKED_FEES })
 		expect(floorConflict).toBe(floorOnly)
 		const feeConflict = await reason(rec({}, { secret: undefined }), { maxFeesPerGas: SPIKED_FEES })
-		expect(feeConflict).toBe("The bridged gas can't cover this claim's fee limit right now (fees spiked). Try again shortly.")
+		expect(feeConflict).toBe("fee-limit-spiked")
 		const secretOnly = await reason(rec({}, { secret: undefined }))
-		expect(secretOnly).toBe("This Fuel bridge is missing its claim secret.")
+		expect(secretOnly).toBe("missing-secret")
 	})
 })

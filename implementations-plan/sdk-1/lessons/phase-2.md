@@ -16,3 +16,12 @@
   sites equal to declarations sent two symbols to a re-exporting module.
 - **2.1: the imports scan skips comments.** Doc comments quote `import("…")` specifiers the module never imports; the
   SDK's declared-imports guard flagged two before it stripped comments.
+- **2.4: a field-sized hex is the only valid fake hash.** A message hash or a transaction hash above the BN254
+  modulus makes `Fr.fromString` throw; the readiness read swallows that as "not ingested" and the gate polls for 30
+  minutes, which reads as a hung test. Fakes use `0x0c…`-style values below the modulus.
+- **2.4: a type import counts in the static-graph guard.** `capabilities.ts` took `BridgeToken` as a type from
+  `bridge/token.ts`, which reaches the hub artifact; the guard walks every import statement, so the root entry
+  failed it. A structural parameter type keeps the root clear.
+- **2.4: a moved helper takes its own imports with it.** The app's tests mocked `hubTokenFor` at the SDK barrel; once
+  `probeHubClaim` moved into the SDK it calls its sibling directly, so the app's tests mock the probe itself.
+

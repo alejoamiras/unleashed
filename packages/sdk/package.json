@@ -6,7 +6,10 @@
 	"sideEffects": false,
 	"exports": {
 		".": "./src/index.ts",
+		"./fuel": "./src/fuel/index.ts",
+		"./bridge": "./src/bridge/index.ts",
 		"./protocol": "./src/protocol/index.ts",
+		"./networks": "./src/networks.ts",
 		"./l1": "./src/l1.ts",
 		"./artifacts": "./src/protocol/artifacts.ts",
 		"./private-fpc-artifact": "./src/protocol/private-fpc-artifact.ts",
@@ -32,6 +35,8 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit -p tsconfig.json",
-		"test": "bun --bun vitest run"
+		"test": "bun --bun vitest run",
+		"stage": "bun scripts/stage.ts",
+		"pack:check": "bun scripts/pack-check.ts"
 	}
 }

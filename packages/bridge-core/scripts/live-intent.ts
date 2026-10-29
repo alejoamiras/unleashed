@@ -34,7 +34,9 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Address, PublicClient } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import {
+	CANONICAL_PERMIT2,
 	DEPOSIT_ROUTER_ABI,
+	MAINNET_L1,
 	PORTAL_FACTORY_ABI,
 	type BridgeBlock,
 	type ManifestV2,
@@ -50,14 +52,7 @@ import { type DeployIdentity, type DeployStep, readDeployJournal } from "./deplo
 import { git, resolveBin, run } from "./run"
 import { aztecPin } from "./sandbox/local-network"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
-import {
-	CANONICAL_PERMIT2,
-	FACTORY_CONSTANTS_ABI,
-	FUEL_SWAPPER_ABI,
-	manifestL1Chain,
-	ROUTER_CONSTANTS_ABI,
-	sourceRpcUrl,
-} from "./script-l1"
+import { FACTORY_CONSTANTS_ABI, FUEL_SWAPPER_ABI, manifestL1Chain, ROUTER_CONSTANTS_ABI, sourceRpcUrl } from "./script-l1"
 import { deriveHubInstance } from "./script-l2"
 import { verifyL1Manifest } from "./verify-l1"
 import { postNodeRpc, readNodeRpcBody, requireDrpcNodeUrl } from "../src/drpc-node"
@@ -132,7 +127,7 @@ export const MAINNET_CAPS: typeof CAPS = {
 
 /** Aztec's registry on Ethereum mainnet. Every rollup it registered stays listed and older ones still take deposits,
  *  so a fuel route's portal must belong to the rollup `getCanonicalRollup()` names. */
-export const MAINNET_REGISTRY = "0x35b22e09ee0390539439e24f06da43d83f90e298"
+export const MAINNET_REGISTRY = MAINNET_L1.registry
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..")

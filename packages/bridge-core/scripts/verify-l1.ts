@@ -37,13 +37,17 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { FeeJuicePortalAbi, RegistryAbi, RollupAbi } from "@aztec-foundation/l1-artifacts"
+import { FeeJuicePortalAbi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, hexToBytes, keccak256, type PublicClient } from "viem"
 import {
-	DEPOSIT_ROUTER_ABI,
+	CANONICAL_PERMIT2,
+	CODE_PINS,
+	type CodePin,
+	deployedHash,
+	type ImmutableSpan,
+	type PinnedContract,
+	pinOfBuild,
 	readErc20Metadata,
-	PORTAL_FACTORY_ABI,
-	DEPOSIT_WITNESS_TYPE_STRING,
 	FUEL_SWAP_SELECTORS,
 	LIFI_BOOK,
 	type LifiChainBook,
@@ -55,18 +59,28 @@ import {
 	toWord,
 	walletChainIdOf,
 } from "@unleashed/sdk/protocol"
-import { readRegistration, legacyRoutersOf } from "@unleashed/sdk/internal"
+import {
+	type Binding,
+	type BridgeContracts,
+	factoryBindings,
+	implementationBindings,
+	legacyRoutersOf,
+	portalBindings,
+	readRegistration,
+	readRollupBinding,
+	type RouterExpectation as RouterBindingExpectation,
+	routerBindings,
+	swapTargetOf,
+} from "@unleashed/sdk/internal"
 import { resolveBin, run } from "./run"
 import { createL1PublicClient, loadManifestV2FromConfigArg, requireRoute } from "./script-bootstrap"
 import {
 	assertFactoryPortal,
-	CANONICAL_PERMIT2,
 	ERC20_MIN_ABI,
 	FACTORY_CONSTANTS_ABI,
 	FUEL_GATE_ABI,
 	FUEL_SWAPPER_ABI,
 	manifestL1Chain,
-	PORTAL_IMPL_CONSTANTS_ABI,
 	ROUTER_CONSTANTS_ABI,
 	sourceRpcUrl,
 	swapperInventoryFloor,
@@ -78,17 +92,6 @@ const EVM_ROOT = join(repoRoot, "contracts", "bridge", "evm")
 
 /** The deterministic Multicall3 deployment, live at the same address on every chain we bridge from. */
 const CANONICAL_MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
-
-/** The registry's canonical rollup, and the values the factory and the implementation each froze
- *  from it at construction. */
-const REGISTRY_MIN_ABI = [
-	{ type: "function", name: "getCanonicalRollup", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-] as const
-const ROLLUP_MIN_ABI = [
-	{ type: "function", name: "getInbox", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "getOutbox", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
-	{ type: "function", name: "getVersion", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-] as const
 
 const DIAMOND_LOUPE_ABI = [
 	{ type: "function", name: "facetAddress", stateMutability: "view", inputs: [{ type: "bytes4" }], outputs: [{ type: "address" }] },
@@ -120,6 +123,15 @@ function same(label: string, actual: unknown, expected: unknown, expectedSource 
 	else fail(label, `on-chain ${got} != ${expectedSource} ${want}`)
 }
 
+/** The SDK's own trust-root comparisons, reported line by line. They compare exactly: addresses arrive lower-cased,
+ *  the witness type string as signed. */
+function report(bindings: readonly Binding[]): void {
+	for (const b of bindings) {
+		if (b.actual === b.expected) ok(`${b.label} = ${b.expected}`)
+		else fail(b.label, `on-chain ${b.actual} != ${b.source} ${b.expected}`)
+	}
+}
+
 /** Every check runs; a thrown one is a FAIL of its own rather than the end of the report. */
 async function guarded(label: string, fn: () => Promise<void>): Promise<void> {
 	try {
@@ -140,68 +152,26 @@ async function checkChainId(pub: PublicClient, label: string, chainId: number): 
 	same(`${label} chain id`, await pub.getChainId(), chainId, "expected")
 }
 
-interface RollupBinding {
-	inbox: Address
-	outbox: Address
-	version: bigint
-}
+const contractsOf = (b: BridgeBlock): BridgeContracts => ({
+	factory: b.l1.factory as Address,
+	implementation: b.l1.implementation as Address,
+	hub: b.l2.hub.address,
+})
 
-/** What the manifest's registry resolves to right now — the only source the frozen L1 pointers are
- *  allowed to have come from. Each caller reads it for itself so one bad read fails one check. */
-async function readRollupBinding(pub: PublicClient, registry: Address): Promise<RollupBinding> {
-	const rollup = await pub.readContract({ address: registry, abi: REGISTRY_MIN_ABI, functionName: "getCanonicalRollup" })
-	const [inbox, outbox, version] = await Promise.all([
-		pub.readContract({ address: rollup, abi: ROLLUP_MIN_ABI, functionName: "getInbox" }),
-		pub.readContract({ address: rollup, abi: ROLLUP_MIN_ABI, functionName: "getOutbox" }),
-		pub.readContract({ address: rollup, abi: ROLLUP_MIN_ABI, functionName: "getVersion" }),
-	])
-	return { inbox, outbox, version }
-}
-
-/** The factory exposes no registry getter: the inbox and rollup version its constructor froze are
- *  the observable half, so the manifest's registry must still resolve to a rollup producing both. */
-async function checkRegistryBinding(pub: PublicClient, b: BridgeBlock): Promise<void> {
-	const factory = b.l1.factory as Address
-	const [rollup, frozenInbox, frozenVersion] = await Promise.all([
-		readRollupBinding(pub, b.l1.registry as Address),
-		pub.readContract({ address: factory, abi: FACTORY_CONSTANTS_ABI, functionName: "INBOX" }),
-		pub.readContract({ address: factory, abi: FACTORY_CONSTANTS_ABI, functionName: "ROLLUP_VERSION" }),
-	])
-	same("factory.INBOX", frozenInbox, rollup.inbox, "registry→rollup.getInbox()")
-	same("factory.ROLLUP_VERSION", frozenVersion, rollup.version, "registry→rollup.getVersion()")
-}
-
-/** The implementation froze its own copy of every pointer a clone delegates into, and a clone has no
- *  storage to repoint: an implementation bound elsewhere is every token's portal bound elsewhere. */
-async function checkPortalImpl(pub: PublicClient, b: BridgeBlock): Promise<void> {
-	const address = b.l1.implementation as Address
-	const abi = PORTAL_IMPL_CONSTANTS_ABI
-	const [rollup, factory, inbox, outbox, version, hub] = await Promise.all([
-		readRollupBinding(pub, b.l1.registry as Address),
-		pub.readContract({ address, abi, functionName: "FACTORY" }),
-		pub.readContract({ address, abi, functionName: "INBOX" }),
-		pub.readContract({ address, abi, functionName: "OUTBOX" }),
-		pub.readContract({ address, abi, functionName: "ROLLUP_VERSION" }),
-		pub.readContract({ address, abi, functionName: "L2_HUB" }),
-	])
-	same("implementation.FACTORY", factory, b.l1.factory)
-	same("implementation.L2_HUB", hub, b.l2.hub.address)
-	same("implementation.INBOX", inbox, rollup.inbox, "registry→rollup.getInbox()")
-	same("implementation.OUTBOX", outbox, rollup.outbox, "registry→rollup.getOutbox()")
-	same("implementation.ROLLUP_VERSION", version, rollup.version, "registry→rollup.getVersion()")
-}
-
+/** The factory exposes no registry getter: the Inbox and rollup version its constructor froze must be what the
+ *  manifest's registry resolves to right now. Each group reads the registry for itself, so one bad read fails one. */
 async function checkFactory(pub: PublicClient, b: BridgeBlock): Promise<void> {
-	const factory = b.l1.factory as Address
-	const [implementation, hub, owner] = await Promise.all([
-		pub.readContract({ address: factory, abi: PORTAL_FACTORY_ABI, functionName: "IMPLEMENTATION" }),
-		pub.readContract({ address: factory, abi: PORTAL_FACTORY_ABI, functionName: "L2_HUB" }),
-		pub.readContract({ address: factory, abi: FACTORY_CONSTANTS_ABI, functionName: "owner" }),
-	])
-	same("factory.IMPLEMENTATION", implementation, b.l1.implementation)
-	same("factory.L2_HUB", hub, b.l2.hub.address)
+	const owner = await pub.readContract({ address: b.l1.factory as Address, abi: FACTORY_CONSTANTS_ABI, functionName: "owner" })
 	same("factory.owner (the guardian)", owner, b.l1.guardian)
-	await guarded("factory rollup binding", () => checkRegistryBinding(pub, b))
+	await guarded("factory rollup binding", async () =>
+		report(await factoryBindings(pub, contractsOf(b), await readRollupBinding(pub, b.l1.registry as Address))),
+	)
+}
+
+/** The implementation froze its own copy of every pointer a clone delegates into, and a clone has no storage to
+ *  repoint: an implementation bound elsewhere is every token's portal bound elsewhere. */
+async function checkPortalImpl(pub: PublicClient, b: BridgeBlock): Promise<void> {
+	report(await implementationBindings(pub, contractsOf(b), await readRollupBinding(pub, b.l1.registry as Address)))
 }
 
 /** A retired router only answers reconcile's reads, but one bound to another factory or owner is not this
@@ -215,50 +185,28 @@ async function checkLegacyRouter(pub: PublicClient, b: BridgeBlock, router: Addr
 	same(`legacy router ${router} owner (the guardian)`, owner, b.l1.guardian)
 }
 
-/** The DepositRouter's swap target: the manifest's fuel swapper off mainnet, LI.FI's Diamond on it. */
-function depositRouterSwapTarget(m: ManifestV2, fuelSwapper: string | undefined): string | undefined {
-	return fuelSwapper ?? (m.l1ChainId === 1 ? LIFI_BOOK[1]?.diamond : undefined)
-}
-
 /** What a router's immutables and owner must be: a bridge's binds its factory, a fuel route's its gate. */
-interface RouterExpectation {
-	factory: string
-	permit2: string
-	feeJuicePortal: string
+interface RouterExpectation extends RouterBindingExpectation {
 	guardian: string
-	swapTarget: string | undefined
 }
 
-const bridgeRouterExpectation = (m: ManifestV2, b: BridgeBlock): RouterExpectation => ({
-	factory: b.l1.factory,
-	permit2: b.l1.permit2,
-	feeJuicePortal: b.l1.feeJuicePortal,
-	guardian: b.l1.guardian,
-	swapTarget: depositRouterSwapTarget(m, b.l1.fuelSwapper),
+const routerExpectation = (m: ManifestV2, l1: { permit2: string; guardian: string; fuelSwapper?: string }, factory: string) => ({
+	factory,
+	permit2: l1.permit2,
+	feeJuicePortal: m.feeJuice.portal,
+	feeAsset: m.feeJuice.asset,
+	guardian: l1.guardian,
+	swapTarget: swapTargetOf(m.l1ChainId, l1.fuelSwapper),
 })
 
 /** Every DepositRouter immutable is fixed for the router's life; its owner can only `sweep`, and must be the guardian. */
-async function checkDepositRouter(pub: PublicClient, m: ManifestV2, want: RouterExpectation, router: Address): Promise<void> {
-	const read = (functionName: "PERMIT2" | "FEE_JUICE_PORTAL" | "FACTORY" | "FEE_ASSET" | "SWAP_TARGET" | "DEPOSIT_WITNESS_TYPE_STRING") =>
-		pub.readContract({ address: router, abi: DEPOSIT_ROUTER_ABI, functionName })
-	const [permit2, feeJuicePortal, factory, feeAsset, swapTarget, witness, owner] = await Promise.all([
-		read("PERMIT2"),
-		read("FEE_JUICE_PORTAL"),
-		read("FACTORY"),
-		read("FEE_ASSET"),
-		read("SWAP_TARGET"),
-		read("DEPOSIT_WITNESS_TYPE_STRING"),
+async function checkDepositRouter(pub: PublicClient, want: RouterExpectation, router: Address): Promise<void> {
+	const [bindings, owner] = await Promise.all([
+		routerBindings(pub, router, want),
 		pub.readContract({ address: router, abi: ROUTER_CONSTANTS_ABI, functionName: "owner" }),
 	])
-	same("depositRouter.SWAP_TARGET", swapTarget, want.swapTarget ?? "(no fuel swapper and no Diamond for this chain)")
-	same("depositRouter.FACTORY", factory, want.factory)
-	same("depositRouter.PERMIT2", permit2, want.permit2)
-	same("depositRouter.FEE_JUICE_PORTAL", feeJuicePortal, want.feeJuicePortal)
-	same("depositRouter.FEE_ASSET", feeAsset, m.feeJuice.asset)
+	report(bindings)
 	same("depositRouter.owner (the guardian)", owner, want.guardian)
-	// The app signs this exact string, case included; a router hashing another one rejects every Permit2 signature.
-	if (witness === DEPOSIT_WITNESS_TYPE_STRING) ok(`depositRouter.DEPOSIT_WITNESS_TYPE_STRING = ${witness}`)
-	else fail("depositRouter.DEPOSIT_WITNESS_TYPE_STRING", `on-chain ${witness} != client ${DEPOSIT_WITNESS_TYPE_STRING}`)
 }
 
 /** Whose the swapper must be, which tokens it must price, and the fuel floor its inventory is measured against. */
@@ -314,7 +262,8 @@ async function checkGeneration(pub: PublicClient, m: ManifestV2, b: BridgeBlock,
 	await guarded("implementation bindings", () => checkPortalImpl(pub, b))
 	const { depositRouter, fuelSwapper } = b.l1
 	if (depositRouter) {
-		await guarded("depositRouter bindings", () => checkDepositRouter(pub, m, bridgeRouterExpectation(m, b), depositRouter as Address))
+		const want = routerExpectation(m, b.l1, b.l1.factory)
+		await guarded("depositRouter bindings", () => checkDepositRouter(pub, want, depositRouter as Address))
 	} else {
 		unavailable(strict, "depositRouter bindings", "the manifest names no depositRouter")
 	}
@@ -341,18 +290,13 @@ async function checkGate(pub: PublicClient, r: FuelRouteBlock, strict: boolean):
  *  registry's canonical rollup must name the portal (any contract can answer the portal's own reads), and the portal
  *  must name that rollup, pay the fee asset and carry the version the wallet chain id encodes. */
 async function checkRoutePortal(pub: PublicClient, m: ManifestV2, r: FuelRouteBlock): Promise<void> {
-	const portal = (functionName: "UNDERLYING" | "ROLLUP" | "VERSION") =>
-		pub.readContract({ address: m.feeJuice.portal as Address, abi: FeeJuicePortalAbi, functionName })
-	const [underlying, rollup, version, canonical] = await Promise.all([
-		portal("UNDERLYING"),
-		portal("ROLLUP"),
-		portal("VERSION"),
-		pub.readContract({ address: r.registry as Address, abi: RegistryAbi, functionName: "getCanonicalRollup" }),
+	const portal = m.feeJuice.portal as Address
+	const rollup = await readRollupBinding(pub, r.registry as Address)
+	const [bindings, version] = await Promise.all([
+		portalBindings(pub, portal, m.feeJuice.asset, rollup),
+		pub.readContract({ address: portal, abi: FeeJuicePortalAbi, functionName: "VERSION" }),
 	])
-	const named = await pub.readContract({ address: canonical, abi: RollupAbi, functionName: "getFeeAssetPortal" })
-	same("canonical rollup's getFeeAssetPortal", named, m.feeJuice.portal)
-	same("feeJuicePortal.UNDERLYING", underlying, m.feeJuice.asset)
-	same("feeJuicePortal.ROLLUP", rollup, canonical, "registry.getCanonicalRollup()")
+	report(bindings)
 	same("walletChainId from feeJuicePortal.VERSION", walletChainIdOf(m.l1ChainId, Number(version)), m.walletChainId)
 }
 
@@ -368,14 +312,8 @@ async function checkFuelRoute(pub: PublicClient, m: ManifestV2, r: FuelRouteBloc
 		if (address) await guarded(`code at ${label}`, () => checkCode(pub, label, address as Address))
 	}
 	same("fuelRoute.permit2", r.permit2, CANONICAL_PERMIT2, "the canonical Permit2")
-	const router: RouterExpectation = {
-		factory: r.gate,
-		permit2: r.permit2,
-		feeJuicePortal: m.feeJuice.portal,
-		guardian: r.guardian,
-		swapTarget: depositRouterSwapTarget(m, r.fuelSwapper),
-	}
-	await guarded("depositRouter bindings", () => checkDepositRouter(pub, m, router, r.depositRouter as Address))
+	const router = routerExpectation(m, r, r.gate)
+	await guarded("depositRouter bindings", () => checkDepositRouter(pub, router, r.depositRouter as Address))
 	await guarded("gate bindings", () => checkGate(pub, r, strict))
 	await guarded("feeJuicePortal binding", () => checkRoutePortal(pub, m, r))
 	const swapper = { guardian: r.guardian, tokens: [], minFuelFj: r.fuel.minFuelFj }
@@ -534,10 +472,6 @@ async function checkLifiBook(
 	}
 }
 
-export interface ImmutableSpan {
-	start: number
-	length: number
-}
 interface ForgeArtifact {
 	deployedBytecode?: { object?: Hex; immutableReferences?: Record<string, ImmutableSpan[]> }
 }
@@ -602,46 +536,6 @@ function unavailable(strict: boolean, label: string, why: string): void {
 	else skip(label, why)
 }
 
-/** Immutables are written into the runtime code at deploy time, so the deployed bytes never equal
- *  the artifact's; zeroing the spans the compiler recorded leaves exactly the compiled logic. */
-function maskImmutables(code: Uint8Array, refs: Record<string, ImmutableSpan[]>): Uint8Array {
-	const masked = Uint8Array.from(code)
-	for (const spans of Object.values(refs)) for (const s of spans) masked.fill(0, s.start, s.start + s.length)
-	return masked
-}
-
-/** solc ends the runtime with a CBOR metadata map and its 2-byte big-endian length. The map hashes the
- *  compiler input, remapped absolute paths included, so it differs per checkout; execution never
- *  reaches it. A sanity check on trusted compiler output, not a parser: a declared length that leaves
- *  no code before it or does not land on a CBOR map header throws. */
-function metadataTrailerSize(code: Uint8Array): number {
-	const n = code.length
-	const cborLength = n >= 2 ? ((code[n - 2] ?? 0) << 8) | (code[n - 1] ?? 0) : 0
-	const size = cborLength + 2
-	// Major type 5 (a map) is the top three bits 101.
-	if (cborLength === 0 || size >= n || ((code[n - size] ?? 0) & 0xe0) !== 0xa0) {
-		throw new Error(`the build's metadata trailer is malformed (declared length ${cborLength} in ${n} bytes)`)
-	}
-	return size
-}
-
-/**
- * The deployed and built runtimes, each hashed with the build's immutable spans and metadata trailer
- * zeroed. Both masks come from the build alone, and equal lengths are required, so every byte before
- * the trailer, immutables aside, must match exactly. Throws on a length mismatch or a malformed build
- * trailer.
- */
-export function maskedRuntimeHashes(
-	onChain: Uint8Array,
-	built: Uint8Array,
-	refs: Record<string, ImmutableSpan[]>,
-): { onChain: Hex; built: Hex } {
-	if (onChain.length !== built.length) throw new Error(`length ${onChain.length} != build ${built.length}`)
-	const trailerStart = built.length - metadataTrailerSize(built)
-	const hash = (code: Uint8Array) => keccak256(maskImmutables(code, refs).fill(0, trailerStart))
-	return { onChain: hash(onChain), built: hash(built) }
-}
-
 async function checkCodeHash(pub: PublicClient, out: string, contract: string, address: Address, strict: boolean): Promise<void> {
 	const label = `${contract} runtime code`
 	const artifactPath = join(out, `${contract}.sol`, `${contract}.json`)
@@ -655,12 +549,19 @@ async function checkCodeHash(pub: PublicClient, out: string, contract: string, a
 		unavailable(strict, label, "the artifact carries no deployedBytecode")
 		return
 	}
-	const built = hexToBytes(object)
-	const onChain = hexToBytes(((await pub.getCode({ address })) ?? "0x") as Hex)
 	// forge omits immutableReferences for a contract with none (FuelOnlyGate). An empty mask compares every
 	// byte, and the build holds zeros where immutables sit, so dropped spans fail unless the deployed values are zero too.
-	const hashes = maskedRuntimeHashes(onChain, built, artifact.deployedBytecode?.immutableReferences ?? {})
-	same(`${label} hash (immutables and metadata masked)`, hashes.onChain, hashes.built, "build")
+	const pin = pinOfBuild(hexToBytes(object), artifact.deployedBytecode?.immutableReferences)
+	const onChain = hexToBytes(((await pub.getCode({ address })) ?? "0x") as Hex)
+	const deployed = deployedHash(onChain, pin)
+	if (deployed === undefined) throw new Error(`length ${onChain.length} != build ${pin.length}`)
+	same(`${label} hash (immutables and metadata masked)`, deployed, pin.hash, "build")
+	// The SDK refuses a network whose code is not its pinned build, so the build verified here must be that one.
+	sameBuild(contract as PinnedContract, pin)
+}
+
+function sameBuild(contract: PinnedContract, pin: CodePin): void {
+	same(`${contract} build`, pin.hash, CODE_PINS[contract].hash, "the SDK's code pin")
 }
 
 async function checkCodeHashes(

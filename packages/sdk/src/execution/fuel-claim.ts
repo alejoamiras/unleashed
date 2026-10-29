@@ -1,8 +1,6 @@
 /**
- * The Fuel claim builder — the fee-juice branch the journal's `claim` dep dispatches to by
- * `assetKind`. NON-composable: imports only bridge-core / the Aztec SDK / the pure `fuel-claim-state`
- * lib, and takes the wallet + floor as ARGUMENTS — never a tools-app singleton — so
- * `useDeposit → fuelClaim → bridge-core` stays acyclic.
+ * The Fuel claim builder: the Fee Juice claim of a gas-only deposit. Takes the wallet, the node and the
+ * floor as arguments and holds no state of its own.
  *
  * PUBLIC: the carrier-less self-pay tx — `new BatchCall(wallet, [])` (no app call) paid by
  * `publicFeeJuicePayment` (`FeeJuicePaymentMethodWithClaim` → `claim_and_end_setup` as setup); it claims
@@ -21,18 +19,19 @@ import { BatchCall, toSimulateOptions } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import { Gas } from "@aztec-labs/stdlib/gas"
-import type { DepositJournalRecord } from "@unleashed/bridge-core"
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
+import { publicFeeJuicePayment } from "../protocol/fee-juice.ts"
+import { assertFuelClearsFloor } from "../protocol/fuel.ts"
 import {
-	PRIVATE_FPC_ADDRESS,
 	PRIVATE_FUEL_CLAIM_GAS as PRIVATE_CLAIM_GAS,
 	PUBLIC_FUEL_CLAIM_GAS as PUBLIC_CLAIM_GAS,
-	assertFuelClearsFloor,
 	deriveBridgeSecret,
 	privateMintAndPayFee,
-	publicFeeJuicePayment,
-} from "@unleashed/sdk/protocol"
-import { isPrivateFuelInsufficiency } from "@/lib/fuel-claim-state"
-import { clampGas } from "@/lib/wallet-fee-budget"
+} from "../protocol/private-fuel.ts"
+import type { DepositFuelBlock } from "../records.ts"
+import { feeStopInteraction } from "./fee-stop.ts"
+import { isPrivateFuelInsufficiency } from "./fuel-claim-state.ts"
+import { clampGas } from "./wallet-fee-budget.ts"
 
 export interface FuelClaimInteraction {
 	simulate: () => Promise<unknown>
@@ -42,6 +41,10 @@ export interface FuelClaimInteraction {
 export interface FuelClaimDeps {
 	/** The connected Aztec wallet. */
 	aztec: unknown
+	/** The network's node: its per-transaction maximum clamps the claim's limits. */
+	node: AztecNode
+	/** The network's PrivateFPC: a private record naming any other refuses (version drift). */
+	privateFpc: string
 	recipient: AztecAddress
 	/** The fail-CLOSED self-pay floor (FUEL_MIN_FJ). Undefined/zero ⇒ the claim refuses (BOTH paths). */
 	minFloorFj: bigint | undefined
@@ -72,16 +75,6 @@ export interface FuelClaimDeps {
 /** Retry-once wrapper for a single pre-submission wallet call, pre-bound to a session by the caller. */
 export type FuelClaimRetry = (op: () => Promise<unknown>) => Promise<unknown>
 
-/** A fail-stop {simulate, send} pair that surfaces `why` (a guard refused before any wallet call). */
-const stop = (why: string): FuelClaimInteraction => ({
-	simulate: async () => {
-		throw new Error(why)
-	},
-	send: async () => {
-		throw new Error(why)
-	},
-})
-
 /** Fail-CLOSED on the ACTUAL fee LIMIT: the protocol reverts the setup claim when the claimed balance can't
  *  cover getFeeLimit() (Σ gasLimit[d]*maxFee[d]) — the LIMIT, not the actual charge — so a bridge that clears
  *  the static FUEL_MIN_FJ floor can still fail once fees spike. Returns true (skip) only when the
@@ -95,15 +88,19 @@ function clearsFeeLimit(
 	return received >= BigInt(gas.l2Gas) * maxFees.feePerL2Gas + BigInt(gas.daGas) * maxFees.feePerDaGas
 }
 
-type FuelBlock = NonNullable<DepositJournalRecord["fuel"]>
+type FuelBlock = DepositFuelBlock
 type PayloadSimulator = (fee: { paymentMethod: unknown }) => Promise<unknown>
 
-/** Build the {simulate, send} for a direct Fee-Juice claim. Guards fail CLOSED (return a `stop`).
+/** Build the {simulate, send} for a direct Fee-Juice claim. Guards fail CLOSED: a refusal is an interaction
+ *  whose simulate and send throw a `FeeStopError`.
  *  Stays `async` on purpose: a throwing parse (a malformed salt) surfaces as a rejection, never a
  *  synchronous throw at the call site. */
-export async function buildFuelClaimInteraction(rec: DepositJournalRecord, deps: FuelClaimDeps): Promise<FuelClaimInteraction> {
+export async function buildFuelClaimInteraction(
+	rec: { isPrivate: boolean; fuel?: FuelBlock },
+	deps: FuelClaimDeps,
+): Promise<FuelClaimInteraction> {
 	const fuel = rec.fuel
-	if (!fuel?.received || !fuel.leafIndex) return stop("This Fuel bridge has no claimable Fee Juice.")
+	if (!fuel?.received || !fuel.leafIndex) return feeStopInteraction("no-claimable-fuel")
 	const received = BigInt(fuel.received)
 	const leaf = new Fr(BigInt(fuel.leafIndex))
 	const simulateViaPayload = makePayloadSimulator(deps)
@@ -149,13 +146,10 @@ export async function simulateFeePayload(
 function checkClaimBudget(received: bigint, gas: { daGas: number; l2Gas: number }, deps: FuelClaimDeps): FuelClaimInteraction | null {
 	try {
 		assertFuelClearsFloor(received, deps.minFloorFj)
-	} catch (e) {
-		return stop(e instanceof Error ? e.message : "The bridged gas is below the safe claim floor.")
+	} catch {
+		return feeStopInteraction(deps.minFloorFj !== undefined && deps.minFloorFj > 0n ? "below-claim-floor" : "floor-unconfigured")
 	}
-	if (!clearsFeeLimit(received, gas, deps.maxFeesPerGas)) {
-		return stop("The bridged gas can't cover this claim's fee limit right now (fees spiked). Try again shortly.")
-	}
-	return null
+	return clearsFeeLimit(received, gas, deps.maxFeesPerGas) ? null : feeStopInteraction("fee-limit-spiked")
 }
 
 function buildPrivateFuelClaim(
@@ -166,18 +160,18 @@ function buildPrivateFuelClaim(
 	simulateViaPayload: PayloadSimulator,
 ): FuelClaimInteraction {
 	const { aztec, recipient } = deps
-	const budgetStop = checkClaimBudget(received, clampGas(PRIVATE_CLAIM_GAS), deps)
+	const budgetStop = checkClaimBudget(received, clampGas(deps.node, PRIVATE_CLAIM_GAS), deps)
 	if (budgetStop) return budgetStop
 	// FPC version-drift kill-switch — never claim to a drifted FPC, never downgrade to public.
-	if (fuel.fpc && fuel.fpc !== PRIVATE_FPC_ADDRESS) {
-		return stop("Private fuel FPC address mismatch (version drift), refusing to claim. Reselect a mode.")
+	if (fuel.fpc && fuel.fpc !== deps.privateFpc) {
+		return feeStopInteraction("fpc-drift")
 	}
 	// Authoritative-first: the engine-unsealed salt wins over the plaintext journal copy (which can be
 	// missing/corrupted while the seal is intact). Plaintext is a fallback only (a record without a salt envelope).
 	const saltHex = deps.resolvedSalt ?? fuel.bridgeSecretSalt
-	if (!saltHex) return stop("This private Fuel bridge is missing its recovery salt, cannot claim.")
+	if (!saltHex) return feeStopInteraction("missing-salt")
 	const salt = Fr.fromString(saltHex)
-	const fpcAddr = AztecAddress.fromStringUnsafe(fuel.fpc ?? PRIVATE_FPC_ADDRESS)
+	const fpcAddr = AztecAddress.fromStringUnsafe(fuel.fpc ?? deps.privateFpc)
 	// teardownGas=0 keeps max_gas_cost within the bridged amount. maxFeesPerGas is the caller's
 	// predicted-worst snapshot (NO padding) — a self-pay claim spends the bridged amount as its whole
 	// budget, so any padding inflates max_gas_cost past it and the FPC reverts "Amount too low to cover
@@ -193,7 +187,7 @@ function buildPrivateFuelClaim(
 			// (suggestGasLimits), so size it to the 2-call setup ({@link PRIVATE_CLAIM_GAS}). The fee is
 			// billed on ACTUAL gas, not the limit, so a generous limit does not overpay — but it IS the
 			// balance-check bound (getFeeLimit), so {@link clearsFeeLimit} above fail-closes on it.
-			gasLimits: Gas.from(clampGas(PRIVATE_CLAIM_GAS)),
+			gasLimits: Gas.from(clampGas(deps.node, PRIVATE_CLAIM_GAS)),
 			teardownGasLimits: Gas.from({ daGas: 0, l2Gas: 0 }),
 			// Both spellings: the wallet-sdk option schema names the cap `maxFeePerGas`, the wallets read `maxFeesPerGas`.
 			...(deps.maxFeesPerGas ? { maxFeesPerGas: deps.maxFeesPerGas, maxFeePerGas: deps.maxFeesPerGas } : {}),
@@ -236,12 +230,12 @@ function buildPublicFuelClaim(
 	simulateViaPayload: PayloadSimulator,
 ): FuelClaimInteraction {
 	const { aztec, recipient } = deps
-	const budgetStop = checkClaimBudget(received, clampGas(PUBLIC_CLAIM_GAS), deps)
+	const budgetStop = checkClaimBudget(received, clampGas(deps.node, PUBLIC_CLAIM_GAS), deps)
 	if (budgetStop) return budgetStop
 	// Authoritative-first: the engine-gated `rec.secret` wins over the `fuel.secret` display copy so the
 	// gate and the claim can never read divergent secrets. Plaintext is a fallback only.
 	const secretHex = deps.resolvedSecret ?? fuel.secret
-	if (!secretHex) return stop("This Fuel bridge is missing its claim secret.")
+	if (!secretHex) return feeStopInteraction("missing-secret")
 	const publicFee = {
 		paymentMethod: publicFeeJuicePayment(recipient, {
 			claimAmount: received,
@@ -252,7 +246,7 @@ function buildPublicFuelClaim(
 		// nothing). teardownGas=0; maxFeesPerGas is the caller's predicted-worst snapshot (NO padding),
 		// since this self-pays and the bridged amount is the whole budget.
 		gasSettings: {
-			gasLimits: Gas.from(clampGas(PUBLIC_CLAIM_GAS)),
+			gasLimits: Gas.from(clampGas(deps.node, PUBLIC_CLAIM_GAS)),
 			teardownGasLimits: Gas.from({ daGas: 0, l2Gas: 0 }),
 			...(deps.maxFeesPerGas ? { maxFeesPerGas: deps.maxFeesPerGas, maxFeePerGas: deps.maxFeesPerGas } : {}),
 		},

@@ -12,7 +12,7 @@
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { type Ref, ref, watch } from "vue"
-import { DAPP_SELF_PAY_FEATURE, walletSupports } from "@/lib/wallet-features"
+import { DAPP_SELF_PAY_FEATURE, walletSupports } from "@unleashed/sdk/internal"
 import { readFeeJuiceOrNull, readPrivateFeeJuiceBalance, readPublicFeeJuiceBalance } from "./deposit-flow"
 
 export interface GasHeldDeps {

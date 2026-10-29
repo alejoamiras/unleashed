@@ -23,7 +23,7 @@ import {
 	requirePinnedCanarySigner,
 	routerOnlyScopeOf,
 } from "./live-intent"
-import { CANONICAL_PERMIT2 } from "./script-l1"
+import { CANONICAL_PERMIT2 } from "@unleashed/sdk/protocol"
 
 const pinned = {
 	rollup: "0x1f435a7f2da358caf887a470faeee7d5d5f4efba",

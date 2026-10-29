@@ -8,15 +8,19 @@ publish setup land on top of this layout.
 
 | Entry | What | Published |
 |---|---|---|
-| `@unleashed/sdk` | Transfer records. | yes |
-| `@unleashed/sdk/protocol` | The pure layer: ABIs, derivations, the manifest, gas math, the LI.FI client and book, fee methods. | yes |
-| `@unleashed/sdk/artifacts` | The hub's Noir artifact, loaded eagerly. | yes |
-| `@unleashed/sdk/private-fpc-artifact` | The PrivateFPC artifact, for a dynamic `import()` only. | yes |
+| `@unleashed/sdk` | `parseNetwork` and its trust roots, `Network`, transfer records and events, `BridgeError`. | yes |
+| `@unleashed/sdk/fuel` | `probeFuel`, `quoteFuel`, `depositFuel`: gas-only deposits. Never loads the hub artifact. | yes |
+| `@unleashed/sdk/bridge` | `resolveToken`, `quoteBridge`, `depositToken`, `hubArtifact()`: token deposits. Loads the hub artifact. | yes |
+| `@unleashed/sdk/protocol` | The pure layer: ABIs, derivations, the manifest, gas math, the LI.FI client and book, fee methods, code pins. | yes |
+| `@unleashed/sdk/networks` | The bundled testnet and mainnet manifests. | yes |
+| `@unleashed/sdk/artifacts` | The hub's Noir artifact, loaded eagerly. | workspace only |
+| `@unleashed/sdk/private-fpc-artifact` | The PrivateFPC artifact, for a dynamic `import()` only. | workspace only |
 | `@unleashed/sdk/l1` | The viem-only slice of `./protocol` (the router ABI, the LI.FI ABIs, book and gas constants): esbuild resolves every member of a barrel, so a Worker bundles this one instead. | workspace only |
 | `@unleashed/sdk/internal` | The orchestration (`execution/`): the L1 send, receipt leaves, arrival gates, claims, recovery. | workspace only |
 
 Source imports use `.ts` specifiers, so every consumer's tsconfig sets `allowImportingTsExtensions`. `src/` imports no
-`node:` built-in (`no-node.test.ts`) and declares no side effects.
+`node:` built-in and declares every package it imports (`imports.test.ts`), and `.` and `./fuel` never reach the hub
+artifact statically (the same test).
 
 ## File map
 
@@ -53,6 +57,9 @@ Source imports use `.ts` specifiers, so every consumer's tsconfig sets `allowImp
 |---|---|
 | `bun run test` | vitest: pure functions and mocked-chain orchestrations. The sandbox integration suite that drives these flows lives in `@unleashed/bridge-core` (`test:integration`). |
 | `bun run typecheck` | `tsc --noEmit` over `src/`. |
+| `bun run stage` | Builds `dist/` from the published entries only: what they reach is emitted, the JSON assets they import are copied with their digests checked, and the published `package.json` is derived (peers exact at the Aztec pins, `viem` a caret range). |
+| `bun run pack:check` | Stages, packs, and installs the tarball into `test/consumer/` (frozen lockfile, install scripts off, nothing resolvable from the repo); typechecks it under `NodeNext` and `Bundler` and imports every entry in Node and Bun. After an Aztec bump, update the fixture's pins and run `bun scripts/pack-check.ts --relock`: a relock re-checks the 7-day gate, so a version younger than that needs a local, uncommitted exclude. |
+| `bun scripts/code-pins.ts` | Rewrites `src/protocol/code-pins.json` from the forge build after a pinned contract changes; `scripts/code-pins.test.ts` fails until it is rerun. |
 
 ## Key invariants
 

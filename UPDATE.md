@@ -50,8 +50,11 @@ on these inputs, so they move only with a new generation.
 ## The pin surface
 
 - `@aztec-labs/*` and `@aztec-foundation/*` exact pins in `apps/tools/package.json`,
-  `packages/bridge-core/package.json` and `contracts/bridge/aztec/txe-server/package.json`, each scope
-  at its own version (above). `packages/bridge-core` pins stock `viem` at exactly the version the
+  `packages/bridge-core/package.json`, `packages/sdk/package.json` and
+  `contracts/bridge/aztec/txe-server/package.json`, each scope at its own version (above). The SDK's
+  published peers follow its pins; its consumer fixture (`packages/sdk/test/consumer/package.json`)
+  declares the same pins and is relocked with `bun scripts/pack-check.ts --relock` from `packages/sdk`
+  (a relock re-checks the release-age gate, so it takes the same temporary excludes). `packages/bridge-core` pins stock `viem` at exactly the version the
   line depends on (`2.57.1` on 6.0.0), so `flows.ts`'s `OutboxContract` client shares the Aztec
   packages' copy; move it with the line.
 - The three packages the Nulo wallet's repository publishes, at the versions published for the new line.

@@ -51,3 +51,29 @@ describe("the shipped source's imports", () => {
 			expect(resolvePackageAsset(name, "package.json", { from: import.meta.url }), name).toMatch(/package\.json$/)
 	})
 })
+
+/** The relative modules `entry` reaches through static imports and re-exports only. */
+function staticGraph(entry: string): Set<string> {
+	const seen = new Set<string>()
+	const visit = (file: string) => {
+		if (seen.has(file)) return
+		seen.add(file)
+		for (const [, fixed] of readFileSync(file, "utf8").replace(COMMENT, "").matchAll(SPECIFIER))
+			if (fixed?.startsWith(".")) visit(join(dirname(file), fixed))
+	}
+	visit(join(SRC, entry))
+	return seen
+}
+
+// The hub artifact is megabytes: a gas-only integrator must not load it, so only a dynamic import reaches it.
+describe("the hub artifact", () => {
+	it.each(["index.ts", "fuel/index.ts"])("is out of %s's static import graph", (entry) => {
+		const graph = staticGraph(entry)
+		expect(graph.size).toBeGreaterThan(5)
+		expect([...graph].map((f) => f.slice(SRC.length + 1)).filter((f) => f === "protocol/artifacts.ts")).toEqual([])
+	})
+
+	it("is in ./bridge's", () => {
+		expect([...staticGraph("bridge/index.ts")].map((f) => f.slice(SRC.length + 1))).toContain("protocol/artifacts.ts")
+	})
+})

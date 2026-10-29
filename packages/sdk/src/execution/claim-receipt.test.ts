@@ -1,7 +1,7 @@
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
 import { describe, expect, it } from "vitest"
-import { classifyClaimReceipt, isWellFormedTxHash } from "./claim-receipt"
+import { classifyClaimReceipt, isWellFormedTxHash } from "./claim-receipt.ts"
 
 describe("isWellFormedTxHash", () => {
 	it("accepts exactly 0x + 64 hex digits that the parser also accepts — parity with TxHash.fromString, not just shape", () => {

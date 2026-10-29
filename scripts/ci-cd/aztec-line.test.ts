@@ -13,7 +13,7 @@ import { join } from "node:path"
  * speak the line the contracts compile against.
  */
 const ROOT = join(import.meta.dir, "..", "..")
-const LOCKFILES = ["bun.lock", "contracts/bridge/aztec/txe-server/bun.lock"]
+const LOCKFILES = ["bun.lock", "contracts/bridge/aztec/txe-server/bun.lock", "packages/sdk/test/consumer/bun.lock"]
 const PIN_SOURCES = ["packages/bridge-core/package.json", "packages/sdk/package.json", "apps/tools/package.json"]
 const EXACT = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/
 const STANDARDS = "@aztec-foundation/aztec-standards"

@@ -13,6 +13,7 @@ import {
 	hubTokenOfSlot,
 	isRegisterRace,
 	preflightHubExit,
+	probeHubClaim,
 } from "./hub-l2.ts"
 import type { JournalTokenBlock } from "../records.ts"
 
@@ -112,6 +113,15 @@ const params = (isPrivate: boolean): HubClaimParams => ({
 })
 
 describe("hub L2 claims", () => {
+	it("the probe simulates a registered token's claim, and never a first claim's constructor", async () => {
+		const bound = fakeHub({ registered: true, claimSimulateFailures: 0 })
+		await probeHubClaim(bound.hub, params(true), { registerFee: { paymentMethod: {} }, onClaimSend: () => {} }, {})
+		expect(bound.calls).toEqual(["simulate:claim_private"])
+		const first = fakeHub({ registered: false, claimSimulateFailures: 0 })
+		expect(await probeHubClaim(first.hub, params(false), {}, {})).toEqual({})
+		expect(first.calls).toEqual([])
+	})
+
 	it("a registered token is a plain claim", async () => {
 		const { hub, calls } = fakeHub({ registered: true })
 		expect(await claimViaHub(hub, params(false), {})).toEqual({ path: "claim", claimTxHash: "0xclaim_public" })

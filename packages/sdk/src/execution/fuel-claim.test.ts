@@ -1,6 +1,5 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import type { DepositJournalRecord } from "@unleashed/bridge-core"
 import { type Mock, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@aztec-labs/aztec.js/contracts", () => ({
@@ -23,16 +22,20 @@ vi.mock("@aztec-labs/aztec.js/contracts", () => ({
 // Keep every real export EXCEPT the fee-method builders each path feeds material into — stub them so we can
 // (a) capture the salt/secret each path routed in, and (b) avoid real poseidon in jsdom (deriveBridgeSecret
 // would compute an @aztec hash — the module-load-crash class).
-vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
+vi.mock("../protocol/private-fuel.ts", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../protocol/private-fuel.ts")>()),
 	privateMintAndPayFee: vi.fn(() => ({})),
-	publicFeeJuicePayment: vi.fn(() => ({})),
 	deriveBridgeSecret: vi.fn(() => Fr.fromString("0xdead")),
 }))
+vi.mock("../protocol/fee-juice.ts", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../protocol/fee-juice.ts")>()),
+	publicFeeJuicePayment: vi.fn(() => ({})),
+}))
 
-import { privateMintAndPayFee, publicFeeJuicePayment } from "@unleashed/sdk/protocol"
-import { walletErrorCodeOf } from "@/lib/errors"
-import { buildFuelClaimInteraction } from "./fuelClaim"
+import { publicFeeJuicePayment } from "../protocol/fee-juice.ts"
+import { PRIVATE_FPC_ADDRESS, privateMintAndPayFee } from "../protocol/private-fuel.ts"
+import { buildFuelClaimInteraction } from "./fuel-claim.ts"
+import type { DepositFuelBlock } from "../records.ts"
 
 const saltArgOf = (call = 0): Fr => (privateMintAndPayFee as unknown as Mock).mock.calls[call][3] as Fr
 // The public self-pay routes its claim into publicFeeJuicePayment(recipient, { claimAmount, claimSecret, leaf }).
@@ -43,11 +46,17 @@ const publicClaimArg = (call = 0) =>
 	]
 const secretArgOf = (call = 0): Fr => publicClaimArg(call)[1].claimSecret
 
+type FuelClaimRecord = { isPrivate: boolean; fuel?: DepositFuelBlock }
+
+/** Nodes report no per-transaction maximum here, so limits pass through unclamped. */
+const NODE = { getNodeInfo: async () => ({}) } as never
+const FPC = PRIVATE_FPC_ADDRESS
+
 const RECIPIENT = AztecAddress.fromNumberUnsafe(0x1234)
 const ABOVE_FLOOR = "100000000000000000000" // 100e18, well above the 11e18 floor
 const FLOOR = 11_000_000_000_000_000_000n
 
-const rec = (over: Record<string, unknown>): DepositJournalRecord =>
+const rec = (over: Record<string, unknown>): FuelClaimRecord =>
 	({
 		schema: 2,
 		id: "0xfuel",
@@ -64,10 +73,12 @@ const rec = (over: Record<string, unknown>): DepositJournalRecord =>
 		assetKind: "fee-juice",
 		fuel: { amount: ABOVE_FLOOR, secret: "0x1234", secretHashHex: "0xfh", minOutput: "0", received: ABOVE_FLOOR, leafIndex: "7" },
 		...over,
-	}) as DepositJournalRecord
+	}) as FuelClaimRecord
 
 const deps = (over: Record<string, unknown> = {}) => ({
 	aztec: {},
+	node: NODE,
+	privateFpc: FPC,
 	recipient: RECIPIENT,
 	minFloorFj: FLOOR,
 	...over,
@@ -78,7 +89,7 @@ describe("buildFuelClaimInteraction — fail-closed guards", () => {
 
 	it("no claimable Fee Juice (missing received) ⇒ stop", async () => {
 		const i = await buildFuelClaimInteraction(rec({ fuel: { leafIndex: "7" } }), deps())
-		await expect(i.simulate()).rejects.toThrow(/no claimable Fee Juice/)
+		await expect(i.simulate()).rejects.toMatchObject({ stop: "no-claimable-fuel" })
 	})
 
 	it("private below the floor ⇒ stop (fail-closed self-pay floor)", async () => {
@@ -86,7 +97,7 @@ describe("buildFuelClaimInteraction — fail-closed guards", () => {
 			rec({ isPrivate: true, fuel: { received: "5", bridgeSecretSalt: "0x1", leafIndex: "7" } }),
 			deps({ minFloorFj: 10n }),
 		)
-		await expect(i.send()).rejects.toThrow(/below the safe claim floor/)
+		await expect(i.send()).rejects.toMatchObject({ stop: "below-claim-floor" })
 	})
 
 	it("public below the floor ⇒ stop (public self-pays now, so the same fail-closed floor guards it)", async () => {
@@ -94,7 +105,7 @@ describe("buildFuelClaimInteraction — fail-closed guards", () => {
 			rec({ fuel: { received: "5", secret: "0x1", leafIndex: "7" } }),
 			deps({ minFloorFj: 10n }),
 		)
-		await expect(i.send()).rejects.toThrow(/below the safe claim floor/)
+		await expect(i.send()).rejects.toMatchObject({ stop: "below-claim-floor" })
 	})
 
 	it("private with an UNCONFIGURED floor ⇒ stop (never silently skipped)", async () => {
@@ -102,7 +113,7 @@ describe("buildFuelClaimInteraction — fail-closed guards", () => {
 			rec({ isPrivate: true, fuel: { received: ABOVE_FLOOR, bridgeSecretSalt: "0x1", leafIndex: "7" } }),
 			deps({ minFloorFj: undefined }),
 		)
-		await expect(i.simulate()).rejects.toThrow(/not configured/)
+		await expect(i.simulate()).rejects.toMatchObject({ stop: "floor-unconfigured" })
 	})
 
 	it("public with an UNCONFIGURED floor ⇒ stop (never silently skipped)", async () => {
@@ -110,7 +121,7 @@ describe("buildFuelClaimInteraction — fail-closed guards", () => {
 			rec({ fuel: { received: ABOVE_FLOOR, secret: "0x1", leafIndex: "7" } }),
 			deps({ minFloorFj: undefined }),
 		)
-		await expect(i.simulate()).rejects.toThrow(/not configured/)
+		await expect(i.simulate()).rejects.toMatchObject({ stop: "floor-unconfigured" })
 	})
 
 	it("private with a DRIFTED FPC ⇒ stop (kill-switch; never claim to a drifted FPC)", async () => {
@@ -118,17 +129,17 @@ describe("buildFuelClaimInteraction — fail-closed guards", () => {
 			rec({ isPrivate: true, fuel: { received: ABOVE_FLOOR, bridgeSecretSalt: "0x1", fpc: "0xWRONGFPC", leafIndex: "7" } }),
 			deps(),
 		)
-		await expect(i.simulate()).rejects.toThrow(/version drift/)
+		await expect(i.simulate()).rejects.toMatchObject({ stop: "fpc-drift" })
 	})
 
 	it("private missing the recovery salt ⇒ stop", async () => {
 		const i = await buildFuelClaimInteraction(rec({ isPrivate: true, fuel: { received: ABOVE_FLOOR, leafIndex: "7" } }), deps())
-		await expect(i.simulate()).rejects.toThrow(/missing its recovery salt/)
+		await expect(i.simulate()).rejects.toMatchObject({ stop: "missing-salt" })
 	})
 
 	it("public missing the claim secret ⇒ stop", async () => {
 		const i = await buildFuelClaimInteraction(rec({ fuel: { received: ABOVE_FLOOR, leafIndex: "7" } }), deps())
-		await expect(i.simulate()).rejects.toThrow(/missing its claim secret/)
+		await expect(i.simulate()).rejects.toMatchObject({ stop: "missing-secret" })
 	})
 
 	// Clears the static floor but NOT getFeeLimit (gasLimits*maxFees) once fees spike — the protocol's
@@ -138,7 +149,7 @@ describe("buildFuelClaimInteraction — fail-closed guards", () => {
 
 	it("public clears the floor but not the fee LIMIT (fee spike) ⇒ stop", async () => {
 		const i = await buildFuelClaimInteraction(rec({}), deps({ maxFeesPerGas: SPIKED }))
-		await expect(i.send()).rejects.toThrow(/fee limit/)
+		await expect(i.send()).rejects.toMatchObject({ stop: "fee-limit-spiked" })
 	})
 
 	it("private clears the floor but not the fee LIMIT (fee spike) ⇒ stop", async () => {
@@ -146,7 +157,7 @@ describe("buildFuelClaimInteraction — fail-closed guards", () => {
 			rec({ isPrivate: true, fuel: { received: ABOVE_FLOOR, bridgeSecretSalt: "0x1", leafIndex: "7" } }),
 			deps({ maxFeesPerGas: SPIKED }),
 		)
-		await expect(i.send()).rejects.toThrow(/fee limit/)
+		await expect(i.send()).rejects.toMatchObject({ stop: "fee-limit-spiked" })
 	})
 })
 
@@ -178,7 +189,7 @@ describe("buildFuelClaimInteraction — simulate validates the REAL payload, not
 			try {
 				return await op()
 			} catch (e) {
-				if (walletErrorCodeOf(e) !== "CONTRACT_NOT_REGISTERED") throw e
+				if (!String(e instanceof Error ? e.message : e).includes('"walletErrorCode":"CONTRACT_NOT_REGISTERED"')) throw e
 				registrations += 1
 				return op()
 			}

@@ -5,7 +5,7 @@ import { mainnetPlaceholderManifest } from "../test/fixtures/frozen-manifests"
 import { assertFuelRouteOptions, deployFuelRoute, type FuelRouteOptions, fuelRouteCandidate, planFuelRoute } from "./fuel-route"
 import { MAINNET_REGISTRY, PLAN_PINNED_L1_SIGNERS } from "./live-intent"
 import { preLifiTestnetManifest } from "./lifi-canary-fixture"
-import { CANONICAL_PERMIT2 } from "./script-l1"
+import { CANONICAL_PERMIT2 } from "@unleashed/sdk/protocol"
 
 // The unit job has no forge build; a plan only hashes the gate's creation code to look it up in the journal.
 vi.mock("./script-artifacts", () => ({

@@ -14,6 +14,7 @@ import type { GasUsed } from "@aztec-labs/stdlib/gas"
 import { deriveStorageSlotInMap } from "@aztec-labs/stdlib/hash"
 import { tokenBridgeHubArtifact } from "../protocol/artifacts.ts"
 import type { JournalTokenBlock } from "../records.ts"
+import { type FuelClaimRetry, simulateFeePayload } from "./fuel-claim.ts"
 
 export function hubAt(wallet: Wallet, hub: string): ContractBase {
 	return Contract.at(AztecAddress.fromStringUnsafe(hub), tokenBridgeHubArtifact, wallet)
@@ -85,16 +86,17 @@ const REGISTRATION_WAIT: Required<RegistrationWait> = {
  *  two fees: `registerFee` pays `register_token` instead of `fee`, and `registeredClaimFee` pays the
  *  claim that follows a registration THIS call sent — a fuel claim's fee consumes the bridged Fee
  *  Juice message, which only one transaction can do, so whichever of the two spends it, the other
- *  must draw on something else. `onRegisterSend` fires right before the registration is sent and
+ *  must draw on something else. Each seam is awaited, so a caller may persist in it before the wallet
+ *  is asked. `onRegisterSend` fires right before the registration is sent and
  *  `onClaimSend` right before the claim, so a caller can latch "the fuel was spent" against the
  *  transaction that actually carries it; `onRegistered` delivers the registration's hash as soon
  *  as it exists, before the claim is awaited. */
 export type SendOpts = Record<string, unknown> & {
 	registerFee?: unknown
 	registeredClaimFee?: unknown
-	onRegisterSend?: () => void
-	onRegistered?: (txHash: string) => void
-	onClaimSend?: () => void
+	onRegisterSend?: () => unknown
+	onRegistered?: (txHash: string) => unknown
+	onClaimSend?: () => unknown
 	registrationWait?: RegistrationWait
 	/** A node's view of a transaction's receipt. A wallet may hand back the registration's receipt
 	 *  before it is mined (the Nulo wallet reads it once, immediately), so the registration's fate —
@@ -271,7 +273,7 @@ async function firstPublicClaim(hub: ContractBase, p: HubClaimParams, send: Send
 	const claim = claimSendOpts(send)
 	// One attempt, whichever transaction carries it: the registering claim, or the plain claim it
 	// falls back to when someone else registered first.
-	send.onClaimSend?.()
+	await send.onClaimSend?.()
 	try {
 		const sent = hub.methods
 			.register_and_claim_public(...registerArgs(p.token), to, p.amount, p.claimValue, new Fr(p.leafIndex))
@@ -286,13 +288,13 @@ async function firstPublicClaim(hub: ContractBase, p: HubClaimParams, send: Send
 async function firstPrivateClaim(hub: ContractBase, p: HubClaimParams, send: SendOpts): Promise<HubClaimOutcome> {
 	const { register, claim, registeredClaim } = splitRegisterFee(send)
 	let registerTxHash: string | undefined
-	send.onRegisterSend?.()
+	await send.onRegisterSend?.()
 	try {
 		const { receipt } = await (hub.methods.register_token(...registerArgs(p.token)).send(register as never) as unknown as Sent)
 		registerTxHash = String(receipt.txHash)
 		// The hash is the caller's evidence of what this transaction did or spent: journalled the
 		// moment it exists, before anything that can still fail — a receipt read, the wait, a revert.
-		send.onRegistered?.(registerTxHash)
+		await send.onRegistered?.(registerTxHash)
 		const fate = await awaitRegistrationFate(receipt, registerTxHash, send)
 		// A dropped registration was never included: nothing was spent, and the whole claim retries.
 		if (fate === "dropped") {
@@ -317,14 +319,35 @@ async function firstPrivateClaim(hub: ContractBase, p: HubClaimParams, send: Sen
 	// the claim is then the plain one, with the plain fee.
 	const claimOpts = registerTxHash === undefined ? claim : registeredClaim
 	if (registerTxHash !== undefined) await awaitClaimVisible(hub, p, claimOpts, registerTxHash, send.registrationWait)
-	send.onClaimSend?.()
+	await send.onClaimSend?.()
 	return { path: "register,claim", registerTxHash, claimTxHash: await txHashOf(plainClaim(hub, p, claimOpts)) }
+}
+
+/**
+ * The consumability probe. A first claim cannot be simulated: registering enqueues the derived Token's constructor,
+ * which no wallet can build against an instance it does not hold yet. So for an unregistered token the fuel the
+ * registration spends is probed on its own (the fee's setup as a whole transaction), and otherwise the checkpoint gate
+ * is the only readiness authority. A registered token probes the real claim, which makes the caller wait out a message
+ * that has not folded into the L2 yet.
+ */
+export async function probeHubClaim(
+	hub: ContractBase,
+	p: HubClaimParams,
+	opts: SendOpts,
+	wallet: unknown,
+	retry?: FuelClaimRetry,
+): Promise<unknown> {
+	if (!(await hubTokenFor(hub, p.token.erc20, p.from))) {
+		const registerFee = opts.registerFee as { paymentMethod: unknown } | undefined
+		return registerFee ? simulateFeePayload(wallet, AztecAddress.fromStringUnsafe(p.recipient), registerFee, retry) : {}
+	}
+	return claimCall(hub, p).simulate(claimSendOpts(opts) as never)
 }
 
 /** Sends the claim, registering the token first when the hub does not know it yet. */
 export async function claimViaHub(hub: ContractBase, p: HubClaimParams, send: SendOpts): Promise<HubClaimOutcome> {
 	if (await registeredTokenOf(hub, p)) {
-		send.onClaimSend?.()
+		await send.onClaimSend?.()
 		return { path: "claim", claimTxHash: await txHashOf(plainClaim(hub, p, claimSendOpts(send))) }
 	}
 	return p.isPrivate ? firstPrivateClaim(hub, p, send) : firstPublicClaim(hub, p, send)

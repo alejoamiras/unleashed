@@ -1,6 +1,6 @@
 /**
  * The max fee per gas the CONNECTED WALLET will submit a transaction under — the figure every fee
- * ceiling in this app has to be priced from, because the Fee Juice a private claim, a private exit
+ * ceiling has to be priced from, because the Fee Juice a private claim, a private exit
  * or a private fuel claim sets aside is the transaction's `gasLimits · maxFeesPerGas`, kept in full
  * by the PrivateFPC, and the wallet decides the second factor. A dApp cannot bind it through the
  * wallet-sdk transport: the option schema (`GasSettingsOptionSchema`) names the cap `maxFeePerGas`
@@ -12,9 +12,8 @@
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { predictedWorstMinFees } from "@unleashed/sdk/protocol"
-import { NETWORK } from "@/lib/network"
+import type { AztecNode } from "@aztec-labs/aztec.js/node"
+import { predictedWorstMinFees } from "../protocol/fee-juice.ts"
 
 export type MaxFees = { feePerDaGas: bigint; feePerL2Gas: bigint }
 export type GasLimits = { daGas: number; l2Gas: number }
@@ -36,21 +35,23 @@ type Quote = { maxFees: MaxFees; at: number; epoch: number; pending?: Promise<Ma
 const quotesByWallet = new WeakMap<object, Map<string, Quote>>()
 /** Bumped by every forget: a quote from before it, cached or still in flight, no longer counts. */
 let epoch = 0
-let networkMax: GasLimits | null = null
+/** Keyed by node: two networks on one page never share limits. */
+const networkMax = new WeakMap<AztecNode, GasLimits>()
 
-/** The most a single transaction may declare on this network, read once; limits above it are refused
- *  at submission, so every fee this app names is clamped to it (a no-op where the app's own limits
- *  already fit). Unknown until the first read: `clampGas` passes limits through until then. */
-export function clampGas(gas: GasLimits): GasLimits {
-	if (!networkMax) return gas
-	return { daGas: Math.min(gas.daGas, networkMax.daGas), l2Gas: Math.min(gas.l2Gas, networkMax.l2Gas) }
+/** The most a single transaction may declare on `node`'s network, read once; limits above it are refused
+ *  at submission, so every fee named is clamped to it (a no-op where the given limits already fit).
+ *  Unknown until the first read: `clampGas` passes limits through until then. */
+export function clampGas(node: AztecNode, gas: GasLimits): GasLimits {
+	const max = networkMax.get(node)
+	if (!max) return gas
+	return { daGas: Math.min(gas.daGas, max.daGas), l2Gas: Math.min(gas.l2Gas, max.l2Gas) }
 }
 
-async function readNetworkMax(): Promise<void> {
-	if (networkMax) return
-	const info = await createAztecNodeClient(NETWORK.nodeUrl).getNodeInfo()
-	const gas = info.txsLimits?.gas
-	if (gas) networkMax = { daGas: Number(gas.daGas), l2Gas: Number(gas.l2Gas) }
+/** Reads `node`'s per-transaction maximum once, so later `clampGas` calls on it clamp. */
+export async function readNetworkMax(node: AztecNode): Promise<void> {
+	if (networkMax.has(node)) return
+	const gas = (await node.getNodeInfo()).txsLimits?.gas
+	if (gas) networkMax.set(node, { daGas: Number(gas.daGas), l2Gas: Number(gas.l2Gas) })
 }
 
 /** Quotes are per account: the wallet behind an account does not change under a session. */
@@ -63,9 +64,9 @@ const keyOf = (account: AztecAddress) => account.toString()
  * Throws when the wallet cannot simulate — the callers turn that into their "could not price" stop.
  * A wallet with no simulation at all (a scripted stand-in) is priced from the node's prediction.
  */
-export async function walletMaxFees(aztec: unknown, account: AztecAddress, gas: GasLimits): Promise<MaxFees> {
+export async function walletMaxFees(node: AztecNode, aztec: unknown, account: AztecAddress, gas: GasLimits): Promise<MaxFees> {
 	const wallet = aztec as SimulatingWallet | null | undefined
-	if (!wallet || typeof wallet.simulateTx !== "function") return predictedWorstMinFees(createAztecNodeClient(NETWORK.nodeUrl))
+	if (!wallet || typeof wallet.simulateTx !== "function") return predictedWorstMinFees(node)
 	let quotes = quotesByWallet.get(wallet)
 	if (!quotes) {
 		quotes = new Map()
@@ -77,7 +78,7 @@ export async function walletMaxFees(aztec: unknown, account: AztecAddress, gas: 
 	if (current?.pending) return current.pending
 	if (current && Date.now() - current.at <= QUOTE_FRESH_MS) return current.maxFees
 	const mine = epoch
-	const pending = probe(wallet, account, gas)
+	const pending = probe(node, wallet, account, gas)
 		.then((maxFees) => {
 			if (mine === epoch) quotes.set(key, { maxFees, at: Date.now(), epoch: mine })
 			return maxFees
@@ -103,10 +104,10 @@ export function forgetWalletFees(): void {
  * whatever it will really submit under. Probing without a proposal would make a cap-honoring
  * wallet answer with its own padded default, and the app would then bind it to that.
  */
-async function probe(wallet: SimulatingWallet, account: AztecAddress, gas: GasLimits): Promise<MaxFees> {
-	await readNetworkMax()
-	const limits = clampGas(gas)
-	const proposed = await predictedWorstMinFees(createAztecNodeClient(NETWORK.nodeUrl))
+async function probe(node: AztecNode, wallet: SimulatingWallet, account: AztecAddress, gas: GasLimits): Promise<MaxFees> {
+	await readNetworkMax(node)
+	const limits = clampGas(node, gas)
+	const proposed = await predictedWorstMinFees(node)
 	const cap = { feePerDaGas: proposed.feePerDaGas, feePerL2Gas: proposed.feePerL2Gas }
 	const noop = await SetPublicAuthwitContractInteraction.create(wallet as never, account, Fr.random(), false)
 	const payload = await noop.request()

@@ -11,7 +11,7 @@ import {
 	isPrivateFuelInsufficiency,
 	type FuelClaimEvidence,
 	type PrivateFuelClaimEvidence,
-} from "./fuel-claim-state"
+} from "./fuel-claim-state.ts"
 
 const base: FuelClaimEvidence = {
 	attempt: false,

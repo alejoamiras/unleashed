@@ -34,6 +34,19 @@ import {
 	upsertRecord,
 } from "@unleashed/bridge-core"
 import type { JournalTokenBlock } from "@unleashed/sdk"
+import {
+	type ArrivalGateState,
+	type ArrivalReads,
+	type DepositSearch,
+	type GateClock,
+	awaitClaimSimulate,
+	awaitL2BlockCountdown,
+	awaitMessageCheckpoints,
+	classifyConsumable,
+	isMsgConsumed,
+	isReceiptRecordMismatch,
+	isWellFormedTxHash,
+} from "@unleashed/sdk/internal"
 import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import type { GrantOutcome } from "@/lib/send-model"
 import { NETWORK } from "@/lib/network"
@@ -43,10 +56,7 @@ import { SYNC_TARGET_MARGIN_BLOCKS, stepLogLines } from "@/lib/bridge-steps"
 import { crossChainLogFacts } from "@/lib/crosschain-steps"
 import { trimTxHash } from "@/lib/format"
 import { humanizeWalletError, isUserRejection } from "@/lib/wallet-errors"
-import { isWellFormedTxHash } from "@/lib/claim-receipt"
-import { isReceiptRecordMismatch } from "@/lib/fuel-claim-state"
 import { HELD_ELSEWHERE, type JournalLocks } from "@/lib/journal-locks"
-import type { DepositSearch } from "./deposit-reconcile"
 import type { ExitSearch } from "./exit-attach"
 import { type DisplayAmount, displayAmountOf } from "@/lib/asset-label"
 import { dropPhaseClock } from "@/lib/phase-clock"
@@ -59,23 +69,6 @@ const log = (...args: unknown[]) => console.log("[bridge:journal]", ...args)
 
 const PRUNE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
 export { SYNC_TARGET_MARGIN_BLOCKS }
-
-/** The L1→L2 message isn't consumable until the sequencer folds it into a block AND this wallet's
- *  PXE syncs it; both claim paths revert with one of these wordings until then. This is the NOT-YET
- *  shape ONLY — it must NOT match the already-consumed shape (see isMsgConsumed): upstream 5.0.0
- *  distinguishes them (`No L1 to L2 message found` = not anchored; `No NON-NULLIFIED L1 to L2 message
- *  found` = anchored but nullified), and the two consumers want opposite conditions. `No L1 to L2
- *  message found` is anchored with a word boundary so the "non-nullified" infix can't match here. */
-export const isMsgNotReady = (msg: string): boolean =>
-	/l1_to_l2_msg_exists|nonexistent L1-to-L2|message not in state|(?<!non-nullified )No L1 to L2 message found/i.test(msg)
-
-/** The already-CONSUMED (nullified) shape: the message was anchored and this claim's nullifier is
- *  already in the tree. 5.0.0's claim oracle checks the nullifier, so a re-claim of consumed FJ
- *  throws `No non-nullified L1 to L2 message found` (@aztec-labs/stdlib l1_to_l2_message). Distinct from
- *  isMsgNotReady — matching that here would (a) treat a not-yet-anchored message as consumed and
- *  latch a false "claimed" [fund-stranding], and (b) never recognise the real consumed shape. */
-export const isMsgConsumed = (msg: string): boolean =>
-	/No non-nullified L1 to L2 message found|message has already been nullified|L1-to-L2 message is already nullified/i.test(msg)
 
 /** Every deposit record the claim path drives. The shared helpers read only the facts both
  *  shapes carry; the steps that differ re-narrow with `runsAsSend`. */
@@ -1479,73 +1472,42 @@ function checkpointApplies(rec: ClaimRecord): boolean {
 	return !!deps.messageReadiness && (!!rec.messageHash || !!rec.fuel?.messageHash)
 }
 
-/** The arrival gates' threaded state: `simulateStart` is the shared 300-iteration budget the
- *  countdown consumes from ahead of the simulate loop; `counted` selects the later
- *  "message arrived" narration once any gate actually waited. */
-interface ArrivalGateState {
-	simulateStart: number
-	counted: boolean
-	preGated: boolean
+/** The SDK's arrival gates, read and narrated through this engine: `deps` is read at each call, and the clock's
+ *  `moved` is the record's own replacement check. */
+function gateIo(rec: ClaimRecord): { reads: ArrivalReads; clock: GateClock } {
+	return {
+		reads: {
+			l2BlockNumber: deps.l2BlockNumber ? () => (deps.l2BlockNumber as NonNullable<typeof deps.l2BlockNumber>)() : undefined,
+			messageReadiness: deps.messageReadiness
+				? (h) => (deps.messageReadiness as NonNullable<typeof deps.messageReadiness>)(h)
+				: undefined,
+		},
+		clock: { wait, moved: () => depositMoved(rec) },
+	}
 }
 
-/** Sync leg 1 — block countdown (display pacing): the deposit-time L2 snapshot + a fixed
- *  margin gives a LEGIBLE "blocks until arrival" - no PXE simulate churn while the rollup
- *  predictably catches up. Best-effort: missing snapshot/dep/node falls through to the gate.
- *  Never an authority — it can never green-light a claim by itself. */
-async function awaitBlockCountdown(rec: ClaimRecord, id: string, gate: ArrivalGateState): Promise<ArrivalGateState> {
-	let { simulateStart: i, counted } = gate
-	const target = rec.depositL2Block !== undefined && deps.l2BlockNumber ? rec.depositL2Block + SYNC_TARGET_MARGIN_BLOCKS : null
-	if (target !== null && deps.l2BlockNumber) {
-		while (i < 300) {
-			let current: number
-			try {
-				current = await deps.l2BlockNumber()
-			} catch {
-				break // Connectivity wobble: the gate loop narrates from here.
-			}
-			if (current >= target) {
-				setRuntime(id, { syncBlock: current })
-				break
-			}
-			counted = true
+/** Sync leg 1 — block countdown (display pacing): the deposit-time L2 snapshot + a fixed margin gives a LEGIBLE
+ *  "blocks until arrival" with no PXE simulate churn. Never an authority. */
+function awaitBlockCountdown(rec: ClaimRecord, id: string, gate: ArrivalGateState): Promise<ArrivalGateState> {
+	const { reads, clock } = gateIo(rec)
+	return awaitL2BlockCountdown(rec.depositL2Block, reads, clock, gate, {
+		block: (current, left) => {
 			setRuntime(id, { syncBlock: current })
-			const left = target - current
-			setStep(id, "syncing", `${left} ${left === 1 ? "block" : "blocks"} until your funds arrive`)
-			await wait(6000)
-			i++
-		}
-	}
-	return { ...gate, simulateStart: i, counted }
+			if (left > 0) setStep(id, "syncing", `${left} ${left === 1 ? "block" : "blocks"} until your funds arrive`)
+		},
+	})
 }
 
-/** Sync leg 2 — the 5.0 checkpoint gate, the consumability pre-check for records that captured
- *  the real inbox message key(s). An L1→L2 message is claimable only once the node anchor's
- *  checkpoint >= the message's checkpoint (the claim builds its membership witness against the
- *  anchor; before that the claim-simulate throws "No L1 to L2 message found"). We poll the REAL
- *  keys the inbox emitted — the token claim AND, for a fueled deposit, the FJ message that pays
- *  for it. Records with no messageHash fall through to the simulate-only loop. Its own
- *  separate 300 budget; waiting here sets `counted`. */
-async function awaitCheckpointGate(rec: ClaimRecord, id: string, gate: ArrivalGateState): Promise<ArrivalGateState> {
-	let counted = gate.counted
-	const gateHashes = [rec.messageHash, rec.fuel?.messageHash].filter((h): h is string => !!h)
-	if (deps.messageReadiness && gateHashes.length > 0) {
-		let fresh = true
-		for (let g = 0; g < 300 && !depositMoved(rec); g++) {
-			const blocked = await sweepMessageCheckpoints(gateHashes)
-			if (blocked === null) {
-				markCheckpointsPassed(id)
-				break
-			}
-			counted = true
-			if (blocked === "unfolded") setStep(id, "syncing", "waiting for the message to reach the L2")
-			else {
-				narrateCheckpointsLeft(id, Math.max(blocked.checkpoint - blocked.anchor, 0), fresh)
-				fresh = false
-			}
-			await wait(6000)
-		}
-	}
-	return { ...gate, counted }
+/** Sync leg 2 — the checkpoint gate on the REAL keys the inbox emitted: the token claim AND, for a fueled deposit,
+ *  the FJ message that pays for it. Records with no messageHash fall through to the simulate-only loop. */
+function awaitCheckpointGate(rec: ClaimRecord, id: string, gate: ArrivalGateState): Promise<ArrivalGateState> {
+	const { reads, clock } = gateIo(rec)
+	const hashes = [rec.messageHash, rec.fuel?.messageHash].filter((h): h is string => !!h)
+	return awaitMessageCheckpoints(hashes, reads, clock, gate, {
+		checkpointsPassed: () => markCheckpointsPassed(id),
+		unfolded: () => setStep(id, "syncing", "waiting for the message to reach the L2"),
+		checkpointsLeft: (reported, first) => narrateCheckpointsLeft(id, reported, first),
+	})
 }
 
 /** The sweep reports only blocked messages, so a counted wait would otherwise end one short of full. */
@@ -1563,48 +1525,27 @@ function narrateCheckpointsLeft(id: string, reported: number, first: boolean): v
 	setStep(id, "syncing", `${left} ${left === 1 ? "checkpoint" : "checkpoints"} until your funds arrive`)
 }
 
-/** One sweep over the gate hashes: the FIRST not-yet-ready message blocks the sweep — either
- *  "unfolded" (probe failed / message not anchored) or its checkpoint distance. Null = all ready. */
-async function sweepMessageCheckpoints(gateHashes: string[]): Promise<{ checkpoint: number; anchor: number } | "unfolded" | null> {
-	for (const h of gateHashes) {
-		// Read-at-call-time (parity): the caller gates on the dep; a concurrent removal throws
-		// out of the gate loop exactly like the original direct call.
-		const st = await (deps.messageReadiness as NonNullable<typeof deps.messageReadiness>)(h).catch(() => null)
-		if (st === null) return "unfolded"
-		if (st.anchor < st.checkpoint) return st
-	}
-	return null
-}
-
-/** The claim-simulate loop — the consumability AUTHORITY. Shares the countdown's 300-iteration
- *  budget (`simulateStart` is how many the countdown consumed). Only a record already
- *  known-claimable (preGated - a retry within the same session) narrates under CLAIM up front;
- *  a FRESH claim stays on CROSSING until a probe actually says the message is consumable: an
- *  optimistic CLAIM would regress to CROSSING on the first not-ready answer. Reload of an already-ready record shows one brief
- *  CROSSING tick before CLAIM - forward, and the ready-simulate returns immediately, so no 6s
- *  stall. */
-async function awaitConsumable(
+/** The claim-simulate loop — the consumability AUTHORITY, on the countdown's leftover budget. Only a record already
+ *  known-claimable (preGated - a retry within the same session) narrates under CLAIM up front; a FRESH claim stays
+ *  on CROSSING until a probe actually says the message is consumable: an optimistic CLAIM would regress to CROSSING
+ *  on the first not-ready answer. */
+function awaitConsumable(
 	interaction: { simulate: () => Promise<unknown> },
 	rec: ClaimRecord,
 	material: ClaimMaterial,
 	gate: ArrivalGateState,
-): Promise<"ready" | "claimed-elsewhere" | "invalid" | "timeout" | "moved"> {
+): ReturnType<typeof awaitClaimSimulate> {
 	const id = rec.id
-	for (let i = gate.simulateStart; i < 300; i++) {
-		if (depositMoved(rec)) return "moved"
-		narrateConsumableWait(id, gate)
-		try {
-			await interaction.simulate()
-			return "ready"
-		} catch (e) {
-			const verdict = await classifyConsumable(e, rec, material)
-			if (verdict === "error") throw e
-			if (verdict !== "not-ready") return verdict
-			log(`message not consumable yet (poll ${i + 1}) - waiting 6s`, id)
-			await wait(6000)
-		}
-	}
-	return "timeout"
+	return awaitClaimSimulate(
+		() => interaction.simulate(),
+		(e) => classifyConsumable(e, () => probeClaimedElsewhere(rec, material)),
+		gateIo(rec).clock,
+		gate,
+		{
+			consumableWait: (g) => narrateConsumableWait(id, g),
+			notReady: (poll) => log(`message not consumable yet (poll ${poll}) - waiting 6s`, id),
+		},
+	)
 }
 
 function narrateConsumableWait(id: string, gate: ArrivalGateState): void {
@@ -1615,23 +1556,6 @@ function narrateConsumableWait(id: string, gate: ArrivalGateState): void {
 			"syncing",
 			gate.counted ? "message arrived — waiting for your wallet to sync it" : "waiting for your wallet to sync the message",
 		)
-}
-
-/** A simulate failure sorted: not-yet-anchored keeps polling; a consumed-shaped error is "claimed
- *  elsewhere" only once the chain's nullifier agrees (the simulate speaks for the wallet's view,
- *  the nullifier for the chain) — every other case is today's error. */
-async function classifyConsumable(
-	e: unknown,
-	rec: ClaimRecord,
-	material: ClaimMaterial,
-): Promise<"not-ready" | "claimed-elsewhere" | "invalid" | "error"> {
-	const msg = e instanceof Error ? e.message : String(e)
-	if (isMsgNotReady(msg)) return "not-ready"
-	if (!isMsgConsumed(msg)) return "error"
-	const probe = await probeClaimedElsewhere(rec, material)
-	if (probe === "nullified") return "claimed-elsewhere"
-	if (probe === "invalid") return "invalid"
-	return "error"
 }
 
 /** The nullifier read for a hub token claim. Any other shape, an unwired dep or a failed read is

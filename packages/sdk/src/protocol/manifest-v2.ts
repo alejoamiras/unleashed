@@ -16,7 +16,6 @@ import { PublicKeys } from "@aztec-labs/aztec.js/keys"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { type Hex, isAddress } from "viem"
 import z from "zod"
-import { tokenBridgeHubArtifact } from "./artifacts.ts"
 import { aztecLineOf } from "./aztec-line.ts"
 import { deriveHubTokenInstance } from "./hub-token.ts"
 import { predictPortal } from "./portal-address.ts"
@@ -305,9 +304,11 @@ export function parseManifestV2(raw: unknown): ManifestV2 {
  * The asynchronous half: every token's `l2Token` must be the address the hub derives from the
  * manifest's words (the app registers that instance with the PXE; a wrong one is never minted to).
  */
-/** The hub instance the manifest record derives to — every token derivation hangs off this address. */
+/** The hub instance the manifest record derives to — every token derivation hangs off this address. The hub
+ *  artifact is megabytes, so only a token route loads it. */
 export async function deriveManifestHub(b: NonNullable<ManifestV2["bridge"]>) {
 	const [tokenClassId, factory, guardian] = b.l2.hub.constructorArgs as [string, string, string]
+	const { tokenBridgeHubArtifact } = await import("./artifacts.ts")
 	return getContractInstanceFromInstantiationParams(tokenBridgeHubArtifact, {
 		constructorArgs: [Fr.fromHexString(tokenClassId), EthAddress.fromString(factory), AztecAddress.fromStringUnsafe(guardian)],
 		constructorArtifact: b.l2.hub.constructorArtifact,

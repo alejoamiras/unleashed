@@ -150,7 +150,7 @@ async function _sealEnvelopeFor(rec: DepositJournalRecord, over: Partial<{ recip
 }
 
 import { SYNC_TARGET_MARGIN_BLOCKS } from "@/lib/bridge-steps"
-import { RECEIPT_RECORD_MISMATCH_MSG } from "@/lib/fuel-claim-state"
+import { RECEIPT_RECORD_MISMATCH_MSG } from "@unleashed/sdk/internal"
 
 describe("journal engine — stage pins", () => {
 	let kv: KV

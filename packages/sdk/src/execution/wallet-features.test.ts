@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DAPP_SELF_PAY_FEATURE, walletSupports } from "./wallet-features"
+import { DAPP_SELF_PAY_FEATURE, walletSupports } from "./wallet-features.ts"
 
 describe("walletSupports", () => {
 	it("is true only when the wallet lists the feature", async () => {

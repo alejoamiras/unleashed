@@ -13,7 +13,7 @@ import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { FEE_JUICE_ADDRESS } from "@aztec-labs/constants"
 import { FeeJuicePortalAbi } from "@aztec-foundation/l1-artifacts"
-import { type Abi, type Address, type Hex, pad, toHex, zeroHash } from "viem"
+import { type Abi, type Address, type Chain, type Hex, pad, toHex, zeroHash } from "viem"
 import { assertSupportedLine } from "../protocol/aztec-line.ts"
 import { deriveTokenClaimSecret } from "../protocol/claim-secret.ts"
 import {
@@ -302,6 +302,70 @@ async function assertIntent(g: FuelRoute, p: SendParams): Promise<void> {
 		throw new Error("runSend: a gas leg for any token but the fee asset needs a fuel quote's swapData")
 }
 
+/** A send with its secrets drawn and its intent built: everything the witness commits to, before any prompt. */
+export interface PreparedSend {
+	params: SendParams
+	tok?: { claimValue: Fr; secretHash: Hex }
+	fuel?: { secret: Fr; secretHash: Hex }
+	intent: RouterIntent
+	swapData: Hex
+	expected: DepositExpectation
+}
+
+/** Refuses the shapes the router refuses, then draws the secrets and builds the intent. Nothing is signed. */
+export async function prepareSend(g: FuelRoute, p: SendParams): Promise<PreparedSend> {
+	await assertIntent(g, p)
+	const tok = await tokenSecrets(p)
+	const fuel = await fuelSecrets(p)
+	return {
+		params: p,
+		...(tok ? { tok } : {}),
+		...(fuel ? { fuel } : {}),
+		intent: sendIntentOf(p, tok?.secretHash, fuel?.secretHash),
+		swapData: p.gas?.swapData ?? "0x",
+		expected: sendExpectation(g, p, tok?.secretHash, fuel?.secretHash),
+	}
+}
+
+/** The Permit2 witness signature over a prepared send, bound to the route's chain. */
+export function signSend(l1: L1Ctx, g: FuelRoute, s: PreparedSend): Promise<Hex> {
+	const p = s.params
+	const typedData = depositWitnessPermitTypedData(
+		{ permitted: { token: p.erc20, amount: p.amount }, spender: g.router, nonce: p.nonce, deadline: p.deadline },
+		depositWitness(s.intent, s.swapData),
+		g.permit2,
+		g.chainId,
+	)
+	return l1.wallet.signTypedData({ account: l1.account, ...typedData } as never) as Promise<Hex>
+}
+
+/** Sends `bridgeWithPermit`. `chain` is the chain viem asserts the wallet is on; the wallet's own when omitted. */
+export async function submitSend(l1: L1Ctx, g: FuelRoute, s: PreparedSend, signature: Hex, chain?: Chain): Promise<Hex> {
+	const p = s.params
+	const call = {
+		address: g.router,
+		abi: DEPOSIT_ROUTER_ABI,
+		functionName: "bridgeWithPermit",
+		args: [s.intent, s.swapData, p.amount, { nonce: p.nonce, deadline: p.deadline, signature }],
+		account: l1.account,
+	}
+	const estimate = await l1.pub.estimateContractGas(call as never)
+	return (await l1.wallet.writeContract({ ...call, chain: chain ?? l1.wallet.chain, gas: sendGasLimit(estimate) } as never)) as Hex
+}
+
+/** The facts a mined send produced: its leaves from the router's own `Deposited`, and the token's frozen registration. */
+export async function confirmSend(
+	l1: L1Ctx,
+	g: FuelRoute,
+	s: PreparedSend,
+	txHash: Hex,
+	receipt: { status: string; logs: Parameters<typeof readRouterDeposit>[0] },
+): Promise<SendResult> {
+	if (receipt.status !== "success") throw new Error(`bridgeWithPermit() REVERTED (${txHash}) — no funds moved; inspect the tx and retry`)
+	const leaves = await readSendReceiptLeaves(g, await readSendInbox(l1.pub, g), s.expected, txHash, receipt.logs)
+	return readSendResult(l1, g, s.params, { txHash, ...leaves }, s.tok, s.fuel)
+}
+
 /** Executes the L1 leg; the L2 claim runs separately against the returned facts. */
 export async function runSend(
 	l1: L1Ctx,
@@ -310,46 +374,21 @@ export async function runSend(
 	onStage?: (s: SendStage) => void,
 	recovery?: SendRecoveryHooks,
 ): Promise<SendResult> {
-	await assertIntent(g, p)
-	const tok = await tokenSecrets(p)
-	const fuel = await fuelSecrets(p)
+	const s = await prepareSend(g, p)
 	recovery?.onSecrets?.({
-		tokenClaimValueHex: tok?.claimValue.toString(),
-		tokenSecretHashHex: tok?.secretHash,
-		fuelSecretHex: fuel?.secret.toString(),
-		fuelSecretHashHex: fuel?.secretHash,
+		tokenClaimValueHex: s.tok?.claimValue.toString(),
+		tokenSecretHashHex: s.tok?.secretHash,
+		fuelSecretHex: s.fuel?.secret.toString(),
+		fuelSecretHashHex: s.fuel?.secretHash,
 		isPrivate: p.isPrivate,
 	})
-
-	const intent = sendIntentOf(p, tok?.secretHash, fuel?.secretHash)
-	const swapData = p.gas?.swapData ?? "0x"
-	const typedData = depositWitnessPermitTypedData(
-		{ permitted: { token: p.erc20, amount: p.amount }, spender: g.router, nonce: p.nonce, deadline: p.deadline },
-		depositWitness(intent, swapData),
-		g.permit2,
-		g.chainId,
-	)
 	onStage?.("signing")
-	const signature = await l1.wallet.signTypedData({ account: l1.account, ...typedData } as never)
-
+	const signature = await signSend(l1, g, s)
 	onStage?.("sending")
-	const call = {
-		address: g.router,
-		abi: DEPOSIT_ROUTER_ABI,
-		functionName: "bridgeWithPermit",
-		args: [intent, swapData, p.amount, { nonce: p.nonce, deadline: p.deadline, signature }],
-		account: l1.account,
-	}
-	const estimate = await l1.pub.estimateContractGas(call as never)
-	const txHash = await l1.wallet.writeContract({ ...call, chain: l1.wallet.chain, gas: sendGasLimit(estimate) } as never)
+	const txHash = await submitSend(l1, g, s, signature)
 	recovery?.onSent?.(txHash)
-
 	onStage?.("confirming")
-	const receipt = await l1.pub.waitForTransactionReceipt({ hash: txHash })
-	if (receipt.status !== "success") throw new Error(`bridgeWithPermit() REVERTED (${txHash}) — no funds moved; inspect the tx and retry`)
-	const expected = sendExpectation(g, p, tok?.secretHash, fuel?.secretHash)
-	const leaves = await readSendReceiptLeaves(g, await readSendInbox(l1.pub, g), expected, txHash, receipt.logs)
-	const result = await readSendResult(l1, g, p, { txHash, ...leaves }, tok, fuel)
+	const result = await confirmSend(l1, g, s, txHash, await l1.pub.waitForTransactionReceipt({ hash: txHash }))
 	recovery?.onConfirmed?.(result)
 	onStage?.("done")
 	return result

@@ -21,6 +21,7 @@ import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
 import { TOKEN_PORTAL_ABI } from "../protocol/factory-abi.ts"
 import { parseFeeJuiceDeposit } from "../protocol/fuel.ts"
 import { PRIVATE_FPC_ADDRESS } from "../protocol/private-fuel.ts"
+import type { DepositRecord } from "../records.ts"
 import { hexEq, ScanIncomplete } from "./chain-scan.ts"
 
 /**
@@ -67,6 +68,21 @@ export interface DepositExpectation {
 	 * own), else `fpc` (default the pinned PrivateFPC) for private fuel and the intent's recipient for public.
 	 */
 	fuel?: { secretHash: Hex; fpc?: Hex; recipient?: Hex }
+}
+
+/** The record facts a deposit's expectation is built from; every deposit record has them, cross-chain ones included. */
+export type DepositRecordFacts = Pick<DepositRecord, "chainId" | "isPrivate" | "recipient" | "secretHashHex" | "fuel"> &
+	({ intent: "gas" } | { intent: "token" | "token+gas"; token: { erc20: string } })
+
+/** What the router's `Deposited` must carry for a deposit record, whichever chain the send started on. */
+export function depositExpectationOf(rec: DepositRecordFacts): DepositExpectation {
+	return {
+		l1ChainId: rec.chainId,
+		isPrivate: rec.isPrivate,
+		recipient: rec.recipient as Hex,
+		...(rec.intent === "gas" ? {} : { token: { erc20: rec.token.erc20 as Address, secretHash: rec.secretHashHex as Hex } }),
+		...(rec.fuel ? { fuel: { secretHash: rec.fuel.secretHashHex as Hex, fpc: rec.fuel.fpc as Hex | undefined } } : {}),
+	}
 }
 
 /** The Ethereum addresses that authenticate a deposit's logs. */

@@ -5,8 +5,14 @@
  * record's send would have made and its receipt is a success on the canonical chain. Uniqueness: one
  * verified transaction across every router is the answer, two is `"ambiguous"`, and any search that
  * could not cover the window — cap, failed or slow read, chain switch, reorg — is `"incomplete"`,
- * never `"none"`.
+ * never `"none"`. A record that names its signer counts only the router events that signer paid for,
+ * before the candidate cap: anyone can replay a published secret hash in a deposit of their own, and
+ * enough look-alikes would otherwise keep the search incomplete for good.
  */
+import { decodeFunctionData, getAbiItem } from "viem"
+import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
+import { LEGACY_ROUTER_ABI } from "../protocol/legacy-router-abi.ts"
+import type { DepositRecord } from "../records.ts"
 import {
 	assertCanonical,
 	type BudgetedRead,
@@ -16,10 +22,7 @@ import {
 	openChainScan,
 	ScanIncomplete,
 	scanRange,
-} from "@unleashed/sdk/internal"
-import { DEPOSIT_ROUTER_ABI, PRIVATE_FPC_ADDRESS, LEGACY_ROUTER_ABI } from "@unleashed/sdk/protocol"
-import type { SendDepositRecord } from "@unleashed/bridge-core"
-import { decodeFunctionData, getAbiItem } from "viem"
+} from "./chain-scan.ts"
 
 type Hex = `0x${string}`
 
@@ -41,13 +44,17 @@ export interface ReconcileL1Client {
 
 export type DepositSearch = { txHash: Hex } | "none" | "ambiguous" | "incomplete"
 
+type SearchRecord = DepositRecord
+
 export interface DepositSearchOptions {
 	/** The chain the record and the generation live on; a client answering from another is `"incomplete"`. */
 	chainId: number
 	/** The deposit router. */
 	router: Hex
-	/** Retired `SwapBridgeRouter`s, read through their frozen ABI. */
+	/** Retired `SwapBridgeRouter`s, read through their frozen ABI. They carried no gas-only deposit. */
 	legacyRouters?: readonly Hex[]
+	/** The network's PrivateFPC: a private gas leg's fuel recipient when the record names none. */
+	privateFpc: string
 	/** How far before the record's `createdAt` the window starts (clock skew, a slow wallet). */
 	slackSeconds?: number
 	/** The largest range searched; a window that would start earlier is `"incomplete"`. */
@@ -79,9 +86,9 @@ type LogArgs = Record<string, unknown> | undefined
 
 /** How one router's deposits are recognised: the event that sieves a record's candidates, and the call its send made. */
 interface RouterShape {
-	eventFor(rec: SendDepositRecord): unknown
-	logMatches(rec: SendDepositRecord, args: LogArgs): boolean
-	calldataMatches(rec: SendDepositRecord, input: Hex): boolean
+	eventFor(rec: SearchRecord): unknown
+	logMatches(rec: SearchRecord, args: LogArgs): boolean
+	calldataMatches(rec: SearchRecord, input: Hex, privateFpc: string): boolean
 }
 
 interface SearchedRouter {
@@ -89,14 +96,15 @@ interface SearchedRouter {
 	shape: RouterShape
 }
 
-export async function findDepositTx(rec: SendDepositRecord, l1: ReconcileL1Client, options: DepositSearchOptions): Promise<DepositSearch> {
+export async function findDepositTx(rec: SearchRecord, l1: ReconcileL1Client, options: DepositSearchOptions): Promise<DepositSearch> {
 	const o = { ...DEFAULTS, now: Date.now, ...options }
-	if (rec.intent === "gas" || !rec.token) return "none"
+	const gasOnly = rec.intent === "gas"
+	if (gasOnly ? !rec.fuel : !rec.token) return "none"
 	if (rec.chainId !== o.chainId) return "incomplete"
 	const read = budgetedReads(o)
 	const routers: SearchedRouter[] = [
 		{ address: o.router, shape: DEPOSIT_ROUTER_SHAPE },
-		...(o.legacyRouters ?? []).map((address) => ({ address, shape: LEGACY_ROUTER_SHAPE })),
+		...(gasOnly ? [] : (o.legacyRouters ?? []).map((address) => ({ address, shape: LEGACY_ROUTER_SHAPE }))),
 	]
 	try {
 		// The scan is only as good as the chain it read: a wallet switched away and back, or a reorg
@@ -113,7 +121,7 @@ export async function findDepositTx(rec: SendDepositRecord, l1: ReconcileL1Clien
 		for (const router of routers) {
 			const hashes = await candidateHashes(rec, l1, router, from, scan.latest, BigInt(o.chunkBlocks), read)
 			if (hashes.length > o.maxCandidates) return "incomplete"
-			verified.push(...(await verifiedOf(rec, l1, router, hashes, read)))
+			verified.push(...(await verifiedOf(rec, l1, router, hashes, read, o.privateFpc)))
 		}
 		await scan.close()
 		if (verified.length === 0) return "none"
@@ -126,14 +134,15 @@ export async function findDepositTx(rec: SendDepositRecord, l1: ReconcileL1Clien
 }
 
 async function verifiedOf(
-	rec: SendDepositRecord,
+	rec: SearchRecord,
 	l1: ReconcileL1Client,
 	router: SearchedRouter,
 	hashes: readonly Hex[],
 	read: BudgetedRead,
+	privateFpc: string,
 ): Promise<Hex[]> {
 	const verified: Hex[] = []
-	for (const hash of hashes) if (await verifyCandidate(rec, l1, router, hash, read)) verified.push(hash)
+	for (const hash of hashes) if (await verifyCandidate(rec, l1, router, hash, read, privateFpc)) verified.push(hash)
 	return verified
 }
 
@@ -158,7 +167,7 @@ async function windowStart(
 /** The router's own events over the window, kept only when the decoded secret hash(es) are this
  *  record's. No recipient filter: a private deposit publishes a zero one. */
 async function candidateHashes(
-	rec: SendDepositRecord,
+	rec: SearchRecord,
 	l1: ReconcileL1Client,
 	router: SearchedRouter,
 	from: bigint,
@@ -176,14 +185,15 @@ async function candidateHashes(
 /** A candidate counts only when its calldata is the call this record's send would have made and its
  *  receipt is a success on the canonical chain. */
 async function verifyCandidate(
-	rec: SendDepositRecord,
+	rec: SearchRecord,
 	l1: ReconcileL1Client,
 	router: SearchedRouter,
 	hash: Hex,
 	read: BudgetedRead,
+	privateFpc: string,
 ): Promise<boolean> {
 	const tx = await read(() => l1.getTransaction({ hash }))
-	if (!tx || !hexEq(tx.to, router.address) || !router.shape.calldataMatches(rec, tx.input)) return false
+	if (!tx || !hexEq(tx.to, router.address) || !router.shape.calldataMatches(rec, tx.input, privateFpc)) return false
 	const receipt = await read(() => l1.getTransactionReceipt({ hash }))
 	if (receipt?.status !== "success") return false
 	await assertCanonical(l1, read, receipt)
@@ -191,10 +201,10 @@ async function verifyCandidate(
 }
 
 /** The fuel recipient a record's send names: the account itself, or the fee contract that mints private gas. */
-const fuelRecipientOf = (rec: SendDepositRecord): string => (rec.isPrivate ? (rec.fuel?.fpc ?? PRIVATE_FPC_ADDRESS) : rec.recipient)
+const fuelRecipientOf = (rec: SearchRecord, privateFpc: string): string => (rec.isPrivate ? (rec.fuel?.fpc ?? privateFpc) : rec.recipient)
 
 /** A private recipient is committed through the secret hash and never published. */
-const publishedRecipientOf = (rec: SendDepositRecord): string => (rec.isPrivate ? ZERO_BYTES32 : rec.recipient)
+const publishedRecipientOf = (rec: SearchRecord): string => (rec.isPrivate ? ZERO_BYTES32 : rec.recipient)
 
 // ── the deposit router ───────────────────────────────────────────────────────
 
@@ -209,8 +219,26 @@ type DepositIntentArgs = {
 	minFuelOutput: bigint
 }
 
+/** The intent a gas-only send signs: no token leg, the whole amount is the slice. The record keeps no input token,
+ *  so the fuel secret hash, which is random per deposit, carries the identity. */
+function gasIntentMatches(rec: SearchRecord, i: DepositIntentArgs, amount: bigint, privateFpc: string): boolean {
+	const fuel = rec.fuel
+	if (!fuel) return false
+	return (
+		hexEq(i.aztecRecipient, ZERO_BYTES32) &&
+		hexEq(i.tokenSecretHash, ZERO_BYTES32) &&
+		i.isPrivate === rec.isPrivate &&
+		amount === BigInt(fuel.amount) &&
+		i.fuelSlice === BigInt(fuel.amount) &&
+		i.minFuelOutput === BigInt(fuel.minOutput) &&
+		hexEq(i.fuelSecretHash, fuel.secretHashHex) &&
+		hexEq(i.fuelRecipient, fuelRecipientOf(rec, privateFpc))
+	)
+}
+
 /** The intent a token or token+gas send signs; a token-only one carries no fuel fields at all. */
-function depositIntentMatches(rec: SendDepositRecord, i: DepositIntentArgs, amount: bigint): boolean {
+function depositIntentMatches(rec: SearchRecord, i: DepositIntentArgs, amount: bigint, privateFpc: string): boolean {
+	if (rec.intent === "gas") return gasIntentMatches(rec, i, amount, privateFpc)
 	const common =
 		hexEq(i.token, rec.token?.erc20) &&
 		hexEq(i.aztecRecipient, publishedRecipientOf(rec)) &&
@@ -225,7 +253,7 @@ function depositIntentMatches(rec: SendDepositRecord, i: DepositIntentArgs, amou
 		i.fuelSlice === BigInt(fuel.amount) &&
 		i.minFuelOutput === BigInt(fuel.minOutput) &&
 		hexEq(i.fuelSecretHash, fuel.secretHashHex) &&
-		hexEq(i.fuelRecipient, fuelRecipientOf(rec))
+		hexEq(i.fuelRecipient, fuelRecipientOf(rec, privateFpc))
 	)
 }
 
@@ -234,9 +262,10 @@ const DEPOSITED_EVENT = getAbiItem({ abi: DEPOSIT_ROUTER_ABI, name: "Deposited" 
 const DEPOSIT_ROUTER_SHAPE: RouterShape = {
 	eventFor: () => DEPOSITED_EVENT,
 	logMatches: (rec, args) =>
-		hexEq(args?.tokenSecretHash, rec.secretHashHex) &&
-		hexEq(args?.fuelSecretHash, rec.intent === "token+gas" ? rec.fuel?.secretHashHex : ZERO_BYTES32),
-	calldataMatches(rec, input) {
+		(rec.sender === undefined || hexEq(args?.payer, rec.sender)) &&
+		hexEq(args?.tokenSecretHash, rec.intent === "gas" ? ZERO_BYTES32 : rec.secretHashHex) &&
+		hexEq(args?.fuelSecretHash, rec.intent === "token" ? ZERO_BYTES32 : rec.fuel?.secretHashHex),
+	calldataMatches(rec, input, privateFpc) {
 		let decoded: ReturnType<typeof decodeFunctionData<typeof DEPOSIT_ROUTER_ABI>>
 		try {
 			decoded = decodeFunctionData({ abi: DEPOSIT_ROUTER_ABI, data: input })
@@ -245,7 +274,7 @@ const DEPOSIT_ROUTER_SHAPE: RouterShape = {
 		}
 		if (decoded.functionName !== "bridgeWithPermit") return false
 		const [intent, , amount] = decoded.args
-		return depositIntentMatches(rec, intent as DepositIntentArgs, amount)
+		return depositIntentMatches(rec, intent as DepositIntentArgs, amount, privateFpc)
 	},
 }
 
@@ -268,7 +297,7 @@ type BridgeWithFuelArgs = {
 	isPrivate: boolean
 }
 
-function legacyCalldataMatches(rec: SendDepositRecord, input: Hex): boolean {
+function legacyCalldataMatches(rec: SearchRecord, input: Hex, privateFpc: string): boolean {
 	let decoded: { functionName: string; args?: readonly unknown[] }
 	try {
 		decoded = decodeFunctionData({ abi: LEGACY_ROUTER_ABI, data: input })
@@ -296,7 +325,7 @@ function legacyCalldataMatches(rec: SendDepositRecord, input: Hex): boolean {
 		f.minFuelOutput === BigInt(rec.fuel.minOutput) &&
 		hexEq(f.tokenSecretHash, rec.secretHashHex) &&
 		hexEq(f.fuelSecretHash, rec.fuel.secretHashHex) &&
-		hexEq(f.fuelRecipient, fuelRecipientOf(rec))
+		hexEq(f.fuelRecipient, fuelRecipientOf(rec, privateFpc))
 	)
 }
 
