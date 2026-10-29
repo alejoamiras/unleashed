@@ -629,6 +629,59 @@ describe("claimToken", () => {
 		expect((await failure(claimToken(net, r, aztec, edited, recorder().run))).code).toBe("invalid-request")
 	})
 
+	it("an abort from the event that reports a recovered read settles nothing", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] })
+		const { net, r, aztec } = await setup()
+		claims()
+		const base = r.aztecNode as unknown as { getTxReceipt(h: unknown): Promise<unknown> }
+		const reads = vi.fn((h: unknown) => base.getTxReceipt(h))
+		reads.mockImplementationOnce(async () => {
+			throw new Error("node down")
+		})
+		const node = { ...r, aztecNode: { ...(base as object), getTxReceipt: reads } as never }
+		const stop = new AbortController()
+		const rec = recorder()
+		const onEvent = (e: TransferEvent) => {
+			rec.run.onEvent(e)
+			if (e.type === "claim-waiting" && e.poll === 2 && e.unreachable === 0) stop.abort()
+		}
+		const e = await drive(failure(claimToken(net, node, aztec, tokenRecord(net), { ...rec.run, onEvent, signal: stop.signal })))
+		expect([
+			e.code,
+			rec.types().includes("claim-landed"),
+			rec.entries.some((x) => "persisted" in x && x.persisted.completedAt),
+		]).toEqual(["aborted", false, false])
+	})
+
+	it("an abort while a latch is written opens no prompt and lifts the latch", async () => {
+		const { net, r, aztec } = await setup()
+		const send = claims()
+		const stop = new AbortController()
+		const rec = recorder()
+		const persist = async (record: DepositRecord) => {
+			await rec.run.persist(record)
+			if (record.claimAttempt || record.fuel?.claimAttempt) stop.abort()
+		}
+		const token = await failure(claimToken(net, r, aztec, tokenRecord(net), { ...rec.run, persist, signal: stop.signal }))
+		const last = rec.entries.flatMap((x) => ("persisted" in x ? [x.persisted] : [])).at(-1)
+		expect([token.code, send.mock.results.length, rec.types().includes("claim-sent"), last?.claimAttempt]).toEqual([
+			"aborted",
+			1,
+			false,
+			false,
+		])
+		const gasStop = new AbortController()
+		const gas = recorder()
+		const gasPersist = async (record: DepositRecord) => {
+			await gas.run.persist(record)
+			if (record.fuel?.claimAttempt) gasStop.abort()
+		}
+		const record = tokenRecord(net, { intent: "token+gas", fuel: publicFuel(), completedAt: 9 } as Partial<DepositRecord>)
+		const e = await failure(claimFuel(net, r, aztec, record, { ...gas.run, persist: gasPersist, signal: gasStop.signal }))
+		const held = gas.entries.flatMap((x) => ("persisted" in x ? [x.persisted] : [])).at(-1)
+		expect([e.code, fuelSends.count, held?.fuel?.claimAttempt]).toEqual(["aborted", 0, false])
+	})
+
 	it("an aborted signal stops the leftover gas claim before its latch or prompt", async () => {
 		const { net, r, aztec } = await setup()
 		const record = tokenRecord(net, { intent: "token+gas", fuel: publicFuel(), completedAt: 9 } as Partial<DepositRecord>)

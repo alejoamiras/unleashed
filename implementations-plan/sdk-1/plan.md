@@ -1038,6 +1038,9 @@ Arc a6, PR 1 (`git diff 890edac..HEAD`):
   gas-only hash that reverted with its message live settled (cleared, `claim-reverted`); a recovery with no gas leaf
   reported success (`receipt-mismatch`); `watchOnly` still reads through the wallet (documented); three tests could
   not fail. Kept: a gas-only fuel hash whose receipt is included stops with `fuel-already-claimed` (D79, today's card).
+- **Round 2, Codex (same session): APPROVE WITH CHANGES, 2 Medium; fixed with tests.** An abort from the event that
+  reports a recovered read still settled (checked after that event too); an abort while a latch was written still
+  opened the prompt (checked right before each wallet send, the known-unsent latch lifted).
 
 Arc a5, the implementation (`git diff 54de731..HEAD`):
 

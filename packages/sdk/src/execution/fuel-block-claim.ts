@@ -5,7 +5,7 @@
  * again only once nothing it sent can still land. It persists the block consumed and leaves settling to its caller.
  */
 import { Fr } from "@aztec-labs/aztec.js/fields"
-import { BridgeError, isUserRejection } from "../errors.ts"
+import { BridgeError, isAborted, isUserRejection } from "../errors.ts"
 import { isWellFormedTxHash } from "./claim-receipt.ts"
 import { asBridgeError, assertMayPrompt, awaitClaimable, type ClaimLeg, type ClaimOutcome, persistClaim, watchClaim } from "./claim-run.ts"
 import { FeeStopError } from "./fee-stop.ts"
@@ -132,6 +132,8 @@ async function sendClaim(leg: ClaimLeg, interaction: FuelClaimInteraction): Prom
 	leg.emit({ type: "claim-requested", leg: "gas" })
 	let txHash: string
 	try {
+		// The latch's write and the event's handler may have stopped the call: nothing is sent then.
+		checkAbort(leg.run, SUBMITTED)
 		txHash = (await interaction.send()).txHash
 	} catch (e) {
 		throw await failedSend(leg, e)
@@ -147,8 +149,9 @@ async function sendClaim(leg: ClaimLeg, interaction: FuelClaimInteraction): Prom
  *  network keeps it, so a resume waits for it rather than sending twice. */
 async function failedSend(leg: ClaimLeg, e: unknown): Promise<unknown> {
 	const msg = e instanceof Error ? e.message : String(e)
-	if (e instanceof FeeStopError || isUserRejection(e)) {
+	if (e instanceof FeeStopError || isUserRejection(e) || isAborted(e)) {
 		await patchFuel(leg, { claimAttempt: false })
+		if (isAborted(e)) return e
 		return isUserRejection(e)
 			? new BridgeError("user-rejected", "the claim was refused", SUBMITTED, "safe", { cause: e })
 			: asBridgeError(e)

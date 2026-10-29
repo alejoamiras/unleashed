@@ -61,6 +61,9 @@ export class BridgeError extends Error {
 
 export const isBridgeError = (e: unknown): e is BridgeError => e instanceof BridgeError
 
+/** A call its caller's signal stopped. */
+export const isAborted = (e: unknown): e is BridgeError => e instanceof BridgeError && e.code === "aborted"
+
 /** A refusal before anything was signed or sent. */
 export const refusal = (code: BridgeErrorCode, message: string, retry: Retry = "never", cause?: unknown): BridgeError =>
 	new BridgeError(code, message, "none", retry, cause === undefined ? undefined : { cause })

@@ -9,7 +9,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { computeSecretHash } from "@aztec-labs/stdlib/hash"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
 import type { Address } from "viem"
-import { BridgeError, isUserRejection } from "../errors.ts"
+import { BridgeError, isAborted, isUserRejection } from "../errors.ts"
 import { classifyClaimReceipt, isWellFormedTxHash } from "../execution/claim-receipt.ts"
 import {
 	type AztecSigner,
@@ -237,6 +237,7 @@ function hubSeams(leg: ClaimLeg, fee: OptsFee) {
 			else persistClaim(leg, { claimAttempt: true, claimAttemptAt: Date.now() })
 			await leg.persisted
 			leg.emit({ type: "registration-requested" })
+			checkAbort(leg.run, "submitted")
 		},
 		onRegistered: async (txHash: string) => {
 			registeredHere = true
@@ -249,18 +250,20 @@ function hubSeams(leg: ClaimLeg, fee: OptsFee) {
 			if (!fuelOnRegistration()) fee.onAttempt?.()
 			await persistClaim(leg, { claimAttempt: true, claimAttemptAt: Date.now() })
 			leg.emit({ type: "claim-requested", leg: "token" })
+			checkAbort(leg.run, "submitted")
 		},
 	}
 	return { seams, fuelOnRegistration }
 }
 
-/** A send that failed before its claim existed. A refused prompt sent nothing, so its fuel latch is lifted. */
+/** A send that failed before its claim existed. A refused prompt, or a call stopped before one, sent nothing, so its
+ *  latches are lifted. */
 async function failedSend(leg: ClaimLeg, e: unknown): Promise<unknown> {
 	// The ladder's failure latch persists without awaiting: its refusal outranks the send's own error.
 	await leg.persisted
-	if (e instanceof BridgeError) return e
+	if (e instanceof BridgeError && !isAborted(e)) return e
 	const msg = messageOf(e)
-	if (isUserRejection(e) || e instanceof FeeStopError) {
+	if (isUserRejection(e) || e instanceof FeeStopError || isAborted(e)) {
 		const fuel = leg.record.fuel
 		if (fuel?.claimAttempt && fuel.claimTxHash === undefined) patchFuel(ladderEnvOf(leg), leg.record.id, fuel, { claimAttempt: false })
 		await persistClaim(leg, { claimAttempt: false })

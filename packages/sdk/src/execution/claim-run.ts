@@ -408,9 +408,9 @@ async function readClaimReceipt(
 	// The event's handler may stop the watch; a stopped watch reads nothing more and settles nothing.
 	checkAbort(leg.run, SUBMITTED)
 	const receipt = await leg.r.aztecNode.getTxReceipt(TxHash.fromString(txHash)).catch(() => UNANSWERED)
-	checkAbort(leg.run, SUBMITTED)
 	const streak = receipt === UNANSWERED ? unreachable + 1 : 0
 	if (streak !== unreachable) leg.emit({ type: "claim-waiting", leg: claim, txHash, poll, unreachable: streak })
+	checkAbort(leg.run, SUBMITTED)
 	return { fate: receipt === UNANSWERED ? "pending" : classifyClaimReceipt(receipt as never), unreachable: streak }
 }
 
