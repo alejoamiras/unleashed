@@ -104,6 +104,7 @@ const releaseForeground = vi.fn((id: string) => {
 const sendError = ref<string | null>(null)
 const sendBusy = ref(false)
 const sendFn = vi.fn(async (): Promise<string> => "")
+const checkFn = vi.fn(async (_plan: unknown): Promise<string | null> => null)
 const sendDispose = vi.fn()
 const exitError = ref<string | null>(null)
 const exitFn = vi.fn(async (_plan: unknown, _approvedCeiling?: bigint): Promise<string> => "")
@@ -330,7 +331,7 @@ vi.mock("@/composables/useGasShare", () => ({
 	}),
 }))
 vi.mock("@/composables/useSend", () => ({
-	useSend: () => ({ send: sendFn, stage: ref(null), busy: sendBusy, error: sendError, dispose: sendDispose }),
+	useSend: () => ({ send: sendFn, check: checkFn, stage: ref(null), busy: sendBusy, error: sendError, dispose: sendDispose }),
 	previewBlock: (plan: { token: ResolvedToken }) => ({
 		erc20: plan.token.address,
 		portal: plan.token.portal,
@@ -536,6 +537,7 @@ describe("SendWizard", () => {
 		toasts.length = 0
 		readContract.mockResolvedValue("0x0000000000000000000000000000000000000000")
 		sendFn.mockResolvedValue("")
+		checkFn.mockReset().mockResolvedValue(null)
 		exitFn.mockResolvedValue("")
 		proposeFn.mockReturnValue({ fuelAmount: 2_000_000n, fuelFj: 5n * 10n ** 18n, capped: null })
 	})
@@ -1129,6 +1131,39 @@ describe("SendWizard", () => {
 		reads.at(-1)?.()
 		await flushPromises()
 		expect(sendFn).toHaveBeenCalledTimes(1)
+	})
+
+	it.each([
+		{ name: "passes", answer: null },
+		{ name: "refuses", answer: "Deposits on this route are paused right now. Nothing was sent." },
+	])("a bridge check that $name after the account switched sends nothing and shows nothing", async ({ answer }) => {
+		let release = (): void => {}
+		checkFn.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					release = () => resolve(answer)
+				}),
+		)
+		const w = await wizard()
+		;(await atReview(w)).vm.$emit("back")
+		await flushPromises()
+		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
+		w.findComponent({ name: "AmountStep" }).vm.$emit("update:isPrivate", false)
+		setRoute({ kind: "route", venue: VENUE, probeOut: 135n * 10n ** 18n })
+		await flushPromises()
+		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
+		await flushPromises()
+		// A public token+gas send has no gas re-read of its own: the bridge check is its confirm's only wait.
+		w.findComponent({ name: "ReviewStep" }).vm.$emit("confirm")
+		await flushPromises()
+		expect(checkFn).toHaveBeenCalledTimes(1)
+		expect(checkFn.mock.calls[0]?.[0]).toMatchObject({ intent: "token+gas", isPrivate: false })
+		selectedAccount.value = `0x${"20".repeat(32)}`
+		await flushPromises()
+		release()
+		await flushPromises()
+		expect(sendFn).not.toHaveBeenCalled()
+		expect(sendError.value).toBeNull()
 	})
 
 	it("a backgrounded send that lands re-resolves the token, standing down a next review priced from it", async () => {

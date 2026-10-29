@@ -1170,17 +1170,39 @@ watch(journal.listedRecords, adoptRunRecord)
 async function preflight(snapshot: ReviewSnapshot): Promise<boolean> {
 	const target = snapshot.plan
 	if (target.direction === "l2-to-l1") return target.isPrivate ? privateExitPreflight(snapshot) : true
+	if (!snapshot.crossChain && !(await bridgeChecked(snapshot, target))) return false
 	const privateSlice = target.isPrivate && target.intent === "token+gas" ? (target.gas ?? null) : null
 	if (target.intent !== "token" && !privateSlice) return true
 	const repriced = await preflightReads(target.intent === "token", privateSlice !== null)
-	// The SNAPSHOT must be the one still on screen — not merely its plan, which the wizard caches
-	// across an account switch, so a review re-entered under another account would carry the same
-	// plan object and let a confirm nobody gave for it resume.
-	if (reviewed.value !== snapshot || step.value !== 2) return false
-	if (snapshot.account !== (bridge.selectedAccount.value ?? "")) return false
+	if (!reviewStands(snapshot)) return false
 	const why = preflightStandDown(target, privateSlice, repriced, snapshot.ownGasCeiling)
 	if (why === undefined) return true
 	invalidateReview(why ?? undefined)
+	return false
+}
+
+/** The SNAPSHOT must be the one still on screen — not merely its plan, which the wizard caches across an account
+ *  switch, so a review re-entered under another account would carry the same plan object and let a confirm nobody
+ *  gave for it resume. */
+function reviewStands(snapshot: ReviewSnapshot): boolean {
+	return reviewed.value === snapshot && step.value === 2 && snapshot.account === (bridge.selectedAccount.value ?? "")
+}
+
+/** An Ethereum send's bridge check, before the permission screen and every prompt: a refusal stays on the review in
+ *  the send's place, and only a review still standing when the reads return may act on them. */
+async function bridgeChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
+	preflighting.value = true
+	let refusal: string | null
+	try {
+		refusal = await sendFlow.check(plan)
+	} finally {
+		preflighting.value = false
+	}
+	if (!reviewStands(snapshot)) return false
+	sendFlow.error.value = refusal
+	if (refusal === null) return true
+	// An earlier attempt's decline is not why this one stopped.
+	grantState.value = "idle"
 	return false
 }
 
