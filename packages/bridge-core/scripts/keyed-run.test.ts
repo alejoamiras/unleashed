@@ -56,6 +56,20 @@ describe("runKeyed", () => {
 		expect((out.match(/<DRPC_API_KEY>/g) ?? []).length >= 2, "the debug line and the failure both name the key").toBe(true)
 		expect(out.includes(key.slice(0, -1))).toBe(false)
 	})
+
+	it("redacts an error that escapes main", () => {
+		const { status, stderr } = bun(
+			packageDir,
+			`import { runKeyed } from "./scripts/keyed-run.ts"
+			runKeyed(async () => {
+				void Promise.reject(new Error(\`background call to \${process.env.DRPC_API_KEY} failed\`))
+				await new Promise((resolve) => setTimeout(resolve, 100))
+			})`,
+		)
+		expect(status, "the run failed").toBe(1)
+		expect(stderr.includes(key)).toBe(false)
+		expect(stderr.includes("background call to <DRPC_API_KEY> failed")).toBe(true)
+	})
 })
 
 describe("keyedNodeUrl", () => {

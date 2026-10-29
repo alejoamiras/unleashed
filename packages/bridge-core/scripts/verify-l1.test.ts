@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { concat, type Hex, hexToBytes, keccak256, toHex } from "viem"
 import { describe, expect, it, vi } from "vitest"
@@ -101,7 +102,8 @@ describe("judgeBook", () => {
 })
 
 describe("verifyL1Manifest's printed failures", () => {
-	// Every check fails at once: viem does not retry "method not found", and its error text carries the RPC URL.
+	// Every check fails at once: viem does not retry "method not found", and its error text carries the RPC URL. The
+	// routing source reads the same server and forge is absent, so the case reaches no network and builds nothing.
 	it("name the keyed L1 RPC, never its URL", async () => {
 		const key = "sentinel_Key-0123456789"
 		const server = createServer((req, res) => {
@@ -130,8 +132,10 @@ describe("verifyL1Manifest's printed failures", () => {
 		try {
 			const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/${key}`
 			vi.stubEnv("SEPOLIA_RPC_URL", url)
+			vi.stubEnv("FORGE_BIN", join(tmpdir(), "absent-forge"))
 			const live = join(import.meta.dirname, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json")
-			const failures = await verifyL1Manifest(parseManifestV2(JSON.parse(readFileSync(live, "utf8"))), url)
+			const manifest = parseManifestV2(JSON.parse(readFileSync(live, "utf8")))
+			const failures = await verifyL1Manifest(manifest, url, { sourceRpcUrl: () => url })
 			expect(failures > 0, "the checks failed").toBe(true)
 			expect(printed.some((line) => line.includes("<SEPOLIA_RPC_URL>"))).toBe(true)
 			expect(printed.some((line) => line.includes(key))).toBe(false)

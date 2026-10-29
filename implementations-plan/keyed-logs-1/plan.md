@@ -201,6 +201,17 @@ refusal, mention-based guard and test selection judged proportionate; A1 fits th
 
 **Final pass, resumed to verify the conditions: approve.** No regression found.
 
+**Implementation round 1.** Codex (fresh session): 1 finding. Same-family review (Opus, alongside): 4 findings. All
+verified and fixed; each new test fails with its fix reverted.
+
+| # | Finding (label) | Disposition |
+|---|---|---|
+| C1 | Medium: the SDK's debug log `inspect`s node responses with the 10 000-character cut, so a long response prints a key prefix (demonstrated) | fixed: `runKeyed` sets `inspect.defaultOptions.maxStringLength = null`; the old test (c) became an end-to-end debug-response case |
+| O1 | The verify-l1 case read the public Base Sepolia RPC and could start `forge build` (demonstrated) | fixed: `sourceRpcUrl` points at the local server, `FORGE_BIN` at an absent binary |
+| O2 | The guard missed a hand-built `lb.drpc.live` URL (demonstrated against the rule) | fixed: rule (1) also matches the keyed host and an `env.DRPC_API_KEY` read |
+| O3 | An error escaping `main` (a background rejection) prints raw (plausible; no SDK path found) | fixed locally: `runKeyed` routes `unhandledRejection` and `uncaughtException` through the same redacted exit |
+| O4 | A test comment gave a wrong reason | fixed: the name is written literally |
+
 ## Delivery
 
 One arc, one PR against `main`: a1 = phases 1–3 plus the close-out commits, `Closes #46`, code review `off`. Branch

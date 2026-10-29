@@ -40,7 +40,8 @@ let keyed = false
 
 /**
  * The entry of every keyed script. Routes the SDK's log lines through {@link redactSecrets}, then lets
- * {@link keyedNodeUrl} compose, then runs `main`; a rejection prints `redactSecrets(describe(err))` and exits 1.
+ * {@link keyedNodeUrl} compose, then runs `main`; a rejection, or an error that escapes it, prints
+ * `redactSecrets(describe(err))` and exits 1.
  * Build the run's work inside `main`, so nothing logs or composes before the redaction is in place.
  */
 export async function runKeyed(
@@ -51,12 +52,18 @@ export async function runKeyed(
 	// value would leave a prefix redaction no longer matches.
 	inspect.defaultOptions.maxStringLength = null
 	installRedactedLogging()
+	const fail = (err: unknown): never => {
+		console.error(redactSecrets(describe(err)))
+		process.exit(1)
+	}
+	// An error that escapes `main` (a background rejection, a throwing timer) is otherwise printed raw by the runtime.
+	process.on("unhandledRejection", fail)
+	process.on("uncaughtException", fail)
 	keyed = true
 	try {
 		await main()
 	} catch (err) {
-		console.error(redactSecrets(describe(err)))
-		process.exit(1)
+		fail(err)
 	}
 }
 

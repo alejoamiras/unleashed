@@ -11,7 +11,8 @@ import { KEYED_ENV } from "../../packages/bridge-core/scripts/keyed-env"
  * names, never values.
  */
 const ROOT = join(import.meta.dir, "..", "..")
-const COMPOSER = /\brequireDrpcNodeUrl\b/
+// The composer, the keyed host, or the key itself read from the environment.
+const COMPOSER = /\brequireDrpcNodeUrl\b|lb\.drpc\.(?:live|org)|\benv\.DRPC_API_KEY\b/
 const ALLOWED_COMPOSERS = ["packages/bridge-core/src/drpc-node.ts", "packages/bridge-core/scripts/keyed-run.ts"]
 const KEYED_SUFFIX = /_(?:KEY|SECRET|SECRET_[A-Z]+|RPC|RPC_URL|TOKEN)$/
 const PUBLIC_NAMES = new Set([
@@ -40,7 +41,7 @@ function sourcesOf(paths: readonly string[]): Map<string, string> {
 	return new Map(paths.flatMap((path) => (path.endsWith(".ts") && !path.endsWith(".test.ts") ? [[path, textOf(path) ?? ""]] : [])))
 }
 
-/** Sources that name the composer outside the allowed files; a mention, so an alias or a namespace import counts. */
+/** Sources that compose outside the allowed files; a mention, so an alias, a namespace import or a hand-built URL counts. */
 export function composers(sources: ReadonlyMap<string, string>): string[] {
 	return [...sources].filter(([path, text]) => !ALLOWED_COMPOSERS.includes(path) && COMPOSER.test(text)).map(([path]) => path)
 }
@@ -54,17 +55,16 @@ export function keyedNames(text: string): string[] {
 	return [...named, ...destructured].filter((name) => KEYED_SUFFIX.test(name))
 }
 
-test("the composer rule flags a call, an alias and a namespace import, and passes keyedNodeUrl", () => {
-	// Assembled at run time, so no source file but this test names the composer.
-	const name = ["require", "Drpc", "NodeUrl"].join("")
+test("the composer rule flags a call, an alias, a namespace import and a hand-built URL, and passes keyedNodeUrl", () => {
 	const sources = new Map([
-		["call.ts", `import { ${name} } from "../src/drpc-node"\n${name}("testnet", process.env)`],
-		["alias.ts", `import { ${name} as nodeUrl } from "@unleashed/bridge-core"\nnodeUrl("mainnet", process.env)`],
-		["namespace.ts", `import * as drpc from "../src/drpc-node"\ndrpc.${name}("testnet", env)`],
-		["keyed.ts", `import { keyedNodeUrl } from "./keyed-run"\nkeyedNodeUrl("testnet")`],
-		[ALLOWED_COMPOSERS[1] as string, `return ${name}(network, process.env)`],
+		["call.ts", 'import { requireDrpcNodeUrl } from "../src/drpc-node"\nrequireDrpcNodeUrl("testnet", process.env)'],
+		["alias.ts", 'import { requireDrpcNodeUrl as nodeUrl } from "@unleashed/bridge-core"\nnodeUrl("mainnet", process.env)'],
+		["namespace.ts", 'import * as drpc from "../src/drpc-node"\ndrpc.requireDrpcNodeUrl("testnet", env)'],
+		["by-hand.ts", "const url = `https://lb.drpc.live/aztec-testnet/${process.env.DRPC_API_KEY}`"],
+		["keyed.ts", 'import { keyedNodeUrl } from "./keyed-run"\nkeyedNodeUrl("testnet")'],
+		[ALLOWED_COMPOSERS[1] as string, "return requireDrpcNodeUrl(network, process.env)"],
 	])
-	expect(composers(sources)).toEqual(["call.ts", "alias.ts", "namespace.ts"])
+	expect(composers(sources)).toEqual(["call.ts", "alias.ts", "namespace.ts", "by-hand.ts"])
 })
 
 test("keyedNames finds reads, quoted names and destructuring, and skips other names", () => {
