@@ -23,3 +23,4 @@
 - 2026-10-29 a2 re-plan gate: OWNER-ASKS.md G1–G7 written with 14 light mocks (7 states at 1280 and 390 px, from a throwaway mainnet dev-server component, removed); nothing built; awaiting the owner's sign-off of G1–G4.
 - 2026-10-29 a2 build: orchestrator approved the plan (677d992); owner signed decision page 11 (P11-01 to P11-07, each Option A), recorded in OWNER-ASKS.md and ledger D18; merged origin/main 6462a67 (no conflict).
 - 2026-10-29 a2 P7 gate: lint pass, typecheck:all pass, apps/tools test pass (128 files, 1712 tests).
+- 2026-10-29 a2 P8 gate: lint pass, typecheck:all pass, apps/tools test pass (130 files, 1727 tests; bridge-generation.test.ts timed out once at load 65 and passed alone), packages/legal test pass, both tools builds + verify:build-target pass, build:landing pass. Deviation D19: gate testids in src/legal/testids.ts.

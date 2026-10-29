@@ -3,12 +3,13 @@ import { legalDistProblems } from "./legal-dist"
 
 const TERMS = "https://unleashed.systems/terms"
 const PRIVACY = "https://unleashed.systems/privacy"
+const DOCS = `id:"unleashed-terms-of-use" … id:"unleashed-privacy-policy"`
 
 const mainnetDist = () =>
 	new Map([
 		["index.html", "<html></html>"],
 		["assets/index-a1.js", "app code"],
-		["assets/MainnetPlaceholderView-b2.js", `href:"${TERMS}" … href:"${PRIVACY}"`],
+		["assets/MainnetRoot-b2.js", `${DOCS} href:"${TERMS}" … href:"${PRIVACY}"`],
 	])
 const otherDist = () =>
 	new Map([
@@ -18,7 +19,7 @@ const otherDist = () =>
 	])
 
 describe("legalDistProblems", () => {
-	it("accepts a mainnet dist linking both documents", () => {
+	it("accepts a mainnet dist linking and carrying both documents", () => {
 		expect(legalDistProblems("mainnet", mainnetDist())).toEqual([])
 	})
 
@@ -32,8 +33,14 @@ describe("legalDistProblems", () => {
 		[PRIVACY, TERMS],
 	])("refuses a mainnet dist that does not link %s", (missing, kept) => {
 		const dist = mainnetDist()
-		dist.set("assets/MainnetPlaceholderView-b2.js", `href:"${kept}"`)
+		dist.set("assets/MainnetRoot-b2.js", `${DOCS} href:"${kept}"`)
 		expect(legalDistProblems("mainnet", dist)).toEqual([`mainnet dist does not link ${missing}`])
+	})
+
+	it("refuses a mainnet dist without a document's data, as when the gate is missing", () => {
+		const dist = mainnetDist()
+		dist.set("assets/MainnetRoot-b2.js", `id:"unleashed-terms-of-use" href:"${TERMS}" href:"${PRIVACY}"`)
+		expect(legalDistProblems("mainnet", dist)).toEqual([`mainnet dist does not carry the document "unleashed-privacy-policy"`])
 	})
 
 	it("refuses a testnet dist carrying a document URL, naming the file", () => {
@@ -48,11 +55,12 @@ describe("legalDistProblems", () => {
 		expect(legalDistProblems("local", dist)).toEqual([`local dist carries "unleashed-terms-of-use" in assets/AppShell-c3.js`])
 	})
 
-	it("refuses a testnet dist shipping the placeholder's chunk", () => {
-		const dist = otherDist()
-		dist.set("assets/MainnetPlaceholderView-b2.css", "")
-		expect(legalDistProblems("testnet", dist)).toEqual([
-			"testnet dist ships the mainnet placeholder: assets/MainnetPlaceholderView-b2.css",
-		])
-	})
+	it.each(["assets/MainnetPlaceholderView-b2.css", "assets/MainnetRoot-d4.js"])(
+		"refuses a testnet dist shipping a mainnet root chunk (%s)",
+		(chunk) => {
+			const dist = otherDist()
+			dist.set(chunk, "")
+			expect(legalDistProblems("testnet", dist)).toEqual([`testnet dist ships the mainnet root: ${chunk}`])
+		},
+	)
 })

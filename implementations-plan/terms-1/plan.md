@@ -239,7 +239,7 @@ and shows the re-ask screen; a new signature replaces the record. A refusal leav
 | `apps/tools/src/legal/AcceptanceGate.vue` | new: G1's screen and its states; emits `accepted` |
 | `apps/tools/src/legal/MainnetRoot.vue` | new: `readAcceptance` once on mount; the gate until accepted, then `MainnetPlaceholderView` |
 | `apps/tools/src/App.vue` | edit: the literal define test gates `import("./legal/MainnetRoot.vue")` instead of the placeholder |
-| `apps/tools/src/lib/testids.ts` | edit: the gate's testids (no legal text: D11's reason) |
+| `apps/tools/src/legal/testids.ts` | new: the gate's testids, kept out of the global `TESTIDS` (D19) |
 | `apps/tools/scripts/legal-dist.ts` + test | edit: a mainnet dist also carries both document ids (the gate imports the documents); other targets also refuse a `MainnetRoot` chunk |
 | `apps/tools/src/lib/network-targets.ts` | edit: the `MAINNET_TARGET` comment's "no wallet transport" becomes "no page fetch; the gate's two calls go to the injected wallet" |
 | `packages/legal/src/privacy.ts` | edit: G3's sentences and a new `updated` date (publishes on the landing, F19) |
@@ -335,7 +335,7 @@ Design: § Arc a2 design. Every phase assumes F13–F19 and I5–I6; nothing els
 Gate: `bun run lint && bun run typecheck:all && bun run --cwd apps/tools test`, exit 0 (lint, typecheck,
 unit).
 
-**P8: the screen, the root, the policy edit.** UI impact: G1–G4 exactly, and G3's policy text.
+**P8 ✓: the screen, the root, the policy edit.** UI impact: G1–G4 exactly, and G3's policy text.
 
 1. Build `AcceptanceGate.vue` and `MainnetRoot.vue`; edit `App.vue`, `testids.ts` and the
    `MAINNET_TARGET` comment.
@@ -419,6 +419,7 @@ check of the production bundle on its host (F10).
 | D16 | ERC-1271 signatures (a2) | refused with G4's `failed` line | accept unverified: a junk signature would then pass. Verify on chain: D13's reasons |
 | D17 | Version skew between the landing and the app (a2) | a known limit, put to the owner (G7) | a bundled document view in the app: a second renderer (D11 L) and new visible UI. Versioned document URLs: a publication and retention contract |
 | D18 | The owner's answers (a2) | decision page 11, each Option A: P11-01 "Approve the agree screen as shown."; P11-02 "Approve the wallet message as shown."; P11-03 "Approve the Privacy Policy edit."; P11-04 "Approve the failure lines as shown; smart-contract accounts that need the chain to check stay out for now."; P11-05 "No copy: the signature stays in the person's browser."; P11-06 "One acceptance per browser for now; decide per-account when the gas flow opens."; P11-07 "Accept it for now, with a check after each merge that both sites serve the merged version." | — the owner decides |
+| D19 | The gate's testids (a2, a deviation from the file map) | `apps/tools/src/legal/testids.ts` (`GATE_TESTIDS`), imported only by mainnet code | the global `TESTIDS` (the plan's map, D11's reason): it ships whole to every build, so the testnet dist would change by four strings, and the testnet build must stay byte-identical (proved in P8) |
 
 **Deviations in a1 (D11).** The file map's `LegalPage.vue`, `MainnetRoot.vue` and `testids.ts` were
 built in P1 and removed once C8 moved the pages to the landing. The a1 file map is now:

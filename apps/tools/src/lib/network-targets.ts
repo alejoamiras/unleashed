@@ -176,9 +176,10 @@ export const MAINNET_TARGET: ToolsTarget = {
 	// No node: the placeholder never calls one (main.ts skips the boot probe), and its CSP blocks one.
 	nodeUrl: "",
 	l1ExplorerBaseUrl: "https://etherscan.io",
-	// The mainnet build renders a static placeholder: no node handshake, no wallet transport, no token
-	// list. Every remote origin is therefore removed — the narrowest CSP a build can ship, and the one
-	// that makes a stray network call from this target fail loudly instead of reaching a live chain.
+	// The mainnet build renders the acceptance gate and a static placeholder: no node handshake, no page
+	// fetch, no token list; the gate's two calls go to the injected wallet, which no CSP governs. Every
+	// remote origin is therefore removed — the narrowest CSP a build can ship, and the one that makes a
+	// stray network call from this target fail loudly instead of reaching a live chain.
 	cspConnectSrc: "'self' data: blob:",
 	readRpcUrls: {},
 }
