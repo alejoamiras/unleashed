@@ -444,6 +444,17 @@ that sends nothing. The five fixes above held.
 | 6 | Low: the cap counts the fundings to one deployer (verified) | documented: a new deployer pair starts a new count |
 | — | Untested: the null pin, the scan's windows, the scan wiring | unit tests for the first two; the integration test runs the margin's refusal |
 
+**a2 implementation, Codex round 2 (same session): conditional approve, 1 Medium, 1 Low; both verified and fixed.**
+Round 1's fixes held; Codex replayed the stale-decision trace (one deposit, the second run refused).
+
+| # | Finding (label) | Disposition |
+|---|---|---|
+| 1 | Medium: the node client logs each failed attempt with its URL before it retries, so the keyed URL prints before the redacted catch (demonstrated) | the deploy routes every SDK log line through the redaction before stderr; a child-process test drives a real retry |
+| 2 | Low: the canary's `--fresh-selfpay` comment promises instance publication (verified) | reworded |
+
+Codex also named a trust assumption: the scan trusts the RPC to return every log at or below the scanned block. The
+margin covers a lagging backend, not one that omits an old log while reporting the nonce it moved.
+
 ## Delivery
 
 One PR per arc against `main`, no stacking. a1 builds on `worktree-mainnet-1` (it carries this plan); every other arc:

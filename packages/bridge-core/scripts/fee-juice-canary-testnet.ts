@@ -129,7 +129,7 @@ async function main() {
 	console.log(`L2 recipient ${from.toString()}`)
 	const { fee: sponsoredFee } = await sponsoredFpcFee(ewallet)
 	// --fresh-selfpay: SKIP the sponsored account deploy so the self-pay claim is the account's FIRST
-	// tx and carries initialization (ctor + instance publication) - the mainnet persona (no sponsor
+	// tx and carries the account's initialization - the mainnet persona (no sponsor
 	// exists there). Measures the gas shape the steady-state calibration excludes.
 	const freshSelfPay = process.argv.includes("--fresh-selfpay")
 	if (freshSelfPay) {

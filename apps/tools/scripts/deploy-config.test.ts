@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { spawnSync } from "node:child_process"
 import { FAUCET_TOKENS, requireDrpcNodeUrl } from "@unleashed/bridge-core"
 import { dripCatalog } from "@unleashed/bridge-core/drip-deploy"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { buildDeploymentJson, fundingOf, getDeploymentConfig, nodeUrlFor, redactSecrets, resolveDeployerKeys } from "./deploy-config"
+import { buildDeploymentJson, fundingOf, getDeploymentConfig, nodeUrlFor, resolveDeployerKeys } from "./deploy-config"
 
 describe("getDeploymentConfig", () => {
 	it("deploys the faucet catalog", () => {
@@ -90,12 +91,40 @@ describe("resolveDeployerKeys", () => {
 	})
 })
 
-describe("redactSecrets", () => {
-	it("names each keyed-run value instead of printing it, the dRPC key inside a composed URL included", () => {
-		const env = { DRPC_API_KEY: "sentinel_Key-0123456789", ETH_RPC_URL: "https://l1.example/v2/sentinel-l1" }
-		const node = requireDrpcNodeUrl("mainnet", env)
-		const out = redactSecrets(`Error fetching from host ${node}: HTTP request failed. URL: ${env.ETH_RPC_URL}`, env)
-		expect(out.includes(env.DRPC_API_KEY) || out.includes("sentinel-l1")).toBe(false)
-		expect(out).toContain("<ETH_RPC_URL>")
+describe("redacted logging", () => {
+	// A child process with the operator's environment: vitest's NODE_ENV=test silences the SDK's logger.
+	// Booleans: a failing `toContain` on the captured text would print the key.
+	it("keeps the keyed URL out of the node client's retry logs and out of its final error", () => {
+		const key = "sentinel_Key-0123456789"
+		const child = spawnSync(
+			"bun",
+			[
+				"-e",
+				`import { inspect } from "node:util"
+				import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
+				import { makeFetch } from "@aztec-labs/foundation/json-rpc/client"
+				import { installRedactedLogging, redactSecrets } from "./scripts/deploy-config.ts"
+				installRedactedLogging()
+				const node = createAztecNodeClient(process.env.PROBE_URL, { fetch: makeFetch([0], false) })
+				console.log(redactSecrets(inspect(await node.getBlockNumber().catch((e) => e))))`,
+			],
+			{
+				cwd: join(import.meta.dirname, ".."),
+				encoding: "utf8",
+				timeout: 60_000,
+				env: {
+					...process.env,
+					NODE_ENV: "production",
+					LOG_LEVEL: "info",
+					DRPC_API_KEY: key,
+					PROBE_URL: `http://127.0.0.1:9/aztec?dkey=${key}`,
+				},
+			},
+		)
+		const out = `${child.stdout}${child.stderr}`
+		expect(child.status, "the probe ran").toBe(0)
+		expect(child.stderr.includes("Error while retrying"), "the SDK logged its retry").toBe(true)
+		expect(out.includes(key)).toBe(false)
+		expect(child.stderr.includes("<DRPC_API_KEY>") && child.stdout.includes("<DRPC_API_KEY>")).toBe(true)
 	})
 })

@@ -2,6 +2,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { GrumpkinScalar } from "@aztec-labs/foundation/curves/grumpkin"
 import { poseidon2Hash } from "@aztec-labs/foundation/crypto/poseidon"
+import { overwriteLoggingStream } from "@aztec-labs/foundation/log"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { FAUCET_DRIPPER_SALT, type FaucetSymbol, FAUCET_TOKENS, requireDrpcNodeUrl } from "@unleashed/bridge-core"
 import { parseFj } from "@unleashed/bridge-core/drip-deploy"
@@ -127,6 +128,45 @@ export function redactSecrets(text: string, env: Record<string, string | undefin
 		const value = env[name]
 		return value ? out.replaceAll(value, `<${name}>`) : out
 	}, text)
+}
+
+const LEVELS: Readonly<Record<number, string>> = {
+	10: "TRACE",
+	20: "DEBUG",
+	25: "VERBOSE",
+	30: "INFO",
+	40: "WARN",
+	50: "ERROR",
+	60: "FATAL",
+}
+const ENVELOPE = new Set(["level", "time", "pid", "hostname", "module", "msg"])
+
+function readable(line: string): string {
+	try {
+		const entry = JSON.parse(line) as Record<string, unknown>
+		const data = Object.fromEntries(Object.entries(entry).filter(([k]) => !ENVELOPE.has(k)))
+		const extra = Object.keys(data).length > 0 ? ` ${JSON.stringify(data)}` : ""
+		return `${LEVELS[entry.level as number] ?? entry.level} ${entry.module ?? ""}: ${entry.msg ?? ""}${extra}\n`
+	} catch {
+		return line
+	}
+}
+
+/**
+ * Routes every SDK log line through {@link redactSecrets} before `write`. The node client logs each failed attempt
+ * with its URL before it retries, so a keyed run installs this before it creates any client.
+ */
+export function installRedactedLogging(
+	write: (text: string) => void = (text) => process.stderr.write(text),
+	env: Record<string, string | undefined> = process.env,
+): void {
+	// Typed as a Writable, but pino needs only `write` from a destination.
+	overwriteLoggingStream({
+		write: (line: string) => {
+			write(redactSecrets(readable(line), env))
+			return true
+		},
+	} as Parameters<typeof overwriteLoggingStream>[0])
 }
 
 // ── Schemas matching src/contracts/deployments.ts ──────────────────────────

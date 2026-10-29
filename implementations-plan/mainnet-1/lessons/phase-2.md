@@ -28,3 +28,7 @@
   deploy, NOISE stops), so the top-up and resume steps are unchanged. The margin's refusal runs with the chain's
   whole height as the margin, so the L1 blocks the sequencer mines during the run cannot carry the scanned block
   past the funder's transactions. Green on an attached sandbox, 66 s.
+- **The SDK logger is silent under vitest.** `@aztec-labs/foundation`'s default level is `silent` when
+  `NODE_ENV=test`, so a test of what the SDK logs runs a child `bun` process with `NODE_ENV=production`.
+  `overwriteLoggingStream` replaces the destination of every SDK logger at once; the repository has one foundation
+  instance, so the override reaches the node client's loggers too.

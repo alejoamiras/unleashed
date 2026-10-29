@@ -48,6 +48,7 @@ import {
 	type Funding,
 	fundingOf,
 	getDeploymentConfig,
+	installRedactedLogging,
 	type Network,
 	nodeUrlFor,
 	redactSecrets,
@@ -196,6 +197,7 @@ async function run(): Promise<void> {
 
 const isDirectInvocation = import.meta.url === `file://${process.argv[1]}`
 if (isDirectInvocation) {
+	installRedactedLogging()
 	run().catch((err: unknown) => {
 		logger.error(`Deploy failed: ${redactSecrets(inspect(err, { depth: 8 }))}`)
 		process.exit(1)
