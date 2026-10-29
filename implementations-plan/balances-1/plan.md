@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: final Codex pass approved; awaiting the orchestrator
+status: a1 implemented; Codex fix loop converged; delivery in progress
 base: main a111e8a
 budget: "recon: 1 Sonnet explorer + driver checks; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -96,7 +96,7 @@ Tapping an Ethereum row while the wallet is elsewhere keeps today's chain messag
   included. Testnet only.
 - **Supply chain**: no dependency change.
 
-## Phase 1 — Ethereum reads move onto the pinned reader (arc a1)
+## Phase 1 — Ethereum reads move onto the pinned reader (arc a1) ✓
 
 Steps:
 1. In `SendWizard.vue`, hoist `bridgeL1` above `useRowBalances` and delete `l1Reader`. Give `useRowBalances`
@@ -182,6 +182,21 @@ its test). Body: what and why, gate outcomes, `tokens.spec.ts` wall-clock before
   stale row after a testnet mint.
 - **Final fresh Codex pass** (new session): `conditional approve` (D2 enforced; the resume invocation, `<prompt-file>`,
   no `Date`). All adopted; D1 and D3 held. Verification round (resumed): `approve`, no material findings.
+- **Deviations in a1.** `useCrossChainSend.ts` changed too: it is a second caller of `useTokenSelection`, and the
+  `balanceReader` dep is required. The one-call adapter became `readBalancesOn` in `useEthereumReader.ts`, shared by
+  the rows and the selection (D4).
+- **Fix loop, round 1** (Codex, new session): `findings: 1`, Low: the `pub` doc said "the wallet's own client", but
+  the cross-chain caller passes the pinned reader. Fixed. **Opus review beside it**: Medium (D4), Low (the SDK doc's
+  split rule: only `batchSize: 0` stops the split), two nits (a false spec comment; `useSourceChain` repeated the
+  owner getter). All fixed in one commit.
+- **D4** (Opus: Medium, demonstrated in viem 2.57.1 `multicall.ts`; Codex confirmed 429, 503 and timeouts): with
+  `allowFailure: true` a refused `eth_call` comes back as every entry failing, and `readErc20Balances` maps each to
+  `0n`, so a publicnode refusal showed every row as 0 and made the amount step refuse every amount. Fix: one helper,
+  `readBalancesOn`, sends one call and rejects when an entry's error walks to `CallExecutionError` (only the
+  aggregate's own RPC call makes one); the rows keep what they read and the selection leaves `l1` unset. The SDK
+  function keeps the same flaw for other callers: filed as an issue at close-out, not changed here (a published
+  behaviour change).
+- **Fix loop, round 2** (Codex, resumed): `clean`.
 
 ## Seeds
 
