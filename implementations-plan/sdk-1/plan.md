@@ -550,16 +550,17 @@ carries the close-out.
   `blocked`, `assetKind`, `schema`) never enter a delta.
 - The storage unit is the whole journal array, so the guard is a compare-and-set only between writers that hold
   `locks.journal`. The claim's writes take it, and so do the writers that change a record while it is being claimed:
-  discovery's patch and its reseal (`crosschain-watch.ts`), the card's `reconcileFuelConsumed`, and `discard`. The
-  send flow's writes, which precede a record's claim, stay as they are (D82).
+  discovery's patch and its reseal (`crosschain-watch.ts`), the card's `reconcileFuelConsumed`, and `discard`; they
+  take it in 6.3, with the claim writer's first caller. The send flow's writes, which precede a record's claim, stay
+  as they are (D82).
 - `isRetirable` (journal pruning) and `resumeActionFor` call `claimRetired`; `isRetirable` keeps its cross-chain
   outcome rule on top. `backup.ts` validates the top-level `claimAttempt` (boolean) and `claimAttemptAt` (finite
   number), as it does the fuel block's.
 - Tests: the first persist of a schema 2, 3 and 4 record writes; a write whose changed field, or whose claim identity,
-  another writer moved between read and write refuses, and one that finds `next`'s value already stored writes; the
-  claim writer interleaved with discovery and with a discard over the in-memory locks loses neither's write; a delta
+  another writer moved between read and write refuses, and one that finds `next`'s value already stored writes; a claim
+  write landing after a discovery write or a discard loses neither; a delta
   leaves `route`, `sealedEnvelope` and a discovery patch intact; a cleared field is deleted; a malformed imported latch
-  is refused.
+  is refused. The interleaving over the in-memory locks is tested in 6.3, with the writers that take them.
 - Validation gate: base commands; `bun run test:all`. Layer: unit.
 
 **Phase 6.3: the app's claims on the SDK (PR 2, with the close-out).**

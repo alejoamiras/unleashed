@@ -15,3 +15,11 @@
     an apparent owner ask.
   - Re-entering the app's own claims each receipt round turns them into resumed calls, so the SDK's verification runs
     where today's engine trusted its provenance; bounded only by node health (known limit).
+
+## The build
+
+- 6.1: the SDK's fixture `messageHash` is not derived from its facts, so once an invalid message refuses before any
+  fee (D85) the token suite's nullifier read had to default to "live"; a resumed success that verifies needs a
+  live→nullified sequence, or the watch never ends.
+- 6.2: the app writers that take the journal lock (discovery, the card's consumed reconcile, discard) move with the
+  claim writer's first caller into 6.3: until the port, no claim writer runs for the lock to order them against.
