@@ -23,3 +23,7 @@
   live→nullified sequence, or the watch never ends.
 - 6.2: the app writers that take the journal lock (discovery, the card's consumed reconcile, discard) move with the
   claim writer's first caller into 6.3: until the port, no claim writer runs for the lock to order them against.
+- PR 1's sandbox integration: 52 passed, 9 failed, all in `sdk-flows`. Its event-script regexes predated the receipt
+  watch's `claim-waiting`/`claim-proposed`, `claim-landed` and `deposit-recovery`; the scripts were rewritten from the
+  observed sequences and the file then passed 9/9. A script that pins a whole event stream breaks on every new event
+  kind, so it lists the repeating watch as one group.

@@ -57,3 +57,7 @@
 - 2026-10-29 a5 review round 3: Codex no new material finding; loop converged in 3 rounds
 - 2026-10-29 a5 final gates on HEAD: lint, typecheck:all, test:all, lint:actions, test:ci-gating (50), pack:check green; audit:tools hit the known 5 s load timeout in bridge-generation.test.ts (load average 95), green alone and on the rerun
 - 2026-10-29 a6 plan amendment: Arc a6 (6.1–6.3), D74–D87; Codex APPROVE after 4 rounds, Opus APPROVE WITH CHANGES folded in; §10 answered by ask26, no out-of-budget difference reachable (D86)
+- 2026-10-29 a6 PR 1 gates on 38f457b: lint, typecheck:all, test:all (sdk 461, bridge-core 535, tools 1671), sdk pack:check green
+- 2026-10-29 a6 PR 1 review: Codex r1 REJECT, r2 APPROVE WITH CHANGES, r3 APPROVE (converged); Opus leg beside r1; all fixed with tests
+- 2026-10-29 a6 PR 1 sandbox integration on fe455fd: 52 passed, 9 failed in sdk-flows (event scripts predated the new events); scripts fixed, sdk-flows 9/9 on the sandbox
+- 2026-10-29 a6 PR 1 final gates on the origin/main merge: lint, typecheck:all, test:all (sdk 460, bridge-core 535, tools 1694, landing 87, design 242, relayer 25, legal 4), sdk pack:check green
