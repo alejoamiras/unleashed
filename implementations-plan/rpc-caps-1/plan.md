@@ -7,10 +7,29 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: implementing arc 1 (phase 1 green); Codex fix loop
+status: completed (PR #77)
 base: main bee3a71
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
+
+## Outcome
+
+- **Status:** completed; delivered in PR #77 (one arc), awaiting the orchestrator's merge. Closes #61.
+- **Shipped:** `cappedLogs` (`packages/bridge-core/src/capped-logs.ts`), `maxLogBlocks` on `SOURCE_CHAINS[84532]`
+  with the measured caps, the wrapping in `readClientFor`, and the corrected comments in `source-chains.ts` and
+  `network-targets.ts`. Tests: `capped-logs.test.ts` (two unit cases and the `RPC_CAPS_LIVE` check), the cap pin in
+  `source-chains.test.ts`, and the wiring case in `useEthereumReader.test.ts`.
+- **Changed in review:** planning narrowed the completeness claim to failed requests and added I2, A2 and four test
+  cases. Implementation round 1 added a remainder range and a filter check to the tests and fixed three comments.
+  Rejected, with reasons in the ledger: one global chunk of 200, split on refusal, `methods.exclude` (D1),
+  retention-aware routing (D5), and cancelling on the deadline (D6).
+- **Lessons:** none promoted, because `lessons.md` is at its budget (8,188 bytes). The endpoint facts live in
+  `source-chains.ts`'s comment and `recon.md`. The note on viem stubs lives in `lessons/phase-1.md`.
+- **Known limits:** #78.
+- **Open items:** none. Reported to the orchestrator for other lanes: the relayer's `CHUNK_BLOCKS` comment
+  (relayer-2), and PublicNode Sepolia's log retention of about 1.7 days, which keeps older cross-chain records
+  `incomplete`.
+- **Seeds:** the `/goal` and `/loop` seeds at the end are retired. They are history, not instructions.
 
 # rpc-caps-1: keep every log query within its endpoint's measured cap
 
