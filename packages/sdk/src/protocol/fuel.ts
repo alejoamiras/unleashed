@@ -11,12 +11,13 @@
  */
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { FeePaymentMethod } from "@aztec-labs/aztec.js/fee"
-import { Fr } from "@aztec-labs/aztec.js/fields"
+import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { FeeJuicePortalAbi } from "@aztec-foundation/l1-artifacts"
 import { computeSecretHash } from "@aztec-labs/stdlib/hash"
 import { ExecutionPayload, mergeExecutionPayloads } from "@aztec-labs/stdlib/tx"
 import { type Address, type Hex, type Log, parseEventLogs } from "viem"
 import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, privateFuelSecretHash } from "./private-fuel.ts"
+import { randomField } from "./random-field.ts"
 
 /** Re-exported so consumers get the canonical FeeJuicePortal ABI from one place (the bridge-core boundary). */
 export { FeeJuicePortalAbi }
@@ -39,7 +40,7 @@ export interface FuelDepositPlan {
  *  `secret` may be supplied for a DETERMINISTIC plan (e.g. derived from a deployer secret) so a
  *  crash between the L1 deposit and the L2 claim is resumable with no secret persisted anywhere;
  *  a leaked public-deposit secret is grief-free regardless (the claim is recipient-bound). */
-export async function planPublicFuelDeposit(recipient: AztecAddress, amount: bigint, secret: Fr = Fr.random()): Promise<FuelDepositPlan> {
+export async function planPublicFuelDeposit(recipient: AztecAddress, amount: bigint, secret: Fr = randomField()): Promise<FuelDepositPlan> {
 	const secretHash = await computeSecretHash(secret)
 	return { to: recipient.toString() as Hex, amount, secretHash: secretHash.toString() as Hex, secret, isPrivate: false }
 }
@@ -47,7 +48,7 @@ export async function planPublicFuelDeposit(recipient: AztecAddress, amount: big
 /** Plan a PRIVATE fee-juice deposit: lands at the PrivateFPC, claimer-bound. A RANDOM secret would
  *  strand the FJ forever — the claimer reconstructs `deriveBridgeSecret(salt, claimer)` from `msg_sender`,
  *  so the secret MUST be derived, never random (mirrors the private swap-fuel invariant). */
-export async function planPrivateFuelDeposit(claimer: AztecAddress, amount: bigint, salt: Fr = Fr.random()): Promise<FuelDepositPlan> {
+export async function planPrivateFuelDeposit(claimer: AztecAddress, amount: bigint, salt: Fr = randomField()): Promise<FuelDepositPlan> {
 	const secret = deriveBridgeSecret(salt, claimer)
 	const secretHash = await privateFuelSecretHash(salt, claimer)
 	return { to: PRIVATE_FPC_ADDRESS as Hex, amount, secretHash: secretHash.toString() as Hex, secret, isPrivate: true, salt }

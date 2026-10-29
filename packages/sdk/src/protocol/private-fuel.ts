@@ -144,7 +144,7 @@ export function ownGasCeiling(shape: HubClaimShape, maxFees: { feePerDaGas: bigi
  * The bridge secret a private-fuel L1 deposit binds to: `poseidon2([salt, claimer], DOM_SEP)`.
  * The claimer reconstructs it from `msg_sender` inside `PrivateFPC.mint_and_pay_fee`, so a RANDOM
  * secret would strand the Fee Juice forever — `flows.ts` MUST inject this for private fuel and never
- * fall back to `Fr.random()` (which stays correct for the recipient-bound PUBLIC fuel path).
+ * fall back to a random secret (which stays correct for the recipient-bound PUBLIC fuel path).
  */
 export const deriveBridgeSecret = (salt: Fr, claimer: AztecAddress): Fr =>
 	poseidon2HashWithSeparator([salt, claimer], DOM_SEP__FPC_BRIDGE_SECRET)
