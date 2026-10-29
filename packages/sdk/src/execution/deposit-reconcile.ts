@@ -5,9 +5,9 @@
  * record's send would have made and its receipt is a success on the canonical chain. Uniqueness: one
  * verified transaction across every router is the answer, two is `"ambiguous"`, and any search that
  * could not cover the window — cap, failed or slow read, chain switch, reorg — is `"incomplete"`,
- * never `"none"`. A record that names its signer counts only the router events that signer paid for,
- * before the candidate cap: anyone can replay a published secret hash in a deposit of their own, and
- * enough look-alikes would otherwise keep the search incomplete for good.
+ * never `"none"`. A record that names its signer counts only that account's candidates, before the
+ * candidate cap: by the payer the router's event names or, on a retired router whose events name none,
+ * by the transaction's sender.
  */
 import { decodeFunctionData, getAbiItem } from "viem"
 import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
@@ -38,7 +38,7 @@ export interface ReconcileL1Client {
 		fromBlock: bigint
 		toBlock: bigint
 	}): Promise<ReadonlyArray<{ transactionHash: Hex; args?: Record<string, unknown> }>>
-	getTransaction(args: { hash: Hex }): Promise<{ to: Hex | null; input: Hex } | null>
+	getTransaction(args: { hash: Hex }): Promise<{ from: Hex; to: Hex | null; input: Hex } | null>
 	getTransactionReceipt(args: { hash: Hex }): Promise<{ status: string; blockNumber: bigint; blockHash: Hex } | null>
 }
 
@@ -89,6 +89,8 @@ interface RouterShape {
 	eventFor(rec: SearchRecord): unknown
 	logMatches(rec: SearchRecord, args: LogArgs): boolean
 	calldataMatches(rec: SearchRecord, input: Hex, privateFpc: string): boolean
+	/** Whether `logMatches` checks the record's signer against a payer the event names. */
+	logNamesPayer: boolean
 }
 
 interface SearchedRouter {
@@ -120,8 +122,9 @@ export async function findDepositTx(rec: SearchRecord, l1: ReconcileL1Client, op
 		const verified: Hex[] = []
 		for (const router of routers) {
 			const hashes = await candidateHashes(rec, l1, router, from, scan.latest, BigInt(o.chunkBlocks), read)
-			if (hashes.length > o.maxCandidates) return "incomplete"
-			verified.push(...(await verifiedOf(rec, l1, router, hashes, read, o.privateFpc)))
+			const found = await verifiedOf(rec, l1, router, hashes, read, o)
+			if (found === "incomplete") return "incomplete"
+			verified.push(...found)
 		}
 		await scan.close()
 		if (verified.length === 0) return "none"
@@ -133,17 +136,28 @@ export async function findDepositTx(rec: SearchRecord, l1: ReconcileL1Client, op
 	}
 }
 
+/** The candidates that verify, or `"incomplete"` past the cap; each transaction is read once. */
 async function verifiedOf(
 	rec: SearchRecord,
 	l1: ReconcileL1Client,
 	router: SearchedRouter,
 	hashes: readonly Hex[],
 	read: BudgetedRead,
-	privateFpc: string,
-): Promise<Hex[]> {
+	o: { maxCandidates: number; privateFpc: string },
+): Promise<Hex[] | "incomplete"> {
+	const signerFirst = !router.shape.logNamesPayer && rec.sender !== undefined
+	const isCall = (hash: Hex) => isRecordCall(rec, l1, router, hash, read, o.privateFpc)
+	const calls = signerFirst ? await sequentialFilter(hashes, isCall) : hashes
+	if (calls.length > o.maxCandidates) return "incomplete"
 	const verified: Hex[] = []
-	for (const hash of hashes) if (await verifyCandidate(rec, l1, router, hash, read, privateFpc)) verified.push(hash)
+	for (const hash of calls) if ((signerFirst || (await isCall(hash))) && (await landed(l1, hash, read))) verified.push(hash)
 	return verified
+}
+
+async function sequentialFilter(hashes: readonly Hex[], keep: (hash: Hex) => Promise<boolean>): Promise<Hex[]> {
+	const kept: Hex[] = []
+	for (const hash of hashes) if (await keep(hash)) kept.push(hash)
+	return kept
 }
 
 /** The first block at or after `targetTs`, by binary search over block timestamps inside the capped
@@ -182,9 +196,10 @@ async function candidateHashes(
 	return [...new Set(logs.filter((log) => router.shape.logMatches(rec, log.args)).map((log) => log.transactionHash))]
 }
 
-/** A candidate counts only when its calldata is the call this record's send would have made and its
- *  receipt is a success on the canonical chain. */
-async function verifyCandidate(
+/** The transaction is the call this record's send would have made and, where the router's events cannot say who
+ *  paid, was sent by the record's signer: only a direct call matches, so its sender is the `msg.sender` the router
+ *  pulled the tokens from. */
+async function isRecordCall(
 	rec: SearchRecord,
 	l1: ReconcileL1Client,
 	router: SearchedRouter,
@@ -194,6 +209,10 @@ async function verifyCandidate(
 ): Promise<boolean> {
 	const tx = await read(() => l1.getTransaction({ hash }))
 	if (!tx || !hexEq(tx.to, router.address) || !router.shape.calldataMatches(rec, tx.input, privateFpc)) return false
+	return router.shape.logNamesPayer || rec.sender === undefined || hexEq(tx.from, rec.sender)
+}
+
+async function landed(l1: ReconcileL1Client, hash: Hex, read: BudgetedRead): Promise<boolean> {
 	const receipt = await read(() => l1.getTransactionReceipt({ hash }))
 	if (receipt?.status !== "success") return false
 	await assertCanonical(l1, read, receipt)
@@ -260,6 +279,7 @@ function depositIntentMatches(rec: SearchRecord, i: DepositIntentArgs, amount: b
 const DEPOSITED_EVENT = getAbiItem({ abi: DEPOSIT_ROUTER_ABI, name: "Deposited" })
 
 const DEPOSIT_ROUTER_SHAPE: RouterShape = {
+	logNamesPayer: true,
 	eventFor: () => DEPOSITED_EVENT,
 	logMatches: (rec, args) =>
 		(rec.sender === undefined || hexEq(args?.payer, rec.sender)) &&
@@ -330,6 +350,7 @@ function legacyCalldataMatches(rec: SearchRecord, input: Hex, privateFpc: string
 }
 
 const LEGACY_ROUTER_SHAPE: RouterShape = {
+	logNamesPayer: false,
 	eventFor: (rec) => (rec.intent === "token+gas" ? BRIDGE_WITH_FUEL_EVENT : BRIDGE_EVENT),
 	logMatches: (rec, args) =>
 		rec.intent === "token+gas"

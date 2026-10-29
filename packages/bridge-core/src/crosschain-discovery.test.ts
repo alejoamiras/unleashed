@@ -187,6 +187,8 @@ function record(variant: Variant = PUBLIC, route: Partial<CrossChainDepositRecor
 		{
 			srcChainId: RAIL.source.chainId,
 			srcToken: RAIL.source.usdc,
+			// What every recorded Across source receipt's Diamond pulled from the user.
+			srcAmount: "5000000",
 			srcSender: RAIL.inputs.user,
 			srcScanFromBlock: (SRC_BLOCK - 20n).toString(),
 			srcTxHash: SRC_TX,
@@ -220,6 +222,8 @@ const stargateRecord = () =>
 		rail: "stargateV2",
 		srcChainId: BASE_CHAIN,
 		srcToken: MAINNET.base.usdc,
+		// The recorded pull: the fee step's input, before LI.FI's fee and the pool's share leave the Diamond.
+		srcAmount: "101342487",
 		srcSender: MAINNET.user,
 		srcScanFromBlock: (BigInt(COMPOSE.base.block) - 20n).toString(),
 		lifiTxId: COMPOSE.composeMsg.slice(0, 66) as Hex,
@@ -332,6 +336,7 @@ const verdictOf = (d: CrossChainDiscovery) => (d.verdict === "incomplete" ? `inc
 // ── synthetic logs spliced into the real receipts ────────────────────────────
 
 const DEPOSITED = getAbiItem({ abi: DEPOSIT_ROUTER_ABI, name: "Deposited" }) as AbiEvent
+const ERC20_TRANSFER = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)")
 const COMPLETED = parseAbiItem(
 	"event LiFiTransferCompleted(bytes32 indexed transactionId, address receivingAssetId, address receiver, uint256 amount, uint256 timestamp)",
 )
@@ -798,6 +803,32 @@ describe("discoverCrossChain", () => {
 		const d = await discover(lost, reads([other, ours], [fillTx(ROUTED.destination.logs)]))
 		expect(d).toMatchObject({ verdict: "deposited", srcTxHash: ours.hash })
 		expect(discoveryPatch(lost, d, 7)).toMatchObject({ route: { srcTxHash: ours.hash } })
+	})
+
+	it("the source scan for a lost hash counts only transfers of the route's exact amount", async () => {
+		const transfers = (n: number, token: Address, from: Address, to: Address, first: bigint, value: bigint): Tx[] =>
+			Array.from({ length: n }, (_, i) => ({
+				hash: label(`transfer ${value} ${i}`),
+				block: first + BigInt(i),
+				logs: [log(token, ERC20_TRANSFER, { from, to, value })],
+			}))
+		const lost = record(PUBLIC, { srcTxHash: undefined })
+		const zeros = transfers(8, RAIL.source.usdc, RAIL.inputs.user, RAIL.source.diamond, SRC_BLOCK + 1n, 0n)
+		const across = await discover(lost, reads([sourceTx(ROUTED), ...zeros], [fillTx(ROUTED.destination.logs)]))
+		expect(across).toMatchObject({ verdict: "deposited", srcTxHash: SRC_TX })
+
+		const lostOnBase = { ...stargateRecord(), route: { ...stargateRecord().route, srcTxHash: undefined } }
+		const baseBlock = BigInt(COMPOSE.base.block)
+		const baseZeros = transfers(8, MAINNET.base.usdc, MAINNET.user, MAINNET.base.diamond, baseBlock + 1n, 0n)
+		const onBase = reads([baseTx(), ...baseZeros], [], {}, { chainId: BASE_CHAIN, finalized: baseBlock })
+		expect(await discover(lostOnBase, onBase, STARGATE_CTX)).toMatchObject({
+			verdict: "pending",
+			transport: { kind: "stargate", guid: COMPOSE.guid },
+		})
+
+		const exact = transfers(9, RAIL.source.usdc, RAIL.inputs.user, RAIL.source.diamond, SRC_BLOCK + 1n, BigInt(lost.route.srcAmount))
+		const capped = await discover(lost, reads([sourceTx(ROUTED), ...exact], [fillTx(ROUTED.destination.logs)]))
+		expect(verdictOf(capped)).toBe("incomplete: too many source candidates")
 	})
 
 	describe("a record its user returns to weeks later: both heads far past what one run could scan from its start", () => {

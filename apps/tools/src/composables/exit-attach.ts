@@ -6,14 +6,8 @@
  * produced it. A window that could not be covered — a cap, a node behind it, pruned or unreadable
  * blocks, a slow read, a reorged tip, a node on another chain — is `"incomplete"`, never `"none"`.
  */
-import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { Fr } from "@aztec-labs/aztec.js/fields"
-import { EthAddress } from "@aztec-labs/foundation/eth-address"
-import { computeL2ToL1MessageHash } from "@aztec-labs/stdlib/hash"
 import type { SendWithdrawRecord } from "@unleashed/bridge-core"
-import { withdrawContentHash } from "@unleashed/sdk/protocol"
-
-const ZERO_L1 = `0x${"0".repeat(40)}`
+import { withdrawMessageHash } from "@unleashed/sdk/internal"
 
 /** A transaction as the node reports it inside a block body. */
 export interface AttachTxEffect {
@@ -63,18 +57,16 @@ const DEFAULTS = {
 
 class Incomplete extends Error {}
 
-/** The L2→L1 message this exit record's burn emitted: the hub sends it to the token's own portal,
- *  and the portal's `withdraw` takes no caller (`withCaller = false`), so the content binds the zero
- *  address there. */
-export async function exitMessageHash(rec: SendWithdrawRecord, identity: { chainId: number; rollupVersion: number }): Promise<string> {
-	const content = await withdrawContentHash(rec.recipientL1, BigInt(rec.amount), ZERO_L1)
-	return computeL2ToL1MessageHash({
-		l2Sender: AztecAddress.fromStringUnsafe(rec.bridge),
-		l1Recipient: EthAddress.fromString(rec.token.portal),
-		content: Fr.fromString(content),
-		rollupVersion: new Fr(identity.rollupVersion),
-		chainId: new Fr(identity.chainId),
-	}).toString()
+/** The L2→L1 message this exit record's burn emitted: the hub sends it to the token's own portal. */
+export function exitMessageHash(rec: SendWithdrawRecord, identity: { chainId: number; rollupVersion: number }): Promise<string> {
+	return withdrawMessageHash({
+		hub: rec.bridge,
+		portal: rec.token.portal,
+		recipientL1: rec.recipientL1,
+		amount: BigInt(rec.amount),
+		chainId: identity.chainId,
+		rollupVersion: identity.rollupVersion,
+	})
 }
 
 /** Every read goes through one budget: a count cap, a wall-clock deadline and the transport's own
