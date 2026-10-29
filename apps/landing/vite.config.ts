@@ -44,7 +44,6 @@ function preloadTags(fileNames: readonly string[]): HtmlTagDescriptor[] {
 	})
 }
 
-/** Each HTML file's rendered slots: the landing's body, or a legal page's head and body. */
 function render(html: string, file: string): string {
 	if (file === "index.html") return fillSlot(html, BODY_SLOT, renderBody())
 	const legal = LEGAL_PAGES.find((page) => page.file === file)

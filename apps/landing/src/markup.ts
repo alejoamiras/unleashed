@@ -32,6 +32,7 @@ export function mark(): string {
 
 const lockup = (cls = "lockup") => `<span class="${cls}">${mark()}<span class="wordmark">${esc(COPY.brand)}</span></span>`
 
+/** Only `href` is escaped here: `cls` and `body` must already be trusted HTML. */
 export const link = (cls: string, href: string, body: string) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(href)}">${body}</a>`
 
 function nav(): string {
