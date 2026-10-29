@@ -12,10 +12,15 @@ export interface SourceChain {
 	/** The Ethereum chain this source delivers into; a manifest for any other L1 may not enable it. */
 	l1ChainId: number
 	/**
-	 * Keyless read RPCs, preferred first, each serving `eth_getLogs` without silently truncating it. Empty where none is
-	 * chosen yet: the caller must supply one.
+	 * Keyless read RPCs, preferred first, each refusing an `eth_getLogs` range past its cap rather than truncating it.
+	 * Empty where none is chosen yet: the caller must supply one.
 	 */
 	rpcUrls: readonly string[]
+	/**
+	 * Per URL of `rpcUrls`, the most blocks (inclusive) one `eth_getLogs` request may span, set at or below the measured
+	 * limit. A reader splits a wider range into requests within it (`cappedLogs`).
+	 */
+	maxLogBlocks?: Readonly<Record<string, number>>
 }
 
 const SEPOLIA = 11_155_111
@@ -27,8 +32,11 @@ export const SOURCE_CHAINS: Readonly<Record<number, SourceChain>> = {
 		name: "Base Sepolia",
 		nativeSymbol: "ETH",
 		l1ChainId: SEPOLIA,
-		// PublicNode refuses an over-large log query outright; the official endpoint caps a query at 500 blocks.
 		rpcUrls: ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"],
+		// As measured: PublicNode refuses `to − from > 50,000` (-32701) and answers of over 20,000 logs (-32602); the
+		// official endpoint refuses `to − from > 200` (-32614). PublicNode keeps logs and receipts for about the last
+		// 11 days of blocks only, and answers older ones as `[]` and `null` without an error.
+		maxLogBlocks: { "https://base-sepolia-rpc.publicnode.com": 50_000, "https://sepolia.base.org": 200 },
 	},
 	8453: { chainId: 8453, name: "Base", nativeSymbol: "ETH", l1ChainId: ETHEREUM, rpcUrls: [] },
 	42161: { chainId: 42161, name: "Arbitrum One", nativeSymbol: "ETH", l1ChainId: ETHEREUM, rpcUrls: [] },
