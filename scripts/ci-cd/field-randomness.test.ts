@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 /**
- * Production sources draw every fresh salt, claim secret and nonce from `randomField` (`@unleashed/sdk/internal`),
- * which reads WebCrypto. This matches direct references only, so an alias escapes it; the SDK's own test of
- * `randomField` covers the runtime. Tests and the local sandbox suite are exempt.
+ * Production sources draw every fresh field (salt, claim secret, authwit nonce) from `randomField`
+ * (`@unleashed/sdk/internal`), which reads WebCrypto. This matches direct references only, so an alias
+ * escapes it; the SDK's own test of `randomField` covers the runtime. Tests and the local sandbox suite are
+ * exempt.
  */
 const ROOT = join(import.meta.dir, "..", "..")
 const ROOTS = ["packages/sdk/src/", "packages/bridge-core/src/", "packages/bridge-core/scripts/", "apps/tools/src/"]
