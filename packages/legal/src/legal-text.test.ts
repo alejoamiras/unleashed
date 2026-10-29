@@ -9,6 +9,15 @@ describe("legal document text", () => {
 		for (const doc of LEGAL_DOCUMENTS) expect(HIDDEN.test(JSON.stringify(doc)), doc.id).toBe(false)
 	})
 
+	it("carries a real date and no owner's blank", () => {
+		for (const doc of LEGAL_DOCUMENTS) {
+			expect(doc.updated, doc.id).toMatch(
+				/^\d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}$/,
+			)
+			expect(JSON.stringify(doc), doc.id).not.toContain("[[OWNER")
+		}
+	})
+
 	it("the hidden-character check catches a right-to-left override", () => {
 		expect(HIDDEN.test("pay‮txt.exe")).toBe(true)
 	})

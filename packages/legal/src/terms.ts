@@ -3,7 +3,7 @@ import type { LegalDocument } from "./document.ts"
 export const TERMS: LegalDocument = {
 	id: "unleashed-terms-of-use",
 	title: "Terms of Use",
-	updated: "[[OWNER: A11 the day these terms go live]]",
+	updated: "29 October 2026",
 	sections: [
 		{
 			heading: "About these terms",

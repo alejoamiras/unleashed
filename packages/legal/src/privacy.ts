@@ -3,7 +3,7 @@ import type { LegalDocument } from "./document.ts"
 export const PRIVACY: LegalDocument = {
 	id: "unleashed-privacy-policy",
 	title: "Privacy Policy",
-	updated: "[[OWNER: A11 the day this policy goes live]]",
+	updated: "29 October 2026",
 	sections: [
 		{
 			heading: "Who we are and what this covers",

@@ -58,6 +58,11 @@ describe("build guard", () => {
 		],
 		["a missing legal page", { "terms.html": undefined }, "missing terms.html"],
 		[
+			"an owner's blank on a page",
+			{ "terms.html": LEGAL("https://unleashed.systems/terms", "<p>Last updated [[OWNER: A11]]</p>") },
+			"terms.html still has an owner's blank",
+		],
+		[
 			"a policy link on a page whose document names no provider",
 			{ "terms.html": LEGAL("https://unleashed.systems/terms", POLICY) },
 			"terms.html links outside LINKS",

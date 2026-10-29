@@ -43,6 +43,8 @@ const URL_LIKE = /[:&\\]|\/\//
 // The renderer escapes with these five only, so no other reference can spell a `/` or a `:`.
 const FOREIGN_ENTITY = /&(?!(?:amp|lt|gt|quot|#39);)/
 const HTTP_EQUIV = /[\s/"']http-equiv\s*=/i
+// How a draft marks a fact only the owner can give; merging publishes the landing, so none may ship.
+const OWNER_BLANK = "[[OWNER"
 
 const text = (dist: Dist, path: string) => new TextDecoder().decode(dist.get(path) ?? new Uint8Array())
 const bytesOf = (dist: Dist, test: (path: string) => boolean) =>
@@ -81,6 +83,7 @@ function checkHtml(page: string, html: string): string[] {
 	if (/\sstyle=/.test(html)) errors.push(`${page} has a style= attribute`)
 	if (HTTP_EQUIV.test(html)) errors.push(`${page} has an http-equiv meta`)
 	if (FOREIGN_ENTITY.test(html)) errors.push(`${page} has a character reference the renderer never emits`)
+	if (html.includes(OWNER_BLANK)) errors.push(`${page} still has an owner's blank (${OWNER_BLANK})`)
 	const allowed = ALLOWED_URLS.get(page) ?? new Set()
 	for (const [, name, ...quoted] of html.matchAll(DESTINATION)) {
 		const value = quoted.find((v) => v !== undefined) ?? ""
