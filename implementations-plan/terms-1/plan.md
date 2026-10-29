@@ -538,6 +538,16 @@ false for another origin and after a document change).
 
 Resumed verification round: **approve** (the a2 re-plan's final verdict).
 
+**a2 code, Codex round 1** (gpt-6.1-sol, high, fresh session, the adversarial prompt): two low findings,
+three comment fixes; it confirmed both paths await verification and that replay and the clone reduce to the
+accepted limit.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | The dist rule misses a gate string leaking alone into a shared testnet chunk (reproduced in memory) | demonstrated, fixed: testnet and local refuse the gate testid prefix; mainnet requires it; leak and clean cases |
+| 2 | No root test holds the check open to prove neither screen renders meanwhile | fixed: a held check, then `none` and `accepted` controls |
+| — | Comments: section labels in the gate, the press-time read's reason, `readAcceptance` called an old version `none` | fixed |
+
 ## Post-implementation
 
 The repository has no Post-implementation standard; the steps are here.

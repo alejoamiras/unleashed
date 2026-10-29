@@ -3,9 +3,16 @@ import type { EIP1193Provider, Hex } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { TESTIDS } from "@/lib/testids"
-import { ACCEPTANCE_KEY, acceptanceMessage, DIGESTS } from "./acceptance"
+import { ACCEPTANCE_KEY, acceptanceMessage, DIGESTS, type Standing } from "./acceptance"
 import MainnetRoot from "./MainnetRoot.vue"
 import { GATE_TESTIDS } from "./testids"
+
+/** Set to hold the root's check open; null delegates to the real one. */
+const check = vi.hoisted(() => ({ held: null as Promise<unknown> | null }))
+vi.mock("./acceptance", async (importOriginal) => {
+	const real = await importOriginal<typeof import("./acceptance")>()
+	return { ...real, readAcceptance: (...args: Parameters<typeof real.readAcceptance>) => check.held ?? real.readAcceptance(...args) }
+})
 
 const sel = (t: string) => `[data-testid="${t}"]`
 const alice = privateKeyToAccount(`0x${"11".repeat(32)}`)
@@ -37,6 +44,7 @@ const shows = (w: Awaited<ReturnType<typeof root>>) => ({
 enableAutoUnmount(afterEach)
 beforeEach(() => localStorage.clear())
 afterEach(() => {
+	check.held = null
 	Reflect.deleteProperty(window, "ethereum")
 	vi.restoreAllMocks()
 })
@@ -55,12 +63,17 @@ describe("MainnetRoot", () => {
 		expect(w.find("h1").text()).toBe("The Terms or the Privacy Policy changed")
 	})
 
-	it("renders nothing until the stored record is checked", async () => {
-		await storeRecord()
-		const w = mount(MainnetRoot, { attachTo: document.body })
-		expect(w.html()).toBe("<!--v-if-->")
+	it.each([
+		["none", { gate: true, placeholder: false }],
+		["accepted", { gate: false, placeholder: true }],
+	] as const)("renders neither screen while the check is open, then only the %s one", async (verdict, after) => {
+		let settle: (s: Standing) => void = () => {}
+		check.held = new Promise<Standing>((r) => (settle = r))
+		const w = await root()
+		expect(shows(w)).toEqual({ gate: false, placeholder: false })
+		settle(verdict)
 		await flushPromises()
-		expect(shows(w)).toEqual({ gate: false, placeholder: true })
+		expect(shows(w)).toEqual(after)
 	})
 
 	it("opens the placeholder after signing, and keeps it for the page even when storage cannot write", async () => {

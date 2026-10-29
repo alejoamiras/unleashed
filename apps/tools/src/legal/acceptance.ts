@@ -94,8 +94,8 @@ async function verifies(address: Address, message: string, signature: Hex): Prom
 
 /**
  * Where this browser stands. `accepted` only when the stored record parses, names the current digests and
- * its signature verifies over the text rebuilt for `origin`, so a record for another site or version, or
- * with any field edited, is `none`. A storage that throws is `none`. Needs no wallet.
+ * its signature verifies over the text rebuilt for `origin`; a record naming other digests is `changed`, and
+ * one for another site, with any field edited, or in a storage that throws, is `none`. Needs no wallet.
  */
 export async function readAcceptance(getStorage: GetStorage, origin: string): Promise<Standing> {
 	let record: AcceptanceRecord | null

@@ -3,7 +3,7 @@ import { legalDistProblems } from "./legal-dist"
 
 const TERMS = "https://unleashed.systems/terms"
 const PRIVACY = "https://unleashed.systems/privacy"
-const DOCS = `id:"unleashed-terms-of-use" … id:"unleashed-privacy-policy"`
+const DOCS = `id:"unleashed-terms-of-use" … id:"unleashed-privacy-policy" … "tl-terms-gate"`
 
 const mainnetDist = () =>
 	new Map([
@@ -40,7 +40,16 @@ describe("legalDistProblems", () => {
 	it("refuses a mainnet dist without a document's data, as when the gate is missing", () => {
 		const dist = mainnetDist()
 		dist.set("assets/MainnetRoot-b2.js", `id:"unleashed-terms-of-use" href:"${TERMS}" href:"${PRIVACY}"`)
-		expect(legalDistProblems("mainnet", dist)).toEqual([`mainnet dist does not carry the document "unleashed-privacy-policy"`])
+		expect(legalDistProblems("mainnet", dist)).toEqual([
+			`mainnet dist does not carry the document "unleashed-privacy-policy"`,
+			`mainnet dist does not carry the acceptance gate "tl-terms-gate"`,
+		])
+	})
+
+	it("refuses a testnet dist carrying a gate string in a shared chunk, naming the file", () => {
+		const dist = otherDist()
+		dist.set("assets/index-a1.js", `app code "tl-terms-gate-sign"`)
+		expect(legalDistProblems("testnet", dist)).toEqual([`testnet dist carries "tl-terms-gate" in assets/index-a1.js`])
 	})
 
 	it("refuses a testnet dist carrying a document URL, naming the file", () => {

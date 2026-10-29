@@ -1,10 +1,7 @@
 <script setup lang="ts">
-/** Services */
 import { Button, Icon } from "@unleashed/design"
 import { LEGAL_URLS, PRIVACY, TERMS } from "@unleashed/legal"
 import { onMounted, ref, useTemplateRef } from "vue"
-
-/** Utils */
 import { browserStorage, injectedProvider, recordAcceptance, type SignFailure, signAcceptance, signFailure } from "./acceptance"
 import { GATE_TESTIDS } from "./testids"
 
@@ -52,7 +49,7 @@ onMounted(() => heading.value?.focus())
 
 async function sign() {
 	if (phase.value === "pending") return
-	// Read at press time: a wallet installed after load injects only into a reloaded page.
+	// Read at press time: some wallets inject `window.ethereum` after the page has loaded.
 	const provider = injectedProvider()
 	if (!provider) {
 		phase.value = "no-wallet"
