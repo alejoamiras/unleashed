@@ -395,9 +395,11 @@ async function lastSourceDeposit(c: Ctx, client: DiscoveryChainReads, latest: bi
 }
 
 /** A lost source hash: `LiFiTransferStarted` indexes nothing, so the candidates are the indexed
- *  `Transfer(srcSender → Diamond)` of `srcToken`, in chain order, each bound through its receipt. */
+ *  `Transfer(srcSender → Diamond)` of `srcToken` for exactly `srcAmount` (the Diamond pulls the verified route's whole
+ *  input, and anyone can log a zero-value `transferFrom` from the sender), in chain order, each bound through its receipt. */
 async function fromTransferScan(c: Ctx, client: DiscoveryChainReads, latest: bigint): Promise<SourceFacts> {
 	const { srcToken, srcSender } = c.rec.route
+	const srcAmount = BigInt(c.rec.route.srcAmount)
 	const diamond = c.ctx.source.diamond
 	const args = { from: srcSender, to: diamond }
 	const until = await lastSourceDeposit(c, client, latest)
@@ -405,7 +407,7 @@ async function fromTransferScan(c: Ctx, client: DiscoveryChainReads, latest: big
 	const logs = await logsOf(c, client, range, srcToken, ERC20_TRANSFER, args)
 	const isOurs = (l: DiscoveryLog) => {
 		const t = eventFrom(srcToken, ERC20_TRANSFER, l)
-		return !!t && hexEq(t.from, srcSender) && hexEq(t.to, diamond)
+		return !!t && hexEq(t.from, srcSender) && hexEq(t.to, diamond) && t.value === srcAmount
 	}
 	const hashes = [...new Set(logs.filter(isOurs).map((l) => l.transactionHash))]
 	if (hashes.length > c.o.maxCandidates) throw new ScanIncomplete("too many source candidates")

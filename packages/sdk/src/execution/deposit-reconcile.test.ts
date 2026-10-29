@@ -103,6 +103,8 @@ interface FakeTx {
 	event: { name: "Bridge" | "BridgeWithFuel" | "Deposited"; args: Record<string, unknown> }
 	/** The router that emitted it; the legacy one unless named. */
 	emitter?: Hex
+	/** The account that sent it; the record's signer unless named. */
+	from?: Hex
 }
 
 /** A chain: blocks 0..latest at 12s each from GENESIS_TS, the given router transactions, and the
@@ -140,7 +142,7 @@ function fakeChain(
 		getTransaction: async ({ hash }) => {
 			reads.push(`tx:${hash}`)
 			const t = txs.find((x) => x.hash === hash)
-			return t ? { to: t.to ?? t.emitter ?? ROUTER, input: t.input } : null
+			return t ? { from: t.from ?? SIGNER, to: t.to ?? t.emitter ?? ROUTER, input: t.input } : null
 		},
 		getTransactionReceipt: async ({ hash }) => {
 			reads.push(`receipt:${hash}`)
@@ -395,6 +397,30 @@ describe("findDepositTx — a retired router", () => {
 	it("two verified transactions are ambiguous, not a guess", async () => {
 		const { client } = fakeChain([bridgeTx("0xaa", 520n), bridgeTx("0xab", 530n)])
 		await expect(findDepositTx(record(), client, opts())).resolves.toBe("ambiguous")
+	})
+
+	it("a record that names its signer counts only that signer's sends, before the candidate cap", async () => {
+		// The retired router's events name no payer, and a replay of the record's own calldata verifies all the same.
+		const replays = Array.from({ length: 9 }, (_, i) => bridgeTx(`0xd${i}` as Hex, 521n + BigInt(i), { from: STRANGER }))
+		const flooded = fakeChain([bridgeTx("0xaa", 520n), ...replays])
+		await expect(findDepositTx(record({ sender: SIGNER }), flooded.client, opts())).resolves.toEqual({ txHash: "0xaa" })
+		await expect(findDepositTx(record(), flooded.client, opts())).resolves.toBe("incomplete")
+		const replayed = fakeChain([bridgeTx("0xaa", 520n), replays[0]])
+		await expect(findDepositTx(record({ sender: SIGNER }), replayed.client, opts())).resolves.toEqual({ txHash: "0xaa" })
+		await expect(findDepositTx(record(), replayed.client, opts())).resolves.toBe("ambiguous")
+	})
+
+	it("signer checks past the read budget, or a transaction read that fails, leave the search incomplete", async () => {
+		const many = Array.from({ length: 40 }, (_, i) =>
+			bridgeTx(`0x${(i + 256).toString(16)}` as Hex, 521n + BigInt(i), { from: STRANGER }),
+		)
+		const flooded = fakeChain([bridgeTx("0xaa", 520n), ...many])
+		await expect(findDepositTx(record({ sender: SIGNER }), flooded.client, opts({ maxReads: 30 }))).resolves.toBe("incomplete")
+		const failing = fakeChain([bridgeTx("0xaa", 520n)])
+		failing.client.getTransaction = async () => {
+			throw new Error("transaction read failed")
+		}
+		await expect(findDepositTx(record({ sender: SIGNER }), failing.client, opts())).resolves.toBe("incomplete")
 	})
 
 	describe("incomplete — the search could not cover the window", () => {
