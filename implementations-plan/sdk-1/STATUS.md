@@ -43,3 +43,4 @@
 - 2026-10-29 a3 final gates on 15d5520: e2e:tools 81/81 at retry 0 (1.5 h; 78 in 1.4 h on a2's head), LI.FI cells A 40.2 s, B 29.6 s, C 28.2 s; audit:tools green
 - 2026-10-29 CI on 45396be: sandbox integration failed sdk-flows (its pinned approval script lacked D63's approval:requested); expectation updated, waiting rounds tolerated; sdk-flows 9/9 locally
 - 2026-10-29 CI on 7f5cb76: all checks pass (sandbox integration 61/61); locally sdk-flows 9/9, full test:integration 55 passed and 5 lost to a host SIGBUS (/dev/shm full of orphaned bb-sync buffers)
+- 2026-10-29 CI on 8bd840d (plan docs only): Workers Builds: unleashed-testnet failed with no version uploaded; identical build inputs passed on 45396be and 7f5cb76, and the check cannot be re-requested without Cloudflare's app token, so the next push re-runs it
