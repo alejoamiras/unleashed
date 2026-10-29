@@ -776,6 +776,9 @@ Arc a4, the implementation (`git diff 556af41..HEAD`):
 - **Round 1, Opus 5.5 (beside it): 1 Low regression, 2 Low docs.** A private claim its own gas paid, resumed without
   secrets, settled with a false `missing-salt`: the leftover claim now counts the landed claim's own fee as the
   spend, and a missing salt keeps the record open (D68). `gasLeft`'s TSDoc and §10 item 5 corrected.
+- **Round 2, Codex (same session): no new material finding.** The fixes hold and their tests fail without them; the
+  hash-equality shortcut matches only a landed claim that paid with the gas (a registration's hash, a cleared or
+  hashless claim cannot match); a missing salt is caller input, so retry "safe". Converged.
 
 ## Delivery
 
