@@ -46,12 +46,17 @@ export async function reviewCrossChain(page: Page, plan: CrossChainPlan): Promis
 	await reviewDeposit(page, { l1ChainId, erc20, ...rest }, TESTIDS.sendXcReview)
 }
 
-/** The review asks the wallet onto the source chain, then signs there; resolves once the stepper takes over. */
-export async function signOnSource(page: Page, srcChainId: number): Promise<void> {
+/** The review asks the wallet onto the source chain; resolves once the wallet is there. */
+export async function switchToSource(page: Page, srcChainId: number): Promise<void> {
 	const notice = page.locator(tid(TESTIDS.sendWrongChain))
 	await expect(notice).toHaveAttribute("data-need", String(srcChainId))
 	await notice.locator(tid(TESTIDS.sendWrongChainSwitch)).click()
 	await expect(notice).toHaveCount(0)
+}
+
+/** The review asks the wallet onto the source chain, then signs there; resolves once the stepper takes over. */
+export async function signOnSource(page: Page, srcChainId: number): Promise<void> {
+	await switchToSource(page, srcChainId)
 	await confirmReview(page)
 }
 
