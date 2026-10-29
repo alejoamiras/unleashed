@@ -16,3 +16,10 @@
   the package as an integrator does and typecheck in `typecheck:all`; a wrong `privacy` literal fails it.
 - **Mutation-checked gating tests.** Dropping `LICENSE` from the `sdk-pack` filter, adding `contents: read` to the
   publish job, or prefixing the publish with `npm ci` each fails its test.
+- **Review round 1 found no pipeline defect and ten documentation ones.** Each README sentence was checked against
+  the source by both reviewers. The costly misses were contracts read off a type rather than its throw sites:
+  `submission` describes the failing call, not the transfer (a claim's refusal says `none` on a sent deposit), and
+  `deposit-reverted` means three things (simulated: `none`; send failed: `unknown`; mined: `submitted`). Docs that
+  tell an integrator when to drop a record must key on both `code` and `submission`.
+- **npm's trusted-publisher entries changed under us.** Since Sep 2026 a new entry allows only `npm stage publish`
+  unless direct `npm publish` is enabled, and an entry unused for two days expires (npm docs, trusted publishers).

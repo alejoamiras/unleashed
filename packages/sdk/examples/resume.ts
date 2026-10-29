@@ -14,7 +14,7 @@ export interface Held {
 }
 
 /** What the page tells the user about one open record. */
-export type Resumed = "settled" | "retry-now" | "retry-later" | "needs-attention"
+export type Resumed = "settled" | "nothing-moved" | "retry-now" | "retry-later" | "needs-attention"
 
 export async function resume(net: Network, reads: Reads, aztec: AztecSigner, held: Held, persist: RunOptions["persist"]): Promise<Resumed> {
 	const claim = held.record.intent === "gas" ? claimFuel : claimToken
@@ -23,7 +23,8 @@ export async function resume(net: Network, reads: Reads, aztec: AztecSigner, hel
 		return "settled"
 	} catch (e) {
 		if (!isBridgeError(e)) throw e
-		// `fee-stop` names its stop in `e.stop`: the account cannot pay for the claim now.
+		// The deposit reverted on chain: the record can be dropped.
+		if (e.code === "deposit-reverted" && e.submission === "submitted") return "nothing-moved"
 		if (e.retry === "safe") return "retry-now"
 		if (e.retry === "after-wait") return "retry-later"
 		// Retrying could move funds twice or cannot succeed: keep the record and show `e.code`.

@@ -787,6 +787,20 @@ Arc a4, the implementation (`git diff 556af41..HEAD`):
   hash-equality shortcut matches only a landed claim that paid with the gas (a registration's hash, a cleared or
   hashless claim cannot match); a missing salt is caller input, so retry "safe". Converged.
 
+Arc a5, the implementation (`git diff 54de731..HEAD`):
+
+- **Round 1, Codex: the publish pipeline is sound; 4 Moderate, all in the docs.** bb.js fetches its WebAssembly from a
+  `data:` URL, so `connect-src` needs `data:`; a new npm trusted-publisher entry allows only `npm stage publish`
+  until direct publishing is enabled, and expires unused after two days; a deposit's reads before its signature
+  surface unwrapped errors, so the README's "every failure is a `BridgeError`" is now scoped; `minFj` bounds the
+  bridged Fee Juice, before the claim's fee.
+- **Round 1, Opus 5.5 (beside it): 1 Medium-High, 1 Medium, 4 Low, all in the docs and an example.** A claim refused
+  before it reads anything reports `submission: "none"` on a sent deposit, so a handler that drops `none` records
+  would strand a public claim secret: the README and `BridgeError`'s TSDoc now say `submission` describes the failing
+  call and a claim's `none` never licenses a drop. The `never` row now says a sent deposit is finished with its claim;
+  a mined revert (`submitted`) is the drop case, an `unknown` one is kept; the 50,000-block search window, the
+  `payer` labels and a stray example comment corrected.
+
 ## Delivery
 
 Five sequential PRs against `main`, no stacking. a1 works on `worktree-sdk-1` (it carries this plan); each later arc

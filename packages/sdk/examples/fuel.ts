@@ -47,7 +47,7 @@ export async function buyGas(p: {
 		recipient: p.aztec.account.toString(),
 		privacy: "private",
 	})
-	// `quote.minFj` is the least the claim receives: the deposit reverts below it. Show it before asking to sign.
+	// `quote.minFj` is the least Fee Juice the deposit bridges (it reverts below it), before the claim's own fee.
 	let secrets: DepositSecrets | undefined
 	const persist: RunOptions["persist"] = async (record, s) => {
 		await p.persist(record, s)

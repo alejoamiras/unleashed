@@ -63,12 +63,14 @@ finished from what you stored.
   deposit was sent it is `"never"`: the record you already stored names the deposit, so finish it with a claim and
   never deposit again. In a claim it is `"safe"`: the claim resumes from whatever you last stored.
 - To resume, call the claim again with the record as last persisted (and its salts). It finds a deposit whose hash
-  the record lost on Ethereum, reads lost message leaves from the deposit's receipt, watches a claim it already sent
-  instead of sending another, and waits out an attempt whose hash was never stored until its nullifier or its age
-  settles it.
-- A deposit the user refused throws `user-rejected` with `submission: "none"`: nothing moved, drop the record. A page
-  that closed between `persist` and the signature leaves a record no deposit may match; its claim reports
-  `deposit-not-found` (`after-wait`) until one is mined.
+  the record lost on Ethereum while the record is under 50,000 blocks old (about a week), reads lost message leaves
+  from the deposit's receipt, watches a claim it already sent instead of sending another, and waits out an attempt
+  whose hash was never stored until its nullifier or its age settles it.
+- A deposit the user refused (`user-rejected`, `submission: "none"`) or one that reverted on chain
+  (`deposit-reverted` with `submission: "submitted"`, from the deposit or a later claim) moved nothing: drop the
+  record. A `deposit-reverted` with `submission: "unknown"` may still have been broadcast: keep it. A page that closed between
+  `persist` and the signature leaves a record no deposit may match: its claim reports `deposit-not-found`
+  (`after-wait`), and when to give it up is yours.
 - `signal` stops a call's waiting. It never cancels a sent transaction and is not honoured between a send and the
   persist of its hash.
 
@@ -96,7 +98,7 @@ A claim (`claimFuel`, `claimToken`) reports:
 | `claimable` | The claim's simulation passes. |
 | `registration-requested`, `registration-sent` | A token's first private claim only: its registration is a transaction of its own. |
 | `claim-requested` | The Aztec wallet is asked for the claim; once per attempt. |
-| `claim-sent` | The claim's hash is persisted. `payer` is `fuel` (the bridged gas), `fpc-credit` (private credit at the PrivateFPC) or `own-gas` (Fee Juice the account already held). |
+| `claim-sent` | The claim's hash is persisted. `payer` is `fuel` when the bridged gas paid; otherwise what the account already held paid, `fpc-credit` for a private claim and `own-gas` for a public one. |
 | `claim-proposed` | The claim is in a proposed block: not yet settlement. |
 | `settled` | The record is persisted complete. `via` is `claim`, or `claimed-elsewhere` when another submitter spent the message. |
 
@@ -122,14 +124,17 @@ before `settled`.
 
 ## Errors
 
-Every failure is a `BridgeError` (`isBridgeError`). `code` says what happened; `submission` whether anything reached a
-chain for this transfer (`none`, `submitted`, `unknown`); `retry` what to do next:
+Every claim failure, and every deposit failure from its signature on, is a `BridgeError` (`isBridgeError`). Anything
+else comes from your RPC, node or wallet failing before the deposit was signed: the deposit was not sent, and the same
+call may run again. `code` says what happened; `submission` whether the failing call put anything on a chain
+(`none`, `submitted`, `unknown`); `retry` what to do next. A claim always follows a sent deposit: never drop a record
+because its claim reported `none`.
 
 | `retry` | Meaning |
 |---|---|
 | `safe` | Call again now. |
 | `after-wait` | The chain has not caught up yet: call again later. |
-| `never` | Retrying could move funds twice or cannot succeed: keep the record and show the error. |
+| `never` | Repeating the call could move funds twice or cannot succeed. Keep the record and show the error: a deposit that was sent is still finished with its claim. |
 
 `fee-stop` names its stop in `stop`, a typed union, for your own copy: the claim cannot pay for itself now, and
 nothing was sent.
@@ -147,8 +152,8 @@ nothing was sent.
 
 The SDK connects only where you point it: your Ethereum RPC (`Reads.l1`), your Aztec node (`Reads.aztecNode`), and,
 on a network without a pinned swapper, `https://li.quest` (keyless, through `Reads.fetch` or the global `fetch`).
-`connect-src` needs those three origins. Its Poseidon2 hashes run in `@aztec-foundation/bb.js`'s WebAssembly, so
-`script-src` needs `'wasm-unsafe-eval'`, as any aztec.js page does.
+Its Poseidon2 hashes run in `@aztec-foundation/bb.js`'s WebAssembly, which it fetches from a `data:` URL: `connect-src`
+needs those three origins and `data:`, and `script-src` needs `'wasm-unsafe-eval'`, as any aztec.js page does.
 
 ## Trust
 
@@ -170,8 +175,10 @@ Before the first run, the owner:
 
 1. publishes the first version by hand (`npm publish <tarball> --access public`, with npm's two-factor prompt) from a
    tarball `pack:check --out` checked;
-2. on npmjs.com, adds the package's trusted publisher: repository `alejoamiras/unleashed`, workflow `publish-sdk.yml`,
-   environment `npm-publish`, then sets publishing access to require two-factor authentication and disallow tokens;
+2. on npmjs.com, once the next version is ready to publish, adds the package's trusted publisher: repository
+   `alejoamiras/unleashed`, workflow `publish-sdk.yml`, environment `npm-publish`, with the `npm publish` action allowed
+   (a new entry allows only `npm stage publish`). An entry that no run has used within two days expires. Then sets
+   publishing access to require two-factor authentication and disallow tokens;
 3. in the repository's settings, creates the `npm-publish` environment with its deployment branches limited to `main`.
 
 ## Maintaining the package
