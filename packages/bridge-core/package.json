@@ -10,6 +10,7 @@
 		"./drip-deploy": "./scripts/drip-deploy.ts",
 		"./fee-juice": "./src/fee-juice.ts",
 		"./fill-testnet": "./scripts/fill-testnet.ts",
+		"./keyed-run": "./scripts/keyed-run.ts",
 		"./private-fpc-artifact": "./src/private-fpc-artifact.ts",
 		"./sandbox": "./scripts/sandbox/index.ts",
 		"./wallet-store": "./scripts/wallet-store.ts"

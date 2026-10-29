@@ -121,7 +121,7 @@ finds `DRPC_API_KEY` and the three source-RPC names.
 
 ## Phases (arc a1)
 
-### Phase 1: the shared modules, and the tools deploy on them
+### Phase 1: the shared modules, and the tools deploy on them ✓
 
 1. Create `keyed-env.ts` and `keyed-run.ts`; move the helper out of `deploy-config.ts`; add the `./keyed-run` export.
 2. Write `keyed-run.test.ts`. (a) A `bun -e` child (`NODE_ENV=production`, `LOG_LEVEL=info`) runs `runKeyed` over a

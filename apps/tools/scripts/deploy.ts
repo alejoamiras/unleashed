@@ -27,7 +27,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { inspect } from "node:util"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { getContractInstanceFromInstantiationParams, type InteractionFeeOptions } from "@aztec-labs/aztec.js/contracts"
 import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee"
@@ -40,6 +39,7 @@ import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { parseManifestV2 } from "@unleashed/bridge-core"
 import { type CatalogEntry, deployDripCatalogOnMainnet, deploySponsoredCatalog, dripCatalog } from "@unleashed/bridge-core/drip-deploy"
+import { runKeyed } from "@unleashed/bridge-core/keyed-run"
 import { ownedWalletStore } from "@unleashed/bridge-core/wallet-store"
 import { MAINNET_ROLLUP_VERSION } from "../src/lib/chain-constants"
 import {
@@ -48,10 +48,8 @@ import {
 	type Funding,
 	fundingOf,
 	getDeploymentConfig,
-	installRedactedLogging,
 	type Network,
 	nodeUrlFor,
-	redactSecrets,
 	resolveDeployerKeys,
 } from "./deploy-config.js"
 
@@ -196,12 +194,6 @@ async function run(): Promise<void> {
 }
 
 const isDirectInvocation = import.meta.url === `file://${process.argv[1]}`
-if (isDirectInvocation) {
-	installRedactedLogging()
-	run().catch((err: unknown) => {
-		logger.error(`Deploy failed: ${redactSecrets(inspect(err, { depth: 8 }))}`)
-		process.exit(1)
-	})
-}
+if (isDirectInvocation) runKeyed(run)
 
 export { parseArgs }

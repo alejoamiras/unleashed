@@ -5,3 +5,4 @@
 - 2026-10-29 Codex round 2: conditional approve; 2 Low findings adopted; final fresh pass next.
 - 2026-10-29 final fresh Codex pass: conditional approve; 3 findings adopted; confirmation round next.
 - 2026-10-29 final pass confirmation: approve (one capacity failure, retried once).
+- 2026-10-29 phase 1 gate green: lint 0, typecheck:all 0, keyed-run.test.ts 3/3, deploy-config.test.ts 12/12.
