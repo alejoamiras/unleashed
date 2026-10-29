@@ -17,7 +17,10 @@ export function show(e: TransferEvent): void {
 			console.log("confirm in your wallet")
 			return
 		case "arrival":
-			console.log(`reaching Aztec (${e.stage})${e.blocksLeft === undefined ? "" : `: ${e.blocksLeft} blocks left`}`)
+			console.log(`reaching Aztec (${e.stage})${e.stage === "counting" && e.blocksLeft ? `: ${e.blocksLeft} blocks left` : ""}`)
+			return
+		case "deposit-recovery":
+			if (e.stage === "waiting") console.log("waiting for Ethereum to confirm the deposit")
 			return
 		case "settled":
 			console.log(e.via === "claim" ? `claimed in ${e.txHash ?? "an earlier call"}` : "claimed by someone else")

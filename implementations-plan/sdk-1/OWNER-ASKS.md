@@ -217,3 +217,7 @@ Options: **A (recommended)** run the app's claims through the SDK and accept 1â€
 every integrator first: a resume that only watches and never prompts (the app resumes on page load), and the "claim
 without gas" choice the card offers today. **B** keep today's behaviour and teach the SDK the app's ways as
 app-only switches: about seven of them inside the code that protects funds. **C** keep the app's engine as it is.
+
+**Answered:** ask26, which replaces options A, B and C: the SDK's claims gain the card's progress events, a resume that
+watches and never prompts, a status for the Ethereum confirmation wait and the claim-without-gas choice, keep its safer
+behaviours, and the app's claims then run on them (Arc a6). Items 1, 2, 3, 7 and 8 ship; 4, 5 and 6 keep today's card.

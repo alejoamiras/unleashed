@@ -121,6 +121,8 @@ function assertDepositFacts(d: Partial<DepositJournalRecord>): void {
 		!isOptionalString(d.leafIndex) ||
 		!isOptionalString(d.messageHash) ||
 		!isOptionalString(d.claimTxHash) ||
+		!isOptionalBoolean(d.claimAttempt) ||
+		!isOptionalNumber(d.claimAttemptAt) ||
 		!isOptionalBoolean(d.claimedByOther) ||
 		!isOptionalNumber(d.depositL2Block) ||
 		(d.assetKind !== undefined && d.assetKind !== "bridge-token" && d.assetKind !== "fee-juice")
