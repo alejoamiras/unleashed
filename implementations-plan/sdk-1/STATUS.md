@@ -30,3 +30,4 @@
 - 2026-10-29 a2 2.2-2.4 written: build and pack check; L1 leg (parseNetwork trust roots, quotes, deposits, events, errors); L2 leg (claimFuel, claimToken, capabilitiesFor, the claim fee ladder moved with FeeStop codes, the app on its copy table); lint, typecheck:all, test:all, pack:check, actionlint, ci-gating green; sdk-flows gas cells 5/5 in the sandbox (434 s)
 
 - 2026-10-29 a2 review round 1: Codex 2 High 3 Medium, Opus 3 High 1 Medium 4 Low; all fixed with tests except the mainnet guardian pin (D57, OWNER-ASKS §7, follow-ups) and three known limits filed closed (#43, #44, #45); packaging gains license, repository, LICENSE and an allow-listed pack-check environment
+- 2026-10-29 a2 review round 2: Codex 1 High 2 Medium, all fixed with tests (private hashless latch settled by nullifier, credit-paid registration latched, quotes deep-frozen) plus synchronous deposit refusals and a stale record in the token claim's ladder call

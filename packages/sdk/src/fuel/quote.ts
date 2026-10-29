@@ -62,17 +62,15 @@ export async function quoteFuel(
 	if (q.amount <= 0n) throw refusal("invalid-request", "amount must be positive")
 	await assertRecipient(q.recipient)
 	const s = await quoteSlice(net, r, q.token, q.amount)
-	return madeQuote(
-		Object.freeze({
-			network: net,
-			token: q.token,
-			amount: q.amount,
-			recipient: q.recipient,
-			privacy: q.privacy,
-			venue: s.venue,
-			...(s.tool ? { tool: s.tool } : {}),
-			expectedFj: s.expectedOut,
-			minFj: s.minOut,
-		}),
-	)
+	return madeQuote({
+		network: net,
+		token: q.token,
+		amount: q.amount,
+		recipient: q.recipient,
+		privacy: q.privacy,
+		venue: s.venue,
+		...(s.tool ? { tool: s.tool } : {}),
+		expectedFj: s.expectedOut,
+		minFj: s.minOut,
+	})
 }

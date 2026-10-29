@@ -640,8 +640,12 @@ Each row: the decision, its source, the rejected view with its reason.
   send until the message's nullifier answers or `PRIVATE_ATTEMPT_STALE_MS` passes, for the token claim and for the
   public gas claim beside it.
 - **D56 Only the SDK's own quotes and frozen networks reach a send.** `depositFuel`/`depositToken` refuse a quote
-  `quoteFuel`/`quoteBridge` did not return; the network, the manifest under it and every bundled pin are deep-frozen.
+  `quoteFuel`/`quoteBridge` did not return, and every quote, resolved token, network, manifest and bundled pin is
+  deep-frozen. The deposits are `async`, so a refusal rejects the promise and never throws past a `.catch`.
   `parseNetwork` refuses a route whose fuel floor is under the claim floor (D50), which no claim could pay from.
+- **D58 Every registration is latched before its prompt.** One paid from held credit persists `claimAttempt` before
+  the wallet is asked and lifts it with the hash; a gas attempt latched without its hash is settled by its message's
+  nullifier on the private path too, so a claim pays from the credit a landed registration left.
 - **D57 The SDK does not pin mainnet's guardian yet.** A hostile manifest can name a genuine-code generation someone
   else deployed, whose guardian can pause it (a delay, never a transfer). The owner's guardian is pinned once the
   mainnet generation exists (`follow-ups.md`, `OWNER-ASKS.md`).
@@ -705,6 +709,11 @@ Arc a2, the implementation (`git diff origin/main...HEAD`):
   `repository`, and `pack-check` passed the whole environment to its subprocesses (fixed). The mainnet guardian
   is not pinned (D57). Known limits: #43 (the reconcile window), #44 (one dropped registration read), #45 (retired
   routers' leaves). A sub-reviewer found no drift in the moved fee ladder.
+- **Round 2, Codex (same session resumed): 1 High, 2 Medium; all verified and fixed with tests.** A private gas attempt
+  whose registration landed without its hash re-minted the spent message for good (D58); a registration paid from held
+  credit was prompted before anything was persisted (D58); a quote's nested gas leg stayed writable (D56). Fixing them
+  found two more: the deposits threw their refusals synchronously, and the token claim handed the fee ladder the record
+  as the call opened it. All five round-1 fixes held.
 
 ## Delivery
 

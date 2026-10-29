@@ -170,13 +170,15 @@ async function settleHashlessClaim(leg: ClaimLeg): Promise<void> {
 	throw new BridgeError("claim-not-visible", "an earlier claim of this deposit may still land", SUBMITTED, "after-wait")
 }
 
-/** A public fuel attempt latched without its hash may have landed. Its nullifier settles it, and once it has aged past
- *  landing the latch is lifted, so the ladder never waits on it forever. */
+/** A fuel attempt latched without its hash may have landed. Its nullifier settles it, so a private claim pays from the
+ *  credit a landed one left instead of minting a spent message again. A public latch aged past landing is lifted, so the
+ *  ladder never waits on it forever; the private ladder ages its own. */
 async function settleHashlessAttempt(leg: ClaimLeg): Promise<void> {
 	const fuel = leg.record.fuel
-	if (leg.record.isPrivate || !fuel?.claimAttempt || fuel.claimTxHash !== undefined || fuel.consumed) return
+	if (!fuel?.claimAttempt || fuel.claimTxHash !== undefined || fuel.consumed) return
 	const state = await fuelNullifierState(leg)
 	if (state === "nullified") return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
+	if (leg.record.isPrivate) return
 	const aged = fuel.claimAttemptAt === undefined || Date.now() - fuel.claimAttemptAt > PRIVATE_ATTEMPT_STALE_MS
 	if (state === "live" && aged) return persistClaim(leg, { fuel: { ...fuel, claimAttempt: false } })
 }
@@ -217,14 +219,16 @@ function hubSeams(leg: ClaimLeg, fee: OptsFee) {
 	const seams: SendOpts = {
 		receiptOf: (txHash) => leg.r.aztecNode.getTxReceipt(TxHash.fromString(txHash)),
 		registrationWait: { sleep: (ms) => wait(leg, ms) },
+		// A registration paid from held credit latches like a claim: nothing names it until its hash is stored.
 		onRegisterSend: async () => {
 			if (fee.fuelOnRegister) fee.onAttempt?.()
+			else persistClaim(leg, { claimAttempt: true, claimAttemptAt: Date.now() })
 			await leg.persisted
 		},
 		onRegistered: async (txHash: string) => {
 			registeredHere = true
 			if (fee.fuelOnRegister && fee.onRegistered) fee.onRegistered(txHash)
-			else persistClaim(leg, { registerTxHash: txHash })
+			else persistClaim(leg, { registerTxHash: txHash, claimAttempt: false })
 			await leg.persisted
 			leg.emit({ type: "registration-sent", txHash })
 		},
@@ -250,12 +254,14 @@ async function failedSend(leg: ClaimLeg, e: unknown): Promise<unknown> {
 	}
 	const registration = /registration \S+ (was dropped|reverted)/.exec(msg)
 	if (registration) {
-		await persistClaim(leg, { registerTxHash: undefined })
+		await persistClaim(leg, { registerTxHash: undefined, claimAttempt: false })
 		const code = registration[1] === "reverted" ? "registration-reverted" : "registration-dropped"
 		return new BridgeError(code, msg, SUBMITTED, "safe", { cause: e })
 	}
-	if (isPrivateFuelInsufficiency(msg) || isMsgNotReady(msg))
+	if (isPrivateFuelInsufficiency(msg) || isMsgNotReady(msg)) {
+		await persistClaim(leg, { claimAttempt: false })
 		return new BridgeError("message-timeout", `the claim was refused before it was sent: ${msg}`, SUBMITTED, "after-wait", { cause: e })
+	}
 	return new BridgeError("claim-not-visible", `the claim may have been sent: ${msg}`, SUBMITTED, "after-wait", { cause: e })
 }
 
@@ -290,8 +296,9 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	const bound = (await hubTokenFor(hub, token.erc20, p.from)) !== undefined
 	await resumeRegistration(leg, bound)
 	await settleHashlessAttempt(leg)
+	// The record as the settling steps above left it, not as the call opened it.
 	const fee = await resolveHubClaimSendOpts(ladderEnvOf(leg), {
-		rec: record,
+		rec: leg.record,
 		recipientAddr: aztec.account,
 		aztec: aztec.wallet,
 		userOverride: false,

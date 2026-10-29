@@ -94,15 +94,13 @@ export async function quoteBridge(
 	if (q.amount <= 0n) throw refusal("invalid-request", "amount must be positive")
 	await assertRecipient(q.recipient)
 	const gas = q.gas ? await gasLeg(net, r, { ...q, gas: q.gas }) : undefined
-	return madeQuote(
-		Object.freeze({
-			network: net,
-			token: q.token,
-			amount: q.amount,
-			tokenAmount: q.amount - (gas?.fuelAmount ?? 0n),
-			recipient: q.recipient,
-			privacy: q.privacy,
-			...(gas ? { gas } : {}),
-		}),
-	)
+	return madeQuote({
+		network: net,
+		token: q.token,
+		amount: q.amount,
+		tokenAmount: q.amount - (gas?.fuelAmount ?? 0n),
+		recipient: q.recipient,
+		privacy: q.privacy,
+		...(gas ? { gas } : {}),
+	})
 }

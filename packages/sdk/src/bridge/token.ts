@@ -7,6 +7,7 @@ import { assertNetwork, type Network, type Reads, type TokenRoute } from "../net
 import { readErc20Metadata } from "../protocol/erc20.ts"
 import { deriveHubTokenInstance } from "../protocol/hub-token.ts"
 import { predictPortal } from "../protocol/portal-address.ts"
+import { deepFreeze } from "../protocol/freeze.ts"
 import { fromWord, toWord } from "../protocol/register-hash.ts"
 import type { JournalTokenBlock } from "../records.ts"
 
@@ -79,7 +80,7 @@ export async function resolveToken(net: Network, r: Reads, erc20: Address): Prom
 		throw refusal("invalid-network", `the hub binds ${erc20} to ${bound}, not the derivation ${derived}`)
 	}
 	const state: BridgeTokenState = !registration ? "first-time" : bound ? "registered" : "portal-only"
-	return Object.freeze({
+	return deepFreeze({
 		network: net,
 		erc20,
 		portal: (registration?.portal ?? predictPortal(b.factory, b.implementation, erc20)) as Address,

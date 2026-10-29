@@ -127,6 +127,12 @@ describe("the events of a deposit", () => {
 			gas: { txTarget: 2, maxFees: { feePerDaGas: 1n, feePerL2Gas: 1n } },
 		})
 		const { entries, run, events } = recorder()
+		// A deposit signs only floors the SDK quoted: an edited gas leg cannot be written, a rebuilt quote is refused.
+		expect(() => Object.assign(quote.gas as object, { minFj: 1n })).toThrow(TypeError)
+		await expect(depositToken(net, r, walletOf(log, net.l1ChainId), { ...quote }, run)).rejects.toMatchObject({
+			code: "invalid-request",
+		})
+		expect([entries.length, log.length]).toEqual([0, 0])
 		const record = await depositToken(net, r, walletOf(log, net.l1ChainId), quote, run)
 		expect(events().map((e) => e.type)).toEqual(["prepared", "signature-requested", "deposit-sent", "deposit-confirmed"])
 		assertPersistedFirst(entries)

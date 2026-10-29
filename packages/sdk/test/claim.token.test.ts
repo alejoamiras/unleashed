@@ -6,7 +6,10 @@ import { ladderEnvOf, openClaim } from "../src/execution/claim-run.ts"
 import type { BridgeError } from "../src/errors.ts"
 import type { TransferEvent } from "../src/events.ts"
 import type { SendOpts } from "../src/execution/hub-l2.ts"
+import { consumedMessageNullifier } from "../src/execution/message-nullifier.ts"
 import { type Network, parseNetwork } from "../src/network.ts"
+import { feeJuiceAddress } from "../src/protocol/fee-juice.ts"
+import { deriveBridgeSecret } from "../src/protocol/private-fuel.ts"
 import type { DepositRecord, JournalTokenBlock } from "../src/records.ts"
 import { readsOf, testnet, worldOf } from "./fakes.ts"
 
@@ -75,8 +78,9 @@ afterEach(() => {
 	fuelSends.stop = undefined
 })
 
-/** A testnet whose node answers the arrival gates at once, and the receipts the test names per transaction. */
-async function setup(receipts: Record<string, { status: string }[]> = {}) {
+/** A testnet whose node answers the arrival gates at once, the receipts the test names per transaction, and the
+ *  nullifiers it names as checkpointed. */
+async function setup(receipts: Record<string, { status: string }[]> = {}, nullified: ReadonlySet<string> = new Set()) {
 	const w = worldOf(testnet())
 	const t = w.m.bridge?.tokens[0]
 	if (!t) throw new Error("the testnet manifest lists a token")
@@ -100,7 +104,7 @@ async function setup(receipts: Record<string, { status: string }[]> = {}) {
 			const queue = receipts[h.toString()] ?? [{ status: "checkpointed" }]
 			return queue.length > 1 ? queue.shift() : queue[0]
 		},
-		getNullifierMembershipWitness: async () => undefined,
+		getNullifierMembershipWitness: async (_at: string, n: Fr) => (nullified.has(n.toString()) ? {} : undefined),
 	}
 	const r = { ...base, aztecNode: node as never }
 	const net = await parseNetwork(w.m, r)
@@ -331,6 +335,45 @@ describe("claimToken", () => {
 			"below-claim-floor",
 			"settled",
 		])
+	})
+
+	it("a private gas attempt latched without its hash whose message is spent pays the claim from credit, never minting it again", async () => {
+		const fuelSalt = Fr.random()
+		const fuel = { ...publicFuel(), secret: undefined, claimAttempt: true, claimAttemptAt: Date.now() }
+		const spent = await consumedMessageNullifier(
+			feeJuiceAddress,
+			Fr.fromString(fuel.messageHash),
+			deriveBridgeSecret(fuelSalt, account),
+		)
+		const { net, r, aztec } = await setup({}, new Set([spent.toString()]))
+		const send = claims()
+		const rec = recorder()
+		const record = tokenRecord(net, { intent: "token+gas", isPrivate: true, fuel } as Partial<DepositRecord>)
+		await claimToken(net, r, aztec, record, { ...rec.run, secrets: { claimSalt: Fr.random(), fuelSalt } })
+		expect(send.mock.calls.length).toBe(1)
+		expect(rec.heldBefore("claim-sent")?.fuel?.consumed).toBe(true)
+	})
+
+	it("a registration paid from held credit is latched before its prompt, and storage that refuses the latch stops it", async () => {
+		const { net, r, aztec } = await setup()
+		hub.bound = false
+		const prompts: (DepositRecord | undefined)[] = []
+		const rec = recorder()
+		hub.claimViaHub = vi.fn(async (_hub: unknown, _p: unknown, send: SendOpts) => {
+			await send.onRegisterSend?.()
+			prompts.push(rec.entries.flatMap((e) => ("persisted" in e ? [e.persisted] : [])).at(-1))
+			await send.onRegistered?.(REGISTER_HASH)
+			await send.onClaimSend?.()
+			return { path: "register,claim", claimTxHash: CLAIM_HASH }
+		})
+		const secrets = { claimSalt: Fr.random() }
+		await claimToken(net, r, aztec, tokenRecord(net, { isPrivate: true }), { ...rec.run, secrets })
+		expect(prompts.map((p) => p?.claimAttempt)).toEqual([true])
+		expect(rec.heldBefore("registration-sent")).toMatchObject({ registerTxHash: REGISTER_HASH, claimAttempt: false })
+		prompts.length = 0
+		const refusing = { ...rec.run, secrets, persist: async () => Promise.reject(new Error("quota")) }
+		const e = await failure(claimToken(net, r, aztec, tokenRecord(net, { isPrivate: true }), refusing))
+		expect([e.code, e.retry, prompts.length]).toEqual(["persist-failed", "safe", 0])
 	})
 
 	it("a token claim latched without its hash refuses while it may still land, with nothing sent", async () => {

@@ -37,3 +37,8 @@
 - **Review round 1: `pack-check` passes an allow-list environment.** Anything a keyed shell exported reached
   `bun install` and the consumer runs before; the proxy and CA variables are on the list so a sandboxed host can still
   install.
+- **Review round 2: a destructured record goes stale at the first persist.** `persistClaim` replaces `leg.record`, so
+  a `const { record } = leg` taken before the settling steps hands later readers the record the call opened with. The
+  ladder's own tests mock it away; pass `leg.record` at the point of use.
+- **Review round 2: a Promise-returning function that is not `async` throws synchronously.** Its guards ran before the
+  first `await`, so a refusal escaped `.catch`; the test caught it only because `expect(fn()).rejects` needs a promise.

@@ -12,7 +12,7 @@ import type { FuelQuote } from "./quote.ts"
  * refuses a wrong chain, a paused route, and a venue that now quotes under `quote.minFj` (`quote-moved`). A private
  * deposit's fuel salt reaches `run.persist` in `secrets`, before the first prompt; `claimFuel` needs it.
  */
-export function depositFuel(net: Network, r: Reads, l1: WalletClient, quote: FuelQuote, run: RunOptions): Promise<DepositRecord> {
+export async function depositFuel(net: Network, r: Reads, l1: WalletClient, quote: FuelQuote, run: RunOptions): Promise<DepositRecord> {
 	assertNetwork(net)
 	if (quote.network !== net) throw refusal("invalid-request", "the quote was made for another network")
 	assertQuote(quote)

@@ -13,7 +13,7 @@ import { tokenBlockOf } from "./token.ts"
  * confirmed it. A first-time token's portal is created inside the same transaction. A private deposit's salts reach
  * `run.persist` in `secrets`, before the first prompt; `claimToken` needs them.
  */
-export function depositToken(net: Network, r: Reads, l1: WalletClient, quote: BridgeQuote, run: RunOptions): Promise<DepositRecord> {
+export async function depositToken(net: Network, r: Reads, l1: WalletClient, quote: BridgeQuote, run: RunOptions): Promise<DepositRecord> {
 	assertNetwork(net)
 	if (quote.network !== net) throw refusal("invalid-request", "the quote was made for another network")
 	assertQuote(quote)
