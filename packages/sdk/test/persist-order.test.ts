@@ -6,11 +6,9 @@ import { depositFuel, quoteFuel } from "../src/fuel/index.ts"
 import { type Network, parseNetwork, type Reads } from "../src/network.ts"
 import { allowanceAfterApprove, readsOf, type Step, testnet, type World, walletOf, worldOf } from "./fakes.ts"
 
-vi.mock("../src/protocol/code-hash.ts", async (importOriginal) => {
-	const real = await importOriginal<typeof import("../src/protocol/code-hash.ts")>()
-	const { syntheticPins } = await import("./fakes.ts")
-	return { ...real, CODE_PINS: syntheticPins(real.pinOfBuild) }
-})
+vi.mock("../src/protocol/generation-record.ts", async (importOriginal) =>
+	(await import("./fakes.ts")).withSyntheticCode(await importOriginal()),
+)
 // Leaves come from the router's own mined `Deposited`; this file is about what happens before them.
 vi.mock("../src/execution/send-flow.ts", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../src/execution/send-flow.ts")>()),

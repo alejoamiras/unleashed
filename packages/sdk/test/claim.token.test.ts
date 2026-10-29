@@ -13,11 +13,9 @@ import { deriveBridgeSecret } from "../src/protocol/private-fuel.ts"
 import type { DepositRecord, JournalTokenBlock } from "../src/records.ts"
 import { readsOf, testnet, worldOf } from "./fakes.ts"
 
-vi.mock("../src/protocol/code-hash.ts", async (importOriginal) => {
-	const real = await importOriginal<typeof import("../src/protocol/code-hash.ts")>()
-	const { syntheticPins } = await import("./fakes.ts")
-	return { ...real, CODE_PINS: syntheticPins(real.pinOfBuild) }
-})
+vi.mock("../src/protocol/generation-record.ts", async (importOriginal) =>
+	(await import("./fakes.ts")).withSyntheticCode(await importOriginal()),
+)
 const hub = vi.hoisted(() => ({
 	bound: true,
 	claimViaHub: undefined as unknown as Mock<(hub: unknown, p: unknown, send: SendOpts) => Promise<unknown>>,

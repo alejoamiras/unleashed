@@ -35,7 +35,7 @@ import { claimViaHub, type HubClaimParams, hubAt, hubTokenFor, probeHubClaim, ty
 import { registrationToBlock } from "../execution/send-flow.ts"
 import { isMsgNotReady } from "../execution/message-errors.ts"
 import { hubMessageState, type TokenMessageState } from "../execution/message-nullifier.ts"
-import type { Network, Reads, TokenRoute } from "../network.ts"
+import { hubArtifactOf, type Network, type Reads, type TokenRoute } from "../network.ts"
 import { deriveHubTokenInstance } from "../protocol/hub-token.ts"
 import type { DepositRecord, JournalTokenBlock } from "../records.ts"
 import { untilAborted } from "../run.ts"
@@ -297,7 +297,7 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	if (resumed) return resumed
 	const { aztec, run, record } = leg
 	const p = claimParamsOf(leg, token)
-	const hub = hubAt(aztec.wallet, bridge.hub)
+	const hub = hubAt(aztec.wallet, bridge.hub, hubArtifactOf(leg.net))
 	// A claim of ours that never stored its hash, or anyone's, may already have spent the message: no fee is chosen for it.
 	if ((await tokenState(leg, p)) === "nullified")
 		return landed(leg, record.claimAttempt || record.fuel?.claimAttempt ? "claim" : "claimed-elsewhere")

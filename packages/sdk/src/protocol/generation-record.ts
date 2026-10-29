@@ -5,14 +5,15 @@
  * sources build, so a source change leaves a running generation working until a new one is promoted with its record.
  * The record is a reviewed trust root: nothing at runtime fetches, selects or overrides it.
  */
-import { loadContractArtifact } from "@aztec-labs/aztec.js/abi"
+import { type ContractArtifact, loadContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { getContractClassFromArtifact } from "@aztec-labs/aztec.js/contracts"
 import { type Hex, hexToBytes, sha256 } from "viem"
 import z from "zod"
 import mainnetRecord from "../../../../contracts/bridge/generations/mainnet/record.json" with { type: "json" }
 import testnetRecord from "../../../../contracts/bridge/generations/testnet/record.json" with { type: "json" }
-import { type CodePin, type ImmutableSpan, metadataTrailerSize, type PinnedContract, pinOfBuild } from "./code-hash.ts"
+import { CODE_PINS, type CodePin, type ImmutableSpan, metadataTrailerSize, type PinnedContract, pinOfBuild } from "./code-hash.ts"
 import { deepFreeze } from "./freeze.ts"
+import { SANDBOX_LIFI_CHAIN_IDS } from "./lifi-addresses.ts"
 import type { ManifestV2 } from "./manifest-v2.ts"
 
 const lowerAddress = z.string().regex(/^0x[0-9a-f]{40}$/, "expected a lower-case 20-byte 0x address")
@@ -204,3 +205,40 @@ export function pinsOf(record: GenerationRecord): Readonly<Partial<Record<Pinned
 
 /** The promoted generations' records, as reviewed in this release: one per live chain. */
 export const LIVE_RECORDS: readonly GenerationRecord[] = Object.freeze([testnetRecord, mainnetRecord].map(parseGenerationRecord))
+
+/** What a manifest's generation runs: the pins its L1 code is checked against and the hub artifact it deployed. */
+export interface GenerationCode {
+	pins: Readonly<Partial<Record<PinnedContract, CodePin>>>
+	/** The live generation's record; absent on a sandbox chain, which runs this release's sources. */
+	record?: GenerationRecord
+	/** Megabytes, so loaded on first use. Throws for a generation with no hub. */
+	hubArtifact(): Promise<ContractArtifact>
+}
+
+/** Each live generation's kept hub artifact, behind its own module. A record with a hub and no loader here fails. */
+const LIVE_HUB_ARTIFACTS: Readonly<Record<string, () => Promise<ContractArtifact>>> = {
+	testnet: async () => (await import("./hub-artifact-testnet.ts")).testnetHubArtifact,
+}
+
+const headHubArtifact = async (): Promise<ContractArtifact> => (await import("./artifacts.ts")).tokenBridgeHubArtifact
+
+function liveHubArtifact(record: GenerationRecord): Promise<ContractArtifact> {
+	const load = record.aztec ? LIVE_HUB_ARTIFACTS[record.network] : undefined
+	if (!load) return Promise.reject(new Error(`the ${record.network} generation has no hub artifact in this release`))
+	return load()
+}
+
+/**
+ * The code `m`'s generation runs, selected by its L1 chain alone: a live chain's committed record, which must bind
+ * `m`; a sandbox chain's own build (this release's pins and hub target). Throws for a live record `m` disagrees with
+ * and for any other chain. No option, input or environment picks another record.
+ */
+export function codeOf(m: ManifestV2): GenerationCode {
+	const record = LIVE_RECORDS.find((r) => r.l1ChainId === m.l1ChainId)
+	if (record) {
+		assertRecordBinds(record, m)
+		return { pins: pinsOf(record), record, hubArtifact: () => liveHubArtifact(record) }
+	}
+	if (SANDBOX_LIFI_CHAIN_IDS.includes(m.l1ChainId)) return { pins: CODE_PINS, hubArtifact: headHubArtifact }
+	throw new Error(`chain ${m.l1ChainId} has no committed generation record`)
+}
