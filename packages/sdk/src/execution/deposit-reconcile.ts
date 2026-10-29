@@ -5,10 +5,9 @@
  * record's send would have made and its receipt is a success on the canonical chain. Uniqueness: one
  * verified transaction across every router is the answer, two is `"ambiguous"`, and any search that
  * could not cover the window — cap, failed or slow read, chain switch, reorg — is `"incomplete"`,
- * never `"none"`. A record that names its signer counts only the router events that signer paid for,
- * before the candidate cap: anyone can replay a published secret hash in a deposit of their own, and
- * enough look-alikes would otherwise keep the search incomplete for good. A retired router's events name
- * no payer, so there the signer is read off each candidate's transaction, still before the cap.
+ * never `"none"`. A record that names its signer counts only that account's candidates, before the
+ * candidate cap: by the payer the router's event names or, on a retired router whose events name none,
+ * by the transaction's sender.
  */
 import { decodeFunctionData, getAbiItem } from "viem"
 import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
