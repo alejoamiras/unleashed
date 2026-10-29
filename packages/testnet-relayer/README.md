@@ -34,7 +34,7 @@ other is ignored with its reason:
 A pass reads every Base Sepolia block stamped within 7,800 s before Sepolia's head time: the 7,200 s window and
 600 s more, found by binary search over block timestamps ([`src/window.ts`](src/window.ts)), never by a block count.
 It reads at most 100,001 blocks, in 2,000-block `getLogs` chunks, so a swapped endpoint must serve that range
-(PublicNode serves 50,000; Base's own endpoint 200). A wider window, a source head stamped before it, or reads still
+(PublicNode serves 50,000; Base's own endpoint 201). A wider window, a source head stamped before it, or reads still
 running after 45 s, or past the run's end, fail the pass before any send.
 
 It then drops the deposits the Sepolia pool already filled (matched by full relay identity, never by deposit id

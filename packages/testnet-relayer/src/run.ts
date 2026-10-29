@@ -39,7 +39,7 @@ import { SCAN_WINDOW_S, scanWindow } from "./window"
 
 /** Destination blocks searched for fills: Sepolia's 12 s slots make 800 blocks span at least 9,600 s, past `SCAN_WINDOW_S`. */
 export const FILL_LOG_BLOCKS = 800n
-/** `getLogs` range per call, which PublicNode serves on both chains (50,000 on Base Sepolia); Base's own endpoint serves 200. */
+/** `getLogs` range per call, which PublicNode serves on both chains (50,000 on Base Sepolia); Base's own endpoint serves 201. */
 export const CHUNK_BLOCKS = 2_000n
 /** Source blocks left unread at the head, which a load-balanced RPC's backends may not all have. */
 const SOURCE_LAG = 2n
