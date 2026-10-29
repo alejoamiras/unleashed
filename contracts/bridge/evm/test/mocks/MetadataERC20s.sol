@@ -169,6 +169,33 @@ contract SenderSurchargeERC20 is ERC20 {
     }
 }
 
+/// Additive transfer skews for the symbolic proofs: the sender pays `value + senderExtra`, the recipient nets
+/// `value - recipientShort`, and the difference goes to 0xdead.
+contract SkewedERC20 is ERC20 {
+    uint256 public senderExtra;
+    uint256 public recipientShort;
+
+    constructor() ERC20("Skewed", "SKW") {}
+
+    function setSkew(uint256 senderExtra_, uint256 recipientShort_) external {
+        senderExtra = senderExtra_;
+        recipientShort = recipientShort_;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && to != address(0)) {
+            super._update(from, address(0xdead), senderExtra + recipientShort);
+            super._update(from, to, value - recipientShort);
+        } else {
+            super._update(from, to, value);
+        }
+    }
+}
+
 /// A plain 18-decimal token with a public mint, for the happy paths.
 contract PlainERC20 is ERC20 {
     constructor(string memory n, string memory s) ERC20(n, s) {}

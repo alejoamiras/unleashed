@@ -144,7 +144,8 @@ nothing was sent.
 ## Supported tokens
 
 - **Token bridge**: any ERC-20, listed in `net.bridge.tokens` or not, through `resolveToken`. A first-time token's
-  portal is created by its deposit and its L2 token by its first claim. Fee-on-transfer tokens and amounts above
+  portal is created by its deposit and its L2 token by its first claim. A deposit whose sender debit or clone credit
+  is not exactly its amount, an amount above `uint128`, and a deposit that would take the clone's balance past
   `uint128` are refused on chain; rebasing tokens are unsupported and not detected.
 - **Gas**: the fee asset at par, or a token the network's venue prices: a pinned swapper on testnet, LI.FI through
   allow-listed venues on mainnet. `probeFuel` gives the rate; a token no venue prices is refused before signing
@@ -253,4 +254,4 @@ artifact statically (the same test).
 - **A private first claim's two transactions pay from the same bridged Fee Juice, and nothing is ever sponsored** (`hub-l2.ts` seams `registerFee` / `registeredClaimFee`): the registration spends the fuel message (`PrivateFPC.mint_and_pay_fee`, sized with `PRIVATE_HUB_REGISTER_GAS`), which leaves `amount − max_gas_cost` as the claimer's private credit at the FPC, and the claim that follows pays from that credit (`pay_fee`, sized with `PRIVATE_HUB_CLAIM_GAS`). The FPC keeps each transaction's committed ceiling, not its charge, so a first-time private bridge must carry both ceilings. The claim is sent only once its own simulation passes in the claimer's wallet: the registration's binding lands on the node first, and `claim_private` reads it at the wallet's synced block, which lags (`registrationWait`, 5 s polls, 3-minute deadline; `onRegistered` hands the caller the registration's hash as soon as it exists).
 - **The Permit2 witness is cross-pinned.** `l1.ts`'s `DepositWitness` member list + `DEPOSIT_WITNESS_TYPE` must stay byte-identical to `DepositRouter.hashWitness`. `l1.test.ts` pins the hashes; the evm fork test proves a post-signature tamper reverts.
 - **Gas-share math is integer-only with two exact ceilings** (`gas-share.ts`): the slice sized from `fjPerTx` and the floor signed from it never lose a base unit to a folded division — a property test pins it.
-- **Token behaviours are bounded on chain, not trusted off chain.** The clone refuses fee-on-transfer (exact-in), `amount > uint128.max`, and protects the reserve on withdraw with an exact portal-debit; a token no fuel venue prices is refused before signing (`fuel-quote.ts`); rebasing tokens are unsupported and surfaced as a caution, never detected.
+- **Token behaviours are bounded on chain, not trusted off chain.** The clone refuses a deposit whose sender debit or clone credit is not exactly the amount (exact-in), `amount > uint128.max` and a reserve past `uint128.max`, and protects the reserve on withdraw with an exact portal-debit; a token no fuel venue prices is refused before signing (`fuel-quote.ts`); rebasing tokens are unsupported and surfaced as a caution, never detected.

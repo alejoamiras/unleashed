@@ -63,9 +63,9 @@ contract TokenPortalImpl is ReentrancyGuardTransient {
         returns (bytes32, uint256)
     {
         _requireDeposit(_amount);
+        _pullExact(_amount);
         DataStructures.L2Actor memory actor = DataStructures.L2Actor(L2_HUB, ROLLUP_VERSION);
         bytes32 contentHash = Hash.sha256ToField(abi.encodeWithSignature("mint_to_public(bytes32,uint256)", _to, _amount));
-        _pullExact(_amount);
         (bytes32 key, uint256 index) = INBOX.sendL2Message(actor, contentHash, _secretHash);
         emit DepositToAztecPublic(_to, _amount, _secretHash, key, index);
         return (key, index);
@@ -77,9 +77,9 @@ contract TokenPortalImpl is ReentrancyGuardTransient {
         returns (bytes32, uint256)
     {
         _requireDeposit(_amount);
+        _pullExact(_amount);
         DataStructures.L2Actor memory actor = DataStructures.L2Actor(L2_HUB, ROLLUP_VERSION);
         bytes32 contentHash = Hash.sha256ToField(abi.encodeWithSignature("mint_to_private(uint256)", _amount));
-        _pullExact(_amount);
         (bytes32 key, uint256 index) = INBOX.sendL2Message(actor, contentHash, _secretHashForL2MessageConsumption);
         emit DepositToAztecPrivate(_amount, _secretHashForL2MessageConsumption, key, index);
         return (key, index);
@@ -123,11 +123,15 @@ contract TokenPortalImpl is ReentrancyGuardTransient {
         if (FACTORY.withdrawsPaused()) revert WithdrawsPaused();
     }
 
-    /// @dev Fee-on-transfer tokens are refused: the message would mint more than the reserve holds.
+    /// @dev Exact on both sides, the mirror of withdraw's exact debit: a short credit would mint more than the
+    /// reserve holds. The reserve backs every L2 mint, and the L2 token's supply is a u128.
     function _pullExact(uint256 amount) private {
         IERC20 token = underlying();
+        uint256 senderBefore = token.balanceOf(msg.sender);
         uint256 before = token.balanceOf(address(this));
         token.safeTransferFrom(msg.sender, address(this), amount);
-        if (token.balanceOf(address(this)) - before != amount) revert InexactTransfer();
+        uint256 reserve = token.balanceOf(address(this));
+        if (reserve - before != amount || senderBefore - token.balanceOf(msg.sender) != amount) revert InexactTransfer();
+        if (reserve > type(uint128).max) revert AmountExceedsL2Max();
     }
 }

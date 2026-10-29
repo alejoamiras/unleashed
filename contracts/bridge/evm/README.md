@@ -57,8 +57,10 @@ forge snapshot --match-test test_gas_ --no-match-contract Fork --check --toleran
   withdrawals — a delay, never a transfer of funds) behind `Ownable2Step`, renounce disabled.
 - **`TokenPortalImpl`** — the implementation every clone delegates to. Canonical `TokenPortal`
   content hashes byte-for-byte (`ContentHash.t.sol` + the Noir keystone), plus guards that never
-  touch the hashed preimage: pause bits, `amount ≤ uint128.max`, exact-in (fee-on-transfer refused),
-  exact portal-debit on withdraw, transient reentrancy guard. No storage, no initializer.
+  touch the hashed preimage: pause bits, `amount ≤ uint128.max`, exact-in (the sender's balance falls
+  and the clone's rises by exactly `amount`), the clone's balance kept within `uint128.max` (the L2
+  token's supply bound), exact portal-debit on withdraw, transient reentrancy guard. No storage, no
+  initializer.
 - **`DepositRouter`** — deposits a token into its clone and, optionally, swaps a slice of it into Fee
   Juice for the same recipient's gas through the immutable `SWAP_TARGET`. Two entrypoints settle
   through one path: `bridgeWithPermit` (an Ethereum EOA's Permit2 witness signature) and
@@ -78,8 +80,8 @@ nonce-pinned factory prediction, journalled, candidate-first) deploys from `out/
 
 ## Tests
 
-**172 hermetic forge tests** (`forge test --no-match-contract Fork`), **18 halmos proofs**
-(`FormalDepositRouterTest 11 · FormalFuelOnlyGateTest 3 · FormalFactoryTest 2 · FormalCloneTest 2`; the guard-shaped ones carry a
+**176 hermetic forge tests** (`forge test --no-match-contract Fork`), **20 halmos proofs**
+(`FormalDepositRouterTest 11 · FormalCloneTest 4 · FormalFuelOnlyGateTest 3 · FormalFactoryTest 2`; the guard-shaped ones carry a
 forge canary proving the property fails without the guard), **live fork suites** (the real Sepolia
 registry/Inbox/FeeJuicePortal, real Permit2, LI.FI's deployed contracts, live token metadata), and a
 committed `.gas-snapshot` for the metered first-time vs known `bridgeWithPermit()` and a fueled
@@ -135,5 +137,6 @@ remainder into the fee asset's clone), and two more rules hold:
   access-controlled mint and no forced allowance.
 - **INFO-2 — `TestnetFuelSwapper` is testnet-only.** It pays Fee Juice at an owner-set rate from inventory
   and the testnet faucet, and its constructor refuses chain id 1; mainnet's `SWAP_TARGET` is LI.FI's Diamond.
-- **Rebasing tokens are unsupported** (the clone's reserve accounting assumes a static balance);
-  fee-on-transfer tokens are refused on chain.
+- **Rebasing tokens are unsupported** (the clone's reserve accounting assumes a static balance). Each
+  deposit must debit the sender and credit the clone by exactly its amount, which refuses on chain a
+  token whose transfer fee or surcharge shows on that deposit.
