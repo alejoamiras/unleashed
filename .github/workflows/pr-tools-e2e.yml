@@ -56,6 +56,8 @@ jobs:
               - 'packages/bridge-core/package.json'
               - 'packages/design/src/**'
               - 'packages/design/package.json'
+              - 'packages/legal/src/**'
+              - 'packages/legal/package.json'
               - 'packages/sdk/src/**'
               - 'packages/sdk/package.json'
               - 'package.json'

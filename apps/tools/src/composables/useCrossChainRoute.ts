@@ -7,7 +7,7 @@
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
-import { Fr } from "@aztec-labs/aztec.js/fields"
+import type { Fr } from "@aztec-labs/aztec.js/fields"
 import {
 	type AcrossClient,
 	type AcrossLimits,
@@ -27,7 +27,7 @@ import {
 	verifyRoute,
 } from "@unleashed/bridge-core"
 import { deriveBridgeSecret, deriveTokenClaimSecret, type LifiChainBook, lifiBook, type RouterIntent } from "@unleashed/sdk/protocol"
-import type { FuelProbe, FuelQuoteProvider } from "@unleashed/sdk/internal"
+import { type FuelProbe, type FuelQuoteProvider, randomField } from "@unleashed/sdk/internal"
 import type { Address, Hex } from "viem"
 import { type ComputedRef, computed, type Ref } from "vue"
 import { GENERATION, SEND_GENERATION } from "@/contracts/bridge-generation"
@@ -138,7 +138,7 @@ export async function crossChainSecrets(
 	intent: SendIntent,
 	isPrivate: boolean,
 	recipient: string,
-	random: () => Fr = Fr.random,
+	random: () => Fr = randomField,
 ): Promise<CrossChainSecrets> {
 	const to = AztecAddress.fromStringUnsafe(recipient)
 	const out: CrossChainSecrets = {}
@@ -334,7 +334,7 @@ export async function quoteCrossChainRoute(ask: CrossChainAsk, deps: RouteDeps):
 	const b = deps.bindings
 	if (!b) return unavailable("This bridge generation has no deposit router.")
 	if (ask.rail !== "acrossV4") return unavailable("This build routes only through Across.")
-	const random = deps.random ?? Fr.random
+	const random = deps.random ?? randomField
 	const lifiTxId = random().toString() as Hex
 	const secrets = await crossChainSecrets(ask.intent, ask.isPrivate, ask.recipient, random)
 	const fuel = ask.intent === "token" ? undefined : deps.fuel(lifiTxId)

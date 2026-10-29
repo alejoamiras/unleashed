@@ -26,6 +26,7 @@ import {
 	type Registration,
 	type SendOpts,
 	type SendStage,
+	assertDepositsOpen,
 	depositL1,
 	probeHubClaim,
 	claimViaHub,
@@ -429,6 +430,9 @@ async function sealSend(
 export interface SendComposable {
 	/** The record id, or "" when the send was cancelled before anything existed (see `error`). */
 	send(plan: SendPlan): Promise<string>
+	/** Reads the bridge's trust roots and the route's pause, with no prompt: null when `plan` may be sent, else the
+	 *  sentence to show. */
+	check(plan: SendPlan): Promise<string | null>
 	stage: Ref<SendStage | null>
 	busy: Ref<boolean>
 	error: Ref<string | null>
@@ -548,6 +552,7 @@ export function useSend(opts: { epoch?: () => number } = {}): SendComposable {
 
 	return {
 		send,
+		check: (plan) => bridgeRefusal(plan, deps.l1),
 		stage,
 		busy,
 		error,
@@ -637,8 +642,7 @@ async function executeSend(ctx: RunCtx): Promise<string> {
 	// Before the network check and the FIRST wallet interaction (a private send's seal), so a wallet on the wrong
 	// chain costs no prompt and leaves no record behind.
 	await assertL1Chain(actors.l1)
-	// Every read of the send goes through the wallet's own client, as the signature does.
-	const reads: Reads = { l1: actors.l1.publicClient as unknown as PublicClient, aztecNode: appNode() }
+	const reads = sendReads(actors.l1)
 	const row: SendRow = { ctx }
 	const receiptWait = new AbortController()
 	let timer: ReturnType<typeof setTimeout> | undefined
@@ -667,8 +671,8 @@ async function executeSend(ctx: RunCtx): Promise<string> {
 }
 
 /** The reviewed plan, exactly: the SDK re-quotes the slice and refuses `quote-moved` under the reviewed floor, which
- *  is the floor it signs. A paused route is left to the router's own revert, where this app's sends have always met
- *  it. */
+ *  is the floor it signs. It reads the pause again before its first persist, so a route paused while the grant prompt
+ *  was open still costs no seal and no Ethereum prompt. */
 function depositPlanOf(plan: SendPlan, recipient: string): DepositPlan {
 	return {
 		intent: plan.intent,
@@ -678,7 +682,6 @@ function depositPlanOf(plan: SendPlan, recipient: string): DepositPlan {
 		isPrivate: plan.isPrivate,
 		...(plan.gas ? { gas: { fuelAmount: plan.gas.fuelAmount, minFuelOutput: plan.gas.minFuelOutput } } : {}),
 		...(plan.intent === "gas" ? {} : { tokenBlock: previewBlock(plan), registers: plan.token.state.kind !== "registered" }),
-		pauseCheck: false,
 	}
 }
 
@@ -797,6 +800,30 @@ function narrate(row: SendRow, e: TransferEvent): void {
 	else if (e.status === "confirmed") markApproveOutcome(id, "done")
 }
 
+export const DEPOSITS_PAUSED = "Deposits on this route are paused right now. Nothing was sent."
+export const BRIDGE_UNCHECKED = "This app could not check the bridge on this network. Nothing was sent."
+
+/** Every read of a send goes through the wallet's own client, as its signature does, and the app's Aztec node. */
+const sendReads = (l1: SendDeps["l1"]): Reads => ({ l1: l1.publicClient as unknown as PublicClient, aztecNode: appNode() })
+
+/**
+ * The confirm's check, before any prompt: the bridge's trust roots (read once per session, then cached) and the
+ * route's pause. It fails closed: a read that throws is a bridge this app could not check. A wallet on another chain
+ * at the session's first check keeps its own sentence; later ones read through the cache, and the send's own chain
+ * check still refuses it before a signature.
+ */
+async function bridgeRefusal(plan: SendPlan, l1: SendDeps["l1"]): Promise<string | null> {
+	const reads = sendReads(l1)
+	try {
+		await assertDepositsOpen(await bridgeNetwork(reads), reads, plan.intent)
+		return null
+	} catch (e) {
+		log("bridge check refused the send", { code: isBridgeError(e) ? e.code : "read-failed" })
+		if (isBridgeError(e) && (e.code === "paused" || e.code === "wrong-chain")) return sendFailureCopy(appFailureOf(e))
+		return BRIDGE_UNCHECKED
+	}
+}
+
 /**
  * The error this app's copy reads. The SDK's own sentences name its API, so a refusal it makes itself becomes this
  * app's sentence for it; anything it wraps — a wallet's answer, a venue's, this app's storage — is shown as the
@@ -804,6 +831,7 @@ function narrate(row: SendRow, e: TransferEvent): void {
  */
 export function appFailureOf(e: unknown, depositTxHash?: string): unknown {
 	if (!isBridgeError(e)) return e
+	if (e.code === "paused") return new Error(DEPOSITS_PAUSED)
 	if (e.code === "quote-moved") return new Error(GAS_QUOTE_MOVED)
 	if (e.code === "no-fuel-route" || e.code === "fetch-unavailable") return new Error(NO_GAS_ROUTE)
 	const live = e.code === "wrong-chain" ? /on chain (\d+)/.exec(e.message)?.[1] : undefined

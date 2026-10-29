@@ -51,7 +51,7 @@ export interface ActivityRowModel {
 	ageSpoken: string
 	/** A cross-chain send's own word and tone, which replace the status's; null for any other row. */
 	word?: DockWord | null
-	/** Replaces visibility and age on the second line ("refund pending"); null for any other row. */
+	/** Replaces visibility and age on the second line ("nothing moved"); null for any other row. */
 	detail?: string | null
 	/** A line of its own under the route ("another deposit found"); null for any other row. */
 	note?: string | null

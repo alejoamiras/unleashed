@@ -11,9 +11,9 @@
  */
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
-import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { AztecNode } from "@aztec-labs/aztec.js/node"
 import { predictedWorstMinFees } from "../protocol/fee-juice.ts"
+import { randomField } from "../protocol/random-field.ts"
 
 export type MaxFees = { feePerDaGas: bigint; feePerL2Gas: bigint }
 export type GasLimits = { daGas: number; l2Gas: number }
@@ -109,7 +109,7 @@ async function probe(node: AztecNode, wallet: SimulatingWallet, account: AztecAd
 	const limits = clampGas(node, gas)
 	const proposed = await predictedWorstMinFees(node)
 	const cap = { feePerDaGas: proposed.feePerDaGas, feePerL2Gas: proposed.feePerL2Gas }
-	const noop = await SetPublicAuthwitContractInteraction.create(wallet as never, account, Fr.random(), false)
+	const noop = await SetPublicAuthwitContractInteraction.create(wallet as never, account, randomField(), false)
 	const payload = await noop.request()
 	const result = (await wallet.simulateTx?.(payload, {
 		from: account,
