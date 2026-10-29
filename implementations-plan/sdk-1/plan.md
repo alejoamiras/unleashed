@@ -805,6 +805,8 @@ Arc a5, the implementation (`git diff 54de731..HEAD`):
   README now drops it only once the block is final. Redefining `submission` as the failing call's was wrong too: after
   `openClaim` a claim reports `submitted` for its deposit with no claim sent; the TSDoc keeps "for this transfer" with
   the preflight `none` named as the one exception.
+- **Round 3, Codex (same session): no new material finding.** Deletion now waits for finality, and `submitted` is no
+  longer read as a claim broadcast. Converged.
 
 ## Delivery
 
