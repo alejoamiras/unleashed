@@ -649,6 +649,29 @@ Each row: the decision, its source, the rejected view with its reason.
 - **D57 The SDK does not pin mainnet's guardian yet.** A hostile manifest can name a genuine-code generation someone
   else deployed, whose guardian can pause it (a delay, never a transfer). The owner's guardian is pinned once the
   mainnet generation exists (`follow-ups.md`, `OWNER-ASKS.md`).
+- **D59 The app sends through `depositL1` with the reviewed plan.** The public `depositFuel`/`depositToken` take only
+  the SDK's own quotes (D56), which size the gas slice and its floor afresh, so the numbers signed would not be the
+  ones the review showed. The app calls the internal `depositL1` with the reviewed slice and floor: it re-quotes the
+  slice, refuses `quote-moved` under the reviewed floor and signs that floor. It takes only a `parseNetwork` network,
+  as the public entries do.
+- **D60 Selection and the route probe keep their own reads.** `resolveToken` and `probeFuel` take a checked network,
+  so the wizard would wait on the node before showing a token or a route. Both stay display reads, the probe through
+  the SDK's `manifestFuelProvider`; the deposit runs under the checked network and re-quotes before the signature.
+  `capabilities.ts` merges `claimCapabilities`' scopes into the app's list, which holds every one of them already.
+- **D61 The app leaves the pause pre-check off.** `DepositPlan.pauseCheck: false`, internal only, keeps today's path:
+  a paused route ends at the router's revert. The pre-check's refusal would be new copy (`OWNER-ASKS.md` §8).
+- **D62 The Permit2 deadline is drawn at the signature.** `depositL1` read the deadline's block before the approval,
+  so an approval that outlasted `PERMIT_DEADLINE_SECONDS` signed an expired witness. The block is now read after the
+  approval, right before the signature, for the public deposits too.
+- **D63 The approval reports `requested` and `waiting`.** The rail narrates the prompt and each receipt round as it
+  does today; `waiting` carries the round.
+- **D64 A send checks the network before its first prompt.** `bridgeNetwork` keeps one `parseNetwork` per page and
+  forgets a rejection, so a node outage refuses the send and the next send checks again. The SDK re-checks the
+  wallet's chain right before the signature: a wallet that left the chain after the seal stops there, its public row
+  discarded and a private one kept and flagged, where the signature used to go out. Both failures read differently
+  (`OWNER-ASKS.md` §9).
+- **D65 The app stops waiting for the deposit's receipt after 180 s.** The SDK waits until its signal aborts; the app
+  aborts at viem's default, the wait its sends always had, and the row keeps its hash for a resume.
 
 ## Audit verdicts
 

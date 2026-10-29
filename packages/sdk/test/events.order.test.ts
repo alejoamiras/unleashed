@@ -6,6 +6,7 @@ import { depositToken, quoteBridge, resolveToken } from "../src/bridge/index.ts"
 import type { TransferEvent } from "../src/events.ts"
 import { depositFuel, quoteFuel } from "../src/fuel/index.ts"
 import { parseNetwork } from "../src/network.ts"
+import { PERMIT_DEADLINE_SECONDS } from "../src/protocol/l1.ts"
 import type { DepositRecord } from "../src/records.ts"
 import type { DepositSecrets } from "../src/run.ts"
 import { allowanceAfterApprove, readsOf, type Step, testnet, walletOf, worldOf } from "./fakes.ts"
@@ -86,16 +87,36 @@ describe("the events of a deposit", () => {
 		const record = await depositFuel(net, r, walletOf(log, net.l1ChainId), quote, run)
 		expect(events().map((e) => (e.type === "approval" ? `approval:${e.status}` : e.type))).toEqual([
 			"prepared",
+			"approval:requested",
 			"approval:sent",
 			"approval:confirmed",
 			"signature-requested",
 			"deposit-sent",
 			"deposit-confirmed",
 		])
-		expect(events().map((e) => e.seq)).toEqual([0, 1, 2, 3, 4, 5])
+		expect(events().map((e) => e.seq)).toEqual([0, 1, 2, 3, 4, 5, 6])
 		assertPersistedFirst(entries)
 		expect(record.fuel?.secret).toBeDefined()
 		expect(record.intent).toBe("gas")
+	})
+
+	it("the Permit2 deadline is drawn at the signature: an approval that outlasts the window cannot expire the witness", async () => {
+		const log: Step[] = []
+		const w = worldOf(testnet())
+		const feeAsset = w.m.feeJuice.asset as Address
+		const approved = allowanceAfterApprove(log)
+		const later = w.blockTimestamp + 3600n
+		w.reads.set(`${feeAsset.toLowerCase()}:allowance`, () => {
+			const allowance = approved()
+			if (allowance > 0n) w.blockTimestamp = later
+			return allowance
+		})
+		const r = readsOf(w)
+		const net = await parseNetwork(w.m, r)
+		const quote = await quoteFuel(net, r, { token: feeAsset, amount: 40n * 10n ** 18n, recipient, privacy: "public" })
+		await depositFuel(net, r, walletOf(log, net.l1ChainId), quote, recorder().run)
+		const signed = log.find((s) => s.kind === "sign")?.detail as { message: { deadline: bigint } }
+		expect(signed.message.deadline).toBe(later + PERMIT_DEADLINE_SECONDS)
 	})
 
 	it("a private token + gas deposit with Permit2 already allowed: no approval events, the salts with every persist and in no record or event", async () => {

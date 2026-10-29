@@ -35,3 +35,5 @@
 - 2026-10-29 merged origin/main (#42, 1f5455f): three conflicts (deploy.ts imports, bridge-core exports, the canary's imports); #42's new scripts repointed at @unleashed/sdk/protocol and /internal; typecheck:all, lint, test:all green
 - 2026-10-29 a2 final gates on 02e139a: lint, typecheck:all, test:all, audit:tools, pack:check, actionlint, ci-gating green; test:integration 60/60 (600993d) with sdk-flows 9/9 on 0006a87 and deployer-funding + sdk-flows 10/10 on the merge; e2e:tools 78/78 (1.4 h; app tree identical to the head); 2.5 ✓
 - 2026-10-29 CI: the tools smoke suite (apps/tools test:e2e) failed 3 register-path cases on e80cc5b; its mocked hub now answers token_for; 28/28 locally, both build targets verified, relayer integration 6/6
+- 2026-10-29 a3 started on sdk-1-a3 from origin/main f1330bc (a2 squash-merged as #47); orchestrator: OWNER-ASKS §7 decided A, not this arc's work, follow-up kept
+- 2026-10-29 a3 3.1: useSend sends through the SDK's depositL1 (reviewed plan, pause pre-check off, deadline at the signature, approval events); lint, typecheck:all, test:all, audit:tools, tools smoke 28/28 green; OWNER-ASKS §8 §9 added, §7 decided A
