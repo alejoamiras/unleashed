@@ -233,7 +233,7 @@ artifact statically (the same test).
 | `hub-l2.ts` | The L2 leg: `claimViaHub` (register-if-first, decided at claim time by `token_for`, race-tolerant), `exitViaHub` / `preflightHubExit` / `hubExitsPaused` (fail-closed) for L2→L1. |
 | `factory-registry.ts` | The factory's frozen registration and the hub's registration view, read together. |
 | `fuel-quote.ts` | The router's fuel leg: LI.FI's same-chain quote on mainnet (allow-listed venues only) or `TestnetFuelSwapper`'s fixed rate elsewhere, with the signed floor written into the swap's own minimum; `manifestFuelProvider` picks the one a manifest names. |
-| `flows.ts` / `l1-receipt.ts` / `l1-to-l2-readiness.ts` / `chain-scan.ts` | `consumeWithdrawal` + `isOutboxMessageConsumed` for exits and the `L1Ctx` every flow takes; the resilient receipt wait; when an L1→L2 message is consumable; budgeted, reorg-checked scans that report "incomplete", never absence. |
+| `flows.ts` / `l1-receipt.ts` / `l1-to-l2-readiness.ts` / `chain-scan.ts` | `consumeWithdrawal`, `isOutboxMessageConsumed` and `withdrawMessageHash` for exits and the `L1Ctx` every flow takes; the resilient receipt wait; when an L1→L2 message is consumable; budgeted, reorg-checked scans that report "incomplete", never absence. |
 | `router-receipt.ts` | `readRouterDeposit`: the router's own `Deposited` in a mined transaction, each leg authenticated by its portal's event and the Inbox leaf recomputed from the intent. |
 | `records.ts` (root) | The protocol facts of a transfer record (`JournalTokenBlock`). |
 

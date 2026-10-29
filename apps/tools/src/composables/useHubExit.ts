@@ -254,8 +254,8 @@ async function runSendConsume(
 			.catch(() => {})
 	}, 5000)
 	const ctx = { pub: l1.publicClient, wallet, account } as unknown as L1Ctx
-	// A failed consume surfaces as itself even when its message reads as spent: the Outbox answers only for the
-	// position the node reports, which an identical exit shares.
+	// A failed consume surfaces as itself even when its message reads as spent: an identical exit carries the same
+	// message, so a consumed one never proves this record finished.
 	try {
 		// The consume runs against THIS token's clone: one portal per ERC-20, and a message from
 		// one clone can never be finished on another.

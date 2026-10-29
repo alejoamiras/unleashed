@@ -498,6 +498,7 @@ describe("useHubExit", () => {
 		expect(rec.consumedByOther).toBeUndefined()
 		expect(rec.consumeTxHash).toBeUndefined()
 		expect(useBridgeJournal().runtime.value[id]?.attention).toBe("error")
+		expect(h.outboxConsumed).not.toHaveBeenCalled()
 	})
 
 	it.each([

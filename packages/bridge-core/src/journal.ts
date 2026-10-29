@@ -143,8 +143,8 @@ export interface DepositJournalRecord extends JournalBase {
 	secretHashHex: string
 	/** Display copy of the sealing L1 account (authoritative copy lives inside the envelope). */
 	sealerL1?: string
-	/** The L1 account that signed the deposit, recorded when the record is built. Display-only; never
-	 *  read by a claim, exit or recovery path. Absent on records written before the field existed. */
+	/** The L1 account that signed the deposit, recorded when the record is built. Recovering a hash-less record
+	 *  counts only router deposits this account paid for or sent. Absent on records written before the field existed. */
 	sender?: string
 	/** The one-time Permit2 approval's tx hash, when THIS deposit performed it — persisted so a
 	 *  post-approval rejection/timeout still shows the mined approval (a standing max allowance)

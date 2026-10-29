@@ -395,8 +395,8 @@ async function lastSourceDeposit(c: Ctx, client: DiscoveryChainReads, latest: bi
 }
 
 /** A lost source hash: `LiFiTransferStarted` indexes nothing, so the candidates are the indexed
- *  `Transfer(srcSender → Diamond)` of `srcToken` for exactly `srcAmount` (the Diamond pulls the verified route's whole
- *  input, and anyone can log a zero-value `transferFrom` from the sender), in chain order, each bound through its receipt. */
+ *  `Transfer(srcSender → Diamond)` of `srcToken` for exactly `srcAmount`, the verified route's whole input, in chain
+ *  order, each bound through its receipt. */
 async function fromTransferScan(c: Ctx, client: DiscoveryChainReads, latest: bigint): Promise<SourceFacts> {
 	const { srcToken, srcSender } = c.rec.route
 	const srcAmount = BigInt(c.rec.route.srcAmount)

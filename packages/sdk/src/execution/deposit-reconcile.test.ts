@@ -400,7 +400,7 @@ describe("findDepositTx — a retired router", () => {
 	})
 
 	it("a record that names its signer counts only that signer's sends, before the candidate cap", async () => {
-		// The retired router's events name no payer, and a replay of the record's own calldata verifies all the same.
+		// The retired router's events name no payer: only the transaction says who sent it.
 		const replays = Array.from({ length: 9 }, (_, i) => bridgeTx(`0xd${i}` as Hex, 521n + BigInt(i), { from: STRANGER }))
 		const flooded = fakeChain([bridgeTx("0xaa", 520n), ...replays])
 		await expect(findDepositTx(record({ sender: SIGNER }), flooded.client, opts())).resolves.toEqual({ txHash: "0xaa" })
@@ -416,6 +416,7 @@ describe("findDepositTx — a retired router", () => {
 		)
 		const flooded = fakeChain([bridgeTx("0xaa", 520n), ...many])
 		await expect(findDepositTx(record({ sender: SIGNER }), flooded.client, opts({ maxReads: 30 }))).resolves.toBe("incomplete")
+		expect(flooded.reads.filter((r) => r.startsWith("tx:")).length).toBeGreaterThan(8)
 		const failing = fakeChain([bridgeTx("0xaa", 520n)])
 		failing.client.getTransaction = async () => {
 			throw new Error("transaction read failed")

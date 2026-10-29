@@ -113,9 +113,9 @@ export async function withdrawMessageHash(m: WithdrawMessageFacts): Promise<stri
  * reports for this exit. The Outbox is read from the portal on L1, never from the node, and a transaction whose
  * first message is not the expected one reads as not consumed.
  *
- * `true` cannot tell this exit from an identical one (same hub, portal, recipient and amount), whose consumed
- * position a node may report instead: never complete a record from it. Unknowable answers (a missing effect, an
- * unproven epoch) read as `false`.
+ * `true` says a message with this hash was consumed; exits with the same hub, portal, recipient and amount share the
+ * hash, so it never establishes that a given record finished. Unknowable answers (a missing effect, an unproven
+ * epoch) read as `false`.
  */
 export async function isOutboxMessageConsumed(
 	l1: L1Ctx,

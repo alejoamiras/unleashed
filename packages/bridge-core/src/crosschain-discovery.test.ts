@@ -805,7 +805,7 @@ describe("discoverCrossChain", () => {
 		expect(discoveryPatch(lost, d, 7)).toMatchObject({ route: { srcTxHash: ours.hash } })
 	})
 
-	it("a lost source hash is found among zero-value transfers from its sender; only its exact amount counts toward the cap", async () => {
+	it("the source scan for a lost hash counts only transfers of the route's exact amount", async () => {
 		const transfers = (n: number, token: Address, from: Address, to: Address, first: bigint, value: bigint): Tx[] =>
 			Array.from({ length: n }, (_, i) => ({
 				hash: label(`transfer ${value} ${i}`),

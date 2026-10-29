@@ -155,7 +155,6 @@ async function verifiedOf(
 	return verified
 }
 
-/** One at a time: every read draws on the search's single budget. */
 async function sequentialFilter(hashes: readonly Hex[], keep: (hash: Hex) => Promise<boolean>): Promise<Hex[]> {
 	const kept: Hex[] = []
 	for (const hash of hashes) if (await keep(hash)) kept.push(hash)
@@ -214,7 +213,6 @@ async function isRecordCall(
 	return router.shape.logNamesPayer || rec.sender === undefined || hexEq(tx.from, rec.sender)
 }
 
-/** A success on the canonical chain. */
 async function landed(l1: ReconcileL1Client, hash: Hex, read: BudgetedRead): Promise<boolean> {
 	const receipt = await read(() => l1.getTransactionReceipt({ hash }))
 	if (receipt?.status !== "success") return false
