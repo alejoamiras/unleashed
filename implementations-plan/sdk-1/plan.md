@@ -690,8 +690,9 @@ Each row: the decision, its source, the rejected view with its reason.
   writer and a schema-3 view of a cross-chain record.
 - **D68 Gas a claimed-elsewhere token left is claimed, private gas included.** `claimToken` settled a private token +
   gas record whose token another submitter claimed with its gas unclaimed; the app prunes completed records after a
-  week, and the sealed salt with them. The leftover claim now runs for private records as private credit; without the
-  salt it settles with `gasLeft` `missing-salt` (D54).
+  week, and the sealed salt with them. The leftover claim now runs for private records as private credit. Gas the
+  landed claim itself paid with (its hash is the fuel's) is spent without a read; a call without the gas salt stays
+  open (`invalid-request`, retry "safe"), since a call with it can still claim.
 - **D69 A gas leg's leaves are its leaf, its message key and the Fee Juice it carries.** A token + gas record holding
   only its token leaf skipped the receipt read, paid from held gas and settled with its gas unclaimed.
 - **D70 The claim reports its prompts.** `registration-requested` and `claim-requested` come right before the Aztec
@@ -764,6 +765,17 @@ Arc a2, the implementation (`git diff origin/main...HEAD`):
   found two more: the deposits threw their refusals synchronously, and the token claim handed the fee ladder the record
   as the call opened it. All five round-1 fixes held.
 - **Round 3, Codex (same session): no new material finding.** All three round-2 fixes hold. Converged.
+
+Arc a4, the implementation (`git diff 556af41..HEAD`):
+
+- **Round 1, Codex (the panel session resumed): no fund loss or app-visible change; 2 Moderate, 2 Low.** Both new
+  tests overclaimed (an argument-blind builder mock; one case removing three fields at once): the builder's payment,
+  salt and PrivateFPC are now asserted and each missing gas field is its own case. A lost public registration race
+  sends its plain claim without a second `claim-requested` (documented: once per attempt). Two sentences promised
+  more than the code (the leftover comment, §10 item 2): qualified.
+- **Round 1, Opus 5.5 (beside it): 1 Low regression, 2 Low docs.** A private claim its own gas paid, resumed without
+  secrets, settled with a false `missing-salt`: the leftover claim now counts the landed claim's own fee as the
+  spend, and a missing salt keeps the record open (D68). `gasLeft`'s TSDoc and §10 item 5 corrected.
 
 ## Delivery
 

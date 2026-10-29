@@ -49,8 +49,8 @@ export interface ClaimOutcome {
 	record: DepositRecord
 	via: "claim" | "claimed-elsewhere"
 	txHash?: string
-	/** A public token + gas claim settled while its bridged gas could not pay for a claim of its own: the tokens
-	 *  landed, and this says why the Fee Juice message stays unclaimed. */
+	/** A token + gas claim settled while no retry could claim its bridged gas: the tokens landed, and this says why
+	 *  the Fee Juice message stays unclaimed. */
 	gasLeft?: BridgeError
 }
 

@@ -13,3 +13,9 @@
   (a successful simulate reaches the send with no abort check) and that the gas claim's hash lives in
   `fuel.claimTxHash`, not the top-level field the app's resume reads.
 - **Mutation-checked.** Each of the two new `claim.token.test.ts` cases fails with its fix reverted.
+- **Review round 1.** Codex: the tests proved dispatch, not the private payment or each missing field; tightened and
+  mutation-checked. Opus: the private leftover check ran before asking whether the landed claim had already spent the
+  gas, so a watch-only resume without secrets settled with a false `missing-salt`. A guard that needs caller input
+  belongs after every check that needs none.
+- **Host.** The sandbox integration suite lost every file to Bun `SIGBUS` (`/dev/shm` 99% full of orphaned
+  `bb-sync` buffers), `sdk-flows` alone too; CI is its gate on this arc.

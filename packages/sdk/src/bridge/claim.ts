@@ -131,13 +131,17 @@ async function resumeRegistration(leg: ClaimLeg, bound: boolean): Promise<void> 
 
 /** A claim paid from held gas, or a token another submitter claimed, leaves the bridged Fee Juice unspent. The
  *  message's nullifier says whether any landed transaction spent it; if none did, it is claimed on its own (public Fee
- *  Juice, or private credit at the PrivateFPC), resumably, before the record settles, so no completed record strands
- *  gas. */
+ *  Juice, or private credit at the PrivateFPC), resumably, before the record settles: a record completes with its gas
+ *  unclaimed only when no retry could claim it, saying why in `gasLeft`. */
 async function claimLeftoverFuel(leg: ClaimLeg): Promise<void> {
 	const fuel = leg.record.fuel
 	if (!fuel?.leafIndex || fuel.consumed || fuel.standaloneClaimed) return
+	// The landed claim paid its fee from this gas: an included transaction's setup spent the message.
+	if (fuel.claimTxHash !== undefined && fuel.claimTxHash === leg.record.claimTxHash)
+		return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
 	// A private message is spent with the claimer-bound derivation of its salt, which only the caller holds.
-	if (leg.record.isPrivate && !leg.run.secrets?.fuelSalt && !fuel.bridgeSecretSalt) throw new FeeStopError("missing-salt")
+	if (leg.record.isPrivate && !leg.run.secrets?.fuelSalt && !fuel.bridgeSecretSalt)
+		throw new BridgeError("invalid-request", "claiming the bridged private gas needs secrets.fuelSalt", SUBMITTED, "safe")
 	const state = await fuelNullifierState(leg)
 	if (state === "nullified") return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
 	if (state !== "live")

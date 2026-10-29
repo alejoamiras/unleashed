@@ -196,14 +196,16 @@ choose.
 If the app ran its claims through the SDK's entries, a person would notice:
 
 1. A claim that cannot pay its fee says so as soon as the claim starts, instead of after the crossing finishes.
-2. A token someone else claimed first: the app claims your bridged gas on its own (one wallet prompt), public or
-   private, instead of leaving the card open with "press Claim your gas" or "keep it".
+2. A token someone else claimed first: the app claims your bridged gas on its own (one wallet prompt, when the gas
+   is still unclaimed and can pay for its own claim), public or private, instead of leaving the card open with "press
+   Claim your gas" or "keep it".
 3. Gas left over when a claim paid from gas you already held: claimed after the token claim lands, not right after it
    is sent; if that gas claim fails for a while, the card stays open with the error instead of completing.
 4. A claim the network dropped while you were away is sent again (a wallet prompt) instead of the card saying "The
    claim was dropped — claim again from this card."
-5. Fewer progress lines: no "verifying" step for a claim found on reload, no "node unreachable — retrying", no block
-   count bar while the message crosses, and a retry shows the crossing again for a moment.
+5. Fewer progress lines: no "verifying" step for a claim found on reload, no "node unreachable — retrying", a
+   crossing count that can stop one short of full or rise again during one wait, and a retry shows the crossing again
+   for a moment.
 6. A deposit found after a reload waits up to about 12 minutes for its Ethereum confirmation instead of saying
    "retry in a minute".
 7. A claim interrupted while your wallet prompt was open waits up to 15 minutes ("an earlier claim may still land")
