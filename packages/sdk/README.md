@@ -40,12 +40,15 @@ Every call that signs takes a `Network` and refuses one `parseNetwork` did not b
   is refused with `unsupported-line` before anything is signed, since its claims could not be built;
 - names a non-canonical Permit2, a slippage above `MAX_FUEL_SLIPPAGE_BPS`, or, on mainnet, a registry or Fee Juice
   contract other than the pinned ones;
+- on a chain this release bundles a network for, is not that network (compared field by field, before any read), or
+  sits on any other chain but a local sandbox's;
 - disagrees with the Aztec node on its chain, rollup, registry or Fee Juice contracts;
 - points at deployed contracts that are not this release's builds bound to the registry's canonical rollup.
 
-`@unleashed/sdk/networks` bundles the reviewed `TESTNET_MANIFEST` and `MAINNET_MANIFEST`. Pass these rather than a
-manifest fetched at run time: the checks above read through your own `Reads.l1`, so the bundled copy is the root
-that no RPC answer can move. Testnet (Sepolia) carries the token bridge and the gas route. The bundled mainnet
+`@unleashed/sdk/networks` bundles the reviewed `TESTNET_MANIFEST` and `MAINNET_MANIFEST`, frozen, and
+`bundledManifest(l1ChainId)` names the one for a chain. They are the only manifests `parseNetwork` accepts on their
+chains, so no file fetched at run time and no RPC answer can move the root, and a new generation reaches you as an SDK
+release. Testnet (Sepolia) carries the token bridge and the gas route. The bundled mainnet
 manifest is a placeholder until mainnet's gas route is deployed, so `parseNetwork` refuses it (`invalid-network`); on
 mainnet the planned network sells gas only, and `net.bridge` is absent there.
 
@@ -159,9 +162,13 @@ needs those three origins and `data:`, and `script-src` needs `'wasm-unsafe-eval
 
 ## Trust
 
-- **LI.FI is a routing dependency, not a trusted party.** A quote is accepted only inside fixed pins (allow-listed
-  venues, the Diamond as target and spender, zero value, the pinned selector, the router as receiver), the signed
-  floor is written into the swap, the router re-checks it on chain, and the signature commits to the swap's bytes.
+- **LI.FI is a routing dependency.** A gas quote is accepted only inside fixed pins (allow-listed venues, the Diamond
+  as target and spender, zero value, the pinned selector, the router as receiver, at most LI.FI's 0.25 % fee step,
+  then the tool's pinned venue contract swapping the rest of the slice into the fee asset), the signed floor is written
+  into the swap, the router re-checks it on chain, and the signature commits to the swap's bytes. This release takes
+  LI.FI gas swaps on a local sandbox's chains only (`LIFI_FUEL_CHAIN_IDS`).
+- **The network is the bundled one.** On a chain `@unleashed/sdk/networks` covers, `parseNetwork` accepts only its
+  manifest, and `resolveToken` accepts a registered token only at the factory's own clone.
 - **The chains are asserted before signing.** The Ethereum wallet must be on the network's chain, and the Aztec
   wallet's chain must match the network's.
 - **Salts are full-entropy** and never appear in a record, an event, an error or a log.
@@ -218,6 +225,7 @@ artifact statically (the same test).
 | `factory-abi.ts` / `deposit-router-abi.ts` / `legacy-router-abi.ts` / `erc20.ts` | Hand-written browser ABIs pinned against the forge artifacts (the retired router's frozen); gas-capped ERC-20 metadata reads decoded from the factory's own bytes. |
 | `l1.ts` | Permit2 `DepositWitness` typed-data and the hash `DepositRouter.hashWitness` checks (it commits to `keccak256(swapData)`), pinned to the Solidity vector in `l1.test.ts`. |
 | `lifi-addresses.ts` / `lifi-abi.ts` / `lifi-gas.ts` | The third-party contracts a LI.FI route touches per chain, with their runtime code hashes; the LI.FI swap and bridge ABIs and facet selectors; the fork-pinned gas budgets, `LIFI_INTEGRATOR` and the venue allow-list. Viem only, so a Worker can bundle them through `@unleashed/sdk/l1`. |
+| `fuel-swap.ts` | The gas leg's swap policy, from the exact bytes: LI.FI's capped fee step, the named tool's pinned venue at the slice less that fee, the testnet swapper's one step, and the chains LI.FI gas swaps run on. One rule for the SDK's quote and `verifyRoute`. |
 | `lifi-api.ts` / `capped-fetch.ts` | The keyless li.quest client (quotes and `/v1/status`, schema-parsed and held to the request it answers) over one bounded fetch (no redirects, a streaming byte cap, one deadline, typed refusals, never throws). |
 | `gas-share.ts` | The integer gas-share math (`fjPerTx` × target [+ `fjRegister`], the signed floor, the 50 % cap). |
 | `fee-juice.ts` / `fuel.ts` / `private-fuel.ts` / `private-fpc-artifact.ts` | Fee-juice payment methods, the direct `FeeJuicePortal` lane, the Wonderland PrivateFPC (pinned address + salt policy; artifact via dynamic import only). |
@@ -248,7 +256,7 @@ artifact statically (the same test).
 ### Key invariants
 
 - **Leaf indices from the mined events, never a preflight simulate** (`send-flow.ts`). A concurrent deposit changes a simulated index, so the claim would retry against the wrong leaf forever. `readSendReceiptLeaves` takes them from the router's own `Deposited` for this send's secret hashes — filtered by emitter, each leg matched to its portal's event and to the Inbox leaf recomputed from the send's own facts, so a look-alike event from another contract in the same receipt cannot forge them.
-- **The portal is derived, never supplied.** The deposit router derives the token's factory clone itself and a first send creates it inside the same transaction; the client derives the same address only to authenticate the receipt.
+- **The portal is derived, never supplied.** The deposit router derives the token's factory clone itself and a first send creates it inside the same transaction; the client derives the same address to authenticate the receipt, and `resolveToken` refuses a registration at any other.
 - **A claim is decided at claim time** (`hub-l2.ts`): `token_for == 0` ⇒ this claim also registers (one tx for public; `register_token` first for private). If another claimant registers in between, the registration path fails on the consumed register leaf and the claim is retried as a plain one — a deposit is never stranded on a race.
 - **A private first claim's two transactions pay from the same bridged Fee Juice, and nothing is ever sponsored** (`hub-l2.ts` seams `registerFee` / `registeredClaimFee`): the registration spends the fuel message (`PrivateFPC.mint_and_pay_fee`, sized with `PRIVATE_HUB_REGISTER_GAS`), which leaves `amount − max_gas_cost` as the claimer's private credit at the FPC, and the claim that follows pays from that credit (`pay_fee`, sized with `PRIVATE_HUB_CLAIM_GAS`). The FPC keeps each transaction's committed ceiling, not its charge, so a first-time private bridge must carry both ceilings. The claim is sent only once its own simulation passes in the claimer's wallet: the registration's binding lands on the node first, and `claim_private` reads it at the wallet's synced block, which lags (`registrationWait`, 5 s polls, 3-minute deadline; `onRegistered` hands the caller the registration's hash as soon as it exists).
 - **The Permit2 witness is cross-pinned.** `l1.ts`'s `DepositWitness` member list + `DEPOSIT_WITNESS_TYPE` must stay byte-identical to `DepositRouter.hashWitness`. `l1.test.ts` pins the hashes; the evm fork test proves a post-signature tamper reverts.

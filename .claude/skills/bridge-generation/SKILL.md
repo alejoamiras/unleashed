@@ -335,7 +335,9 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      changes: **commit it now**, `promote` refuses an uncommitted intent), runs strict `verify-l1` and
      the hub initialization-hash readback. Then `live-intent.ts promote <intent>` (`--bridge-only`
      when the faucet candidate is not part of this arc), the only thing that touches
-     `testnet-bridge.json`. Never hand-copy.
+     `testnet-bridge.json`. Never hand-copy. The promoted manifest is the SDK's bundled network, the
+     only one `parseNetwork` accepts on its chain: publish the SDK once the promotion is on `main`
+     (`packages/sdk/README.md` § Releasing).
    - **On a reset, retire the old live manifest first.** `promote` refuses any network, chain,
      factory or hub move against an existing live manifest ("promotion would change the network
      identity"), and a reset moves all four. Delete `apps/tools/public/testnet-bridge.json` in its
