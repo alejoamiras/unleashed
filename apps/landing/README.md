@@ -1,8 +1,9 @@
 # @unleashed/landing
 
 The page at `unleashed.systems` and `www.unleashed.systems`: the lab's name, a short pitch, and one row per
-experiment with a small animated screen. Vanilla TypeScript, no framework. The HTML is rendered at build time,
-so the page reads in full with JavaScript off.
+experiment with a small animated screen, plus the mainnet app's Terms of Use and Privacy Policy at `/terms` and
+`/privacy`. Vanilla TypeScript, no framework. The HTML is rendered at build time, so every page reads in full
+with JavaScript off; the legal pages run no script but the theme boot.
 
 ## Commands
 
@@ -24,10 +25,11 @@ runs never share a port. `LANDING_WEBKIT=1` adds WebKit at phone width (CI does 
 |---|---|
 | `src/content.ts` | Every word on the page, the links, the experiment rows, and `SCREEN_PLACEMENT` |
 | `src/markup.ts` | The body HTML, rendered by `vite.config.ts` into `index.html` at build time |
+| `src/legal-pages.ts`, `src/legal-markup.ts` | One page per document in `packages/legal`, rendered into `terms.html` and `privacy.html`; build-time only, so no document text reaches `main.ts`'s bundle |
 | `src/engines/` | The background dither field and the three card screens, on one frame loop |
 | `src/motion.ts` | When motion runs: the visitor's Pause, reduced motion, a hidden tab |
 | `security-headers.ts` | The CSP and the other response headers, for `_headers` and `vite preview` |
-| `scripts/dist-checks.ts` | The guard over a built `dist/` (CSP, no inline code, links, fonts, sizes, build id) |
+| `scripts/dist-checks.ts` | The guard over a built `dist/` (CSP, no inline code, links and build id on every page, fonts, sizes) |
 
 The rows use the Strip placement, the owner's pick. `SCREEN_PLACEMENT = "tile"` in `src/content.ts` switches them
 to Tile; the Tile rules already ship in `src/styles/landing.css`.
