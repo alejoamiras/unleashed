@@ -8,6 +8,9 @@ import { LIFI_BRIDGE_DATA_COMPONENTS } from "./lifi-abi.ts"
 import { LIFI_INTEGRATOR } from "./lifi-gas.ts"
 import { lifiContractCallQuote, lifiQuoteSchema, lifiSameChainQuote, lifiStatus } from "./lifi-api.ts"
 
+/** The live fuel quote is Ethereum's; it is held to the pins as an enabled chain would hold it. */
+vi.mock("./lifi-gas.ts", async (importOriginal) => ({ ...(await importOriginal<object>()), LIFI_FUEL_CHAIN_IDS: [31337, 31338, 1] }))
+
 const FIXTURES = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"..",
