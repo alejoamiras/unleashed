@@ -1,13 +1,22 @@
 import { TESTNET_FILLER } from "@unleashed/bridge-core/across-fill"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { RelayLine } from "./log"
-import { connectRelay, type RunOutcome, relayOnce } from "./run"
+import { connectRelay, type PassBounds, type RunOutcome, type RunSummary, relayOnce, relayPass } from "./run"
 import worker, { scheduledRun } from "./worker"
 
+const run = vi.hoisted(() => ({ msLeft: 58_000 }))
 vi.mock("./run", async (importOriginal) => ({
 	...(await importOriginal<typeof import("./run")>()),
 	connectRelay: vi.fn(),
 	relayOnce: vi.fn(),
+	relayPass: vi.fn(),
+}))
+// Two passes, each told the run ends `run.msLeft` from now.
+vi.mock("./schedule", () => ({
+	relayRun: async (pass: (b: PassBounds) => Promise<RunSummary>) => [
+		await pass({ runEnd: Date.now() + run.msLeft }),
+		await pass({ runEnd: Date.now() + run.msLeft }),
+	],
 }))
 
 const MIDNIGHT = Date.UTC(2026, 9, 29)
@@ -23,14 +32,18 @@ beforeEach(() => {
 })
 afterEach(() => {
 	vi.unstubAllGlobals()
+	run.msLeft = 58_000
 })
 
-const runs = (outcome: RunOutcome) => vi.mocked(relayOnce).mockResolvedValue({ outcome })
+const runs = (outcome: RunOutcome) => {
+	vi.mocked(relayOnce).mockResolvedValue({ outcome })
+	vi.mocked(relayPass).mockResolvedValue({ outcome })
+}
 
 describe("the Worker's restock", () => {
-	it("asks for a drip after every run that passed its checks, at the cron trigger's time", async () => {
+	it("asks for a drip once a run, after its first pass that passed its checks, at the cron trigger's time", async () => {
 		const quiet = vi.spyOn(console, "log").mockImplementation(() => {})
-		for (const outcome of ["idle", "busy", "gas-price", "filled", "already-filled", "skipped"] as const) {
+		for (const outcome of ["idle", "busy", "gas-price", "late", "filled", "already-filled", "skipped"] as const) {
 			runs(outcome)
 			drip.mockClear()
 			await worker.scheduled({ scheduledTime: MIDNIGHT }, env)
@@ -56,5 +69,15 @@ describe("the Worker's restock", () => {
 		expect(readContract).not.toHaveBeenCalled()
 		expect(drip).not.toHaveBeenCalled()
 		expect(lines).toEqual([])
+	})
+
+	it("asks nothing when too little of the run is left for the float read and Circle's answer", async () => {
+		const lines: RelayLine[] = []
+		runs("idle")
+		run.msLeft = 5_000
+		await scheduledRun(env, (l) => lines.push(l), MIDNIGHT)
+		expect(lines).toEqual([{ event: "restock-refused", reason: "too little of the run is left" }])
+		expect(readContract).not.toHaveBeenCalled()
+		expect(drip).not.toHaveBeenCalled()
 	})
 })

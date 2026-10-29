@@ -10,3 +10,5 @@
 - 2026-10-29 plan revised for ask34 (Phase 2: relayRun, passes, late gate, incremental scans); fresh Codex audit next
 - 2026-10-29 Codex ask34 audit: reject (fill-path cases); dispositions applied: OWNER-ASKS §1, per-try gate+pause, restock after first pass, full rescan per pass
 - 2026-10-29 Codex ask34 resumed twice: approve; plan committed; OWNER-ASKS §1 open (ships A)
+- 2026-10-29 ORCHY-STEER: OWNER-ASKS §1 answered: option A (both cases ship as known limits stated in the PR; no cross-run lock)
+- 2026-10-29 a1: phase 1+2 code and tests written; package tests 34/34, live test green

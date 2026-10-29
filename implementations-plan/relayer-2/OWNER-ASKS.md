@@ -25,5 +25,7 @@ change, and both exist today with one pass a minute:
 
 **What ships now.** A. a1 ships the passes and states both cases in its PR.
 
+**Answer.** The orchestrator, for the owner: option A. Both cases ship as known limits stated in the PR, with no lock across runs.
+
 **Recommendation.** A. The cost is gas only and the network is a testnet. B is worth doing only if overlaps show up
 in Workers Logs, as two runs whose sends interleave.
