@@ -14,7 +14,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Address, getAddress, type Hex, type LocalAccount, type PublicClient, pad, parseEther, toHex, type WalletClient } from "viem"
 import { privateKeyToAccount, privateKeyToAddress } from "viem/accounts"
 import type { DiscoveryChainReads } from "../src/crosschain-discovery"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 import type { L1Ctx } from "../src/flows"
 import { lifiBook } from "../src/lifi-addresses"
 import type { ManifestV2 } from "../src/manifest-v2"
@@ -188,7 +188,7 @@ async function main(): Promise<void> {
 	const args = parseCanaryArgs(process.argv)
 	const edge = canaryEdge(manifest, args, process.env)
 	// The node URL carries the dRPC key, so only a live run composes it, and before the preflight's minutes.
-	const live = !args.dryRun && edge.signer ? { signer: edge.signer, nodeUrl: requireDrpcNodeUrl("testnet", process.env) } : null
+	const live = !args.dryRun && edge.signer ? { signer: edge.signer, nodeUrl: keyedNodeUrl("testnet") } : null
 	const reads = canaryReads(edge)
 	const base: Omit<CanaryDeps, "recipient" | "mode"> = {
 		reads: { source: reads.source as unknown as ChainReads, ethereum: reads.ethereum as unknown as ChainReads },
@@ -208,12 +208,4 @@ async function main(): Promise<void> {
 	console.log(formatCanaryRecord(await runCanary(edge.cfg, { ...base, recipient: mode.l2.recipient, mode })))
 }
 
-if (import.meta.main) {
-	main().then(
-		() => process.exit(0),
-		(e: unknown) => {
-			console.error(e instanceof Error ? e.message : e)
-			process.exit(1)
-		},
-	)
-}
+if (import.meta.main) runKeyed(main, (e) => (e instanceof Error ? e.message : String(e))).then(() => process.exit(0))

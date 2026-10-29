@@ -10,6 +10,7 @@ import { ensurePermit2Allowance } from "../src/l1"
 import { predictPortal } from "../src/portal-address"
 import { sourceChain } from "../src/source-chains"
 import { retried } from "../src/retried"
+import { redactSecrets } from "./keyed-env"
 
 /** Uniswap's Permit2, created at this one address on every chain the bridge reaches (the sandbox installs it there). */
 export const CANONICAL_PERMIT2 = "0x000000000022d473030f116ddee9f6b43ac78ba3"
@@ -226,7 +227,9 @@ export async function retryOnRevert<T>(fn: () => Promise<T>, tries = 3): Promise
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e)
 			if (i >= tries || !/REVERTED/.test(msg)) throw e
-			console.log(`bridge() reverted (attempt ${i}/${tries}) — waiting one Aztec slot and retrying: ${msg.slice(0, 120)}`)
+			console.log(
+				`bridge() reverted (attempt ${i}/${tries}) — waiting one Aztec slot and retrying: ${redactSecrets(msg).slice(0, 120)}`,
+			)
 			await new Promise((r) => setTimeout(r, 45_000))
 		}
 	}

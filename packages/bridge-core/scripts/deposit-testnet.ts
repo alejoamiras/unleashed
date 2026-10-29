@@ -40,7 +40,7 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -193,7 +193,7 @@ async function runWithdrawLeg(
 
 async function main() {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 
 	const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 	const { wallet, pub } = createL1Clients({ chain: sepolia, rpcUrl: SEPOLIA_RPC, account })
@@ -230,7 +230,4 @@ async function main() {
 	await runWithdrawLeg(l1, { ewallet, hub, token, from, sendOpts }, node, mins)
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

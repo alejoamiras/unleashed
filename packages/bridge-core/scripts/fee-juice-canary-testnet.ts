@@ -24,7 +24,7 @@ import { claimAndDeployAccount, claimFeeJuiceSelfPaid, depositFeeJuicePublic, fe
 import { waitForL1ToL2Message } from "./generation"
 import { deployAccountIfAbsent, freshSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { createL1Clients, createL2Wallet, createNode, loadManifestV2FromConfigArg, sepoliaChain, stopwatch } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 import { walletChainIdOf } from "../src/wallet-chain-id"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
@@ -101,7 +101,7 @@ async function ensureFeeAssetFunded(d: CanaryL1): Promise<void> {
 
 async function main() {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 	const account = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 	const { wallet, pub } = createL1Clients({ chain: sepolia, rpcUrl: SEPOLIA_RPC, account })
 	const l1: CanaryL1 = {
@@ -177,7 +177,4 @@ async function main() {
 	console.log("   The feeJuice lane (handler mint + direct portal deposit + zero-app-call self-pay claim) is live.")
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

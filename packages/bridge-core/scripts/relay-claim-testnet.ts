@@ -36,7 +36,7 @@ import { type ManifestToken, type ManifestV2, manifestToken } from "../src/manif
 import { parseClaimDescriptor, type RelayClaimDescriptor, redactDescriptorForLog, requireRelayerSecret } from "../src/relay-claim"
 import { createL2Wallet, createNode, loadManifestV2FromConfigArg, requireBridge } from "./script-bootstrap"
 import { claimTokensUntilSynced, deployAccountIfAbsent, registerHub, registerHubToken, sponsoredFpcFee } from "./script-l2"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const MANIFEST_PATH = process.env.BRIDGE_MANIFEST ?? join(here, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json")
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
 		throw new Error(`descriptor names ${descriptor.bridge} but the manifest hub is ${bridge.l2.hub.address} — refusing`)
 	}
 	const relayerSecret = requireRelayerSecret(process.env)
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 	console.log(`relaying ${token.displaySymbol} claim:`, redactDescriptorForLog(descriptor))
 
 	const { ewallet, from, sendOpts } = await relayerWallet(relayerSecret, nodeUrl)
@@ -159,8 +159,5 @@ async function main(): Promise<void> {
 	console.log(`✅ relayed the ${claim.isPrivate ? "private" : "public"} claim (${outcome.path}) — tx ${outcome.claimTxHash}`)
 }
 
-main().catch((err: unknown) => {
-	// Never let a stack trace carry the salt/secret — print only the message.
-	console.error("relay-claim failed:", err instanceof Error ? err.message : String(err))
-	process.exit(1)
-})
+// Never let a stack trace carry the salt/secret — print only the message.
+runKeyed(main, (err) => `relay-claim failed: ${err instanceof Error ? err.message : String(err)}`)

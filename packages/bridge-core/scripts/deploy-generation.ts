@@ -66,7 +66,7 @@ import {
 } from "./script-bootstrap"
 import { CANONICAL_PERMIT2 } from "./script-l1"
 import { deployAccountIfAbsent, deployerSchnorrAccount, sponsoredFpcFee } from "./script-l2"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(here, "..", "..", "..", "apps", "tools", "public")
@@ -105,7 +105,7 @@ function requireSigner(network: "testnet" | "mainnet" = "testnet"): ReturnType<t
  *  sponsored-fee-spending transaction, and nothing but an actual generation needs it on chain. */
 async function connect(mins: () => string, opts: { deployAccount: boolean }): Promise<{ l1: L1Ctx; l2: L2Ctx; addrs: NodeL1 }> {
 	const account = requireSigner()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 	// Before any account exists: the registry and portal read here become the generation's immutables.
 	const info = await authenticatedNode(nodeUrl)
 	const chain = sepoliaChain(SEPOLIA_RPC)
@@ -293,7 +293,7 @@ async function commandRouterOnly(): Promise<void> {
 	const mins = stopwatch()
 	const rates = ratesArg()
 	const account = requireSigner()
-	const info = await authenticatedNode(requireDrpcNodeUrl("testnet", process.env))
+	const info = await authenticatedNode(keyedNodeUrl("testnet"))
 	const l1: L1Ctx = { ...createL1Clients({ chain: sepoliaChain(SEPOLIA_RPC), rpcUrl: SEPOLIA_RPC, account }), account }
 	const options: RouterOnlyOptions = {
 		l1,
@@ -328,7 +328,7 @@ async function commandFuelRoute(): Promise<void> {
 	if (!rpcUrl) throw new Error("ETH_RPC_URL is required: run this through mainnet-l1.env.example — STOP")
 	const account = requireSigner("mainnet")
 	const base = loadManifestV2FromConfigArg(process.argv, { mode: "fallback", fallbackPath: MAINNET_LIVE_PATH })
-	const info = await authenticatedMainnetNode(requireDrpcNodeUrl("mainnet", process.env), base)
+	const info = await authenticatedMainnetNode(keyedNodeUrl("mainnet"), base)
 	const l1: L1Ctx = { ...createL1Clients({ chain: mainnetChain(rpcUrl), rpcUrl, account }), account }
 	const options: FuelRouteOptions = {
 		l1,
@@ -402,7 +402,4 @@ async function main(): Promise<void> {
 	throw new Error("usage: deploy-generation.ts <deploy|pre-create|calibrate> [flags] — see the header")
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

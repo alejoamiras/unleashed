@@ -51,7 +51,7 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { requireDrpcNodeUrl } from "../src/drpc-node"
+import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -373,7 +373,7 @@ async function buildL2(l1: L1Ctx, nodeUrl: string, mins: () => string): Promise<
 
 async function main() {
 	const mins = stopwatch()
-	const nodeUrl = requireDrpcNodeUrl("testnet", process.env)
+	const nodeUrl = keyedNodeUrl("testnet")
 
 	// This canary deposits Fee Juice and pays fees THROUGH the pinned PrivateFPC — an unrecoverable
 	// loss if that address is not the installed artifact's canonical instance, or is published with
@@ -396,7 +396,4 @@ async function main() {
 	if (NOFUEL_SPEND_RUNS > 0) await runNoFuelSpendProof(ctx, fpc, NOFUEL_SPEND_RUNS)
 }
 
-main().catch((e) => {
-	console.error(e)
-	process.exit(1)
-})
+runKeyed(main)

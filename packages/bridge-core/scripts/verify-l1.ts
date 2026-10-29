@@ -50,6 +50,7 @@ import type { BridgeBlock, FuelRouteBlock, ManifestToken, ManifestV2 } from "../
 import { toWord } from "../src/register-hash"
 import { legacyRoutersOf } from "../src/send-generation"
 import { walletChainIdOf } from "../src/wallet-chain-id"
+import { redactSecrets } from "./keyed-env"
 import { resolveBin, run } from "./run"
 import { createL1PublicClient, loadManifestV2FromConfigArg, requireRoute } from "./script-bootstrap"
 import {
@@ -96,15 +97,16 @@ let warnings = 0
 const ok = (label: string) => console.log(`✓ ${label}`)
 const skip = (label: string, why: string) => console.log(`— ${label}: ${why}`)
 
+/** `detail` is often a caught viem error, whose text carries the RPC URL. */
 function fail(label: string, detail: string): void {
 	failures++
-	console.error(`✗ ${label}: ${detail}`)
+	console.error(redactSecrets(`✗ ${label}: ${detail}`))
 }
 
 /** Worth an operator's look, never a reason to refuse: the next check that depends on it is still exact. */
 function warn(label: string, detail: string): void {
 	warnings++
-	console.warn(`! ${label}: ${detail}`)
+	console.warn(redactSecrets(`! ${label}: ${detail}`))
 }
 
 function same(label: string, actual: unknown, expected: unknown, expectedSource = "manifest"): void {

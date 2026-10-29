@@ -136,7 +136,7 @@ finds `DRPC_API_KEY` and the three source-RPC names.
   `cd apps/tools && bun --bun vitest run scripts/deploy-config.test.ts`. Pass: exit 0. Layers: lint, typecheck, unit,
   integration (child process).
 
-### Phase 2: every composer and every known mid-run print
+### Phase 2: every composer and every known mid-run print ✓
 
 1. Move the 13 entries onto `runKeyed` and their composition onto `keyedNodeUrl`; keep each failure text via `describe`.
 2. Wrap `deploy-private-fpc-mainnet.ts`'s top-level await in `runKeyed`.

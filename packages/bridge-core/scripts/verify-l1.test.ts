@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
+import { join } from "node:path"
 import { concat, type Hex, hexToBytes, keccak256, toHex } from "viem"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR } from "../src/across-v4"
 import type { LifiChainBook } from "../src/lifi-addresses"
-import { judgeBook, maskedRuntimeHashes, type ObservedBook } from "./verify-l1"
+import { parseManifestV2 } from "../src/manifest-v2"
+import { judgeBook, maskedRuntimeHashes, type ObservedBook, verifyL1Manifest } from "./verify-l1"
 
 /** A runtime laid out as solc emits it: code, an INVALID guard, then the CBOR metadata map
  *  `{ipfs: <34 bytes>, solc: <3 bytes>}` and its 2-byte length. */
@@ -92,5 +97,48 @@ describe("judgeBook", () => {
 		expect(notOk(seen({ facets: { [SELECTOR]: at(5), [BRIDGE]: at(7) } }))).toEqual([
 			`fail LI.FI book (chain 84532) facet behind ${BRIDGE}`,
 		])
+	})
+})
+
+describe("verifyL1Manifest's printed failures", () => {
+	// Every check fails at once: viem does not retry "method not found", and its error text carries the RPC URL.
+	it("name the keyed L1 RPC, never its URL", async () => {
+		const key = "sentinel_Key-0123456789"
+		const server = createServer((req, res) => {
+			let body = ""
+			req.on("data", (chunk) => {
+				body += chunk
+			})
+			req.on("end", () => {
+				const reply = (call: { id?: unknown }) => ({
+					jsonrpc: "2.0",
+					id: call.id ?? null,
+					error: { code: -32601, message: "method not found" },
+				})
+				const calls = JSON.parse(body) as { id?: unknown } | { id?: unknown }[]
+				res.setHeader("content-type", "application/json")
+				res.end(JSON.stringify(Array.isArray(calls) ? calls.map(reply) : reply(calls)))
+			})
+		})
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+		const printed: string[] = []
+		const spies = (["log", "warn", "error"] as const).map((level) =>
+			vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+				printed.push(args.join(" "))
+			}),
+		)
+		try {
+			const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/${key}`
+			vi.stubEnv("SEPOLIA_RPC_URL", url)
+			const live = join(import.meta.dirname, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json")
+			const failures = await verifyL1Manifest(parseManifestV2(JSON.parse(readFileSync(live, "utf8"))), url)
+			expect(failures > 0, "the checks failed").toBe(true)
+			expect(printed.some((line) => line.includes("<SEPOLIA_RPC_URL>"))).toBe(true)
+			expect(printed.some((line) => line.includes(key))).toBe(false)
+		} finally {
+			for (const spy of spies) spy.mockRestore()
+			vi.unstubAllEnvs()
+			server.close()
+		}
 	})
 })
