@@ -44,9 +44,10 @@ export const SOURCE_CHAINS: Readonly<Record<number, SourceChain>> = {
 		// official endpoint refuses `to − from > 200` (-32614).
 		maxLogBlocks: { "https://base-sepolia-rpc.publicnode.com": 50_000, "https://sepolia.base.org": 200 },
 		// As measured at head ≈ 51,950,000: PublicNode keeps logs complete from block 47,000,000, answers `[]` for the
-		// half-million blocks before it and refuses older ones (4444); it answers receipts below 47,000,000 `null`. The
-		// boundaries did not move with the head, so they may advance in steps: 3,000,000 keeps a wide margin. The
-		// official endpoint serves logs and receipts far older; both refuse blocks below 46,500,000.
+		// half-million blocks before it and refuses older ones (4444); it answers receipts below 47,000,000 `null`. Why
+		// the boundary sits there is unknown and a resync can move it anywhere; only the live check detects a shrink
+		// past this value. The official endpoint serves logs and receipts far older; both refuse block reads below
+		// 46,500,000, which bounds every record discovery can still read.
 		logRetentionBlocks: { "https://base-sepolia-rpc.publicnode.com": 3_000_000 },
 	},
 	8453: { chainId: 8453, name: "Base", nativeSymbol: "ETH", l1ChainId: ETHEREUM, rpcUrls: [] },

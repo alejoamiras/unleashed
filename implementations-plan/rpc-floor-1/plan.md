@@ -67,8 +67,8 @@ trusted to report what they hold honestly, as today (Security).
 
 **Inferences.**
 
-- I1: PublicNode Base may prune in 500,000-block steps (both boundaries stayed put while the head moved 39,000
-  blocks); that is one observation, not a guarantee. A declared retention of 3,000,000 blocks keeps a margin of
+- I1: PublicNode Base's boundaries stayed put while the head moved 39,000 blocks. Why they sit at round blocks (a
+  pruning step, or where a snapshot started) is unknown, and a resync can move them anywhere. A declared retention of 3,000,000 blocks keeps a margin of
   about 1,950,000 (about 4.5 days) below today's 4,950,000. A shrink past it is caught only by the opt-in live check.
 - I2: As measured, the readable age is bounded by Base block history (from 46,500,000, about 5,450,000 blocks or
   12.6 days at 0.2 s). It moves when PublicNode prunes. An older record stays `incomplete` (D5).
@@ -226,6 +226,19 @@ A3's claim (singleton local URL lists) sound.
 |---|---|---|
 | F1 | Medium: a failed transaction or head probe throws through `receiptOrNext`, so fresh polling can reject before any threshold (demonstrated in memory on viem 2.57.1); "polling unchanged" overclaims, as 1,000 blocks is 3 min 20 s on Base (plausible) | adopted: a failed probe keeps the original `null`; Excellent (3), the mechanism and D3 state the residual; test 2 gains probe-failure and 999/1,000-block controls |
 | F2 | Low: "Asks: none" contradicts A1 and A3 needing acceptance (plausible) | adopted: the summary separates lane asks from plan Asks and requires recorded acceptance of A1 and A3 |
+
+**Implementation round 1.** Codex (`gpt-6.1-sol`, high, new session, net diff from `origin/main` b8c2289): clean. It
+traced the reverted-attempt `not-sent` path as closed for the measured floors, found the 4444 refusals hop without a
+retry, the probes kept to their own endpoint, the live comparisons non-vacuous, and no comment worth flagging.
+
+Same-family review (Opus, alongside round 1): 4 Low, no correctness bug in the wrappers. All adopted.
+
+| # | Finding (label) | Disposition |
+|---|---|---|
+| O1 | Nothing pins the last endpoint's exclusion from `receiptOrNext`: wrapping every URL leaves the tests green (demonstrated by trace) | fixed: the wiring test reads a receipt that is `null` everywhere and expects `TransactionReceiptNotFoundError`; the mutation goes red |
+| O2 | No test covers the `earliest` refusal (demonstrated by trace) | fixed: test 1 refuses `fromBlock: "earliest"`; treating it as a head tag goes red |
+| O3 | The retention comment commits to a step-pruning model the evidence does not show (plausible) | fixed: the comment and I1 say the boundary's cause is unknown and a resync can move it; only the live check detects a shrink |
+| O4 | Three comments: "blocks" meant block reads; `HEAD`'s doc described `OLD`; the stub's doc was stale | fixed |
 
 ## Delivery
 

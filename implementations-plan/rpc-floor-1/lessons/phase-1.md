@@ -32,3 +32,11 @@
   receipt. A stub without that method rejects the wait for a reason unrelated to receipts, so the polling case runs
   with `checkReplacement: false`.
 - A `custom` stub's `switch` over methods passes Biome's cognitive-complexity limit only as a handler map.
+
+## Review rounds
+
+- Codex round 1 (`gpt-6.1-sol`, high, new session): clean.
+- Opus review alongside: 4 Low, all fixed. Two new mutations confirm the added assertions: `receiptOrNext` on the
+  last endpoint too (the wiring test fails), `earliest` treated as a head tag (test 1 fails).
+- Stub pitfall: viem sends `eth_blockNumber` without `params`, so a fetch stub that reads `params[0]` throws and the
+  fallback silently moves to the next endpoint; the wiring test caught it as a missing PublicNode call.

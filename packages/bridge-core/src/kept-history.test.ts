@@ -113,6 +113,8 @@ describe("keptLogs", () => {
 
 		const alone = scan(keptLogs(pruned.transport, 4_000), 5_000n, 5_999n)
 		await expect(alone).rejects.toMatchObject({ code: 4444 })
+		const earliest = client(keptLogs(pruned.transport, 4_000)).getLogs({ address: WETH, fromBlock: "earliest", toBlock: 7_000n })
+		await expect(earliest).rejects.toMatchObject({ code: 4444 })
 		expect(pruned.asked("eth_getLogs")).toEqual([{ method: "eth_getLogs", from: 6_001n, to: 7_000n }])
 
 		for (const bad of [0, -1, 1.5, Number.NaN]) expect(() => keptLogs(pruned.transport, bad)).toThrow(/positive integer/)
