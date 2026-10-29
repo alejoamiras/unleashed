@@ -26,6 +26,7 @@ import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { DripperContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Dripper.js"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
+import { randomField } from "@unleashed/sdk/internal"
 import { catalogMismatches } from "../src/faucet-catalog"
 import { stopwatch } from "./script-bootstrap"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
@@ -104,8 +105,8 @@ async function rebuildAll() {
 type Rebuilt = Awaited<ReturnType<typeof rebuildAll>>
 
 async function dripEach(ewallet: EmbeddedWallet, nodeUrl: string, { dripper: dripperInstance, tokens }: Rebuilt, mins: () => string) {
-	const { signingKey, secretKey } = await deriveNuloAccountKeys(Fr.random())
-	const manager = await ewallet.createSchnorrAccount(secretKey, Fr.random(), signingKey)
+	const { signingKey, secretKey } = await deriveNuloAccountKeys(randomField())
+	const manager = await ewallet.createSchnorrAccount(secretKey, randomField(), signingKey)
 	const from = (await manager.getAccount()).getAddress()
 	console.log(`L2 drip recipient ${from.toString()}`)
 

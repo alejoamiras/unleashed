@@ -5,7 +5,6 @@
  * that persist.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Account, Address, Chain, Hex, WalletClient } from "viem"
 import { BridgeError, isUserRejection, refusal, type Submission } from "../errors.ts"
 import { type Emit, eventEmitter, type Leaves } from "../events.ts"
@@ -16,6 +15,7 @@ import { PORTAL_FACTORY_ABI } from "../protocol/factory-abi.ts"
 import { feeJuiceAddress } from "../protocol/fee-juice.ts"
 import { ensurePermit2Allowance, PERMIT_DEADLINE_SECONDS } from "../protocol/l1.ts"
 import { deriveBridgeSecret } from "../protocol/private-fuel.ts"
+import { randomField } from "../protocol/random-field.ts"
 import type { DepositRecord, JournalTokenBlock } from "../records.ts"
 import { checkAbort, type DepositSecrets, persistOr, type RunOptions, untilAborted } from "../run.ts"
 import type { L1Ctx } from "./flows.ts"
@@ -109,8 +109,8 @@ function randomNonce(): bigint {
  *  (`withDeadline`); until then it is zero, which Permit2 refuses. */
 function paramsOf(net: Network, plan: DepositPlan, swapData: Hex): { params: SendParams; secrets: DepositSecrets } {
 	const claimer = AztecAddress.fromStringUnsafe(plan.recipient)
-	const claimSalt = plan.isPrivate && plan.intent !== "gas" ? Fr.random() : undefined
-	const fuelSalt = plan.isPrivate && plan.gas ? Fr.random() : undefined
+	const claimSalt = plan.isPrivate && plan.intent !== "gas" ? randomField() : undefined
+	const fuelSalt = plan.isPrivate && plan.gas ? randomField() : undefined
 	const gas = plan.gas && {
 		fuelAmount: plan.gas.fuelAmount,
 		fuelRecipient: (plan.isPrivate ? net.privateFpc : plan.recipient) as Hex,
