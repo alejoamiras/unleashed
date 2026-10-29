@@ -1041,6 +1041,7 @@ Arc a6, PR 1 (`git diff 890edac..HEAD`):
 - **Round 2, Codex (same session): APPROVE WITH CHANGES, 2 Medium; fixed with tests.** An abort from the event that
   reports a recovered read still settled (checked after that event too); an abort while a latch was written still
   opened the prompt (checked right before each wallet send, the known-unsent latch lifted).
+- **Round 3, Codex (same session): APPROVE.** Both reproductions abort with nothing settled or sent. Converged.
 
 Arc a5, the implementation (`git diff 54de731..HEAD`):
 
