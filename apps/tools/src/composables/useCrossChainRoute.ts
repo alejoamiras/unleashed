@@ -7,7 +7,7 @@
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
-import { Fr } from "@aztec-labs/aztec.js/fields"
+import type { Fr } from "@aztec-labs/aztec.js/fields"
 import {
 	type AcrossClient,
 	type AcrossLimits,
@@ -27,7 +27,7 @@ import {
 	verifyRoute,
 } from "@unleashed/bridge-core"
 import { deriveBridgeSecret, deriveTokenClaimSecret, type LifiChainBook, lifiBook, type RouterIntent } from "@unleashed/sdk/protocol"
-import type { FuelProbe, FuelQuoteProvider } from "@unleashed/sdk/internal"
+import { type FuelProbe, type FuelQuoteProvider, type FuelQuoteRefusal, randomField } from "@unleashed/sdk/internal"
 import type { Address, Hex } from "viem"
 import { type ComputedRef, computed, type Ref } from "vue"
 import { SEND_GENERATION } from "@/contracts/bridge-generation"
@@ -101,6 +101,8 @@ export type CrossChainRouteOutcome =
 	| { kind: "no-route"; reason: string; max?: bigint }
 	/** The decoder refused bytes we built: never offered, never signed. */
 	| { kind: "refused"; field: string; reason: string }
+	/** The venue quotes the slice under the claim minimum `floor`: the amount is too small, nothing is down. */
+	| { kind: "below-floor"; expectedOut: bigint; floor: bigint }
 	/** This build cannot route the ask: no router, no rail it builds, no Across API, or fees still pricing. */
 	| { kind: "unavailable"; reason: string }
 
@@ -136,7 +138,7 @@ export async function crossChainSecrets(
 	intent: SendIntent,
 	isPrivate: boolean,
 	recipient: string,
-	random: () => Fr = Fr.random,
+	random: () => Fr = randomField,
 ): Promise<CrossChainSecrets> {
 	const to = AztecAddress.fromStringUnsafe(recipient)
 	const out: CrossChainSecrets = {}
@@ -175,15 +177,19 @@ interface RouteCtx {
 	rate?: FuelProbe
 }
 
-/** Why the venue gave no answer: an outage is not a "no route". */
-const gasFailure = (c: RouteCtx): Outcome =>
-	c.venue && !c.venue.reverted() ? unavailable("The gas venue could not be read.") : noRoute(NO_GAS_ROUTE)
+/** Only a failed read is an outage: a quote under the claim minimum is the amount's to fix, any other refusal no route. */
+function gasFailure(c: RouteCtx, res: FuelQuoteRefusal): Outcome {
+	if (res.reason === "floor") return settle({ kind: "below-floor", expectedOut: res.expectedOut, floor: res.floor })
+	const outage = res.reason === "provider" && !c.venue?.reverted()
+	return outage ? unavailable("The gas venue could not be read.") : noRoute(NO_GAS_ROUTE)
+}
 
 async function sliceOf(c: RouteCtx, venue: FuelQuoteProvider, delivered: bigint): Promise<bigint | Outcome> {
 	if (c.ask.intent === "gas") return delivered
 	if (!c.rate) {
 		const probe = await venue.probe(c.ask.srcToken.destToken, 10n ** BigInt(c.ask.srcToken.decimals))
-		if (!probe.ok || probe.probe.probeOut <= 0n) return gasFailure(c)
+		if (!probe.ok) return gasFailure(c, probe)
+		if (probe.probe.probeOut <= 0n) return noRoute(NO_GAS_ROUTE)
 		c.rate = probe.probe
 	}
 	const slice = c.deps.slice(c.ask, delivered, c.rate)
@@ -197,7 +203,7 @@ async function gasAt(c: RouteCtx, delivered: bigint): Promise<(CrossChainGas & {
 	const slice = await sliceOf(c, c.venue.provider, delivered)
 	if (typeof slice !== "bigint") return slice
 	const q = await c.venue.provider.quote(c.ask.srcToken.destToken, slice)
-	if (!q.ok) return gasFailure(c)
+	if (!q.ok) return gasFailure(c, q)
 	const venue: FuelProvider = q.quote.provider === "lifi" ? { provider: "lifi", tool: q.quote.tool } : { provider: "testnetSwapper" }
 	return { fuelAmount: slice, minFuelOutput: q.quote.minOut, expectedOut: q.quote.expectedOut, venue, swapData: q.quote.swapData }
 }
@@ -331,7 +337,7 @@ export async function quoteCrossChainRoute(ask: CrossChainAsk, deps: RouteDeps):
 	const b = deps.bindings
 	if (!b) return unavailable("This bridge generation has no deposit router.")
 	if (ask.rail !== "acrossV4") return unavailable("This build routes only through Across.")
-	const random = deps.random ?? Fr.random
+	const random = deps.random ?? randomField
 	const lifiTxId = random().toString() as Hex
 	const secrets = await crossChainSecrets(ask.intent, ask.isPrivate, ask.recipient, random)
 	const fuel = ask.intent === "token" ? undefined : deps.fuel(lifiTxId)
