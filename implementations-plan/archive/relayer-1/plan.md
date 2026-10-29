@@ -14,6 +14,39 @@ budget: "recon: 3 Sonnet agents; code-review: off; foreign reviewer gpt-6.1-sol 
 size: "over the 350-line mid target: the revision for ask13 keeps the superseded design's audit evidence in one table"
 ---
 
+## Outcome
+
+- **Status: closed, shipped** in three PRs. Phases 1–6 and arcs a2 and a3 are ✓.
+- **Shipped.**
+  - #29 (a1): the `packages/testnet-relayer` Worker. It is a one-minute cron that fills the app's exclusive Base
+    Sepolia → Sepolia Across sends through bridge-core's Worker-safe fill core (`@unleashed/bridge-core/across-fill`).
+    The PR also adds its unit tests, the two-anvil integration test in `_bridge-contracts.yml` and the owner's runbook.
+  - #32 (a3): the optional Circle faucet-API drip. With `CIRCLE_API_KEY` set, it runs once a day, in the cron minute
+    that opens a UTC day, while the float is under 20 USDC.
+  - The close-out PR (a2): `TESTNET_FILLER` is pinned to the owner's dedicated relayer key,
+    `0x6bF61c9C868fe8d1b3B3d977fBf80498DBD7Cf1F`. The tests, the runbook and the `bridge-generation` skill follow it,
+    and the sandbox e2e fills as that address.
+  - The owner created the key, deployed the Worker from Workers Builds, set its secret and funded it on Sepolia
+    (0.5 ETH, 40 USDC): runbook steps 1–3.
+- **Reviews.** The audit verdicts below: plan audits, then fix loops on a1, a3 and a2, each converged in 2 rounds.
+- **Dispositions.**
+  - Option A, a Bun process under a keyed run: superseded by the Worker (ask13). Phase 1's seam stays.
+  - The canary key as the filler: replaced by the dedicated key. `fill-testnet.ts` now fills only the canary's own
+    deposits.
+  - A lock against overlapping runs: rejected (D8), recorded as known limit 4.
+  - Restock through Across repayment: impossible, because Across testnet repays no fill (F4).
+- **Assumptions.**
+  - A1 held: the owner chose Workers Paid.
+  - A3 grew into "both": manual top-ups plus a3's drip.
+  - A4 stays open as #40.
+- **Known limits:** #39, #34, #35, #36, #37, #38.
+- **Open items.**
+  - #40 (`owner-decision`): the testnet send copy still promises a manual fill and a refund (`OWNER-ASKS.md` #1).
+  - Runbook step 4, the owner's live check of a Base Sepolia send, follows this PR's testnet deploy. The testnet app
+    names the canary until then.
+  - Step 6, the Circle key, is optional and the owner's.
+- **Retired:** the `/goal` and `/loop` seeds below. This plan is a record, never a task list.
+
 # relayer-1: a testnet relayer for Base Sepolia sends
 
 A Cloudflare Worker fills the testnet's cross-chain sends by itself. Every minute it reads the recent Across
@@ -26,7 +59,7 @@ and filling through a Worker-safe fill core moved into bridge-core's `src`: alwa
 owner accepted a testnet key in the shared Cloudflare account (ask13).
 
 **Revision.** The first approved draft ran a Bun process under a keyed run (option A). The owner then chose a hosted
-Worker and a dedicated key (ask13), and the orchestrator steered the design (`STATUS.md`). Phase 1 (`8cfea22`) was
+Worker and a dedicated key (ask13), and the orchestrator steered the design. Phase 1 (`8cfea22`) was
 built for A and stays: its exports are promised to sdk-1 and the CLI uses its extractions.
 
 ## Scope map
@@ -346,7 +379,7 @@ Until a2 merges and the secret is set, a1's Worker is inert: it refuses every ru
 **Validation gate.** `bun test scripts/ci-cd/doc-links.test.ts`, `bun run lint`, `bun run test:all`,
 `bun run audit:tools`. Pass: exit 0 each. Layers: doc links, lint, unit, the app's build.
 
-### Arc a2 — pin the dedicated relayer (after runbook step 1)
+### Arc a2 — pin the dedicated relayer (after runbook step 1) ✓
 
 Steps: set `TESTNET_FILLER` to the printed address; update the tests that pin its value; note in the README that
 in-flight sends naming the canary at the switch are filled by hand with `fill-testnet.ts` within their 2 h, and that
@@ -492,6 +525,25 @@ gate before its balance read. `RESTOCK_BELOW` is named for the web faucet's clai
 Round 2 (resumed): **approve**, no new material finding; the `"manual"` fix checked against Cloudflare's Request docs
 (a 3xx comes back as-is), the byte cap probed at 4,096 and 4,097 bytes and across split UTF-8. Its one informational
 item, two narrating test comments, is applied.
+
+**Fix loop on a2's diff and the close-out.** Round 1: Codex **reject**, three findings; beside it an Opus diff review,
+**approve** with nine minor ones. Both found the signer split sound: no path fills an app send with the canary key, and
+no mainnet path reads the pin. Adopted:
+- Codex, demonstrated: the by-hand fill of a send naming the canary must start more than 120 s before `fillDeadline`,
+  not "within its 2 h", or the fill core refuses it.
+- `selfBuiltTerms`' TSDoc had the fee backwards.
+- The pin's TSDoc now states that the Worker refuses a key that does not derive it, and that the canary fills its own
+  deposits: its matrix self-fills, and `fill-testnet.ts` is the by-hand fallback.
+- The runbook's rotation says who fills a send naming the old key.
+- Docs: a comment and a README row still said "by hand", and three lessons had drifted from their sources in the
+  rewrite; `lessons.md` is back under 8 KiB.
+
+Declined: Codex's literal pin of the address in a test. The test refuses the canary and both deploy signers, which
+covers the plausible regression, a revert; a copy of the literal pins only itself, and a wrong pin shows as
+`refused` on the first run.
+Round 2 (resumed): **approve**, no remaining or new material finding; the rotation clause probed in memory (`once`
+refuses a signer that does not derive its checkout's pin and admits the old key's deposit under the old pin), and the
+declined assertion accepted as nonblocking.
 
 ## Post-implementation
 

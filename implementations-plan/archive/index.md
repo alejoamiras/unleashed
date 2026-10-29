@@ -43,6 +43,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [private-fuel](private-fuel/plan.md) — archived — private-fuel — private Fee Juice across the bridge
 - [private-fuel-fee-fix](private-fuel-fee-fix/plan.md) — archived — Private-fuel claim fee fix (V5 self-paying budget)
 - [protocol-labels](protocol-labels/plan.md) — archived — protocol-labels — the bridge's protocol labels settled, and the testnet generation they require
+- [relayer-1](relayer-1/plan.md) — archived — relayer-1 — a cron Worker that fills the testnet's Base Sepolia sends
 - [send-wizard-ux](send-wizard-ux/plan.md) — archived — Send wizard UX redesign
 - [swap-fuel](swap-fuel/plan.md) — archived — swap-fuel — bridge-and-fuel on the live Sepolia ↔ Aztec testnet bridge
 - [tools-console](tools-console/plan.md) — archived — Tools Console — the shell around the Send wizard
