@@ -58,3 +58,26 @@ over `apps/tools`, `apps/landing`, `packages/bridge-core/src`, `packages/design/
 - The landing links only to testnet and says "Mainnet is not open yet" (`apps/landing/src/content.ts`);
   its links are allowlisted (`LINKS`, `scripts/dist-checks.ts`).
 - Open issues: none. Closed known limits: #27 only (unrelated).
+
+## a2 re-plan: wallet-signed acceptance (base `e1d1c4c`)
+
+One Sonnet explorer (batched reuse sweep, ten capabilities); every claim below was re-checked in the tree.
+
+| Capability | Found | Verdict |
+|---|---|---|
+| Injected provider access | only private, in composables: `useL1Wallet.ts:23-26` (`window.ethereum` cast to viem's `EIP1193Provider`), `deposit-flow.ts:56` | build new in `src/legal/` (sdk-1 rewrites `src/composables/`) |
+| User-rejection test | `src/lib/wallet-errors.ts:13-24` `isUserRejection` (4001, viem's `UserRejectedRequestError`, cause chain); its one import, `lib/errors.ts`, imports nothing | reuse as is |
+| 4100 / 4200 / no-wallet classes | none (searched `4100\|4200\|Unauthorized\|UnsupportedProviderMethod` over apps and packages) | not needed: everything not a rejection is one "failed" state |
+| Plain-text message builder | `bridge-core/src/recovery-crypto.ts:27-33` `recoveryKeyMessage` (banner line, "not a transaction" line, fields), signed through viem `signMessage` | adapt the shape; a new builder (another domain) |
+| Local signature check | none (`verifyMessage\|recoverMessageAddress\|hashMessage` absent in apps and packages) | build new on viem 2.57.1 `verifyMessage` (pure ECDSA; run here: true on the signed text, false on a changed one, throws "invalid signature length" on a short one) |
+| sha256 in the browser | only Node `createHash` in build scripts | viem `sha256(stringToBytes(JSON.stringify(doc)))`, as the plan already had |
+| Fail-closed storage | `useTokenCatalog.ts:42-51` (try/catch around the access); hand-rolled shape checks (`createAztecWalletSession.ts:246-283`) | adapt the pattern; key `unleashed:legal-acceptance` (app prefix `unleashed:`; `unleashed-bridge:` is bridge-core's) |
+| Unit-test fakes | `memoryStorage()` (`src/test/crosschain.ts:118-131`); no shared EIP-1193 fake; `App.test.ts:27` uses `vi.stubEnv` + `vi.resetModules` | real signatures from `privateKeyToAccount(...).signMessage` |
+| Browser fixture | `tests/browser/fixtures/l1-wallet.ts`: `eth_requestAccounts` (`:267`), `personal_sign` signs for real with `{ raw }` (`:328-336`), `rejectNext` (4001), `holdNext` | reuse for the scripted dev-server run |
+| Screen parts | `Button` (`packages/design/src/ui/Button.vue`: `variant`, `loading` sets `aria-busy`); `role="status"` / `role="alert"` (`ConnectionErrorStrip.vue:29`); page frame and tokens from `MainnetPlaceholderView.vue` | reuse |
+| Mainnet-only proof | `scripts/legal-dist.ts:16-30`; `TESTIDS` is one object and ships whole to testnet | extend the chunk pattern; doc ids as the mainnet marker, never a testid |
+
+Facts for the design: `terms.ts:17` already says acceptance is a wallet signature over a message that names
+the version; `privacy.ts:39` says the holding page stores nothing (false once the gate ships); EIP-191
+`personal_sign` carries no chain id, so no network switch; the mainnet CSP (`'self' data: blob:`) does not
+govern an injected wallet's calls. Closed known limits: none on terms or acceptance; no open issue.

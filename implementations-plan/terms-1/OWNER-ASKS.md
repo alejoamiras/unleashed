@@ -5,232 +5,182 @@ The documents are drafts, not legal advice. A lawyer should read them before lau
 Each entry: the question, the options, a recommendation, and what ships while it is open. The owner
 reads down to each entry's **Detail** heading; what follows it is for the orchestrator.
 
-## Facts only you can give (they fill the blanks in both documents)
+## Answered
 
-### A1. Who runs the app: you personally, or a company?
-- Options: me, by name · a company
-- Recommendation: a company, because it keeps your own money apart from claims against the app.
-- Ships now: the drafts keep a blank; the documents PR does not merge.
+Decision page 1 (P1-01 to P1-17) and decision page 4 (P4-01 to P4-03) answered A1–A14, C1–C4 and C6–C8;
+the answers are in the published documents (#28) and in `plan.md`. C4 is P1-14 Option B, "Sign a message
+with their wallet", with the note "We will need UX / UI decision page on how it looks." C6 is P1-15
+Option A, C7 is P1-16 Option A. C5 (the screen's layout) was never asked; G1 asks it.
 
-**Detail.** The operator is the contracting party in the Terms and the "controller" in the Privacy Policy.
-An individual operator is personally liable for anything the caps do not hold back.
+## Open: the signed agree screen
 
-### A2. What name and postal address should the documents show?
-- Options: (your answer)
-- Recommendation: the company's registered name and address.
-- Ships now: a blank; no merge.
+You chose that a person signs a message with their wallet before using the mainnet app (P1-14), that any
+change to either document asks again (P1-15), and that the screen goes live now, behind the login wall
+(P1-16). Nothing is built until you sign G1–G4. G5–G7 have a "ships now" answer and do not hold it.
 
-**Detail.** GDPR Art. 13(1)(a) needs the controller's identity and contact details when it applies.
+How it works: the first time someone opens the mainnet app, they see one page. They press "Sign with your
+wallet". Their wallet may first ask to connect to the site, then shows a short message. Signing is free and
+moves nothing. The app checks the signature and keeps it in that browser, so the next visit opens straight
+to the app. When either document changes, the page comes back once and asks again.
 
-### A3. Which email should people use about the terms and their data?
-- Options: a new address just for this · an address you already use
-- Recommendation: a new address just for this, so legal mail does not mix with other mail.
-- Ships now: a blank; no merge.
+The pictures are mocks of the screen in the app's light theme, at 1280 px (a laptop) and 390 px (a phone),
+in `implementations-plan/terms-1/design/` (not committed): `gate-<state>-<width>.png`.
 
-### A4. Which country's law should govern the terms?
-- Options: (your answer)
-- Recommendation: the country where the operator is based, because its courts apply it most predictably.
-- Ships now: a blank; no merge.
+### G1. Do you approve the agree screen?
 
-**Detail.** A consumer in the EU or the UK keeps the protections of their home law whatever the choice
-(Rome I Art. 6). The choice of law does not decide whether the GDPR applies: A12 does.
+- Options: approve as shown · approve with edits to the words · the same words in a box over the dimmed
+  holding page instead of a full page
+- Recommendation: approve as shown. A full page leaves nothing behind it to press by mistake, and it reads
+  well on a phone. Line 2 matches the Terms, which say you cannot reverse, cancel or speed up a transaction.
+- Ships now: nothing; the screen is not built.
+- Pictures: `gate-ask-1280.png`, `gate-ask-390.png` (first visit); `gate-reask-1280.png`,
+  `gate-reask-390.png` (after a change).
 
-### A5. Where should a dispute be settled?
-- Options: the courts of a city you name · private arbitration, one person at a time
-- Recommendation: private arbitration, one person at a time, where your chosen law allows it; otherwise
-  your home courts.
-- Ships now: a blank; no merge.
+First visit, top to bottom:
 
-**Detail.** Individual arbitration with a class-action and jury waiver is the most protective form in the
-US. EU consumer law often refuses pre-dispute arbitration for consumers (Directive 93/13/EEC, annex 1(q)).
-Name the rules and the seat (for example JAMS or ICC, and a city).
+1. Heading: "Before you use Unleashed"
+2. "Unleashed is experimental software. Its operator never takes custody of your funds or keys, and cannot
+   reverse a transaction you send."
+3. "To continue, sign a message with your Ethereum wallet. It says you agree to the Terms of Use and have
+   read the Privacy Policy. Signing is free and sends no transaction."
+4. Two links, each opening the document on unleashed.systems in a new tab: "Terms of Use" and "Privacy
+   Policy", each followed by "updated 29 October 2026" (the document's own date).
+5. Button: "Sign with your wallet"
+6. Under the button, small: "Your wallet may ask you to connect to this site first."
 
-### A6. What is the youngest age allowed to use the app?
-- Options: 18 · 21
-- Recommendation: 18, the usual age to sign a contract.
-- Ships now: a blank; no merge.
+After a change to either document, the same page with a new heading and paragraph, and without line 2:
 
-### A7. Which places should the terms forbid using the app from?
-- Options: only countries under sanctions · sanctioned countries plus a list you name
-- Recommendation: sanctioned countries plus any your lawyer names. The terms forbid it; the app does not
-  block anyone.
-- Ships now: the drafts name sanctioned countries and persons and leave a blank for the rest.
+1. Heading: "The Terms or the Privacy Policy changed"
+2. "One or both have a new version. Read them, then sign to keep using Unleashed."
+3. Lines 4 to 6 as above, with the new dates.
 
-**Detail.** Blocking by location would be a product change and is out of scope. The clause is a user
-promise (no sanctioned person, no sanctioned place), which is the usual pattern for open-source front ends.
+### G2. Do you approve the message the wallet shows?
 
-### A8. What is the most the operator should ever owe one user?
-- Options: USD 100 · nothing beyond what the law requires · another amount
-- Recommendation: USD 100, and let your lawyer confirm it. In some places a court is more likely to
-  accept a small fixed sum than zero.
-- Ships now: a blank; no merge.
-
-**Detail.** Users pay the operator nothing, so the common "fees paid in the last 12 months" cap would be
-zero. Courts are more likely to strike a zero cap as unconscionable.
-
-### A9. Which Cloudflare features are on for the app's two addresses, and what do they show you about visitors?
-- Options: only Cloudflare's defaults · a list (logs, analytics, bot or security checks, anything that
-  sets cookies or adds scripts) with who sees them and how long they are kept
-- Recommendation: keep only the defaults, and tell us what the dashboard shows you about visitors.
-- Ships now: a blank in the hosting section; no merge.
-
-**Detail.** The repo's Worker configs turn on no logging (`apps/tools/wrangler.mainnet.jsonc` has no
-`observability` key), but zone and account settings live in the dashboard, where the repo cannot see them. "Defaults" alone does
-not tell us what the operator can see or how long Cloudflare keeps it. Features to check: Workers Logs,
-Logpush, Web Analytics (and its auto-inject), Bot Fight Mode (`__cf_bm` cookie), JavaScript detections
-(`/cdn-cgi/challenge-platform/`, which the app's `script-src 'self'` allows), Zaraz, and the sampled
-request data the default dashboards show. The policy then says "the app sets no cookies; our host may
-set security cookies" and names what applies.
-
-### A10. Will the Cloudflare login wall still be in front of the app when mainnet opens to everyone?
-- Options: no, it comes down at launch · yes, it stays
-- Recommendation: it comes down at launch.
-- Ships now: the policy says that while the wall is up, Cloudflare checks each visitor's login and sets
-  its own login cookie. That sentence leaves only in the update that follows the wall coming down.
-
-**Detail.** Cloudflare Access sets a `CF_Authorization` cookie on the protected host. An answer that the
-wall *will* come down does not make the policy true while it is still up.
-
-### A11. When should the documents take effect?
-- Options: the day they go live · a date you name
-- Recommendation: the day they go live.
-- Ships now: a blank; no merge.
-
-### A12. Where is the operator based, and is the app meant for people in the EU or the UK?
-- Options: based in the EU or UK · based elsewhere, open to EU and UK users · based elsewhere, EU and UK
-  users barred
-- Recommendation: answer this with your lawyer. If the GDPR applies, the policy gains its required
-  sections.
-- Ships now: the drafts include those sections, marked to remove if they do not apply.
-
-**Detail.** GDPR Art. 3: establishment in the EU, or offering services to people in the EU (EDPB
-Guidelines 3/2018). The UK GDPR follows the same test. Where it applies, the policy must give purposes and
-legal bases, retention, transfers abroad and the right to complain to a supervisory authority (Art. 13).
-
-### A13. Who holds the keys that can pause the bridge?
-- Options: the operator alone · a group that must agree (a multisig) · someone else
-- Recommendation: a group that must agree, because then one lost or stolen key cannot pause the bridge
-  alone.
-- Ships now: the terms describe each pause power with a blank for who holds it.
-
-**Detail.** Three roles exist in the contracts: the factory owner can pause L1 deposits and withdrawals
-(`PortalFactory.sol:62`), the hub guardian can pause exits but never claims (`token_bridge_hub` `main.nr`),
-and the router owner can sweep tokens the router holds outside a transaction (`DepositRouter.sol:191`).
-None can take escrowed funds. The C5 copy says "never takes custody", not "never holds", because the
-portals do hold deposited tokens in escrow.
-
-### A14. Are you or your company connected to the Nulo wallet, Aztec Labs or the Aztec Foundation?
-- Options: no · yes (say which and how)
-- Recommendation: (a fact, no recommendation) the terms must not call a related product independent.
-- Ships now: the terms say the wallets and networks are separate products, "even where related parties
-  publish them".
-
-**Detail.** The holding page links to the Nulo wallet, and the login wall admits Aztec Foundation and Labs
-identities. If the operator publishes Nulo, a clause saying the operator does not operate the wallets is
-false.
-
-## Choices
-
-### C1. Do you approve the text of the Terms of Use?
-- Options: approve · approve with edits · a lawyer reviews it first
-- Recommendation: a lawyer reviews it first, because the draft is not legal advice.
-- Ships now: the documents PR opens as a draft with the text and screenshots, and waits.
-
-**Detail: what each clause does for you, one line each.**
-1. Who may use it: keeps out minors and sanctioned users, so you are not serving them.
-2. What it is: says it is an experiment given as is, so nobody can claim you promised a product.
-3. No custody: says you never take custody of anyone's keys or funds. Whether a court treats you as a
-   custodian still depends on the facts.
-4. Pause powers: tells users who can pause deposits and exits (never claims), so a pause is disclosed
-   and not a broken promise (A13).
-5. The user's job: makes keys, backups, addresses and taxes the user's responsibility, not yours.
-6. Risks: the user accepts that bugs, network resets, pauses and total loss can happen.
-7. No advice, no misuse: you give no financial advice; illegal use is forbidden.
-8. Open-source license: the code license stays as it is; the terms cover only the website.
-9. No warranty and a liability cap: you promise nothing about the app working, owe nothing for indirect
-   loss and at most the A8 amount in total, except what the law never lets anyone exclude (such as
-   fraud or injury).
-10. Indemnity and release: the user pays your costs if their misuse gets you sued, and gives up claims
-    they do not yet know about, where the law allows.
-11. Changes: you may change or shut the app at any time; changed terms are asked again.
-12. Disputes: where and how a dispute is settled (A4, A5).
-13. Housekeeping: aims to keep the rest in force if one clause fails.
-
-### C2. Do you approve the text of the Privacy Policy?
-- Options: approve · approve with edits · a lawyer reviews it first
-- Recommendation: a lawyer reviews it first.
-- Ships now: the documents PR waits.
-
-**Detail: what each section says, one line each.**
-1. Who is responsible and how to reach them (A1–A3).
-2. In short: what the mainnet app does today; no accounts, no analytics, no cookies from the app, no
-   server of yours that gets user data. Your host may set security cookies (A9), and while the login
-   wall is up Cloudflare sets its own login cookie (A10).
-3. The browser: lists what the app keeps on the user's device, including what stays readable there, and
-   that clearing it can lose a claim.
-4. Hosting: Cloudflare sees each visitor's IP address, browser and page (A9).
-5. Wallets: the user's wallets make their own calls; that is the wallet maker's matter.
-6. Services the app calls: what the Aztec node, the chain-reading services, the token-list service and
-   the bridge-quote service each see; today the mainnet app calls none of them, and a test keeps the
-   named list true.
-7. Blockchains: what every send, claim and exit makes public forever.
-8. Backups: the file stays with the user; its contents are encrypted, its label is not; you never
-   receive it.
-9. Links: an explorer the user clicks sees the address or transaction in the link.
-10. No selling, no ads; privacy rights where they apply (A12); minimum age; changes; contact.
-
-### C3. Where should the two documents appear?
-- Options: (a) their own pages, linked under the three links on the "being upgraded" page · (b) their own
-  pages, not linked until the agree screen ships
-- Recommendation: (a), so your team can read them now behind the login wall.
-- Looks like: (a) the "being upgraded" page gains a second row in the same small type: "Terms of Use ·
-  Privacy Policy". Both pages: the document title, "Last updated …", numbered headings, body text at
-  most 760 px wide in the app's colours, and at the top "← Back · Terms of Use · Privacy Policy".
-  (b) the same pages, reached only by typing `/terms` or `/privacy`.
-- Ships now: the PR builds (b). (a) is added once you choose it.
-
-### C4. How should a person agree before using the mainnet app?
-- Options: tick a box and press Continue · sign a message with their Ethereum wallet
-- Recommendation: tick a box and press Continue. It works before any wallet is connected.
-- Either way you keep no proof that a given person agreed: the record stays in that person's browser.
-  Keeping proof would need a server that stores personal data, which is a separate decision.
-- Ships now: nothing; the agree screen is not started.
-
-**Detail.** Clickwrap with an unticked box, conspicuous links and an active click is the form US courts
-enforce most often (*Meyer v. Uber*, 2d Cir. 2017; *Berman v. Freedom Financial*, 9th Cir. 2022). A
-signature stored only in the browser proves nothing to the operator. Neither option leaves the operator
-any proof that a given person agreed: the record lives in that person's browser. Keeping proof needs a
-server that stores it: new storage and personal data, a separate decision outside this lane. A signature request on
-arrival also trains users to sign whatever a page asks, which phishing sites exploit.
-
-### C5. What should the agree screen look like?
-- Options: (a) a full page before the app · (b) a box over the dimmed app
-- Recommendation: (a), because nothing behind it can be clicked by mistake and it reads well on a phone.
-- Looks like (both use this copy, to be approved):
-  - Heading: "Before you use Unleashed"
-  - Body: "Unleashed is experimental software. Its operator never takes custody of your funds or keys,
-    and every transaction you send is final."
-  - Box, unticked: "I have read and agree to the Terms of Use, and I have read the Privacy Policy."
-    Both names are links that open the document in a new tab.
-  - Button "Continue", disabled until the box is ticked.
-  - (a) fills the page in the app's colours, centred, at most 560 px wide. (b) is the same content in the
-    app's dialog box, with no close button, over the page dimmed behind it.
+- Options: approve as shown · approve with edits to the words
+- Recommendation: approve as shown.
 - Ships now: nothing.
+- Pictures: `gate-wallet-1280.png` (a wallet window over the screen), `gate-wallet-390.png` (a phone
+  wallet's sheet). The wallet is drawn plain on purpose: each wallet has its own look. The app asks the
+  wallet to show this exact text; most wallets also show the site asking and the account, and some shorten
+  the text or add their own warnings.
 
-### C6. When should people be asked to agree again?
-- Options: after any change to either document · only when you mark a change as important (this needs a
-  change to the plan)
-- Recommendation: after any change. It happens by itself, so nobody can forget to ask.
+The text, exactly (the dates, versions, site and account fill in):
+
+```
+Unleashed: accept the Terms of Use
+
+I agree to the Unleashed Terms of Use, and I have read the Privacy Policy.
+
+Terms of Use, updated 29 October 2026
+https://unleashed.systems/terms
+Version 0x<64 characters>
+
+Privacy Policy, updated 29 October 2026
+https://unleashed.systems/privacy
+Version 0x<64 characters>
+
+Site: https://app.unleashed.systems
+Account: 0x<the account's address>
+
+Signing is free. It is not a transaction and moves no funds.
+```
+
+**Detail.** Each "Version" is a fingerprint (SHA-256) of that document's exact text: one changed letter
+changes it, and anyone can recompute it from the published repository, so the signature names the exact
+words agreed to. "Site" is the address the page says it is; the wallet itself shows the address that
+really asks, so a copy of the site that asks for this exact text is visible as a copy in the wallet. The
+text is plain ASCII, so wallets that show only plain characters can show it. The alternative, a structured
+"typed data" request, was rejected: wallets do not check its site field either, and it is the kind of
+request wallet-draining sites use, which this screen should not make routine. Full reasoning:
+`plan.md` § Arc a2 design.
+
+### G3. Do you approve this edit to the Privacy Policy?
+
+- Options: approve · approve with edits
+- Recommendation: approve. Today the policy says the holding page stores nothing in the browser; once the
+  screen is live it stores the signature, so the policy must say so.
+- Ships now: nothing. The screen waits for this edit: without it, the policy would be false the day the
+  screen goes live.
+- The edit publishes on unleashed.systems/privacy when it merges, with that day's date.
+
+"What stays in your browser", first paragraph. Now: "The unleashed.systems website stores nothing in your
+browser, and neither does the app's holding page. Once the app offers the gas flow, it may store these items
+in your browser's local storage, on your device only:" New: "The unleashed.systems website stores nothing in
+your browser. The app keeps what it needs in your browser's local storage, on your device only. Today its
+holding page keeps one item, your acceptance of these documents. Once the app offers the gas flow, it may
+keep all of these:"
+
+Same section, last list item. Now: "Your acceptance of these documents, once the app asks for it." New:
+"Your acceptance of these documents: the Ethereum address that signed it, the signature, and the versions
+you accepted."
+
+"Your wallets", a new second sentence: "Before you use the app, it asks your Ethereum wallet for your
+address and for a signature on its acceptance message."
+
+### G4. Do you approve what people see when signing does not work?
+
+- Options: approve as shown · approve with edits to the words · let smart-contract accounts in too (a plan
+  change: see Detail)
+- Recommendation: approve as shown.
 - Ships now: nothing.
+- Pictures: `gate-refused-*.png`, `gate-busy-*.png`, `gate-nowallet-*.png`, `gate-failed-*.png`; the
+  waiting line shows behind the wallet in `gate-wallet-*.png`.
 
-### C7. Should the agree screen go live now, in front of the "being upgraded" page?
-- Options: now · only when mainnet opens to the public
-- Recommendation: now. Only your team sees it behind the login wall, and it is tested and ready on
-  launch day.
-- Ships now: nothing. If you pick "later", the finished gate waits as an unmerged draft until mainnet
-  opens.
+Each line appears under the button, which stays on the page so the person can try again:
 
-### C8. Should the landing site (unleashed.systems) link to the two documents?
-- Options: not until mainnet opens · now, in its footer
-- Recommendation: not until mainnet opens. The landing links only to testnet today.
-- Ships now: no landing change.
+1. While the wallet is open, the button reads "Waiting for your wallet…" and cannot be pressed, and the line
+   says: "Check your wallet and read the message, then sign or cancel. If no window opened, open your wallet
+   from the browser's toolbar."
+2. The person pressed Cancel in the wallet: "You did not sign. Unleashed stays closed until you accept the
+   Terms. You can sign whenever you are ready."
+3. The wallet already holds an earlier request from this page (a reload does not clear it): "Your wallet
+   already has a request from this page waiting. Open your wallet, sign or cancel it, then try again."
+4. No Ethereum wallet in the browser: "No Ethereum wallet found in this browser. Install one, such as Rabby
+   or MetaMask, then reload this page."
+5. Anything else went wrong: "Your wallet could not sign this message, or sent back a signature this page
+   cannot check. Try again, or use another account. Some smart-contract accounts cannot sign here yet."
+
+**Detail.** Some smart-contract accounts (a Safe, for example) sign in a way (ERC-1271) that can only be
+checked by asking the blockchain. Accounts that sign with their own key pass, including upgraded ones
+(EIP-7702). The mainnet app has no connection to read the chain. Letting the others in is a plan change:
+either a chain connection for the mainnet app, which the Privacy Policy would have to name, or accepting
+signatures nobody checked.
+
+### G5. Should you keep a copy of each signature?
+
+- Options: no, it stays in the person's browser · yes, on a server you run
+- Recommendation: no, for now.
+- Ships now: no copy; the signature stays in the person's browser.
+
+**Detail.** Like the tick-box, a signature kept only in the browser gives you nothing to show later: you
+never receive it. It does prove, to anyone who has that browser's record, which account agreed to which
+exact text. Keeping a copy needs a server that stores wallet addresses next to IP addresses, which is
+personal data, and the Privacy Policy, which says no server of yours receives data, would change. That is a
+separate plan.
+
+### G6. One acceptance per browser, not per account: is that right for now?
+
+- Options: per browser, as described · ask again when a different account connects (decided in the plan
+  that opens the gas flow)
+- Recommendation: per browser now; decide the second option when the gas flow opens.
+- Ships now: one signature per browser and per site address (app.unleashed.systems and the second address
+  that serves the same app each ask once).
+
+**Detail.** The holding page connects no wallet after the signature, so the app cannot yet tell which
+account a person later uses. Someone who signed with one account and later deposits from another would not
+be asked again. Checking that belongs in the gas flow, which will connect the wallet anyway.
+
+### G7. Can a person sign a version they cannot read yet? Is that acceptable for now?
+
+- Options: accept it for now · show the documents inside the app as well (a plan change)
+- Recommendation: accept it for now. Only your team sees the screen until mainnet opens.
+- Ships now: the limit, plus a release step: after each merge, check that unleashed.systems and the app
+  both serve the merged version.
+
+**Detail.** People read the documents on unleashed.systems, but they sign the versions built into the app.
+The two sites deploy separately from the same change, in either order. Between the two deploys, or longer
+if one deploy fails, the app can ask for a signature on a version the site does not show yet. A tab
+opened before a change keeps asking for the older version until it is reloaded, even after both sites
+have the new one. The message
+names each document's date, but two edits on one day share a date. Showing the text inside the app would
+close the gap, but it adds a second copy of the pages and new screens.

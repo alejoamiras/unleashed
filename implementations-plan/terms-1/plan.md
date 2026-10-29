@@ -7,8 +7,8 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: draft, awaiting approval (final Codex verdict: approve)
-base: main @ fb90e36
+status: a1 merged (#28); a2 re-planned for a wallet signature (light; final Codex verdict: approve), awaiting the owner's sign-off of OWNER-ASKS G1–G4
+base: main @ fb90e36 (a1); main @ e1d1c4c (a2 re-plan)
 budget: "recon: 2 Sonnet explorers; code-review: off; Codex gpt-6.1-sol at high for audits and fix loops, at max for the drafting rounds"
 ---
 
@@ -35,10 +35,13 @@ deploys `main` to both mainnet hosts.
   2. A user can read both documents before agreeing, on a phone, in short plain sentences. Capitals appear
      only where a disclaimer must stand out.
   3. Every CI build proves that the testnet and local builds ship neither document nor the gate (P2).
-  4. The gate fails closed: storage that cannot be read shows the gate. An acceptance holds for the rest
-     of the session even when storage cannot be written.
-- **Good enough.** The record stays in the browser: the operator holds no proof of acceptance (I3).
-  English only. No "what changed" view between versions.
+  4. The gate fails closed: storage that cannot be read, or a record whose signature does not check out
+     over the current text, shows the gate. An acceptance holds for the rest of the session even when
+     storage cannot be written.
+  5. (a2) The wallet shows the user readable text that names the documents, their versions, the site and
+     the account, and says it moves no funds. No wallet prompt opens until the user presses the button.
+- **Good enough.** The record stays in the browser: the operator holds no proof of acceptance (I3, G5).
+  English only. No "what changed" view between versions. An ERC-1271-only account cannot accept (G4).
 
 ## Assumptions
 
@@ -76,6 +79,24 @@ deploys `main` to both mainnet hosts.
 - F11. `viem` exports a synchronous `sha256` and is a dependency of `apps/tools`. `new URL("data:")` and
   `new URL("blob:")` parse, with origin `"null"`.
 - F12. The landing links only to testnet and says "Mainnet is not open yet" (`apps/landing/src/content.ts`).
+  (Superseded by a1: the landing's footer links both documents.)
+
+**Facts for the a2 re-plan** (verified on `e1d1c4c`; detail in `recon.md` § a2)
+
+- F13. The approved Terms already describe this method: "you sign its acceptance message with your
+  Ethereum wallet, and the message names the version you accept" (`packages/legal/src/terms.ts:17`).
+- F14. The approved Privacy Policy says the holding page stores nothing in the browser
+  (`privacy.ts:39`). A gate in front of it makes that false, so a2 must edit the policy (G3).
+- F15. The only `window.ethereum` accessors are private, in composables (`useL1Wallet.ts:23-26`).
+  `isUserRejection` (`src/lib/wallet-errors.ts:13-24`) is reusable; its one import imports nothing.
+- F16. viem 2.57.1's `verifyMessage` checks an EIP-191 signature locally (ECDSA recovery, no client) and
+  returns a Promise. Run here, awaited: true on the signed text, false on a changed text, and a rejection
+  on a malformed signature. An unawaited result is a truthy Promise.
+- F17. EIP-191 `personal_sign` carries no chain id, so signing needs no network switch. An injected
+  wallet's calls are not page fetches, so the mainnet CSP (`connect-src 'self' data: blob:`) is unchanged.
+- F18. The browser fixture's `personal_sign` returns a real, recoverable signature and supports
+  `rejectNext` (4001) (`tests/browser/fixtures/l1-wallet.ts:267,328-336`).
+- F19. Every change to `packages/legal` publishes on the landing when it merges (a1, D11).
 
 **Inferences** (unverified)
 
@@ -94,55 +115,32 @@ deploys `main` to both mainnet hosts.
   2015 s. 62), and an EU court may not rewrite an unfair term (C-618/10). So the Terms list the
   carve-outs explicitly; no summary to the owner promises enforceability.
 
-**Asks.** All in `OWNER-ASKS.md` (A1–A14 facts, C1–C8 choices); the plan never assumes a visible answer.
-Facts stay `[[OWNER: An]]` placeholders. a1 is marked ready after A1–A14, C1, C2, C3 and C8; a2
-starts after C4–C7.
+- I5. (a2) Wallets display a `personal_sign` message as text, and some hardware wallets do so only for
+  printable ASCII, which is why the message is ASCII-only. A wallet may also shorten it or add warnings, so
+  the copy promises only what the app asks the wallet to show. Confidence: moderate; no named wallet was
+  tested.
+- I6. (a2) An ERC-1271 signature cannot be checked by ECDSA recovery; checking it needs a chain call, and
+  the mainnet build has no read path (F1). An account that signs with its own key, an EIP-7702 delegated
+  one included, recovers and passes. Confidence: high for the mechanism; how many mainnet users hold an
+  ERC-1271-only account is unknown.
+
+**Asks.** A1–A14 and C1–C8 are answered (`OWNER-ASKS.md`, decision pages 1 and 4); C5 (the layout) never
+was, so G1 carries it. a2 is built only after the owner signs G1–G4 on a page; G5–G7 have a "ships now"
+form and do not block it.
 
 ## Architecture & Implementation
 
-One new directory, `apps/tools/src/legal/`. `App.vue` is the only shell file it edits; nothing under
-`src/composables/` changes (sdk-1 rewrites it).
+**a1, as built** (D11; the file map is under the ledger's "Deviations in a1"). `packages/legal` holds the
+documents as closed typed data (`document.ts`, `terms.ts`, `privacy.ts`) and their public URLs (`site.ts`).
+The landing renders static `/terms` and `/privacy` through `esc()`. In `apps/tools`, `App.vue`'s literal
+define test lazily imports `MainnetPlaceholderView`, which links to the landing's pages; nothing under
+`src/composables/` changed (sdk-1 rewrites it). The original file map (an in-app `LegalPage`, a path
+router in `MainnetRoot`) and the drafting outlines for P3 and P4 were superseded by D11 and by the merged
+text; both are in git history.
 
-```
-App.vue ──(mainnet build only: dynamic import)──▶ legal/MainnetRoot.vue
-   └─ every other target: AppShell (unchanged)      ├─ /terms   → LegalPage(TERMS)
-                                                     ├─ /privacy → LegalPage(PRIVACY)
-                                                     └─ else     → [a2: AcceptanceGate until accepted] → MainnetPlaceholderView
-```
-
-```ts
-// legal/document.ts (internal)
-export type Block =
-	| { kind: "p"; text: string }
-	| { kind: "list"; items: readonly string[] }
-	| { kind: "providers"; rows: readonly ProviderRow[] }
-export interface ProviderRow { name: string; origin: string | null; role: string; sees: string; policyUrl: string }
-export interface LegalDocument {
-	id: "unleashed-terms-of-use" | "unleashed-privacy-policy" // rendered as data-legal-doc; the P2 marker
-	title: string
-	updated: string
-	sections: readonly { heading: string; blocks: readonly Block[] }[]
-}
-```
-
-| File | Change |
-|---|---|
-| `src/legal/document.ts` | new: the types |
-| `src/legal/terms.ts`, `privacy.ts` | new: the documents as typed data |
-| `src/legal/LegalPage.vue` | new: text interpolation only, never `v-html`. Title, update date, an `h2` per section, paragraphs, lists, a providers table (policy links `target="_blank" rel="noopener noreferrer"`), plain `<a href>` links to the other document and to `/`. Styles reuse the placeholder's `--ul-*` tokens |
-| `src/legal/MainnetRoot.vue` | new: reads `location.pathname` once (lower-case, one trailing slash stripped, as `useShell.sectionAt`) and picks the page. It imports `MainnetPlaceholderView`, so testnet stops shipping the placeholder |
-| `src/legal/testids.ts` | new: `LEGAL_TESTIDS`. Not in the global `TESTIDS`, whose unused keys ship to testnet (F3) |
-| `src/App.vue` | edit: `const MAINNET_BUILD = import.meta.env.VITE_TOOLS_TARGET === "mainnet"`; `const MainnetRoot = MAINNET_BUILD ? defineAsyncComponent(() => import("./legal/MainnetRoot.vue")) : null`; render it when set, else `AppShell`. One comment: the test must stay a local literal (F3, F4) |
-| `src/lib/network-targets.ts` | edit: one comment on `MAINNET_TARGET`: every origin it reaches is a provider `src/legal/privacy.ts` names, pinned by its test |
-| `.claude/skills/bridge-generation/SKILL.md` | edit: one promotion step: a mainnet promotion re-traces the Privacy Policy in the same PR |
-| `scripts/legal-dist.ts` + `.test.ts` | new: pure `legalDistProblems(key, files: ReadonlyMap<string, string>): string[]` |
-| `scripts/verify-build-target.ts` | edit: read the dist's `.js/.html/.css` files and append `legalDistProblems` |
-| `src/legal/acceptance.ts` (a2) | new: digests, `isAccepted(getStorage)`, `recordAcceptance(getStorage)` |
-| `src/legal/AcceptanceGate.vue` (a2) | new: the C5 pick |
-
-**Dist rule.** A mainnet dist contains both document ids (from a2, also the gate's testid). A testnet or
-local dist contains none of them and no file name starting `MainnetRoot`. One problem line per broken
-expectation, naming the matching file.
+**Dist rule.** A mainnet dist carries both document URLs (from a2, also both document ids). A testnet or
+local dist carries no URL, no document id, and no `MainnetPlaceholderView` chunk (from a2, no `MainnetRoot`
+chunk either). One problem line per broken expectation, naming the matching file.
 
 **Provider pin (P4): an allowlist consistency check.** Origins of every `https:`/`wss:` source in
 `MAINNET_TARGET.cspConnectSrc`, plus those of `nodeUrl`, `readRpcUrls`, `acrossApiUrl` and
@@ -150,72 +148,100 @@ expectation, naming the matching file.
 today. The hosting row is always present. The pin cannot see request contents or wallet-routed calls
 (F8); the code trace covers those.
 
-**Version and record (a2).** `version(doc) = sha256(stringToBytes(JSON.stringify(doc)))` (viem), computed
-at module load. `localStorage["unleashed:legal-acceptance"] = {"v":1,"terms":"0x…","privacy":"0x…"}`.
-`isAccepted` is true only when reading the storage, parsing and the shape all succeed and both digests
-match. `getStorage` is `() => window.localStorage`, so a throwing getter counts as "not accepted".
-`recordAcceptance` ignores a failed write; `MainnetRoot` holds the acceptance in a `ref` for the session.
-Any edit re-asks (C6). Each mainnet host is its own origin, so a user accepts once per host. No test can
-force a fresh "Last updated" date (a pin of date and digest passes when only the digest is updated), so
-every text edit updates `updated` and the fix loop checks it.
+**Version (a1, kept by a2).** `version(doc) = sha256(stringToBytes(JSON.stringify(doc)))` (viem), computed
+at module load. Any edit re-asks (P1-15). No test can force a fresh "Last updated" date (a pin of date
+and digest passes when only the digest is updated), so every text edit updates `updated` and the fix
+loop checks it. The record and the gate: § Arc a2 design.
 
-**Trade-offs:** ledger D1–D10.
+**Trade-offs:** ledger D1–D17.
 
-## Document outlines (the drafting brief for P3 and P4)
+## Arc a2 design: wallet-signed acceptance (re-plan)
 
-**Terms of Use.**
+Owner decisions this arc builds on (the visible budget): **P1-14 Option B**: "Sign a message with their
+wallet." (note: a decision page showing how it looks before it is built). **P1-15 Option A**: "After any
+change to either document." **P1-16 Option A**: "Now, behind the login wall." The layout, every string and
+the signed text are G1–G4, unsigned until the owner signs that page.
 
-1. Acceptance and eligibility: minimum age (A6), legal capacity, no sanctioned person or place, other
-   barred places (A7).
-2. What the app is: experimental open-source proof-of-concept software, as is; an interface to contracts
-   on Ethereum and Aztec. Wallets, LI.FI, Across and the networks are separate products, even where
-   related parties publish them (A14).
-3. No custody: the operator never takes custody of keys, funds or claim secrets. The user signs every
-   transaction in the user's own wallets. Transactions are recorded on public networks, what is visible
-   depends on the kind of transaction (private Aztec sends hide more), and they are final.
-4. Pause and owner powers (F9, holders A13): what each pause covers, that claims are never paused, the
-   router sweep of stray balances, and that no role can move escrowed funds. No liability for a pause.
-   P3 traces each power in the contracts and states only what the trace shows.
-5. The user's responsibility: keys, wallets, backups, browser storage (a cleared journal can make a
-   claim unrecoverable), addresses, amounts, fees and taxes.
-6. Risks the user accepts: contract bugs (audited or not), resets, pauses, delays, third-party failure, a
-   lost claim secret, regulatory change, total loss.
-7. No advice, no fiduciary duty. Prohibited uses: unlawful use, sanctions evasion, attacks on the app.
-8. Apache-2.0 governs the code; these terms govern the hosted interface and restrict no license right.
-9. Disclaimer of warranties, in capitals. Limitation of liability: no indirect or consequential loss; a
-   total cap (A8). Explicit carve-outs: death or personal injury by negligence, fraud, gross negligence
-   or wilful misconduct where the law forbids excluding it, and statutory rights that cannot be waived.
-10. Indemnity by the user. A release, with a California Civil Code § 1542 waiver where it applies.
-11. Changes: the operator may change, suspend or end the app at any time. A changed document is asked
-    again before further use.
-12. Governing law, venue and disputes (A4, A5); if arbitration: individual claims, no class, no jury.
-13. Severability, entire agreement, no waiver, assignment, contact (A3).
+**What is signed: EIP-191 plain text (`personal_sign`)**, ASCII only, from one pure function
+`acceptanceMessage(origin, account)`; the dates, URLs and digests come from `@unleashed/legal`:
 
-**Privacy Policy.**
+```
+Unleashed: accept the Terms of Use
 
-1. Who is responsible and how to reach them (A1–A3).
-2. In short: what the mainnet app does today. No accounts, no analytics, no cookies from the app, no
-   server of ours that receives your data; our host may set security cookies (A9), and while the login
-   wall stands Cloudflare checks the login and sets its own cookie (A10).
-3. Your browser: each item the app writes, in plain words, including what stays readable (F6), that
-   invalid records are set aside and kept, and that completed records go after 7 days; the libraries
-   the app uses may cache public data such as proving parameters (F5). Nothing is sent to the operator.
-   Clearing it can lose a claim.
-4. Hosting: Cloudflare sees each visitor's IP address, browser, page and time; what the operator sees and
-   for how long (A9).
-5. Your wallets make their own calls, their RPC included; that is the wallet maker's matter.
-6. Services the app calls, by kind, traced to code: the Aztec node (IP, tx and message hashes, nullifier
-   witnesses), read RPCs (IP, L1 address, source tx hash), the token-list CDN (ordinary request data: IP,
-   browser headers, the page origin, the time; no address or transaction), Across (amount, recipient,
-   chain ids, message). Then the pinned table of named providers (empty today), and "each
-   provider is named here before bridging opens".
-7. Public chains: what a send, a claim and an exit publish, permanently; what a private send keeps off
-   the chain. A private send is not anonymity.
-8. Backups: a file the user keeps; the record is encrypted, the header is not (F7).
-9. Links: the site a link opens sees the address or transaction in it.
-10. No sale, no ads, no profiling. Legal bases (legitimate interests for hosting), retention, transfers
-    abroad, rights and the right to complain to a supervisory authority, kept unless A12 shows the GDPR
-    and UK GDPR cannot apply. Minimum age. Changes and re-acceptance. Contact.
+I agree to the Unleashed Terms of Use, and I have read the Privacy Policy.
+
+Terms of Use, updated 29 October 2026
+https://unleashed.systems/terms
+Version 0xa7898348…c9811331            (the full 32-byte digest)
+
+Privacy Policy, updated 29 October 2026
+https://unleashed.systems/privacy
+Version 0x27f0fb8a…e1be7354
+
+Site: https://app.unleashed.systems     (location.origin)
+Account: 0x…                             (checksummed)
+
+Signing is free. It is not a transaction and moves no funds.
+```
+
+Why text and not EIP-712 (ledger D12): an EIP-712 domain has no field the wallet checks against the
+requesting origin, so "a domain bound to the origin" is a string the wallet shows and never verifies, as
+in text; the wallet shows the requesting origin itself either way. Its `chainId` is optional, but with one
+MetaMask refuses unless the wallet is on that chain, and without one the domain is a name and a version
+that add nothing to text. Nothing ever parses the record (no contract, no server): the verifier rebuilds
+the exact text, so structure buys nothing. Typed-data requests are the form Permit and Permit2 drainers
+use, and a gate would make that prompt routine for every visitor; a text message authorizes no token
+transfer in any contract we know of. The repository's precedent is text (`recoveryKeyMessage`). Not
+EIP-4361 either: conforming wallets check its origin, but they title it a sign-in, which misnames assent,
+and its nonce exists for a relying party to check, which this app does not have. The first line must never
+match EIP-4361's opening (`<domain> wants you to sign in with your Ethereum account:`).
+What the wallet does with the text varies (I5): the app asks it to show this exact text, nothing more.
+
+**Where it is kept.** `localStorage["unleashed:legal-acceptance"] =
+{"v":1,"account":"0x…","signature":"0x…","terms":"0x…","privacy":"0x…"}`, on the device only (G5). Each
+mainnet host is its own origin, so a user signs once per host.
+
+**What a later visit checks** (`async readAcceptance(getStorage, origin)`; no wallet, no prompt; the root
+stays in `checking` until it settles):
+
+1. Reading, parsing and the shape succeed: the parsed value is a plain object (not null, not an array),
+   `v === 1`, `account` matches `^0x[0-9a-fA-F]{40}$`, `signature` `^0x[0-9a-fA-F]{130}$`, each digest
+   `^0x[0-9a-f]{64}$`. Else `none`. `getStorage` is `() => window.localStorage`, so a throwing getter is
+   `none`. The same check runs on a record before it is stored.
+2. Both digests equal the current ones; else `changed`. This step proves no earlier acceptance (a junk
+   record with old digests reads `changed`), so the re-ask copy claims none.
+3. `(await verifyMessage({ address: account, message: acceptanceMessage(origin, account), signature }))
+   === true`, inside `try`/`catch` (a rejection counts as false); else `none`. The text is rebuilt from the
+   current documents and this page's origin, so a record for another site or version, or with any field
+   edited, fails.
+
+**Signing** (`signAcceptance(provider, origin)`, only on the button): `eth_requestAccounts`, the first
+account through `getAddress`, the text, `personal_sign` with `[stringToHex(text), account]`, then
+the awaited `verifyMessage` on the result before anything is stored. That check refuses a wallet that
+signed with another account or returned a signature recovery cannot check, an ERC-1271 one included (I6,
+G4). `recordAcceptance` ignores a failed write; `MainnetRoot` holds `accepted` for the session.
+
+**States** (strings G1, G4): `checking` renders nothing (milliseconds), then `ask`, or `reask` when step 2
+said `changed`. A press moves to `pending` (button disabled and `aria-busy`), then `accepted` (the
+placeholder), `refused` (`isUserRejection`), `busy` (EIP-1193 `-32002`: the wallet already holds a request
+from this site, which a reload does not clear), `no-wallet` (no `window.ethereum` at press time) or
+`failed` (anything else). Each of the last four keeps the button, and a press retries. `pending` has
+no timer: its line tells the user to answer or cancel in the wallet, which ends it as `accepted` or
+`refused`. Another tab learns of an acceptance on its next load.
+
+**Version change (P1-15 A).** Any edit to either document changes its digest. The next load reads `changed`
+and shows the re-ask screen; a new signature replaces the record. A refusal leaves the old record and the gate.
+
+| File | Change |
+|---|---|
+| `apps/tools/src/legal/acceptance.ts` | new: `DIGESTS`, `acceptanceMessage`, `readAcceptance`, `signAcceptance`, `recordAcceptance`, `injectedProvider()` (the one `window.ethereum` read) |
+| `apps/tools/src/legal/AcceptanceGate.vue` | new: G1's screen and its states; emits `accepted` |
+| `apps/tools/src/legal/MainnetRoot.vue` | new: `readAcceptance` once on mount; the gate until accepted, then `MainnetPlaceholderView` |
+| `apps/tools/src/App.vue` | edit: the literal define test gates `import("./legal/MainnetRoot.vue")` instead of the placeholder |
+| `apps/tools/src/lib/testids.ts` | edit: the gate's testids (no legal text: D11's reason) |
+| `apps/tools/scripts/legal-dist.ts` + test | edit: a mainnet dist also carries both document ids (the gate imports the documents); other targets also refuse a `MainnetRoot` chunk |
+| `apps/tools/src/lib/network-targets.ts` | edit: the `MAINNET_TARGET` comment's "no wallet transport" becomes "no page fetch; the gate's two calls go to the injected wallet" |
+| `packages/legal/src/privacy.ts` | edit: G3's sentences and a new `updated` date (publishes on the landing, F19) |
 
 ## Security & Adversarial Considerations
 
@@ -226,132 +252,139 @@ every text edit updates `updated` and the fix loop checks it.
   guard, draft PRs until the owner approves).
 - **The gate is not access control.** The user owns the browser and can write the record by hand. The gate
   records assent; no code may treat it as a security check. It fails closed (a throwing storage getter or
-  read, a malformed record, an old digest) and holds two digests and no personal data.
+  read, a malformed record, an old digest). From a2 it holds an address, a signature and two digests,
+  which G3 declares (§ a2, the signed record).
 - **Unchanged:** the CSP, `frame-ancestors 'none'` on every path, and the dependency set (none added).
-- **Signature option.** A signature prompt on arrival teaches users to sign what a page asks, which
-  phishing exploits; without a server the operator never receives it (C4).
+
+**a2, the signed record.** The attacker classes: a script on another origin, a phishing clone of the app,
+anyone with write access to the user's browser storage (the user, an extension, code already running in
+this origin), a wallet that misbehaves. Paths:
+
+- **Replayed signature** (demonstrated by construction): someone copies another person's valid record into
+  this browser's storage for the same origin; step 3 passes and the gate opens on an assent that names the
+  other account. It needs write access to this origin's storage, which only the user or code already
+  running here has; no funds move and no boundary is crossed. Known limit, as "the gate is not access
+  control": with a signature, forging a record is the same act as signing with any key.
+- **Cross-origin** (traced, corrected in audit): `Site` names the site the page claims to be, not where the
+  signing happened. An honest page on another origin (the other mainnet host, a dev server) builds a text
+  that fails step 3 here. A clone can ask for the exact text naming `app.unleashed.systems`, while the
+  wallet shows the clone's real origin; that signature verifies here, but only once someone with write
+  access to this origin's storage imports it, which is the replay path above. Storage is per origin, so no
+  other site reads or writes the record. Known limit.
+- **Old version** (traced): both digests are in the signed text; an old record reads `changed` and re-asks,
+  and a signature over one version can never verify as another.
+- **Storage tampering** (traced): an edited field fails the shape or step 3; a removed record re-asks; a
+  throwing storage reads `none`. The record holds an address and a signature, personal data the policy
+  must declare (G3); it never leaves the device.
+- **The signature reused elsewhere** (exploitability unknown, no known consumer): the EIP-191 prefix makes it
+  neither a transaction nor an EIP-712 message, and the text is not EIP-4361, so no sign-in verifier takes it.
+- **A wallet that signs with another account or returns junk** (traced): checked before storing; `failed`.
+- **The phishing habit** (C4's concern): the prompt opens only on a press, after the screen says what the
+  wallet will show, and the text says it moves no funds. Never on page load.
+- **Version skew** (plausible): the landing (where the user reads) and the app (whose digests the user
+  signs) deploy separately from one commit, in either order. Between the two deploys, and for as long as a
+  failed deploy or an open tab lasts, the user can sign a digest of a text the landing does not show; two
+  edits on one day share a date. A view of the bundled text in the app would close it, but it is a second
+  renderer (D11 L) and new visible UI. The owner decides (G7); ships now: the limit, with the release step
+  checking both Workers serve the merge commit. Known limit, filed at close-out.
+- **Injection:** the text holds only `location.origin` and a checksummed address; the screen renders by
+  interpolation. No new dependency; viem is already one.
 
 ## Phases
 
-UI impact lines quote the recorded owner decisions: none recorded yet. Every visible part waits for the
-named entry. Testnet: none, in every phase.
+UI impact lines quote the recorded owner decisions: a1's are decision pages 1 and 4 (P1-01 to P1-17,
+P4-01 to P4-03); a2's are P1-14 B, P1-15 A and P1-16 A, quoted in § Arc a2 design, and G1–G4 once signed.
+Every visible part waits for the named entry. Testnet: none, in every phase.
 
 ### Arc a1: the documents, rendered on mainnet only
 
-**P1 ✓: mainnet root and renderer.** UI impact: the pages are visible on mainnet; the PR waits for C3.
+Done and merged as #28; each phase's steps and gate are in git history and its log in `lessons/`.
 
-1. Add `document.ts`, `testids.ts`, `LegalPage.vue`, `MainnetRoot.vue`, and skeleton `terms.ts` and
-   `privacy.ts` (title, one section). Edit `App.vue`.
-2. Tests: `LegalPage.test.ts` renders each block kind, renders a `<script>` string as text, links the
-   other document. `MainnetRoot.test.ts`: `/terms`, `/privacy`, `/Terms/`, and `/` (the placeholder).
-   `legal-text.test.ts`: no hidden characters (control: the matcher catches U+202E). Move `App.test.ts`
-   to `vi.stubEnv` + `vi.resetModules`: mainnet renders the root and never loads the shell; testnet
-   never loads `MainnetRoot`.
+- **P1 ✓** the mainnet root and renderer (later moved to the landing, D11); hidden-character test.
+- **P2 ✓** the dist rule in `verify:build-target` (`lessons/phase-2.md`).
+- **P3 ✓** the Terms, three Codex rounds at `max` to no material objection (`lessons/phase-3.md`).
+- **P4 ✓** the Privacy Policy and the provider pin, three Codex rounds (`lessons/phase-4.md`).
+- **P5 ✓** the code fix loop, screenshots, draft PR; `e2e:tools` ran in CI only (`lessons/phase-5.md`).
+- **P6 ✓** the owner's answers (decision pages 1 and 4), the `[[OWNER` refusal, the re-trace, two code rounds
+  (`lessons/phase-6.md`).
 
-Gate: `bun run lint && bun run typecheck:all && bun run --cwd apps/tools test`, exit 0 (lint, typecheck, unit).
+### Arc a2: the signed acceptance gate (starts after the owner signs G1–G4)
 
-**P2 ✓: prove "mainnet only" in the dist.** UI impact: none. Built to D11: the rule checks the placeholder's links and chunk, and the landing's guard checks the pages.
+Design: § Arc a2 design. Every phase assumes F13–F19 and I5–I6; nothing else is assumed.
 
-1. Write `scripts/legal-dist.ts`; wire it into `verify-build-target.ts`.
-2. `legal-dist.test.ts`: one broken expectation per case (mainnet without each id; testnet with an id;
-   local with an id; testnet with a `MainnetRoot` chunk), plus a clean control per target.
-3. If testnet still carries the chunk, apply I1's fallbacks in order; log it in `lessons/phase-2.md`.
+**P7: the record and the signed text.** UI impact: none on screen; the text is G2, verbatim.
 
-Gate: the P1 gate, then `bun run --cwd apps/tools build:testnet && bun run --cwd apps/tools verify:build-target testnet && bun run --cwd apps/tools build:mainnet && bun run --cwd apps/tools verify:build-target mainnet`; both print ✓ (adds build).
+1. Merge `origin/main`. Write `acceptance.ts`.
+2. `acceptance.test.ts`, with real signatures from `privateKeyToAccount(...).signMessage`:
+   - The text equals G2 for a fixed origin and account; it is ASCII-only (control: an inserted "é" fails
+     the check); its first line does not match EIP-4361's opening.
+   - `readAcceptance`: empty → `none`; a signed record → `accepted`; a changed terms or privacy digest →
+     `changed`; the same record read under another origin → `none`; an edited account or signature →
+     `none`; bad JSON, `null`, an array, a wrong field type, a short or upper-case digest, `v` ≠ 1, a
+     throwing `getItem`, a throwing storage getter → `none`. A `verifyMessage` that resolves false after a
+     delay, or rejects, → `none` (control: the same record with a true result → `accepted`).
+   - `signAcceptance` with a fake EIP-1193 provider: success returns a record that reads `accepted`; a
+     signature by another key (the wallet switched accounts between the two calls) → throws, nothing
+     stored; a 4001 on `eth_requestAccounts` or on `personal_sign` → the error passes `isUserRejection`; a
+     `-32002` → classified `busy`; an empty account list → throws.
+   - A throwing `setItem` does not throw.
+   - An old record relabelled with the current digests, its old signature kept, → `none` (only step 3
+     can refuse it).
 
-**P3 ✓: draft the Terms of Use.** UI impact: the text is C1. Closed after three Codex rounds (`lessons/phase-3.md`).
+Gate: `bun run lint && bun run typecheck:all && bun run --cwd apps/tools test`, exit 0 (lint, typecheck,
+unit).
 
-1. Trace each privileged function (F9) and each risk the outline names; record claim → code in
-   `lessons/phase-3.md`. Write `terms.ts` from the outline, in plain sentences, each term defined once.
-2. Codex rounds: `~/.claude/skills/codex/scripts/run-codex.sh <prompt> <worktree> max read-only gpt-6.1-sol`,
-   then `resume-codex.sh "" <followup> <codex-dir> max`. Ask for operator protection within the law,
-   enforceability per clause (US, EU, UK), claims the code cannot back, and plain language. Every prompt
-   carries the two lines on `.env` files and `~/.agents/orchy/`.
-3. Log each round: objections, each accepted or rejected with the reason.
-4. Done when a round raises no material objection. A point Codex raises again without new evidence after
-   a reasoned rejection is a disagreement, not a new objection: it goes into C1's Detail for the lawyer.
+**P8: the screen, the root, the policy edit.** UI impact: G1–G4 exactly, and G3's policy text.
 
-Gate: the P1 gate; the closing round's verdict quoted in `lessons/phase-3.md`.
+1. Build `AcceptanceGate.vue` and `MainnetRoot.vue`; edit `App.vue`, `testids.ts` and the
+   `MAINNET_TARGET` comment.
+2. Extend `legal-dist.ts`: a mainnet dist without a document id fails; a testnet dist with a `MainnetRoot`
+   chunk fails; a clean control per target.
+3. Apply G3 to `privacy.ts` with the merge day's UTC date as `updated`.
+4. Tests: `checking` renders nothing; `ask` hides the placeholder; a `changed` record shows the re-ask
+   heading; a press shows `pending` (button disabled, `aria-busy`, G4's status line); success shows the
+   placeholder and writes the record; `refused`, `busy`, `no-wallet` and `failed` each show their G4 line
+   and keep the button; a press after a refusal signs; focus starts on the heading; the keyboard alone
+   completes it; `checking` that settles late still shows nothing before it settles; the provider sees no
+   request before the first press; a good signature with a throwing `setItem` opens the placeholder, and
+   a remount with empty storage shows the gate again. `App.test.ts`: replace the placeholder's mock, load
+   counter and rendering assertions with `MainnetRoot`'s.
+   Then mainnet loads `MainnetRoot` and never the shell; testnet never loads `MainnetRoot`.
 
-**P4 ✓: draft the Privacy Policy.** UI impact: the text is C2. Closed after three Codex rounds (`lessons/phase-4.md`).
+Gate: the P7 gate, then `bun run --cwd apps/tools build:testnet && bun run --cwd apps/tools
+verify:build-target testnet && bun run --cwd apps/tools build:mainnet && bun run --cwd apps/tools
+verify:build-target mainnet`, both printing ✓ (adds build), then `bun run build:landing` exit 0
+(its guard refuses an owner's blank and checks every page).
 
-1. Trace the dist (`.js` chunks), not only `src`, for storage APIs and remote hosts, and resolve each hit
-   to its caller; record claim → code in `lessons/phase-4.md`. Write `privacy.ts` from the outline.
-2. `privacy.test.ts`: the provider pin (control: a fixture target with one extra `https:` origin fails;
-   `data:` and `blob:` are ignored). Add the runbook line and the `MAINNET_TARGET` comment.
-3. Codex rounds as in P3; also ask whether each statement matches the code it cites.
+**P9: review, run, PR, close-out.**
 
-Gate: the P1 gate; the closing round's verdict quoted in `lessons/phase-4.md`.
+1. The Codex fix loop on the a2 diff (Post-implementation).
+2. Claim a port: `bun apps/tools/scripts/e2e/resolve-ports.ts <state-dir> terms-1-gate $$`. In `apps/tools`,
+   start `TOOLS_DEV_PORT=<port> bunx vite --config vite.mainnet.config.mts` in its own process group.
+3. Drive it with Playwright, `PLAYWRIGHT_BROWSERS_PATH` unset. Inject a test EIP-1193 provider (an init
+   script shaped like F18's fixture, with a viem account; never committed). Accept by keyboard, then
+   reload: no gate. Change a stored digest: the re-ask. Empty storage: the gate. Refuse: the refusal line.
+   Answer `-32002`: the busy line. Take every state at 1280 and 390 px, light and dark, and compare each
+   with the signed mocks. Stop the server by its process group and release the port with `--release`.
+   Log the run in `lessons/phase-9.md`.
+4. Draft PR; ready only after the owner approves the final screenshots (P1-16 A: live at merge).
+5. The close-out.
 
-**P5 ✓: review, screenshots, draft PR.** Code loop converged (`lessons/phase-5.md`); `e2e:tools` runs in CI only (`lessons/phase-5.md`).
+Gate: `bun run audit:tools && bun run test:all` exit 0, the P8 build commands, and `bun run e2e:tools`
+exit 0 (`App.vue` is the testnet shell's entry too; where the worktree cannot boot the sandbox, CI's
+`tools-e2e-status` is that layer, as in P5).
 
-1. The Codex fix loop on the a1 code diff (Post-implementation).
-2. Claim a port: `bun apps/tools/scripts/e2e/resolve-ports.ts <state-dir> terms-1-shots $$`; in
-   `apps/tools` run `TOOLS_DEV_PORT=<port> bunx vite --config vite.mainnet.config.mts` in its own process
-   group.
-3. With Playwright (`PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright`), open `/terms` and `/privacy`
-   directly and capture both and `/` at 1280 and 390 px, light and dark, into
-   `implementations-plan/terms-1/design/` (gitignored). Log what the run checked in `lessons/phase-5.md`.
-   Stop the server by its process group; release the port with `--release`.
-4. `gh pr create --draft` (Delivery). Name the screenshots in the arc report.
-
-Gate: `bun run audit:tools && bun run test:all && bun run e2e:tools` exit 0 (`App.vue` is the testnet
-shell's entry too), and the P2 build commands.
-
-**P6 ✓: the owner's answers.** Starts when A1–A14, C1–C3 and C8 are answered. C1–C3 signed as decision page 4 (P4-01, P4-02, P4-03); A11 is the final revision's UTC date; the merge, re-trace and gates are in `lessons/phase-6.md`.
-
-1. Merge `origin/main`; redo the P3 and P4 traces against it (sdk-1 may have moved the code they cite).
-2. Fill every placeholder; apply the C1/C2 edits and C3 (for example two links under the placeholder's
-   links, with `App.test.ts` and `MainnetPlaceholderView.test.ts` updated). If C8 is yes, add the landing
-   links (`apps/landing/src/content.ts` `LINKS`, its tests, `scripts/dist-checks.ts`).
-3. Extend `legal-text.test.ts`: neither document contains `[[OWNER` (control: a sample is caught).
-4. Run the P3/P4 drafting rounds again on the filled documents, to the same done rule, and resume the
-   code fix loop on the diff until clean. Take fresh screenshots.
-5. `gh pr ready` only after the owner approves the final screenshots and text of this revision (the
-   orchestrator records it); a later visible change needs that approval again.
-
-Gate: the P5 gate.
-
-### Arc a2: the acceptance gate (after a1 merges and C4–C7 are answered)
-
-**P7: the acceptance record.** UI impact: none.
-
-1. Write `acceptance.ts`. If C6 picks "only important changes", stop: a hand-set version is a plan change
-   (D3).
-2. Tests: empty storage → false; a recorded acceptance → true; a changed terms or privacy digest → false;
-   bad JSON, a wrong shape, `v` ≠ 1, a throwing `getItem` and a throwing storage getter → false; a
-   throwing `setItem` does not throw. Control: one changed character changes the digest.
-
-Gate: the P1 gate.
-
-**P8: the gate screen.** UI impact: the whole screen is C4–C7; it is built only to the owner's picks.
-
-1. Build `AcceptanceGate.vue` to C5. If C4 picks the wallet signature, stop: Ethereum wallet code in the
-   mainnet root is outside this file map, so it is a plan change.
-2. `MainnetRoot` shows the gate on every path except `/terms` and `/privacy` until accepted, then the
-   placeholder. Add the gate's testid to the P2 rule.
-3. Tests: the gate hides the placeholder; both documents render without acceptance; Continue stays
-   disabled until the box is ticked (if C5 has a box); accepting shows the placeholder and writes the
-   record; a stale record shows the gate; focus starts on the gate's heading; the keyboard alone
-   completes it.
-
-Gate: the P2 gate.
-
-**P9: review, screenshots, PR, close-out.** As P5, plus: in the dev-server run, accept by keyboard, reload,
-and confirm the gate stays away; then empty storage and confirm it returns. The PR opens as a draft and
-becomes ready only after the owner approves the gate's final screenshots and copy, and, if C7 says "only
-when mainnet opens", only once mainnet opens (no activation flag). Then the close-out. Gate: the P5 gate.
-
-**Owner's release step (each arc).** After the merge deploys, open `/terms`, `/privacy` and `/` on both
-mainnet hosts in a browser logged in through Access. This is the only check of the production bundle on
-its real host (F10).
+**Owner's release step (each arc).** After the merge deploys, open `/` on both mainnet hosts in a browser
+logged in through Access, with a real Ethereum wallet: sign, reload, and confirm no second prompt. Confirm the
+landing and the app both serve the merge commit (G7), and check the landing `/privacy` date. This is the only
+check of the production bundle on its host (F10).
 
 ## Delivery
 
 | Arc | Phases | Branch | Base | PR title | code-review |
 |---|---|---|---|---|---|
 | a1 | P1–P6 | `worktree-terms-1` (carries the plan commit) | `main` | `feat(tools): add the mainnet terms of use and privacy policy` | off |
-| a2 | P7–P9 + close-out | `terms-1-gate`, cut from `main` after a1 merges | `main` | `feat(tools): ask for acceptance of the mainnet terms before use` | off |
+| a2 | P7–P9 + close-out | `worktree-terms-1` (a1 squash-merged as #28; the branch carries `main` and the a2 re-plan) | `main` | `feat(tools): ask for a wallet-signed acceptance of the mainnet terms` | off |
 
 - A PR opens only after its gates pass and its Codex loop converges. The body gives what changed and why,
   each validation with its result, the screenshots, `Part of ask7` or `Delivers ask7`, and the owner
@@ -372,11 +405,18 @@ its real host (F10).
 | D4 | Provider truth | the pin to the target's allowlist and endpoints, plus a code trace | a prose list alone drifts silently |
 | D5 | What the documents describe | today's holding page plus the bridge features "once bridging opens" | the placeholder alone: obsolete at launch; the full app in the present tense: false today |
 | D6 | Arcs | the orchestrator's a1/a2; a1 a draft until P6 | Outline B |
-| D7 | Method | recommend the click-through (C4) | — the owner decides |
+| D7 | Method | the owner chose the wallet signature (P1-14 B) over the recommended click-through | — the owner decides |
 | D8 | Browser coverage | jsdom tests + the dist rule as the regression layer; a scripted dev-server run per arc; the owner's post-deploy check | a committed mainnet browser spec: the browser suite builds only `local`, and the production bundle refuses localhost by design (F10), so a spec would need a new target in the harness to test what jsdom already proves |
 | D9 | Drafting effort | Codex at `max` until no material objection; a repeated, reasoned-against point is a recorded disagreement | a fixed round cap: the lane brief says rounds run until no material objection |
 | D10 | Legal testids | `src/legal/testids.ts` | the global `TESTIDS`: its unused keys ship to testnet (F3) |
 | D11 | Where the public reads the documents (C8) | G: a data-only package `packages/legal` (`@unleashed/legal`) holds the documents, their ids and their public URLs; the landing renders static `/terms` and `/privacy` (CSS and theme boot, no script); the mainnet placeholder links there; a2 imports the package for the digests. Codex and Opus both chose G | C: an Access bypass on the app host for `/terms`, `/privacy` and `/assets/*` (a dashboard dependency, and it exposes the walled bundle). H: the documents in the landing until a2 (a move in a2, and a2's gate would import from an app). L: a renderer per app (two renderers of one text) |
+
+| D12 | What is signed (a2) | EIP-191 plain text, ASCII, claimed site, account and both digests in the text | EIP-712: no origin check, an optional `chainId` that either forces a chain or adds nothing, structure nobody parses, the drainers' request form (§ Arc a2 design). EIP-4361: titled a sign-in; its nonce is for a relying party this app does not have |
+| D13 | Later visits (a2) | re-verify the stored signature locally on every load (awaited) | store digests only and trust them: any hand-written record passes, and a junk record cannot be told from a real one. A chain call for ERC-1271 signatures: the mainnet build has no read path (F1), and adding one adds a provider to the policy |
+| D14 | Wallet access (a2) | two raw EIP-1193 calls in `src/legal/acceptance.ts` | `useL1Wallet`: a composable sdk-1 rewrites, and it builds a wallet client, listeners and chain switching the gate never uses |
+| D15 | Where the signature is kept (a2) | the user's browser only | a server copy: new persistence and personal data, and the approved policy says no server receives data. The owner's call (G5) |
+| D16 | ERC-1271 signatures (a2) | refused with G4's `failed` line | accept unverified: a junk signature would then pass. Verify on chain: D13's reasons |
+| D17 | Version skew between the landing and the app (a2) | a known limit, put to the owner (G7) | a bundled document view in the app: a second renderer (D11 L) and new visible UI. Versioned document URLs: a publication and retention contract |
 
 **Deviations in a1 (D11).** The file map's `LegalPage.vue`, `MainnetRoot.vue` and `testids.ts` were
 built in P1 and removed once C8 moved the pages to the landing. The a1 file map is now:
@@ -408,12 +448,9 @@ costs above the £5,000 floor face fairness review; a wallet signature identifie
 Before publication: confirm the Cloudflare plan, the Access log retention and the cookie inventory, the
 email provider's role and transfers, and assess persistent preferences and caches under PECR reg. 6.
 
-**Outline B (competing).** Markdown under `docs/legal/`, converted by a mainnet-only vite plugin into
-static HTML pages, the gate in one later arc. *For:* Markdown is easier for the owner and a lawyer; pages
-need no JavaScript; the config keeps them off testnet. *Against:* a Markdown converter and a plugin to
-maintain; a raw-HTML and URL policy for the converter; page styles outside the app's components; and the
-gate still needs a digest the plugin would have to emit. A fits the typed-copy convention
-(`apps/landing/src/content.ts`), the Vue renderer and the zero-dependency budget.
+**Outline B (competing, a1).** Markdown under `docs/legal/` through a mainnet-only vite plugin: easier for a
+lawyer to edit, but a converter, a plugin and a raw-HTML policy to maintain, and the gate would still need a
+digest the plugin emits. Rejected for typed data (D1, D6).
 
 ## Audit verdicts
 
@@ -468,6 +505,36 @@ conditional approve. D8, D9, D10, D5 and the `TESTIDS` rejection held.
 Resumed verification round: conditional approve, one finding: the Post-implementation command still made
 a2's PR ready. Fixed (`--draft` for both arcs). Second resumed round: **approve** (final verdict).
 
+**a2 re-plan, Codex round 1** (gpt-6.1-sol, high, fresh session): conditional approve. Each claim was
+checked in the tree first; #7 against `terms.ts:67`, #3 by the awaited run behind F16.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | Users can sign a version the landing does not show (version skew; a failed deploy prolongs it) | accepted as a known limit put to the owner (G7, D17); the bundled in-app view rejected (D11 L, new UI) |
+| 2 | Cross-origin protection overstated: a clone can request the exact text naming the real site | accepted, demonstrated: Security and G2 Detail corrected; it reduces to the replay limit |
+| 3 | `verifyMessage` returns a Promise; an unawaited check admits junk | accepted: F16, step 3, delayed-false and rejection tests in P7 |
+| 4 | A reload does not clear a pending wallet request (`-32002`) | accepted: the `busy` state and line (G4), tests in P7 and P8; no timer |
+| 5 | I5 and G2 promise wallet displays nobody tested; D12 overstated `chainId` and the EIP-4361 nonce | accepted: I5, G2 and D12 rewritten; the drainer point kept as the documented fact, not a claim about habits |
+| 6 | "Smart-contract accounts cannot sign" is too broad (EIP-7702 accounts recover) | accepted: I6, G4, D16 name ERC-1271 signatures |
+| 7 | G1's "every transaction you send is final" contradicts the Terms | accepted, demonstrated: "cannot reverse a transaction you send" |
+| 8 | `changed` proves no prior acceptance; the shape check is loose | accepted: neutral re-ask copy; anchored shape check on read and before storing |
+| — | Phrase "on your device only" as what the app stores | rejected: the approved policy's own words (P4-02); its next paragraph already says other software in the browser may read the data |
+
+**a2 re-plan, round 2** (resumed): **approve**; all eight fixes verified, nothing lost with a1's cut steps.
+
+**a2 re-plan, final fresh Codex pass** (gpt-6.1-sol, high, new session with the ledger and the contested
+points): conditional approve. D12–D17 held; it reran the check in memory (true on the text and its replay,
+false for another origin and after a document change).
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | G7 omits that an already-open tab keeps asking for the old version after both deploys succeed | accepted: G7 Detail; still a known limit (detecting a deploy is a new lifecycle) |
+| 2 | No gate proves the session fallback when `setItem` throws | accepted: a P8 case, with a remount control |
+| 3 | Security still says the record holds "two digests and no personal data" | accepted, demonstrated: corrected |
+| 4 | No case for an old signature relabelled with current digests; no check that nothing prompts before the press | accepted: a P7 case and a P8 assertion |
+
+Resumed verification round: **approve** (the a2 re-plan's final verdict).
+
 ## Post-implementation
 
 The repository has no Post-implementation standard; the steps are here.
@@ -515,15 +582,18 @@ FETCH_HEAD:implementations-plan/archive/terms-1/plan.md` succeeds, run `agent-wo
 
 ## Seeds (draft; finalized after approval)
 
+The a1 seeds are retired (a1 merged as #28; they are in git history). The a2 seed, draft until the owner
+signs G1–G4:
+
 ```
-/goal Phases P1–P5 marked ✓ in implementations-plan/terms-1/plan.md, each backed by its validation gate passing in the transcript; the Codex drafting rounds for both documents closed per P3/P4 step 4, quoted in lessons/phase-3.md and phase-4.md; the a1 Codex fix loop converged (a resumed round with no new material finding, quoted); the a1 draft PR exists (gh pr view output), opened only after that; bun run audit:tools and bun run test:all exit 0.
+/goal Phases P7–P9 marked ✓ in implementations-plan/terms-1/plan.md, each backed by its validation gate passing in the transcript; the gate's strings, layout and signed text match OWNER-ASKS.md G1–G4 as signed; the a2 Codex fix loop converged (a resumed round with no new material finding, quoted); the a2 draft PR exists (gh pr view output), opened only after that, with the close-out commits on it; bun run audit:tools and bun run test:all exit 0.
 ```
 
 ```
-/loop 15m Drive implementations-plan/terms-1 per plan.md. Each firing: read plan.md and lessons/; take the next unchecked phase; run its gate after each edit; commit; at an arc's end run the Post-implementation loop; never merge, deploy, or mark a1 ready; never start P6 or a2 before the owner's answers reach plan.md; stop and report at the a1 draft PR.
+/loop 15m Drive implementations-plan/terms-1 arc a2 per plan.md. Each firing: read plan.md and lessons/; take the next unchecked phase of P7–P9; run its gate after each edit; commit; after P8 run the Post-implementation loop; never merge, deploy, or mark the PR ready; never build a string or layout OWNER-ASKS.md G1–G4 has not signed; stop and report at the a2 draft PR.
 ```
 
 Recommended: `/goal` (completion shows in the transcript). Use exactly one per session.
 
-Over the 350-line target: the two document outlines (the drafting brief) and the three audit tables
-are evidence the implementer needs; restatement was cut.
+Over the 350-line target: the a2 design, its threat paths and four audit tables (a1's three, a2's) are
+evidence the implementer needs; a1's completed steps and drafting outlines were cut to git history.
