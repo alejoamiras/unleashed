@@ -41,19 +41,26 @@ async function run(pass: (b: PassBounds) => Promise<RunSummary>, at = T) {
 }
 
 it("runs four passes 15 s apart, one at a time, each bounded by a run end before the next cron", async () => {
-	const slow = passes([20_000])
-	const { summaries, endedAt } = await run(slow.pass)
+	const busy = passes([10_000, 10_000, 10_000, 10_000])
+	const { summaries, endedAt } = await run(busy.pass)
 	expect(summaries).toHaveLength(4)
-	expect(slow.starts).toEqual([0, 20, 30, 45])
-	expect(slow.overlapped()).toBe(false)
-	expect(slow.bounds.map((b) => b.runEnd - T)).toEqual([58_000, 58_000, 58_000, 58_000])
+	expect(busy.starts).toEqual([0, 15, 30, 45])
+	expect(busy.overlapped()).toBe(false)
+	expect(busy.bounds.map((b) => b.runEnd - T)).toEqual([58_000, 58_000, 58_000, 58_000])
 	expect(endedAt).toBeLessThan(58)
 })
 
 it("drops the slots a slow pass or a late start missed, and stops after a refused pass", async () => {
-	const slow = passes([40_000])
-	await run(slow.pass)
-	expect(slow.starts).toEqual([0, 40, 45])
+	// A pass that overran a slot is followed at the next slot, not at once.
+	for (const [ms, starts] of [
+		[20_000, [0, 30, 45]],
+		[40_000, [0, 45]],
+	] as const) {
+		const slow = passes([ms])
+		await run(slow.pass)
+		expect(slow.starts).toEqual(starts)
+		expect(slow.overlapped()).toBe(false)
+	}
 	const late = passes([])
 	await run(late.pass, T + 50_000)
 	expect(late.starts).toEqual([50])

@@ -55,9 +55,9 @@ One JSON line per event ([`src/log.ts`](src/log.ts)), in Workers Logs. No line c
 | `failed` | the pass ended on an error: a read that kept failing, a window it cannot cover, reads past their deadline, or one that may have written (an approval, a reverted fill) |
 | `ignored` | a deposit outside the envelope, logged by the passes within 30 s of its block |
 | `low-gas` / `low-inventory` | the filler holds under 0.01 ETH / under 6 USDC on Sepolia |
-| `busy` | the filler has a pending transaction: the run sends nothing |
-| `gas-price` | a fill at the gas cap could cost over 0.005 ETH: the run sends nothing |
-| `late` | under 25 s of the run were left for a try: the pass sends nothing, and the next run's first pass tries |
+| `busy` | the filler has a pending transaction: the pass sends nothing |
+| `gas-price` | a fill at the gas cap could cost over 0.005 ETH: the pass sends nothing |
+| `late` | under 25 s of the run were left for a try, or none for a pass: nothing is sent, and the next run's first pass tries |
 | `refused` | the chain, the key or the manifest is not the testnet relayer's: nothing signed, nothing read beyond the two chain ids |
 | `restock-requested` | Circle's faucet API answered `204` to a USDC drip request (`balance` before it); the next runs' balance shows the drip |
 | `restock-refused` | the drip request, or the balance read before it, failed: Circle's status, `code` and message, the key never in it |
@@ -81,7 +81,8 @@ conservative cadence, not a documented one. Without the secret, the Worker only 
 3. A fill that fails after its approval is retried each minute until its deadline, at an approval and a revoke
    each, and as the largest candidate holds smaller ones back meanwhile.
 4. Overlapping runs (a send that outlasts its 25 s budget, or a run stalled past its minute) can waste gas on
-   replaced or reverted transactions. They cannot lose tokens: the pool pulls from the filler only inside the
+   replaced or reverted transactions, and so can a pass whose Sepolia reads hit a backend not yet at the fill the
+   pass before it landed. They cannot lose tokens: the pool pulls from the filler only inside the
    filler's own `fillRelay`, once per relay.
 5. Eight admitted deposits whose fill reverts even at the gas cap (an intent the router refuses, recovering to a
    fallback receiver that Sepolia USDC blacklists) are refused before any write, but fill a pass's eight tries ahead

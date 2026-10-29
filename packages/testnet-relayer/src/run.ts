@@ -39,7 +39,7 @@ import { SCAN_WINDOW_S, scanWindow } from "./window"
 
 /** Destination blocks searched for fills: Sepolia's 12 s slots make 800 blocks span at least 9,600 s, past `SCAN_WINDOW_S`. */
 export const FILL_LOG_BLOCKS = 800n
-/** `getLogs` range per call. PublicNode serves 50,000 blocks on both chains; Base's own endpoint serves 200, too few. */
+/** `getLogs` range per call, which PublicNode serves on both chains (50,000 on Base Sepolia); Base's own endpoint serves 200. */
 export const CHUNK_BLOCKS = 2_000n
 /** Source blocks left unread at the head, which a load-balanced RPC's backends may not all have. */
 const SOURCE_LAG = 2n
@@ -51,7 +51,7 @@ export const SURVEY_DEADLINE_MS = 45_000
  * heuristic for a send at normal pace, which nothing here can cut short.
  */
 export const FILL_BUDGET_MS = 25_000
-/** Candidates one run may try: write-free refusals pass to the next, so fewer poisoned deposits cannot hold the queue. */
+/** Candidates one pass may try: write-free refusals pass to the next, so fewer poisoned deposits cannot hold the queue. */
 export const MAX_TRIES = 8
 /** The worst fee one send may cost, checked at the gas cap before any write and on every send. */
 export const FEE_CEILING_WEI = 5_000_000_000_000_000n
@@ -67,7 +67,7 @@ export interface RelayConfig {
 export type RunOutcome = "refused" | "idle" | "busy" | "gas-price" | "late" | "filled" | "already-filled" | "skipped" | "failed"
 
 export interface PassBounds {
-	/** When the pass must be done (ms since the epoch): before the next cron fires. */
+	/** When the pass's reads must be done and no later try may start (ms since the epoch): before the next cron fires. */
 	runEnd: number
 }
 
@@ -324,7 +324,6 @@ async function fillOne(c: RelayConfig, candidates: Candidate[], bounds: PassBoun
 	return outcome
 }
 
-/** Every read of a pass: the chains and signer first, then the deposits still worth a try, in order. */
 async function survey(c: RelayConfig, read: Read): Promise<Candidate[]> {
 	await assertRoute(c, read)
 	const float = await readFloat(c, read)
@@ -335,7 +334,8 @@ async function survey(c: RelayConfig, read: Read): Promise<Candidate[]> {
 
 /**
  * One pass, never throwing: every error is a log line, and the next pass is the retry. Its reads end by
- * `bounds.runEnd` or fail the pass before any send; a try starts only `FILL_BUDGET_MS` before it.
+ * `bounds.runEnd` or fail the pass before any send. No try starts within `FILL_BUDGET_MS` of it, and a started try is
+ * awaited past it.
  */
 export async function relayPass(c: RelayConfig, bounds: PassBounds = { runEnd: Number.POSITIVE_INFINITY }): Promise<RunSummary> {
 	try {

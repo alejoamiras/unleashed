@@ -112,20 +112,22 @@ No state crosses passes. The worker restocks after the first pass that passed it
 - D4. `CHUNK_BLOCKS` 2,000, as the repo's other Base Sepolia scans on PublicNode (`crosschain-discovery.ts:196`):
   20 log reads instead of 79. Block width does not bound a response's size; a flood stays known limit #34.
 - D5. The ignored-log boundary is a second search inside `[from, head]`, at most 17 reads. 30 s is two pass
-  intervals: each ignored deposit is logged by about two passes, and a late pass leaves no gap.
+  intervals: each ignored deposit is logged by about two passes. Passes more than 30 s apart (a 40 s pass, an
+  invocation over 15 s late) leave a gap whose ignored deposits get no line: logs only.
 - D6. `FILL_LOG_BLOCKS` stays 800: it spans at least 9,600 s, past the 7,800 s window (the live test checks it).
 - D7. Anchor on Sepolia's head time: the destination pool compares a deadline with its own clock, and F3 bounds the
   deadline by the source block's timestamp, so no clock-skew inference remains. The 600 s past the fill window keep
   an expired deposit in the `skipped` `deadline` lines for about ten minutes, as today.
 - D8. The read-only survey races its deadline, so a slow provider (F5) fails the pass before the run's end, and each
-  read is refused once the deadline passes, so an abandoned survey stops at its next read; it holds no state and
-  reaches no write. Sends are not raced: abandoning one could leave a signing send behind.
+  read is refused once the deadline passes, including one in flight at it, so an abandoned survey runs no further
+  step and logs nothing more; it holds no state and reaches no write. Sends are not raced: abandoning one could leave a signing send behind.
 - D9. Each pass rescans the whole window, as a run does today: no state crosses passes, so a failed or abandoned
   pass cannot corrupt the next. Rejected: scanning only the blocks since the previous pass (about 3 source reads
   instead of 56), which needs a cursor committed atomically, rollback and dedupe rules (Codex traced both hazards)
   for reads that fit the limits (F5, F7). Reopen if PublicNode throttles the Worker.
 - D10. Passes are sequential: `relayRun` awaits each pass, so no pass starts while one is in flight. A slow pass or a
-  late invocation drops the slots it missed rather than running them back to back.
+  late invocation drops the slots it missed rather than running them back to back: a pass starts only at a slot,
+  the next not yet started after the previous pass ends. A run too late for any pass logs `late`.
 - D11. A send cannot be bounded from the relayer: its receipt waits sit in the out-of-scope fill path (F8). So the
   run bounds the start of each try: with under 25 s left before `runEnd` (two 12 s slots and a second of polling, a
   heuristic for normal pace) the pass logs `late` and sends nothing. The passes at 0, 15 and 30 s can send; the
@@ -149,9 +151,11 @@ No state crosses passes. The worker restocks after the first pass that passed it
   window into expired deposits (up to the cap), whose fills revert: gas only, at most `FEE_CEILING_WEI` a send,
   which lying about `fillStatuses` already allows.
 - **Overlap and double sends.** Passes never overlap (D10); every try checks for our pending transaction first (D12)
-  and starts only with 25 s left (D11). Two existing fill-path cases remain (§1): a send that stalls past the
-  minute between its approval and its fill can meet the next run's try (known limit #36), and a receipt wait that
-  gives up after 180 s revokes while the approval may be pending. Neither moves tokens twice.
+  and starts only with 25 s left (D11). Two existing fill-path cases remain (§1): a try that outlasts the minute
+  (slow reads before its first write, or a stall between its approval and its fill) can meet the next run's try
+  (known limit #36), and a receipt wait that gives up after 180 s revokes while the approval may be pending. A pass
+  whose Sepolia reads hit a backend not yet at the fill the pass before it landed can try that relay again, at an
+  approval and a revert or revoke. None moves tokens twice.
 - **Range errors and throttling.** A refused or throttled read fails its pass (`failed`); the next pass retries.
 - **Budget.** A pass makes at most about 90 logical source reads and 8 destination reads, plus `pause` per try; with
   every retry four passes stay under 10,000 subrequests, and each survey ends by `runEnd`. CPU is log decoding,
@@ -160,7 +164,7 @@ No state crosses passes. The worker restocks after the first pass that passed it
 - **Logs.** One new event, `late`; reasons carry block counts and seconds, never a URL. Per-pass lines (`skipped`,
   `low-gas`, `low-inventory`) now come up to four times a minute.
 
-## Phase 1 — the window from timestamps
+## Phase 1 — the window from timestamps ✓
 
 1. Add `src/window.ts` and `src/window.test.ts`. 2. Change `src/run.ts` per Phase 1 of the change map.
 3. Rework `config()` in `src/run.test.ts`: `SOURCE_HEAD` 50,000,000, five blocks per second, `getLogs` by range.
@@ -182,7 +186,7 @@ No state crosses passes. The worker restocks after the first pass that passed it
 **Validation gate** (all exit 0): `cd packages/testnet-relayer && bun run test && bun run typecheck`; from the
 root `bun run lint` and `bun run typecheck:all`.
 
-## Phase 2 — four passes a minute (ask34)
+## Phase 2 — four passes a minute (ask34) ✓
 
 1. Add `src/schedule.ts` and `src/schedule.test.ts`. 2. Change `src/run.ts`, `src/worker.ts`, `src/log.ts` per
 Phase 2. 3. Update `src/worker.test.ts` for the cron path. 4. Add the tests below and the README.
@@ -237,6 +241,8 @@ for four passes a minute and no `failed` naming the window.
 | Codex ask34 (`01a188f9`) | reject | the two fill-path cases go to the owner (§1), not claimed as "never"; the late gate and `pause` before each try (D11, D12); restock inside the minute (D13); a full rescan each pass removes the cross-pass state and its commit and rollback hazards (D9); 25 s called a heuristic | a durable lock or a fill-path change now: persistence, coordination and an out-of-scope recovery policy, so the owner's call (§1) |
 | Codex ask34, resumed | conditional approve | race `pause` to the send cutoff (D12); bound the restock by `runEnd` (D13); drop missed slots (D10) | none |
 | Codex ask34, resumed again | **approve** | the three conditions verified, no Phase 1 regression | none |
+| Codex fix loop 1 (`01a1890f`) | 2 low | the run's comments say it starts nothing after its end, not that it ends (an admitted send is awaited); two narrating comments deleted | none |
+| Opus diff review | 8 low or nit | a pass starts only at a slot (D10); an in-flight read refused at the deadline (D8); `late` for a run with no pass; the live test two blocks below the head; a failed-first-pass worker test; §1 case 1 widened; D5 corrected; wording | a guard for finite deadlines over 2³¹ − 1 ms (no caller); the lagging-backend retry ships as known limit 4 (gas only) |
 
 ## Seeds
 

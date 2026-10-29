@@ -86,7 +86,10 @@ export async function scheduledRun(env: RelayerEnv, log: RelayLog = consoleLog, 
 		}
 		return summary
 	}, scheduledTime)
-	return summaries.at(-1) ?? { outcome: "idle" }
+	const last = summaries.at(-1)
+	if (last) return last
+	log({ event: "late", reason: `the run started ${Math.round((Date.now() - scheduledTime) / 1_000)} s after its cron time` })
+	return { outcome: "late" }
 }
 
 export default {

@@ -3,7 +3,7 @@
  * only with RELAYER_LIVE=1. Base Sepolia's block time keeps the window under half the cap, PublicNode serves a full
  * `getLogs` chunk on both chains, and Sepolia's fill-log span still covers the window.
  */
-import { BASE_SEPOLIA_RPC_DEFAULT, FILLED_RELAY, FUNDS_DEPOSITED, SEPOLIA_RPC_DEFAULT } from "@unleashed/bridge-core/across-fill"
+import { BASE_SEPOLIA_RPC_DEFAULT, FILLED_RELAY, FUNDS_DEPOSITED, retried, SEPOLIA_RPC_DEFAULT } from "@unleashed/bridge-core/across-fill"
 import { lifiBook } from "@unleashed/sdk/l1"
 import { createPublicClient, http } from "viem"
 import { describe, expect, it } from "vitest"
@@ -16,8 +16,12 @@ describe.skipIf(process.env.RELAYER_LIVE !== "1")("the scan window on the live t
 	}, async () => {
 		const source = createPublicClient({ transport: http(BASE_SEPOLIA_RPC_DEFAULT) })
 		const destination = createPublicClient({ transport: http(SEPOLIA_RPC_DEFAULT) })
-		const [head, sepolia] = await Promise.all([source.getBlockNumber(), destination.getBlock({ blockTag: "latest" })])
-		const stamp = async (blockNumber: bigint) => (await source.getBlock({ blockNumber })).timestamp
+		// Two blocks below the head, as a pass reads: not every load-balanced backend has the newest.
+		const [head, sepolia] = await Promise.all([
+			source.getBlockNumber().then((n) => n - 2n),
+			destination.getBlock({ blockNumber: (await destination.getBlockNumber()) - 2n }),
+		])
+		const stamp = async (blockNumber: bigint) => (await retried(() => source.getBlock({ blockNumber }))).timestamp
 		const since = sepolia.timestamp - SCAN_WINDOW_S
 		const { from } = await scanWindow(stamp, head, since)
 		expect(await stamp(from)).toBeGreaterThanOrEqual(since)

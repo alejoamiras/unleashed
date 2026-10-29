@@ -12,3 +12,4 @@
 - 2026-10-29 Codex ask34 resumed twice: approve; plan committed; OWNER-ASKS §1 open (ships A)
 - 2026-10-29 ORCHY-STEER: OWNER-ASKS §1 answered: option A (both cases ship as known limits stated in the PR; no cross-run lock)
 - 2026-10-29 a1: phase 1+2 code and tests written; package tests 34/34, live test green
+- 2026-10-29 a1 gates: package test 34/34, typecheck, root lint, typecheck:all, anvil integration 6/6, live 1/1 — all green; Phases 1 and 2 ✓

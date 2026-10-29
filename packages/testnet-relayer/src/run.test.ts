@@ -209,7 +209,7 @@ describe("relayOnce", () => {
 		expect(fill).toHaveBeenCalledTimes(1)
 	})
 
-	it("tries a larger send before any dust, and at most eight candidates a run", async () => {
+	it("tries a larger send before any dust, and at most eight candidates a pass", async () => {
 		const dust = Array.from({ length: 20 }, (_, i) => depositLog(deposit(3n, BigInt(i + 1)), i + 1))
 		const send = depositLog(deposit(5_000_000n, 99n), 99)
 		fill.mockRejectedValue(new FillRefused("unfillable", "no FilledRelay"))
@@ -248,17 +248,19 @@ describe("relayOnce", () => {
 		vi.useFakeTimers()
 		const at = SOURCE_HEAD - 18_000n
 		const ours = depositLog(deposit(5_000_000n, 1n, NOW - 3_600), 1, 0, at)
+		const fresh = depositLog(appDeposit({ input: 5_000_000n, filler: STRANGER, depositId: 2n, head: NOW }), 2, 0, SOURCE_HEAD - 10n)
 		let reached = () => {}
 		const atStall = new Promise<void>((r) => {
 			reached = r
 		})
 		let release = () => {}
 		const stalled = new Promise<unknown[]>((r) => {
-			release = () => r([])
+			release = () => r([fresh])
 		})
+		// The chunk at the head stalls; released, it holds a deposit `ignored` would log.
 		const slow = config({
 			logs: async (from, to) => {
-				if (from <= at) return at <= to ? [ours] : []
+				if (to < SOURCE_HEAD - 2n) return from <= at && at <= to ? [ours] : []
 				reached()
 				return stalled
 			},
@@ -272,6 +274,7 @@ describe("relayOnce", () => {
 		release()
 		await vi.advanceTimersByTimeAsync(20_000)
 		expect(slow.calls).toHaveLength(reads)
+		expect(slow.lines).toHaveLength(1)
 		expect(fill).not.toHaveBeenCalled()
 	})
 
