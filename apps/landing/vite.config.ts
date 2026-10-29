@@ -1,11 +1,16 @@
 import { execSync } from "node:child_process"
 import { readFileSync } from "node:fs"
+import { basename } from "node:path"
+import { fileURLToPath } from "node:url"
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from "vite"
 import { buildCommit } from "./build-commit.ts"
 import { type Channel, channelOf, pageHeaders, renderHeadersFile } from "./security-headers.ts"
-import { renderBody } from "./src/markup.ts"
+import { LEGAL_PAGES } from "./src/legal-pages.ts"
+import { legalBody, legalHead } from "./src/legal-markup.ts"
+import { fillSlot, renderBody } from "./src/markup.ts"
 
 const BODY_SLOT = "<!--landing:body-->"
+const HEAD_SLOT = "<!--landing:head-->"
 
 // Above-the-fold faces only: the heading's body face and the wordmark's pixel face. The mono face is
 // drawn on card canvases, which wait for it themselves.
@@ -39,7 +44,14 @@ function preloadTags(fileNames: readonly string[]): HtmlTagDescriptor[] {
 	})
 }
 
-/** Renders the body into index.html, and emits `_headers` and `build.json` for the Worker. */
+function render(html: string, file: string): string {
+	if (file === "index.html") return fillSlot(html, BODY_SLOT, renderBody())
+	const legal = LEGAL_PAGES.find((page) => page.file === file)
+	if (!legal) throw new Error(`no page renders ${file}`)
+	return fillSlot(fillSlot(html, HEAD_SLOT, legalHead(legal)), BODY_SLOT, legalBody(legal))
+}
+
+/** Renders every page's slots, and emits `_headers` and `build.json` for the Worker. */
 function landingPlugin(channel: Channel): Plugin {
 	let id = ""
 	return {
@@ -51,8 +63,7 @@ function landingPlugin(channel: Channel): Plugin {
 		transformIndexHtml: {
 			order: "post",
 			handler(html, ctx) {
-				if (!html.includes(BODY_SLOT)) throw new Error(`index.html has no ${BODY_SLOT}`)
-				const page = html.replace(BODY_SLOT, renderBody())
+				const page = render(html, basename(ctx.filename))
 				if (!ctx.bundle) return page
 				const meta: HtmlTagDescriptor[] = [{ tag: "meta", attrs: { name: "unleashed-build", content: id }, injectTo: "head" }]
 				if (channel === "preview") meta.push({ tag: "meta", attrs: { name: "robots", content: "noindex" }, injectTo: "head" })
@@ -75,6 +86,9 @@ export default defineConfig({
 		// Fonts stay files: an inlined data: font would need `font-src data:`.
 		assetsInlineLimit: 0,
 		modulePreload: { polyfill: false },
+		rollupOptions: {
+			input: ["index.html", ...LEGAL_PAGES.map((page) => page.file)].map((file) => fileURLToPath(new URL(file, import.meta.url))),
+		},
 	},
 	server: { port: Number(process.env.LANDING_DEV_PORT) || 5177 },
 	preview: { headers: pageHeaders(channel) },

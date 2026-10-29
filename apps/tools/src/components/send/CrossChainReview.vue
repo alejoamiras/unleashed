@@ -88,8 +88,8 @@ const gasLine = computed(() => {
 })
 
 const takes = computed(() => {
-	if (!IS_MAINNET && refundWait.value)
-		return `Up to ${refundWait.value} for a manual fill on ${l1}, a few minutes for Aztec to pick it up, then your claim.`
+	if (props.figures.fixed)
+		return `Usually a few minutes for our testnet relayer to fill it on ${l1}, a few minutes for Aztec to pick it up, then your claim.`
 	const minutes = Math.max(1, Math.ceil(props.figures.etaSeconds / 60))
 	return `About ${minutes} min to reach ${l1}, a few minutes for Aztec to pick it up, then your claim.`
 })
@@ -116,12 +116,9 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 
 <template>
 	<section class="step" :data-testid="TESTIDS.sendXcReview">
-		<p v-if="!IS_MAINNET && refundWait" class="testnet ul-notch" :data-testid="TESTIDS.sendXcTestnetNotice">
+		<p v-if="figures.fixed" class="testnet ul-notch" :data-testid="TESTIDS.sendXcTestnetNotice">
 			<span class="glyph"><Icon name="info-box" :size="24" /></span>
-			<span
-				>Testnet: this send waits for a manual fill on {{ l1 }}. If it isn't filled within {{ refundWait }}, it is refunded to you on
-				{{ chainLabel(src) }}.</span
-			>
+			<span>Testnet: our testnet relayer fills this send on {{ l1 }}, usually within a few minutes.</span>
 		</p>
 
 		<dl class="lines">
@@ -234,7 +231,8 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 					<dt>Fallback</dt>
 					<dd>{{ user }} <span class="soft-body">on {{ l1 }}</span></dd>
 				</div>
-				<div v-if="refundWait" class="row" :data-testid="TESTIDS.sendXcRefund">
+				<!-- Across refunds an unfilled deposit on mainnet only. -->
+				<div v-if="IS_MAINNET && refundWait" class="row" :data-testid="TESTIDS.sendXcRefund">
 					<dt>Refund</dt>
 					<dd>{{ user }} <span class="soft-body">on {{ chainLabel(src) }}, after {{ refundWait }} undelivered</span></dd>
 				</div>
