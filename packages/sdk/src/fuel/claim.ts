@@ -15,6 +15,7 @@ import {
 	settledAlready,
 } from "../execution/claim-run.ts"
 import { claimBridgedGas, claimFuelBlock } from "../execution/fuel-block-claim.ts"
+import { BridgeError } from "../errors.ts"
 import type { Network, Reads } from "../network.ts"
 import type { DepositRecord } from "../records.ts"
 
@@ -26,10 +27,13 @@ async function claimGas(leg: ClaimLeg): Promise<ClaimOutcome> {
 	return settle(leg, landing.via, landing.txHash)
 }
 
-/** The bridged gas of a token + gas record whose tokens are done. Only the fuel block changes: the record's own
- *  completion is its token claim's. */
+/** The bridged gas of a token + gas record whose tokens are done. Only the fuel block and the deposit's recovered facts
+ *  change: the record's own completion is its token claim's. */
 async function claimGasLeg(leg: ClaimLeg): Promise<ClaimOutcome> {
-	await ensureDepositFacts(leg)
+	await ensureDepositFacts(leg, leg.net.bridge ?? leg.route)
+	const fuel = leg.record.fuel
+	if (!fuel?.leafIndex || !fuel.messageHash)
+		throw new BridgeError("receipt-mismatch", "the deposit carried no bridged gas for this record", "submitted", "never")
 	await claimBridgedGas(leg, { claim: true })
 	await leg.persisted
 	const txHash = leg.record.fuel?.claimTxHash

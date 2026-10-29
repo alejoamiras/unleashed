@@ -879,7 +879,8 @@ Each row: the decision, its source, the rejected view with its reason.
   Fee Juice, or private credit) once its tokens are done: `completedAt`, or a `claimedByOther` marker. It checks the
   chain, the recipient and the network's fuel route, never the token's registration or the hub, so a blocked or
   distrusted token record still recovers its gas, as the card's "Claim your gas" does today; it writes only the fuel
-  block and never completes the record. Before the tokens are done it refuses: the token claim may pay with that gas.
+  block and the deposit facts it recovers (read through the token route, whose event carries the gas leaf), and never
+  completes the record. Before the tokens are done it refuses: the token claim may pay with that gas.
 - **D79 A gas-only claim in flight is its top-level hash.** A send writes it there and in the fuel block, and a drop
   clears both. A fuel block hash with no top-level one (today's engine latches the fuel hash first and clears only the
   top level when a claim drops) is read by its receipt as today's ladder reads it (`priorFuelClaimStop`): included is
@@ -1025,6 +1026,18 @@ Arc a6, the plan amendment (both legs read the tree):
   receipt/nullifier divergence through the watch budget on a healthy supported endpoint); the first unreachable read
   is reported by its own poll.
 - **Round 4, Codex: APPROVE.**
+
+Arc a6, PR 1 (`git diff 890edac..HEAD`):
+
+- **Round 1, Codex: REJECT, 1 High, 3 Medium; all verified and fixed with tests.** `claimFuel` on a token + gas record
+  recovered a lost gas leaf through the fuel route, which has no token portals (now the token route; D78 names the
+  facts it writes); an abort from an event or during a read still settled (the signal is checked after each); a
+  resumed claim's live reading kept a stale `claimedByOther`; `wallet-sync` was deduplicated to one event.
+- **Opus 5.5 (beside it): 2 Medium, 6 Low.** The leftover gas claim ignored an aborted signal before its latch and
+  prompt; a claim value that does not derive the record's secret hash read the message as live (refused now); a resumed
+  gas-only hash that reverted with its message live settled (cleared, `claim-reverted`); a recovery with no gas leaf
+  reported success (`receipt-mismatch`); `watchOnly` still reads through the wallet (documented); three tests could
+  not fail. Kept: a gas-only fuel hash whose receipt is included stops with `fuel-already-claimed` (D79, today's card).
 
 Arc a5, the implementation (`git diff 54de731..HEAD`):
 

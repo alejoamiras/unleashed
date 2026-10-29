@@ -6,6 +6,7 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
+import { computeSecretHash } from "@aztec-labs/stdlib/hash"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
 import type { Address } from "viem"
 import { BridgeError, isUserRejection } from "../errors.ts"
@@ -37,9 +38,10 @@ import { registrationToBlock } from "../execution/send-flow.ts"
 import { isMsgNotReady } from "../execution/message-errors.ts"
 import { hubMessageState, type TokenMessageState } from "../execution/message-nullifier.ts"
 import type { Network, Reads, TokenRoute } from "../network.ts"
+import { tokenClaimSecretHash } from "../protocol/claim-secret.ts"
 import { deriveHubTokenInstance } from "../protocol/hub-token.ts"
 import type { DepositRecord, JournalTokenBlock } from "../records.ts"
-import { untilAborted } from "../run.ts"
+import { checkAbort, untilAborted } from "../run.ts"
 
 const SUBMITTED = "submitted" as const
 const DROP_STRIKES = 3
@@ -93,9 +95,21 @@ async function frozenTokenBlock(leg: ClaimLeg, bridge: TokenRoute): Promise<Jour
 }
 
 /** The claim's arguments. A private claim spends the claim salt only the caller's `secrets` hold. */
-function claimParamsOf(leg: ClaimLeg, token: JournalTokenBlock): HubClaimParams {
-	const { record, run, aztec } = leg
-	const claimValue = record.isPrivate ? run.secrets?.claimSalt : record.secret ? Fr.fromString(record.secret) : undefined
+/** The token leg's claim value, held to the record's secret hash: another deposit's value would derive a nullifier that
+ *  never exists, and its message would read live forever. Undefined when the caller holds none. */
+async function claimValueOf(leg: ClaimLeg): Promise<Fr | undefined> {
+	const { record, run } = leg
+	const value = record.isPrivate ? run.secrets?.claimSalt : record.secret ? Fr.fromString(record.secret) : undefined
+	if (!value) return undefined
+	const recipient = AztecAddress.fromStringUnsafe(record.recipient)
+	const hash = record.isPrivate ? await tokenClaimSecretHash(value, recipient) : await computeSecretHash(value)
+	if (!hash.equals(Fr.fromString(record.secretHashHex))) throw refused("the claim value does not derive the record's secret hash")
+	return value
+}
+
+async function claimParamsOf(leg: ClaimLeg, token: JournalTokenBlock): Promise<HubClaimParams> {
+	const { record, aztec } = leg
+	const claimValue = await claimValueOf(leg)
 	if (!claimValue)
 		throw refused(record.isPrivate ? "a private claim needs the deposit's secrets.claimSalt" : "the record holds no claim secret")
 	return {
@@ -130,11 +144,12 @@ async function resumeRegistration(leg: ClaimLeg, bound: boolean): Promise<void> 
 	throw new BridgeError("claim-not-visible", `the registration ${txHash} has not reached the wallet yet`, SUBMITTED, "after-wait")
 }
 
-/** The tokens landed: a token another submitter claimed is recorded as such first, so a gas claim that then fails
- *  still says so. Gas that can never pay for its own claim does not hold the record open: it settles, saying why. Any
+/** The tokens landed: who claimed them is recorded first (a landing of ours drops a stale `claimedByOther`), so a gas
+ *  claim that then fails still says so. Gas that can never pay for its own claim does not hold the record open: it settles, saying why. Any
  *  other failure of the gas claim names the landed token claim, and the next call claims the gas again. */
 async function landed(leg: ClaimLeg, via: ClaimOutcome["via"], txHash?: string): Promise<ClaimOutcome> {
-	if (via === "claimed-elsewhere" && !leg.record.claimedByOther) await persistClaim(leg, { claimedByOther: true })
+	const byOther = via === "claimed-elsewhere" ? true : undefined
+	if (leg.record.claimedByOther !== byOther) await persistClaim(leg, { claimedByOther: byOther })
 	leg.emit({ type: "claim-landed", via, ...(txHash ? { txHash } : {}) })
 	let gasLeft: BridgeError | undefined
 	try {
@@ -174,12 +189,18 @@ async function settleHashlessAttempt(leg: ClaimLeg): Promise<void> {
 	if (state === "live" && aged) return persistClaim(leg, { fuel: { ...fuel, claimAttempt: false } })
 }
 
-/** Watches the claim the record already sent, which counts only once its message's nullifier shows. */
+/** Watches the claim the record already sent, which counts only once its message's nullifier shows. A live reading
+ *  drops a `claimedByOther` marker, as before a claim. */
 async function resumeSentClaim(leg: ClaimLeg): Promise<ClaimOutcome | undefined> {
 	const txHash = leg.record.claimTxHash
 	if (txHash === undefined) return undefined
 	if (!isWellFormedTxHash(txHash)) throw refused("the record's claim hash is malformed")
-	return afterSend(leg, txHash, await watchClaim(leg, txHash, "token", () => tokenStateOf(leg)))
+	const verify = async () => {
+		const state = await tokenStateOf(leg)
+		if (state === "live" && leg.record.claimedByOther) await persistClaim(leg, { claimedByOther: undefined })
+		return state
+	}
+	return afterSend(leg, txHash, await watchClaim(leg, txHash, "token", verify))
 }
 
 /** A reverted claim spent its fee but not its message; a dropped one spent neither. Either way the hash is cleared
@@ -197,10 +218,9 @@ function tokenState(leg: ClaimLeg, claimValue: Fr): Promise<TokenMessageState> {
 }
 
 /** The token message's state, "unknown" when the caller holds no claim value to derive its nullifier from. */
-function tokenStateOf(leg: ClaimLeg): Promise<TokenMessageState> {
-	const { record, run } = leg
-	const claimValue = record.isPrivate ? run.secrets?.claimSalt : record.secret ? Fr.fromString(record.secret) : undefined
-	return claimValue ? tokenState(leg, claimValue) : Promise.resolve("unknown")
+async function tokenStateOf(leg: ClaimLeg): Promise<TokenMessageState> {
+	const claimValue = await claimValueOf(leg)
+	return claimValue ? tokenState(leg, claimValue) : "unknown"
 }
 
 /** The seams that persist each latch the fee owes before the wallet is asked, and report the registration once its
@@ -260,6 +280,7 @@ async function failedSend(leg: ClaimLeg, e: unknown): Promise<unknown> {
 }
 
 async function sendClaim(leg: ClaimLeg, hub: ContractBase, p: HubClaimParams, fee: OptsFee): Promise<ClaimOutcome> {
+	checkAbort(leg.run, "submitted")
 	const { seams, fuelOnRegistration } = hubSeams(leg, fee)
 	let txHash: string
 	try {
@@ -296,7 +317,7 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	const resumed = await resumeSentClaim(leg)
 	if (resumed) return resumed
 	const { aztec, run } = leg
-	const p = claimParamsOf(leg, token)
+	const p = await claimParamsOf(leg, token)
 	const hub = hubAt(aztec.wallet, bridge.hub)
 	const spent = await settleSpentMessage(leg, p)
 	if (spent) return spent

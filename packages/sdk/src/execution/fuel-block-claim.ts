@@ -18,6 +18,7 @@ import { walletMaxFees } from "./wallet-fee-budget.ts"
 import { feeJuiceAddress } from "../protocol/fee-juice.ts"
 import { deriveBridgeSecret, PRIVATE_HUB_CLAIM_GAS } from "../protocol/private-fuel.ts"
 import type { DepositFuelBlock } from "../records.ts"
+import { checkAbort } from "../run.ts"
 
 const SUBMITTED = "submitted" as const
 
@@ -73,10 +74,13 @@ async function resumeSentClaim(leg: ClaimLeg): Promise<FuelLanding | undefined> 
 	const txHash = gasOnly(leg) ? leg.record.claimTxHash : fuelOf(leg).claimTxHash
 	if (txHash === undefined) return gasOnly(leg) ? readLatchedHash(leg) : undefined
 	if (!isWellFormedTxHash(txHash)) throw asBridgeError(new FeeStopError("malformed-claim-hash"))
-	// A mined claim consumed the message in its setup, whatever its execution result.
-	if ((await watchClaim(leg, txHash, "gas", () => fuelNullifierState(leg))) !== "dropped") return landed(leg, "claim", txHash)
+	const fate = await watchClaim(leg, txHash, "gas", () => fuelNullifierState(leg))
+	// A mined claim of ours spent the message in its setup, whatever its execution result; a reverted transaction whose
+	// message is still live spent nothing, so the hash was never this record's claim.
+	if (fate === "success" || (fate === "reverted" && (await fuelNullifierState(leg)) !== "live")) return landed(leg, "claim", txHash)
 	await storeClaimHash(leg, undefined)
-	throw dropped(txHash)
+	if (fate === "dropped") throw dropped(txHash)
+	throw new BridgeError("claim-reverted", `the transaction ${txHash} spent none of this gas; claim again`, SUBMITTED, "safe")
 }
 
 /** A gas-only fuel block hash with no top-level one: a writer latched it and then lost, or cleared after a drop, the
@@ -122,6 +126,7 @@ async function buildClaim(leg: ClaimLeg): Promise<FuelClaimInteraction> {
 
 /** Latches the attempt, sends, persists the hash, then reports and watches it. */
 async function sendClaim(leg: ClaimLeg, interaction: FuelClaimInteraction): Promise<FuelLanding> {
+	checkAbort(leg.run, SUBMITTED)
 	const attemptAt = Date.now()
 	await patchFuel(leg, { claimAttempt: true, claimAttemptAt: attemptAt, setupInsufficiency: false })
 	leg.emit({ type: "claim-requested", leg: "gas" })

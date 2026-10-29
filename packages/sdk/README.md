@@ -67,8 +67,9 @@ finished from what you stored.
   the record is under 50,000 blocks old, about a week). A claim it already sent is watched, never sent again, and
   counts only once its message's nullifier shows; one that dropped or reverted is cleared and reported, and the next
   call claims again. An attempt whose hash was never stored is waited out until its nullifier or its age settles it.
-- `watchOnly: true` resumes without ever asking the wallet: it does all of the above that needs no signature and
-  throws `needs-prompt` (`retry: "safe"`) where a fee would be priced or a prompt opened. Pass it when a page resumes
+- `watchOnly: true` resumes without asking the wallet to sign or send (it still reads through it): it does all of
+  the above that needs no signature and throws `needs-prompt` (`retry: "safe"`) where a fee would be priced or a
+  prompt opened. Pass it when a page resumes
   its records on load, and call again without it when the user acts.
 - `claimRetired(record)` says when a record is complete and its claim material may be dropped.
 - A deposit the user refused (`user-rejected`, `submission: "none"`) moved nothing: drop the record. One that

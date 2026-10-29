@@ -222,6 +222,21 @@ describe("claimFuel", () => {
 		expect([out.txHash, calls.send]).toEqual([CLAIM_HASH, 1])
 	})
 
+	it("a resumed hash that reverted with its gas still live was never this record's claim: cleared, and claimed again", async () => {
+		const { net, r, aztec } = await setup({ receipts: [{ status: "checkpointed", executionResult: "reverted" }] })
+		const calls = interaction()
+		const rec = recorder()
+		const sent = gasRecord(net, { claimTxHash: CLAIM_HASH }, { claimAttempt: true, claimTxHash: CLAIM_HASH })
+		const e = await failure(claimFuel(net, r, aztec, sent, rec.run))
+		expect([e.code, e.retry, calls.send, rec.last()?.completedAt, rec.last()?.fuel?.claimTxHash]).toEqual([
+			"claim-reverted",
+			"safe",
+			0,
+			undefined,
+			undefined,
+		])
+	})
+
 	it("a gas hash the top level lost is read as the ladder reads it: landed or pending stops, dropped claims again", async () => {
 		const latched = { claimAttempt: true, claimAttemptAt: Date.now(), claimTxHash: `0x${"0d".repeat(32)}` }
 		const stops = []
