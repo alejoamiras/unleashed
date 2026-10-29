@@ -1133,10 +1133,9 @@ describe("SendWizard", () => {
 		expect(sendFn).toHaveBeenCalledTimes(1)
 	})
 
-	it.each([
-		{ name: "passes", answer: null },
-		{ name: "refuses", answer: "Deposits on this route are paused right now. Nothing was sent." },
-	])("a bridge check that $name after the account switched sends nothing and shows nothing", async ({ answer }) => {
+	/** A public token+gas review confirmed with its bridge check held: such a send has no gas re-read of its own, so
+	 *  the check is its confirm's only wait. */
+	async function confirmHeld(w: Awaited<ReturnType<typeof wizard>>, answer: string | null) {
 		let release = (): void => {}
 		checkFn.mockImplementation(
 			() =>
@@ -1144,7 +1143,6 @@ describe("SendWizard", () => {
 					release = () => resolve(answer)
 				}),
 		)
-		const w = await wizard()
 		;(await atReview(w)).vm.$emit("back")
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("update:intent", "token+gas")
@@ -1153,17 +1151,44 @@ describe("SendWizard", () => {
 		await flushPromises()
 		w.findComponent({ name: "AmountStep" }).vm.$emit("next")
 		await flushPromises()
-		// A public token+gas send has no gas re-read of its own: the bridge check is its confirm's only wait.
 		w.findComponent({ name: "ReviewStep" }).vm.$emit("confirm")
 		await flushPromises()
-		expect(checkFn).toHaveBeenCalledTimes(1)
 		expect(checkFn.mock.calls[0]?.[0]).toMatchObject({ intent: "token+gas", isPrivate: false })
+		return release
+	}
+
+	it.each([
+		{ name: "passes", answer: null },
+		{ name: "refuses", answer: "Deposits on this route are paused right now. Nothing was sent." },
+	])("a bridge check that $name after the account switched sends nothing and shows nothing", async ({ answer }) => {
+		const release = await confirmHeld(await wizard(), answer)
 		selectedAccount.value = `0x${"20".repeat(32)}`
 		await flushPromises()
 		release()
 		await flushPromises()
 		expect(sendFn).not.toHaveBeenCalled()
 		expect(sendError.value).toBeNull()
+	})
+
+	it("a receipt asked for while the bridge check reads opens once it returns, and the review it replaced never sends", async () => {
+		const w = await wizard()
+		const release = await confirmHeld(w, null)
+		crossChainRecords.value = [xcRecord({ id: "xc-2", completedAt: 9_000, claimTxHash: WORD as `0x${string}` })]
+		useShell().showReceipt("xc-2")
+		await flushPromises()
+		// The hold defers the request; dropping it is what lets the receipt in.
+		expect(w.findComponent({ name: "BridgeReceipt" }).exists()).toBe(false)
+		release()
+		await flushPromises()
+		expect(w.findComponent({ name: "BridgeReceipt" }).exists()).toBe(true)
+		expect(sendFn).not.toHaveBeenCalled()
+	})
+
+	it("a bridge check that passes on a review still standing sends it", async () => {
+		const release = await confirmHeld(await wizard(), null)
+		release()
+		await flushPromises()
+		expect(sendFn).toHaveBeenCalledTimes(1)
 	})
 
 	it("a backgrounded send that lands re-resolves the token, standing down a next review priced from it", async () => {

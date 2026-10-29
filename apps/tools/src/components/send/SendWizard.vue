@@ -1191,19 +1191,24 @@ function reviewStands(snapshot: ReviewSnapshot): boolean {
 /** An Ethereum send's bridge check, before the permission screen and every prompt: a refusal stays on the review in
  *  the send's place, and only a review still standing when the reads return may act on them. */
 async function bridgeChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
-	preflighting.value = true
-	let refusal: string | null
-	try {
-		refusal = await sendFlow.check(plan)
-	} finally {
-		preflighting.value = false
-	}
+	const refusal = await heldCheck(plan)
 	if (!reviewStands(snapshot)) return false
 	sendFlow.error.value = refusal
 	if (refusal === null) return true
 	// An earlier attempt's decline is not why this one stopped.
 	grantState.value = "idle"
 	return false
+}
+
+/** The check under the preflighting hold. Its caller must test the review only after this resolves: dropping the hold
+ *  lets a deferred receipt request replace the review, and that watcher runs before the caller resumes. */
+async function heldCheck(plan: SendPlan): Promise<string | null> {
+	preflighting.value = true
+	try {
+		return await sendFlow.check(plan)
+	} finally {
+		preflighting.value = false
+	}
 }
 
 /** A private exit's confirm re-reads the private gas its fee is paid from, exactly as a token-only
