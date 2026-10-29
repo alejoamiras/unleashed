@@ -17,6 +17,7 @@ const TOKEN_HASH = `0x${"0b".repeat(32)}` as Hex
 const FUEL_HASH = `0x${"0c".repeat(32)}` as Hex
 const USDC = rail.destination.usdc as Address
 const fuel = { secretHash: FUEL_HASH, slice: 400_000n, minOutput: 1n }
+const SWAPPER: Address = `0x${"5e".repeat(20)}`
 
 describe("crossChainIntent", () => {
 	it("publishes the recipient only on a public token leg, and sends private gas to the PrivateFPC", () => {
@@ -37,7 +38,7 @@ describe("an Across route of ours", () => {
 	const outputAmount = 4_900_000n
 	const provider = testnetSwapperFuelProvider({
 		reader: { quote: async (_, amountIn) => amountIn * 10n ** 12n },
-		swapper: `0x${"5e".repeat(20)}`,
+		swapper: SWAPPER,
 		router: rail.router.router,
 		feeAsset: rail.router.feeAsset,
 		transactionId: lifiTxId,
@@ -68,6 +69,7 @@ describe("an Across route of ours", () => {
 			feeAsset: rail.router.feeAsset,
 			routerCall: bridgeFromCallerCall(intent, swapData, outputAmount, outputAmount),
 			fuel: { provider: "testnetSwapper" },
+			fuelSwapper: SWAPPER,
 			rail: { kind: "acrossV4", outputAmount, quoteTimestamp: 1_800_000_000, fillDeadline: 1_800_007_200 },
 		}
 	}

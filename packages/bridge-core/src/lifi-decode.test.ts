@@ -17,21 +17,22 @@ import {
 	toHex,
 	zeroHash,
 } from "viem"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { ACROSS_V4_FACET_ABI, buildAcrossV4Deposit } from "./across-v4"
 import {
 	START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR,
 	DEPOSIT_ROUTER_ABI,
 	LIFI_RECEIVER_MESSAGE_PARAMS,
 	type LifiSwapData,
+	type RouterIntent,
 	SWAP_TOKENS_MULTIPLE_V3_ABI,
 	SWAP_TOKENS_SINGLE_V3_ABI,
 	lifiBook,
 } from "@unleashed/sdk/protocol"
+import { FEE_FORWARDER_ABI } from "@unleashed/sdk/l1"
 import {
 	acrossDepositFor,
 	decodeRouterMessage,
-	FEE_FORWARDER_ABI,
 	type FieldPolicyKind,
 	type RouteExpectation,
 	type RouteTx,
@@ -41,6 +42,23 @@ import {
 	verifyRoute,
 } from "./lifi-decode"
 import { decodeLzOptions, type LzExecutorOption, STARGATE_FACET_V2_ABI, stargateFeeCeiling } from "./stargate"
+
+/** The recorded routes swap gas on Ethereum through LI.FI; this suite holds them to the policy as an enabled chain would. */
+const fuelChains = vi.hoisted(() => [31337, 31338, 1])
+vi.mock("../../sdk/src/protocol/lifi-gas.ts", async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	LIFI_FUEL_CHAIN_IDS: fuelChains,
+}))
+
+/** Runs `check` with Ethereum outside the chains LI.FI gas swaps run on, as it is in production. */
+function onLiveEthereum<T>(check: () => T): T {
+	fuelChains.splice(fuelChains.indexOf(1), 1)
+	try {
+		return check()
+	} finally {
+		fuelChains.push(1)
+	}
+}
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "contracts", "bridge", "evm", "test", "fixtures", "lifi")
 const readFixture = (name: string) => JSON.parse(readFileSync(join(FIXTURES, name), "utf8"))
@@ -72,6 +90,7 @@ function testnetExpectation(lifiTxId: Hex, routerCall: Hex): RouteExpectation {
 		feeAsset: rail.router.feeAsset,
 		routerCall,
 		fuel: { provider: "testnetSwapper" },
+		fuelSwapper: rail.router.swapper,
 		rail: {
 			kind: "acrossV4",
 			outputAmount: BigInt(rail.inputs.outputAmount),
@@ -222,6 +241,36 @@ describe("lifi-decode: refusals", () => {
 		expect(refusalOf(verifyRoute(c.tx, { ...c.expected, ...override }))?.field).toBe(field)
 	})
 
+	it("refuses a fuel swap whose fee step takes more than LI.FI's fee", () => {
+		const c = mainnetCase()
+		const [intent, swapData, minReceived, maxPull] = decodeFunctionData({ abi: DEPOSIT_ROUTER_ABI, data: c.expected.routerCall })
+			.args as readonly [RouterIntent, Hex, bigint, bigint]
+		const call = decodeFunctionData({ abi: SWAP_TOKENS_MULTIPLE_V3_ABI, data: swapData })
+		const [feeStep, venueStep] = call.args[5]
+		const fee = decodeFunctionData({ abi: FEE_FORWARDER_ABI, data: feeStep.callData }).args
+		const taken = intent.fuelSlice - intent.fuelSlice / 100n
+		const steps = [
+			{ ...feeStep, callData: encodeFunctionData({ abi: FEE_FORWARDER_ABI, args: [fee[0], [{ ...fee[1][0], amount: taken }]] }) },
+			{ ...venueStep, fromAmount: intent.fuelSlice - taken },
+		]
+		const moved = encodeFunctionData({ abi: SWAP_TOKENS_MULTIPLE_V3_ABI, args: [...call.args.slice(0, 5), steps] as never })
+		const routerCall = encodeFunctionData({
+			abi: DEPOSIT_ROUTER_ABI,
+			functionName: "bridgeFromCaller",
+			args: [intent, moved, minReceived, maxPull],
+		})
+		expect(refusalOf(verifyRoute(c.tx, { ...c.expected, routerCall }))?.field).toBe("fuelFee._distributions[0].amount")
+	})
+
+	it("refuses a LI.FI fuel swap on a chain where LI.FI gas swaps are not enabled", () => {
+		const c = mainnetCase()
+		onLiveEthereum(() => {
+			expect(refusalOf(verifyRoute(c.tx, c.expected))?.field).toBe("fuel.provider")
+			expect(refusalOf(verifyComposeMessage(compose.message, c.expected))?.field).toBe("fuel.provider")
+		})
+		expect(refusalOf(verifyRoute(c.tx, c.expected))).toBeUndefined()
+	})
+
 	it("refuses bytes that are not the canonical encoding of their own fields", () => {
 		const c = mainnetCase()
 		expect(refusalOf(verifyRoute({ ...c.tx, data: `${c.tx.data}00` }, c.expected))?.field).toBe("call")
@@ -337,9 +386,15 @@ function buildModel(c: RouteCase): Model {
 	const swapData = router.state.values.swapData as Hex
 	if (swapData !== "0x") {
 		const abi = [...SWAP_TOKENS_SINGLE_V3_ABI, ...SWAP_TOKENS_MULTIPLE_V3_ABI]
-		built.push(functionNode("fuelSwap", abi, swapData, { node: "router", at: ["swapData"] }))
+		const fuelSwap = functionNode("fuelSwap", abi, swapData, { node: "router", at: ["swapData"] })
+		built.push(fuelSwap)
+		const steps = fuelSwap.state.values._swapData
+		if (Array.isArray(steps) && steps.length === 2) {
+			const at: Seg[] = ["_swapData", 0, "callData"]
+			built.push(functionNode("fuelFee", FEE_FORWARDER_ABI, steps[0].callData, { node: "fuelSwap", at }))
+		}
 	}
-	const order = ["fuelSwap", "router", "message", "fee", "options", "call"]
+	const order = ["fuelFee", "fuelSwap", "router", "message", "fee", "options", "call"]
 	const specs = order.flatMap((n) => built.filter((b) => b.spec.name === n).map((b) => b.spec))
 	const tx = { values: { chainId: c.tx.chainId, from: c.tx.from, to: c.tx.to, value: c.tx.value } }
 	const nodes = Object.fromEntries(built.map((b) => [b.spec.name, b.state]))
@@ -475,13 +530,16 @@ function runMutation(m: Model, leaf: Leaf, mutate: Mutation, alsoOurs: boolean):
 	return verifyRoute(mutated.tx, expected)
 }
 
+/** The provider's fuel quote, which our builder embeds byte for byte. */
+const FUEL_QUOTE_LEAF = /^(fuelSwap|fuelFee)\./
+
 function judgeLeaf(m: Model, leaf: Leaf): string[] {
 	const policy = routeFieldPolicy(leaf.path)
 	if (!policy) return [`${leaf.path}: neither policed nor listed unpoliced`]
 	const failures: string[] = []
 	const value = leaf.read(leaf.node === "tx" || leaf.node === "approval" ? m.state[leaf.node] : m.state.nodes[leaf.node])
 	const kind = "kind" in policy ? policy.kind : "unpoliced"
-	const quote = leaf.path.startsWith("fuelSwap.")
+	const quote = FUEL_QUOTE_LEAF.test(leaf.path)
 	if (value === undefined && !leaf.grow && leaf.type !== "selector") return [`${leaf.path}: read undefined`]
 	for (const mutate of mutationsOf(leaf, kind, value)) {
 		// Inside our own calldata every byte is ours: changed in transit, any leaf is refused.
@@ -510,6 +568,14 @@ describe("lifi-decode: every single-field mutation", () => {
 			c.name === "testnet plain" ? ["router.swapData"] : ["fuelSwap._swapData.fromAmount", "fuelSwap._swapData[0].fromAmount"]
 		expect(leaves.map((l) => l.path)).toEqual(expect.arrayContaining(["message.receiver", "router.intent.fuelSlice", ...nested]))
 		expect(leaves.some((l) => fuel.includes(l.path))).toBe(true)
+		if (c.name.startsWith("mainnet"))
+			expect(leaves.map((l) => l.path)).toEqual(
+				expect.arrayContaining([
+					"fuelFee._distributions[0].amount",
+					"fuelSwap._swapData[1].fromAmount",
+					"fuelSwap._swapData[1].callTo",
+				]),
+			)
 		expect(leaves.flatMap((leaf) => judgeLeaf(m, leaf))).toEqual([])
 	})
 })

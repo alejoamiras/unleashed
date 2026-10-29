@@ -68,6 +68,8 @@ export function acrossApi(answer: "quote" | "error" = "quote") {
 	return { client: { fetch: fetch as unknown as typeof globalThis.fetch, base: "https://across.test/api" }, asked }
 }
 
+const SWAPPER: Address = `0x${"5e".repeat(20)}`
+
 export type Venue = "swapper" | "reverts" | "down" | "answers-another-slice"
 
 /** A fixed-rate swapper venue and a stub Across; the slice is a tenth of the delivery. */
@@ -78,12 +80,12 @@ export function routeDeps(o: { venue?: Venue; across?: ReturnType<typeof acrossA
 		return amountIn * 10n ** 12n
 	}
 	return {
-		bindings: { l1ChainId: SEPOLIA, router: ROUTER, feeAsset: FEE_ASSET },
+		bindings: { l1ChainId: SEPOLIA, router: ROUTER, feeAsset: FEE_ASSET, fuelSwapper: SWAPPER },
 		across: (o.across ?? acrossApi()).client,
 		fuel: (lifiTxId) => {
 			const provider = testnetSwapperFuelProvider({
 				reader: { quote },
-				swapper: `0x${"5e".repeat(20)}`,
+				swapper: SWAPPER,
 				router: ROUTER,
 				feeAsset: FEE_ASSET,
 				transactionId: lifiTxId,

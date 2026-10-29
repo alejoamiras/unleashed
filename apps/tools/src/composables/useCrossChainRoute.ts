@@ -30,7 +30,7 @@ import { deriveBridgeSecret, deriveTokenClaimSecret, type LifiChainBook, lifiBoo
 import type { FuelProbe, FuelQuoteProvider } from "@unleashed/sdk/internal"
 import type { Address, Hex } from "viem"
 import { type ComputedRef, computed, type Ref } from "vue"
-import { SEND_GENERATION } from "@/contracts/bridge-generation"
+import { GENERATION, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { IS_MAINNET, NETWORK } from "@/lib/network"
 import { resolveToolsTarget } from "@/lib/network-targets"
 import { NO_GAS_ROUTE, type SendIntent } from "@/lib/send-model"
@@ -112,6 +112,8 @@ export interface RouteBindings {
 	l1ChainId: number
 	router: Address
 	feeAsset: Address
+	/** The manifest's testnet swapper, which a `testnetSwapper` fuel quote must call. */
+	fuelSwapper?: Address
 }
 
 export interface RouteDeps {
@@ -242,6 +244,7 @@ function expectationOf(c: RouteCtx, call: RouterCallAt, rail: RailExpectation): 
 		feeAsset: c.b.feeAsset,
 		routerCall: call.routerCall,
 		...(call.gas ? { fuel: call.gas.venue } : {}),
+		...(c.b.fuelSwapper ? { fuelSwapper: c.b.fuelSwapper } : {}),
 		rail,
 	}
 }
@@ -345,7 +348,12 @@ export function appRouteDeps(slice: SliceSizer): RouteDeps {
 	const ethereum = readClientFor(NETWORK.l1ChainId)
 	return {
 		bindings: SEND_GENERATION
-			? { l1ChainId: NETWORK.l1ChainId, router: SEND_GENERATION.router, feeAsset: SEND_GENERATION.feeAsset }
+			? {
+					l1ChainId: NETWORK.l1ChainId,
+					router: SEND_GENERATION.router,
+					feeAsset: SEND_GENERATION.feeAsset,
+					...(GENERATION?.l1.fuelSwapper ? { fuelSwapper: GENERATION.l1.fuelSwapper as Address } : {}),
+				}
 			: undefined,
 		across: target.acrossApiUrl
 			? { fetch: ((input, init) => fetch(input, init)) as typeof fetch, base: target.acrossApiUrl }

@@ -15,6 +15,11 @@ vi.mock("../src/protocol/code-hash.ts", async (importOriginal) => {
 	const { syntheticPins } = await import("./fakes.ts")
 	return { ...real, CODE_PINS: syntheticPins(real.pinOfBuild) }
 })
+/** The recorded LI.FI quote swaps on Ethereum, where LI.FI gas swaps are not enabled; these cases enable it. */
+vi.mock("../src/protocol/lifi-gas.ts", async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	LIFI_FUEL_CHAIN_IDS: [31337, 31338, 1],
+}))
 
 const LIFI = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "contracts", "bridge", "evm", "test", "fixtures", "lifi")
 const RAW = JSON.parse(readFileSync(join(LIFI, "mainnet.raw.json"), "utf8")).deadlineFree

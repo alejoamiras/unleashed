@@ -6,6 +6,7 @@
  * `toAmountMin` can never equal it: the floor never drops below the claim minimum). I/O is injected.
  */
 import { type Address, concat, encodeFunctionData, type Hex, numberToHex, pad, parseAbi, size, slice, zeroHash } from "viem"
+import { decodeFuelSwap, fuelSwapIssue } from "../protocol/fuel-swap.ts"
 import { signedMinFuelOutput } from "../protocol/gas-share.ts"
 import { FUEL_SWAP_SELECTORS, SWAP_TOKENS_SINGLE_V3_ABI } from "../protocol/lifi-abi.ts"
 import { lifiBook } from "../protocol/lifi-addresses.ts"
@@ -116,7 +117,7 @@ export interface LifiFuelProviderOptions extends FuelFloorPolicy {
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 /** The pins a LI.FI fuel quote must meet before its bytes are used; returns the first field that breaks one. */
-function unsafeLifiField(o: LifiFuelProviderOptions, q: LifiQuote): string | undefined {
+function unsafeLifiField(o: LifiFuelProviderOptions, q: LifiQuote, token: Address, amountIn: bigint): string | undefined {
 	const allowed: readonly string[] = LIFI_ALLOW_EXCHANGES
 	const venues = [q.tool, ...q.includedSteps.filter((s) => s.type === "swap").map((s) => s.tool)]
 	if (!venues.every((t) => allowed.includes(t))) return "tool"
@@ -128,7 +129,10 @@ function unsafeLifiField(o: LifiFuelProviderOptions, q: LifiQuote): string | und
 	if (fields.receiver !== pad(o.router.toLowerCase() as Hex)) return "_receiver"
 	// The bytes and the estimate describe the same quote only if LI.FI wrote its own minimum into the call.
 	if (fields.minAmountOut !== q.estimate.toAmountMin) return "_minAmountOut"
-	return undefined
+	const swap = decodeFuelSwap(q.transactionRequest.data)
+	if ("field" in swap) return swap.field
+	const venue = { provider: "lifi", tool: q.tool } as const
+	return fuelSwapIssue(swap, { chainId: o.chainId, token, slice: amountIn, feeAsset: o.feeAsset, venue })?.field
 }
 
 async function lifiQuoteChecked(o: LifiFuelProviderOptions, token: Address, amountIn: bigint): Promise<FuelResult<{ quote: LifiQuote }>> {
@@ -142,15 +146,15 @@ async function lifiQuoteChecked(o: LifiFuelProviderOptions, token: Address, amou
 		slippageBps: o.slippageBps,
 	})
 	if (!res.ok) return { ok: false, reason: "provider", message: `LI.FI refused: ${res.reason}`, lifi: res }
-	const field = unsafeLifiField(o, res.value)
+	const field = unsafeLifiField(o, res.value, token, amountIn)
 	return field === undefined ? { ok: true, quote: res.value } : { ok: false, reason: "unsafe", field }
 }
 
 /**
  * LI.FI's same-chain quote, paid and received by the router. A quote is refused unless every swap on it runs on a
  * `LIFI_ALLOW_EXCHANGES` venue, it calls and needs approval for `diamond` alone, carries no value, uses a pinned
- * selector, names the router as `_receiver` and agrees with its own estimate; the returned `swapData` differs from
- * LI.FI's bytes only in the `_minAmountOut` word.
+ * selector, names the router as `_receiver`, agrees with its own estimate and its steps meet `fuelSwapIssue` (on
+ * `LIFI_FUEL_CHAIN_IDS` only); the returned `swapData` differs from LI.FI's bytes only in the `_minAmountOut` word.
  */
 export function lifiFuelProvider(o: LifiFuelProviderOptions): FuelQuoteProvider {
 	return {
