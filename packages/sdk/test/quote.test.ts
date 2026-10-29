@@ -15,6 +15,12 @@ vi.mock("../src/protocol/code-hash.ts", async (importOriginal) => {
 	const { syntheticPins } = await import("./fakes.ts")
 	return { ...real, CODE_PINS: syntheticPins(real.pinOfBuild) }
 })
+/** A synthetic manifest stands in for the bundle on the chains a case sets; every other chain keeps the real one. */
+const bundles = vi.hoisted(() => new Map<number, unknown>())
+vi.mock("../src/networks.ts", async (importOriginal) => {
+	const real = await importOriginal<typeof import("../src/networks.ts")>()
+	return { ...real, bundledManifest: (id: number) => (bundles.has(id) ? bundles.get(id) : real.bundledManifest(id)) }
+})
 /** The recorded LI.FI quote swaps on Ethereum, where LI.FI gas swaps are not enabled; these cases enable it. */
 vi.mock("../src/protocol/lifi-gas.ts", async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -26,6 +32,7 @@ const RAW = JSON.parse(readFileSync(join(LIFI, "mainnet.raw.json"), "utf8")).dea
 const BOOK = JSON.parse(readFileSync(join(LIFI, "mainnet.json"), "utf8")) as { router: Address; ethereum: { usdc: Address } }
 /** The recorded quote's slice: 10 USDC. */
 const RECORDED_IN = 10_000_000n
+bundles.set(1, mainnetFuelRoute(BOOK.router))
 
 let recipient: string
 beforeAll(async () => {
