@@ -5,7 +5,7 @@ import type { ToolsTargetKey } from "../src/lib/network-targets"
 /** A built dist's text files, keyed by their path relative to the dist root. */
 export type DistTexts = ReadonlyMap<string, string>
 
-/** The mainnet root's chunks (the gate, the placeholder): emitted by name, so checkable without reading them. */
+/** The mainnet root's chunk, emitted by name, so checkable without reading it; the placeholder's name too, should it split off. */
 const MAINNET_CHUNK = /(^|\/)(MainnetRoot|MainnetPlaceholderView)[^/]*$/
 
 /**

@@ -133,12 +133,10 @@ export async function signAcceptance(provider: EIP1193Provider, origin: string):
 export function recordAcceptance(getStorage: GetStorage, record: AcceptanceRecord): void {
 	try {
 		getStorage().setItem(ACCEPTANCE_KEY, JSON.stringify(record))
-	} catch {
-		// The caller already holds the acceptance in memory.
-	}
+	} catch {}
 }
 
-/** EIP-1193 `-32002`: the wallet already holds a request from this origin, which a reload does not clear. */
+/** EIP-1474 `-32002`, which wallets such as MetaMask return while an earlier request from this origin waits; a reload does not clear it. */
 const REQUEST_PENDING = -32002
 
 export type SignFailure = "refused" | "busy" | "failed"

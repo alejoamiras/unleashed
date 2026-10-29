@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button, Icon } from "@unleashed/design"
 import { LEGAL_URLS, PRIVACY, TERMS } from "@unleashed/legal"
-import { onMounted, ref, useTemplateRef } from "vue"
+import { nextTick, onMounted, ref, useTemplateRef } from "vue"
 import { browserStorage, injectedProvider, recordAcceptance, type SignFailure, signAcceptance, signFailure } from "./acceptance"
 import { GATE_TESTIDS } from "./testids"
 
@@ -44,11 +44,11 @@ const DOCS = [
 
 const phase = ref<Phase>("idle")
 const heading = useTemplateRef<HTMLHeadingElement>("heading")
+const signButton = useTemplateRef<{ $el: HTMLButtonElement }>("signButton")
 
 onMounted(() => heading.value?.focus())
 
 async function sign() {
-	if (phase.value === "pending") return
 	// Read at press time: some wallets inject `window.ethereum` after the page has loaded.
 	const provider = injectedProvider()
 	if (!provider) {
@@ -62,6 +62,9 @@ async function sign() {
 		emit("accepted")
 	} catch (e) {
 		phase.value = signFailure(e)
+		// Disabling the focused button sent focus to the body; give it back so the keyboard can retry.
+		await nextTick()
+		if (document.activeElement === document.body) signButton.value?.$el.focus()
 	}
 }
 </script>
@@ -92,6 +95,7 @@ async function sign() {
 		</ul>
 		<div class="action">
 			<Button
+				ref="signButton"
 				size="large"
 				:loading="phase === 'pending'"
 				:disabled="phase === 'pending'"

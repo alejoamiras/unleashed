@@ -548,6 +548,17 @@ accepted limit.
 | 2 | No root test holds the check open to prove neither screen renders meanwhile | fixed: a held check, then `none` and `accepted` controls |
 | — | Comments: section labels in the gate, the press-time read's reason, `readAcceptance` called an old version `none` | fixed |
 
+**a2 code, same-family review** (Opus 5.5, beside round 1): five findings; four more were already fixed by
+round 1. It checked every G1, G2 and G4 string byte for byte and the layout against the signed mocks.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | The policy's `updated` stays "29 October 2026", the same as #28's version, so the landing's date cannot tell the two apart | partly: kept, as a1's rule (the final revision's UTC date) gives that date; if the merge lands after 29 October UTC, bump `updated` in `privacy.ts` first (it only re-digests, and the gate asks again). Named in the PR body and the report |
+| 2 | viem loads secp256k1 as a lazy chunk; a deploy that replaces it between load and press makes a fresh signature fail with advice to switch accounts | plausible: folded into the version-skew known limit (an open tab across a deploy; a reload fixes it). A static import needs a new direct dependency |
+| 3 | The double-press test proves `disabled`, and `sign()`'s pending guard is dead | demonstrated, fixed: guard removed; the test says what it proves |
+| 4 | Disabling the focused button sends focus to the body, so a keyboard retry needs Shift+Tab | fixed: focus returns to the button after a failure unless the user moved it; a unit case and a browser check (Enter to refuse, Enter to accept) |
+| 5 | `-32002` is EIP-1474, not EIP-1193; a test helper's comment; the dist rule's chunk comment; a redundant catch comment; a test title | fixed |
+
 ## Post-implementation
 
 The repository has no Post-implementation standard; the steps are here.

@@ -92,7 +92,7 @@ describe("acceptanceMessage", () => {
 		expect(signIn.test("app.unleashed.systems wants you to sign in with your Ethereum account:")).toBe(true)
 	})
 
-	it("changes with either document", () => {
+	it("names each document by its own 32-byte digest", () => {
 		expect(DIGESTS.terms).toMatch(/^0x[0-9a-f]{64}$/)
 		expect(DIGESTS.terms).not.toBe(DIGESTS.privacy)
 	})

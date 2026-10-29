@@ -20,7 +20,7 @@ const LINE = {
 	failed: "Your wallet could not sign this message, or sent back a signature this page cannot check. Try again, or use another account. Some smart-contract accounts cannot sign here yet.",
 }
 
-/** A wallet whose `personal_sign` answers are queued: a function signs or throws, `"hold"` waits for `release`. */
+/** A wallet whose `personal_sign` answers are queued: `"sign"` or `"bob"` signs as that account, a number throws that code, `"hold"` waits for `release`. */
 function installWallet(...answers: ("sign" | "bob" | "hold" | number)[]) {
 	const calls: string[] = []
 	let release: () => void = () => {}
@@ -100,6 +100,7 @@ describe("AcceptanceGate", () => {
 		expect(button(w).attributes("disabled")).toBeDefined()
 		expect(button(w).attributes("aria-busy")).toBe("true")
 		expect(status(w).text()).toBe(LINE.pending)
+		// The disabled button swallows a second press: one request pair in all.
 		await button(w).trigger("click")
 		wallet.release()
 		await flushPromises()
@@ -134,6 +135,22 @@ describe("AcceptanceGate", () => {
 		expect(status(w).classes()).toContain("warn")
 		expect(w.emitted("accepted")).toBeUndefined()
 		expect(localStorage.length).toBe(0)
+	})
+
+	it("gives focus back to the button after a failure, unless the user moved it", async () => {
+		installWallet(4001, 4001)
+		const w = gate()
+		const el = button(w).element as HTMLButtonElement
+		el.focus()
+		await button(w).trigger("click")
+		el.blur() // a browser moves focus to the body when the focused button is disabled
+		await flushPromises()
+		expect(document.activeElement).toBe(el)
+		const link = w.find(sel(GATE_TESTIDS.docLink)).element as HTMLAnchorElement
+		await button(w).trigger("click")
+		link.focus()
+		await flushPromises()
+		expect(document.activeElement).toBe(link)
 	})
 
 	it("says so when the browser has no Ethereum wallet", async () => {
