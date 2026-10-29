@@ -7,10 +7,23 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: a1 implemented; Codex fix loop converged; delivery in progress
+status: closed, shipped in #72
 base: main a111e8a
 budget: "recon: 1 Sonnet explorer + driver checks; code-review: off; Codex gpt-6.1-sol at high"
 ---
+
+## Outcome
+
+- **Status: closed, shipped** in #72 (arc a1, Delivers ask35). Phase 1 is ✓.
+- **Shipped.** The token rows and the selected token's Ethereum balance read through the build's pinned keyless reader,
+  keyed by the connected address alone, so a wallet on Base Sepolia shows them. The rows go out as one `eth_call`, and a
+  refused call keeps the figures already read instead of showing zeros (D4). The wallet keeps resolution, chain checks
+  and signing.
+- **Not done, by decision.** Resolution while the wallet is elsewhere (D1); `batchSize: 0` inside the SDK (D2); a
+  post-mint receipt wait (D3). No lesson promoted: `lessons.md` is at its budget, and #73 owns the SDK fix.
+- **Known limits:** #74.
+- **Open items:** #73.
+- The `/goal` and `/loop` seeds below are retired; they are not instructions.
 
 # balances-1: Ethereum balances on the token list whichever chain the wallet is on
 
