@@ -1,10 +1,18 @@
 import { mount } from "@vue/test-utils"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { CrossChainFigures } from "@/lib/crosschain-figures"
 import type { SendPlan } from "@/lib/send-model"
 import { TESTIDS } from "@/lib/testids"
 import { ask, DEST_TOKEN, SRC_USDC } from "@/test/crosschain"
 import CrossChainReview from "./CrossChainReview.vue"
+
+const net = vi.hoisted(() => ({ mainnet: false }))
+vi.mock("@/lib/network", async (original) => ({
+	...(await original<typeof import("@/lib/network")>()),
+	get IS_MAINNET() {
+		return net.mainnet
+	},
+}))
 
 const sel = (t: string) => `[data-testid="${t}"]`
 
@@ -60,11 +68,12 @@ function review(over: Record<string, unknown> = {}) {
 }
 
 describe("CrossChainReview", () => {
+	afterEach(() => {
+		net.mainnet = false
+	})
+
 	it("states a testnet send as the testnet board draws it, and signs", async () => {
 		const w = review()
-		expect(w.find(sel(TESTIDS.sendXcTestnetNotice)).text()).toBe(
-			"Testnet: this send waits for a manual fill on Ethereum · Sepolia. If it isn't filled within 2 hours, it is refunded to you on Base Sepolia.",
-		)
 		expect(w.find(sel(TESTIDS.sendReviewSend)).text()).toContain("5.00USDCfrom BASE Base Sepolia")
 		expect(w.find(sel(TESTIDS.sendXcLimits)).text()).toBe("Across's testnet limits: at least ≈ 1.95, at most ≈ 8.00 USDC per send")
 		expect(w.find(sel(TESTIDS.sendReviewArrives)).text()).toBe("Arrives≈ 4.51 USDC on Aztec")
@@ -75,13 +84,13 @@ describe("CrossChainReview", () => {
 		expect(w.find(sel(TESTIDS.sendXcFallback)).text()).toContain("your own address 0x51Cd…0f44 there instead")
 		await w.find(sel(TESTIDS.sendReviewDetailsToggle)).trigger("click")
 		expect(w.find(sel(TESTIDS.sendReviewTokenLink)).attributes("href")).toBe(`https://sepolia.basescan.org/token/${SRC_USDC}`)
-		expect(w.find(sel(TESTIDS.sendXcRefund)).text()).toBe("Refund0x51Cd…0f44 on Base Sepolia, after 2 hours undelivered")
+		expect(w.find(sel(TESTIDS.sendXcRefund)).exists(), "testnet promises no refund").toBe(false)
 		await w.find(sel(TESTIDS.sendReviewConfirm)).trigger("click")
 		expect(w.emitted("confirm")).toHaveLength(1)
 		w.unmount()
 	})
 
-	it("states fixed terms in the limits' place, keeps the testnet notice, and times the wait by the manual fill", async () => {
+	it("states fixed terms in the limits' place, and says our testnet relayer fills the send", async () => {
 		const fixed: CrossChainFigures = {
 			...FIGURES,
 			delivered: 3_750_000n,
@@ -93,17 +102,32 @@ describe("CrossChainReview", () => {
 			fixed: true,
 		}
 		const w = review({ figures: fixed })
-		expect(w.find(sel(TESTIDS.sendXcTestnetNotice)).exists()).toBe(true)
+		expect(w.find(sel(TESTIDS.sendXcTestnetNotice)).text()).toBe(
+			"Testnet: our testnet relayer fills this send on Ethereum · Sepolia, usually within a few minutes.",
+		)
 		expect(w.find(sel(TESTIDS.sendXcLimits)).exists()).toBe(false)
 		expect(w.find(sel(TESTIDS.sendXcFixedTerms)).text()).toBe(
 			"Fixed testnet terms: the relay fee is 25.0 % of the amount, and one send carries at most 8.00 USDC.",
 		)
 		expect(w.find(sel(TESTIDS.sendReviewTakes)).text()).toBe(
-			"TakesUp to 2 hours for a manual fill on Ethereum · Sepolia, a few minutes for Aztec to pick it up, then your claim.",
+			"TakesUsually a few minutes for our testnet relayer to fill it on Ethereum · Sepolia, a few minutes for Aztec to pick it up, then your claim.",
 		)
 		expect(w.text()).toContain("Terms valid for 0:42 · rebuilt before you sign")
 		await w.find(sel(TESTIDS.sendReviewDetailsToggle)).trigger("click")
 		expect(w.find(sel(TESTIDS.sendReviewDetails)).text()).toContain("QuoteFixed testnet terms, rebuilt every 60\u00a0s")
+		expect(w.find(sel(TESTIDS.sendXcRefund)).exists()).toBe(false)
+		w.unmount()
+	})
+
+	it("keeps mainnet's Refund row and live ETA, and shows no testnet notice", async () => {
+		net.mainnet = true
+		const w = review()
+		expect(w.find(sel(TESTIDS.sendXcTestnetNotice)).exists()).toBe(false)
+		expect(w.find(sel(TESTIDS.sendReviewTakes)).text()).toBe(
+			"TakesAbout 1 min to reach Ethereum · Sepolia, a few minutes for Aztec to pick it up, then your claim.",
+		)
+		await w.find(sel(TESTIDS.sendReviewDetailsToggle)).trigger("click")
+		expect(w.find(sel(TESTIDS.sendXcRefund)).text()).toBe("Refund0x51Cd…0f44 on Base Sepolia, after 2 hours undelivered")
 		w.unmount()
 	})
 
