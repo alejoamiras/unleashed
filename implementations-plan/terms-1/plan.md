@@ -298,7 +298,7 @@ Gate: the P1 gate; the closing round's verdict quoted in `lessons/phase-4.md`.
 Gate: `bun run audit:tools && bun run test:all && bun run e2e:tools` exit 0 (`App.vue` is the testnet
 shell's entry too), and the P2 build commands.
 
-**P6: the owner's answers.** Starts when A1–A14, C1–C3 and C8 are answered.
+**P6 ✓: the owner's answers.** Starts when A1–A14, C1–C3 and C8 are answered. C1–C3 signed as decision page 4 (P4-01, P4-02, P4-03); A11 is the final revision's UTC date; the merge, re-trace and gates are in `lessons/phase-6.md`.
 
 1. Merge `origin/main`; redo the P3 and P4 traces against it (sdk-1 may have moved the code they cite).
 2. Fill every placeholder; apply the C1/C2 edits and C3 (for example two links under the placeholder's
