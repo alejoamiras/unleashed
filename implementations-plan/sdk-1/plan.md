@@ -7,12 +7,42 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: approved; the owner answered OWNER-ASKS §1–§7 and §10 (ask26); a6 in progress
+status: closed; delivered (a1–a6)
 base: main fb90e366
 budget: "recon: 3 Sonnet explorers; drafts: driver + Codex + Opus 5.5; code-review: off; Codex gpt-6.1-sol at high"
 ---
 
 # sdk-1: a publishable bridge SDK, the app on it, and mainnet fuel through LI.FI
+
+## Outcome
+
+- **Closed; delivered** in seven PRs: a1 #33, a2 #47, a3 #51, a4 #56, a5 #57, a6 #69, and the a6 PR that carries this
+  close-out. The owner merges, squash.
+- **Shipped: ask5.**
+  - The mainnet gas-only fuel route behind a fuel-only gate (a1).
+  - `@unleashed/sdk`, with its fuel and bridge entries, verified deposits and resumable claims (a2).
+  - The app's send lanes (a3) and claims (a4, a6) on the SDK.
+  - The publish setup: README, typechecked examples, `publish-sdk.yml` and `pack:check` in `pr-quick` (a5).
+  - Publishing the package is the owner's act, by hand from `main`.
+- **Shipped: ask3.** The keyless LI.FI client runs through the SDK in the browser (a3).
+- **Shipped: ask26** (a6).
+  - The SDK's claim entries report the claim card's progress, resume watching without prompting (`watchOnly`), report
+    the Ethereum confirmation wait, and take the claim-without-gas choice (`withoutGas`).
+  - They keep the early fee check, the gas a claimed-elsewhere token left, and no second fee after an interrupted
+    prompt.
+  - The app's claims run on them through a field-delta journal writer under the journal lock.
+  - The card's visible changes are §10's items 1, 2, 3, 7 and 8, P7-02's sentence and the private claimed-elsewhere
+    line; every other state shows what it did before.
+- **Dropped.**
+  - Exits, the cross-chain source leg, Drip and the AZTEC mint stay on private code: v1 covers ask5's flows only.
+  - The app does not show the Ethereum confirmation wait (D83): §10 item 6 was outside the budget.
+- **Known limits:**
+  - #30 and #31 (a1);
+  - #43, #44 and #45 (a4);
+  - #79: a node whose nullifier state trails its receipts holds a resumed claim's completion back.
+- **Open items:**
+  - #80: the send flow's journal writes stay outside the journal lock (D82).
+- **Seeds retired:** the `/goal` and `/loop` seeds below are history.
 
 ## Summary
 
@@ -1065,6 +1095,7 @@ Arc a6, PR 2 (`git diff bc5e585..HEAD`):
     on a cross-chain record now restarts it after the same delay.
   - Only an unsent record skipped the unseal on an explicit watch-only run: such a run is no longer interactive.
   - The gas-timeout test stored no hash: it now keeps the sent hash and hands it to the retry.
+- **Round 3, Codex: APPROVE.** No new findings; it checked the restart's cancellation and cleanup paths.
 - **The screenshot tour** reached all five states through real flows. Everything else it flagged is today's
   rendering:
   - the run template after fee-stop copy;
