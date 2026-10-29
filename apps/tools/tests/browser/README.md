@@ -113,6 +113,7 @@ You can take PR screenshots with a throwaway spec, `specs/zz-*.spec.ts`. It driv
 - The test wallet's iframe and its parked panel (`[data-wallet-parked]`) sit over the rail's top-left corner, where the logo is. Pass `style: "iframe, [data-wallet-parked] { visibility: hidden !important; }"` to `page.screenshot` so the capture shows the app, not the harness.
 - The wallet and token names in a capture are harness test data, not app copy.
 - A theme switch runs a 90ms colour transition: wait about 350ms after switching before a capture, or labels are caught mid-fade.
+- The sandbox runs a send's first phases in about a second, so a pending phase's estimate is gone before a capture: arm `l1.holdNext("transaction")` before confirming to hold the send there.
 - The parked panel can also take a real click aimed near that corner (the rail's tabs after an account switch, the tab bar at 390). Dispatch the click on the element itself there.
 - A tour cannot reach a retried state through an injected `failNext` or `holdNext` wallet failure: bridge-core's uncertain-outcome guard waits for the pending attempt's receipt, so Retry never lands. Reach the state another way, such as a held L1 transaction.
 

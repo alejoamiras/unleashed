@@ -1,7 +1,7 @@
 /**
- * One relayer run: find the app's deposits for our filler in the fill window, drop what is filled, late or
+ * One relayer pass: find the app's deposits for our filler in the fill window, drop what is filled, late or
  * unaffordable, and fill at most one, the largest first. Stateless: the chain is the only record, so a redeploy, a
- * crash or a skipped minute loses nothing a later run cannot redo while the deposit is fillable.
+ * crash or a skipped pass loses nothing a later pass cannot redo while the deposit is fillable.
  */
 import {
 	boundedGasTerms,
@@ -31,22 +31,27 @@ import {
 	type PublicClient,
 } from "viem"
 import type { PrivateKeyAccount } from "viem/accounts"
+import { PastDeadline, type Read, withinDeadline } from "./deadline"
 import { errorLine, type RelayLog } from "./log"
 import type { RelayerRoute } from "./route"
 import { classify } from "./select"
+import { SCAN_WINDOW_S, scanWindow } from "./window"
 
-/** Source blocks a run scans: Base Sepolia's 2 s blocks over the 7,200 s fill window and 600 s more. */
-export const SCAN_BLOCKS = 4_000n
-/** Destination blocks searched for fills: the fill window and margin at Sepolia's 12 s. */
+/** Destination blocks searched for fills: Sepolia's 12 s slots make 800 blocks span at least 9,600 s, past `SCAN_WINDOW_S`. */
 export const FILL_LOG_BLOCKS = 800n
-/** The widest `getLogs` range Base's own endpoint serves. */
-const CHUNK_BLOCKS = 500n
+/** `getLogs` range per call, which PublicNode serves on both chains (50,000 on Base Sepolia); Base's own endpoint serves 201. */
+export const CHUNK_BLOCKS = 2_000n
 /** Source blocks left unread at the head, which a load-balanced RPC's backends may not all have. */
 const SOURCE_LAG = 2n
-/** An ignored deposit is logged by the runs that see it this close to the head, not by every run for two hours. */
-const IGNORED_LOG_BLOCKS = 30n
 const DEADLINE_MARGIN_S = 120n
-/** Candidates one run may try: write-free refusals pass to the next, so fewer poisoned deposits cannot hold the queue. */
+/** The longest a pass's reads may take: a slow provider fails the pass, never the next cron's run. */
+export const SURVEY_DEADLINE_MS = 45_000
+/**
+ * A try starts only this long before the run's end: two Sepolia slots and a second of receipt polling each, a
+ * heuristic for a send at normal pace, which nothing here can cut short.
+ */
+export const FILL_BUDGET_MS = 25_000
+/** Candidates one pass may try: write-free refusals pass to the next, so fewer poisoned deposits cannot hold the queue. */
 export const MAX_TRIES = 8
 /** The worst fee one send may cost, checked at the gas cap before any write and on every send. */
 export const FEE_CEILING_WEI = 5_000_000_000_000_000n
@@ -59,7 +64,12 @@ export interface RelayConfig {
 	log: RelayLog
 }
 
-export type RunOutcome = "refused" | "idle" | "busy" | "gas-price" | "filled" | "already-filled" | "skipped" | "failed"
+export type RunOutcome = "refused" | "idle" | "busy" | "gas-price" | "late" | "filled" | "already-filled" | "skipped" | "failed"
+
+export interface PassBounds {
+	/** When the pass's reads must be done and no later try may start (ms since the epoch): before the next cron fires. */
+	runEnd: number
+}
 
 export interface RunSummary {
 	outcome: RunOutcome
@@ -76,7 +86,6 @@ interface Candidate {
 }
 
 class RunRefused extends Error {}
-
 const chainOf = (id: number, rpcUrl: string): Chain =>
 	defineChain({
 		id,
@@ -99,15 +108,16 @@ export function connectRelay(
 			transport: http(endpoints.sourceRpcUrl),
 		}),
 		destination: {
-			public: createPublicClient({ chain: destinationChain, transport }),
+			// Receipt waits poll at 1 s, so a send lasts about its inclusion time, as `FILL_BUDGET_MS` assumes.
+			public: createPublicClient({ chain: destinationChain, transport, pollingInterval: 1_000 }),
 			wallet: createWalletClient({ account, chain: destinationChain, transport }) as FillWallet,
 		},
 	}
 }
 
 /** Both endpoints on their end of the route and the signer is the filler, before any other read or any signature. */
-async function assertRoute(c: RelayConfig): Promise<void> {
-	const [s, d] = await Promise.all([c.source.getChainId(), c.destination.public.getChainId()])
+async function assertRoute(c: RelayConfig, read: Read): Promise<void> {
+	const [s, d] = await Promise.all([read(() => c.source.getChainId()), read(() => c.destination.public.getChainId())])
 	if (s !== c.route.source.chainId) throw new RunRefused(`the source endpoint answers chain ${s}, not ${c.route.source.chainId}`)
 	if (d !== c.route.destination.chainId) {
 		throw new RunRefused(`the destination endpoint answers chain ${d}, not ${c.route.destination.chainId}`)
@@ -117,12 +127,12 @@ async function assertRoute(c: RelayConfig): Promise<void> {
 }
 
 /** The filler's output-token balance; either balance is logged when too low for one more full send. */
-async function readFloat(c: RelayConfig): Promise<bigint> {
+async function readFloat(c: RelayConfig, read: Read): Promise<bigint> {
 	const { public: client } = c.destination
 	const filler = c.route.filler
 	const [gas, token] = await Promise.all([
-		client.getBalance({ address: filler }),
-		client.readContract({ address: c.route.destination.token, abi: erc20Abi, functionName: "balanceOf", args: [filler] }),
+		read(() => client.getBalance({ address: filler })),
+		read(() => client.readContract({ address: c.route.destination.token, abi: erc20Abi, functionName: "balanceOf", args: [filler] })),
 	])
 	if (gas < LOW_GAS_WEI) c.log({ event: "low-gas", balance: gas })
 	const fullSend = selfBuiltTerms(c.route.destination.chainId, c.route.maxInput, 0, filler).outputAmount
@@ -137,21 +147,25 @@ function chunks(from: bigint, to: bigint): [bigint, bigint][] {
 	return out
 }
 
-/** The source pool's deposits bound for the destination over the window, one per log so each keeps its transaction. */
-async function sourceDeposits(c: RelayConfig): Promise<{ head: bigint; found: Omit<Candidate, "relayHash">[] }> {
+/** The source pool's deposits bound for the destination since `since`, one per log so each keeps its transaction. */
+async function sourceDeposits(c: RelayConfig, since: bigint, read: Read) {
 	const { source, route } = c
-	const head = (await source.getBlockNumber({ cacheTime: 0 })) - SOURCE_LAG
-	const from = head > SCAN_BLOCKS ? head - SCAN_BLOCKS : 0n
+	const latest = await read(() => source.getBlockNumber({ cacheTime: 0 }))
+	const head = latest > SOURCE_LAG ? latest - SOURCE_LAG : 0n
+	const stamp = async (blockNumber: bigint) => (await retried(() => read(() => source.getBlock({ blockNumber })))).timestamp
+	const window = await scanWindow(stamp, head, since)
 	const found: Omit<Candidate, "relayHash">[] = []
-	for (const [fromBlock, toBlock] of chunks(from, head)) {
+	for (const [fromBlock, toBlock] of chunks(window.from, head)) {
 		const logs = await retried(() =>
-			source.getLogs({
-				address: route.source.spokePool,
-				event: FUNDS_DEPOSITED,
-				args: { destinationChainId: BigInt(route.destination.chainId) },
-				fromBlock,
-				toBlock,
-			}),
+			read(() =>
+				source.getLogs({
+					address: route.source.spokePool,
+					event: FUNDS_DEPOSITED,
+					args: { destinationChainId: BigInt(route.destination.chainId) },
+					fromBlock,
+					toBlock,
+				}),
+			),
 		)
 		for (const log of logs) {
 			const [deposit] = depositsIn([log], route.source.spokePool, BigInt(route.source.chainId))
@@ -160,38 +174,40 @@ async function sourceDeposits(c: RelayConfig): Promise<{ head: bigint; found: Om
 			}
 		}
 	}
-	return { head, found }
+	return { recentFrom: window.recentFrom, found }
 }
 
 /** Admitted deposits; a transaction holding two is ignored whole, since the fill path names a deposit by its transaction. */
-async function admitted(c: RelayConfig): Promise<Candidate[]> {
-	const { head, found } = await sourceDeposits(c)
+async function admitted(c: RelayConfig, since: bigint, read: Read): Promise<Candidate[]> {
+	const { recentFrom, found } = await sourceDeposits(c, since, read)
 	const perTx = new Map<string, number>()
 	for (const f of found) perTx.set(f.txHash, (perTx.get(f.txHash) ?? 0) + 1)
 	const out: Candidate[] = []
 	for (const f of found) {
 		const reason = (perTx.get(f.txHash) ?? 0) > 1 ? "ambiguous" : classify(f.deposit, c.route)
 		if (reason === null) out.push({ ...f, relayHash: relayHashOf(f.deposit) })
-		else if (f.blockNumber + IGNORED_LOG_BLOCKS >= head) c.log({ event: "ignored", reason, srcTx: f.txHash })
+		else if (f.blockNumber >= recentFrom) c.log({ event: "ignored", reason, srcTx: f.txHash })
 	}
 	return out
 }
 
 /** Fills the destination pool logged from our origin, by deposit id, over the fill window. */
-async function recentFills(c: RelayConfig, destinationHead: bigint) {
+async function recentFills(c: RelayConfig, destinationHead: bigint, read: Read) {
 	const { public: client } = c.destination
 	const from = destinationHead > FILL_LOG_BLOCKS ? destinationHead - FILL_LOG_BLOCKS : 0n
 	const byId = new Map<bigint, Parameters<typeof fillsRelay>[0][]>()
 	for (const [fromBlock, toBlock] of chunks(from, destinationHead)) {
 		const logs = await retried(() =>
-			client.getLogs({
-				address: c.route.destination.spokePool,
-				event: FILLED_RELAY,
-				args: { originChainId: BigInt(c.route.source.chainId) },
-				fromBlock,
-				toBlock,
-				strict: true,
-			}),
+			read(() =>
+				client.getLogs({
+					address: c.route.destination.spokePool,
+					event: FILLED_RELAY,
+					args: { originChainId: BigInt(c.route.source.chainId) },
+					fromBlock,
+					toBlock,
+					strict: true,
+				}),
+			),
 		)
 		// Anyone can log fills under one deposit id, so a bucket can be long: append, never copy.
 		for (const { args } of logs) {
@@ -218,9 +234,14 @@ function before(a: Candidate, b: Candidate): number {
 }
 
 /** Candidates still worth a try, in order: unfilled by full identity, not late, affordable. */
-async function fillable(c: RelayConfig, candidates: Candidate[], float: bigint): Promise<Candidate[]> {
-	const head = await c.destination.public.getBlock({ blockTag: "latest" })
-	const fills = await recentFills(c, head.number)
+async function fillable(
+	c: RelayConfig,
+	candidates: Candidate[],
+	float: bigint,
+	head: { number: bigint; timestamp: bigint },
+	read: Read,
+): Promise<Candidate[]> {
+	const fills = await recentFills(c, head.number, read)
 	const destinationId = c.route.destination.chainId
 	const isFilled = (k: Candidate) =>
 		(fills.get(k.deposit.relay.depositId) ?? []).some((f) => fillsRelay(f, k.deposit.relay.message, k.relayHash, destinationId))
@@ -242,20 +263,32 @@ async function fillable(c: RelayConfig, candidates: Candidate[], float: bigint):
 }
 
 /** `busy` while the filler has a transaction out, `gas-price` while a fill at the gas cap would pass the ceiling. */
-async function pause(c: RelayConfig): Promise<"busy" | "gas-price" | null> {
+async function pause(c: RelayConfig, read: Read): Promise<"busy" | "gas-price" | null> {
 	const { public: client } = c.destination
 	const address = c.route.filler
 	const [pending, latest] = await Promise.all([
-		client.getTransactionCount({ address, blockTag: "pending" }),
-		client.getTransactionCount({ address, blockTag: "latest" }),
+		read(() => client.getTransactionCount({ address, blockTag: "pending" })),
+		read(() => client.getTransactionCount({ address, blockTag: "latest" })),
 	])
 	if (pending > latest) return "busy"
-	const { maxFeePerGas } = await client.estimateFeesPerGas()
+	const { maxFeePerGas } = await read(() => client.estimateFeesPerGas())
 	return TX_GAS_CAP * maxFeePerGas > FEE_CEILING_WEI ? "gas-price" : null
 }
 
+/** Why a try may not start: past the send cutoff, or per {@link pause}, whose reads are raced to that cutoff. */
+async function holdBeforeTry(c: RelayConfig, bounds: PassBounds): Promise<"late" | "busy" | "gas-price" | null> {
+	const left = bounds.runEnd - FILL_BUDGET_MS - Date.now()
+	if (left <= 0) return "late"
+	try {
+		return await withinDeadline(left, (read) => pause(c, read))
+	} catch (e) {
+		if (e instanceof PastDeadline) return "late"
+		throw e
+	}
+}
+
 /** Tries candidates in order until one reaches a write or a result; write-free refusals pass to the next. */
-async function fillOne(c: RelayConfig, candidates: Candidate[]): Promise<RunSummary> {
+async function fillOne(c: RelayConfig, candidates: Candidate[], bounds: PassBounds): Promise<RunSummary> {
 	const charge = (worst: bigint) => {
 		if (worst > FEE_CEILING_WEI) throw new Error(`a send's worst fee ${worst} wei passes the ${FEE_CEILING_WEI} wei ceiling`)
 	}
@@ -268,6 +301,11 @@ async function fillOne(c: RelayConfig, candidates: Candidate[]): Promise<RunSumm
 	}
 	let outcome: RunSummary = { outcome: "idle" }
 	for (const k of candidates.slice(0, MAX_TRIES)) {
+		const held = await holdBeforeTry(c, bounds)
+		if (held) {
+			c.log({ event: held })
+			return { outcome: held }
+		}
 		const line = { relayHash: k.relayHash, srcTx: k.txHash, input: k.deposit.relay.inputAmount, output: k.deposit.relay.outputAmount }
 		try {
 			const r = await fillSourceDeposit(deps, k.txHash, { relayHash: k.relayHash })
@@ -286,21 +324,29 @@ async function fillOne(c: RelayConfig, candidates: Candidate[]): Promise<RunSumm
 	return outcome
 }
 
-/** One run, never throwing: every error is a log line, and the next minute is the retry. */
-export async function relayOnce(c: RelayConfig): Promise<RunSummary> {
+async function survey(c: RelayConfig, read: Read): Promise<Candidate[]> {
+	await assertRoute(c, read)
+	const float = await readFloat(c, read)
+	// One destination head serves the window and the deadline skip: both are Sepolia-clock facts.
+	const head = await read(() => c.destination.public.getBlock({ blockTag: "latest" }))
+	return fillable(c, await admitted(c, head.timestamp - SCAN_WINDOW_S, read), float, head, read)
+}
+
+/**
+ * One pass, never throwing: every error is a log line, and the next pass is the retry. Its reads end by
+ * `bounds.runEnd` or fail the pass before any send. No try starts within `FILL_BUDGET_MS` of it, and a started try is
+ * awaited past it.
+ */
+export async function relayPass(c: RelayConfig, bounds: PassBounds = { runEnd: Number.POSITIVE_INFINITY }): Promise<RunSummary> {
 	try {
-		await assertRoute(c)
-		const float = await readFloat(c)
-		const candidates = await fillable(c, await admitted(c), float)
+		const candidates = await withinDeadline(Math.min(SURVEY_DEADLINE_MS, bounds.runEnd - Date.now()), (read) => survey(c, read))
 		if (candidates.length === 0) return { outcome: "idle" }
-		const paused = await pause(c)
-		if (paused) {
-			c.log({ event: paused })
-			return { outcome: paused }
-		}
-		return await fillOne(c, candidates)
+		return await fillOne(c, candidates, bounds)
 	} catch (e) {
 		c.log({ event: e instanceof RunRefused ? "refused" : "failed", reason: errorLine(e) })
 		return { outcome: e instanceof RunRefused ? "refused" : "failed" }
 	}
 }
+
+/** One pass with no run around it: the manual run and the tests. */
+export const relayOnce = (c: RelayConfig): Promise<RunSummary> => relayPass(c)

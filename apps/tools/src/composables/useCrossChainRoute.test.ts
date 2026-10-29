@@ -3,7 +3,7 @@ import { acrossMessageOf, TESTNET_FILLER } from "@unleashed/bridge-core"
 import { lifiBook } from "@unleashed/sdk/protocol"
 import { describe, expect, it } from "vitest"
 import { NO_GAS_ROUTE } from "@/lib/send-model"
-import { acrossApi, ask, BASE_SEPOLIA, NOW_S, OUT, routeDeps } from "@/test/crosschain"
+import { acrossApi, ask, BASE_SEPOLIA, NOW_S, OUT, routeDeps, TESTNET_MIN_FUEL_FJ, type Venue } from "@/test/crosschain"
 import { type CrossChainAsk, quoteCrossChainRoute, ROUTE_TTL_MS, type RouteDeps, useCrossChainRoute } from "./useCrossChainRoute"
 
 describe("quoteCrossChainRoute", () => {
@@ -40,6 +40,22 @@ describe("quoteCrossChainRoute", () => {
 		// A token-only send never asks the venue.
 		const tokenOnly = await outcome(ask({ intent: "token" }), routeDeps({ venue: "down" }))
 		expect(tokenOnly.kind === "route" && tokenOnly.route.gas).toBeUndefined()
+	})
+
+	it("tells a slice under the claim minimum, a broken pin and a zero rate from an outage", async () => {
+		const half = (venue: Venue): RouteDeps => ({ ...routeDeps({ venue, fixedAt: NOW_S }), slice: (_, delivered) => delivered / 2n })
+		const outcome = async (srcAmount: bigint, d: RouteDeps) => (await quoteCrossChainRoute(ask({ srcAmount }), d)).answer
+		// Fixed terms deliver 0.75 of 1 USDC; half of that buys 12 FJ, under the 29.77 FJ minimum.
+		expect(await outcome(1_000_000n, half("under-floor"))).toEqual({
+			kind: "below-floor",
+			expectedOut: 12n * 10n ** 18n,
+			floor: TESTNET_MIN_FUEL_FJ,
+		})
+		expect((await outcome(5_000_000n, half("under-floor"))).kind).toBe("route")
+		for (const venue of ["pin-broken", "zero-rate"] as const) {
+			expect(await outcome(5_000_000n, half(venue))).toEqual({ kind: "no-route", reason: NO_GAS_ROUTE })
+		}
+		expect(await outcome(5_000_000n, half("down"))).toEqual({ kind: "unavailable", reason: "The gas venue could not be read." })
 	})
 
 	it("off mainnet, builds every deposit on fixed terms held for the testnet filler, without asking Across", async () => {
