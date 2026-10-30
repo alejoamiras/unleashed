@@ -12,6 +12,7 @@ import { Button, Icon, Tag } from "@unleashed/design"
 import { computed, ref, watch } from "vue"
 
 /** Composables */
+import { refuseRepeat, useArmedPress } from "@/composables/useArmedPress"
 import { useBridgeJournal } from "@/composables/useBridgeJournal"
 import { useBridgeWallet } from "@/composables/useBridgeWallet"
 import { useOpsInFlight } from "@/composables/useOpsInFlight"
@@ -23,7 +24,6 @@ import { ageFrom, ageWords, classify, routeWords, rowStrings, runningWord, statu
 import { chainLabel, chainTxUrl } from "@/lib/chains"
 import { phaseChip } from "@/lib/crosschain-activity"
 import { useNow } from "@/lib/clock"
-import { IS_MAINNET } from "@/lib/network"
 import { etherscanTxUrl, explorerTxUrl } from "@/lib/explorer"
 import { formatElapsed } from "@/lib/phase-clock"
 import { accountOf, recordState } from "@/lib/record-policy"
@@ -34,6 +34,7 @@ import { claimFuelStandalone, overrideFuelClaim, reconcileFuelConsumed } from "@
 /** Components */
 import BridgePhaseRail from "./BridgePhaseRail.vue"
 import CrossChainCardBody from "./CrossChainCardBody.vue"
+import DiscardWarning from "./DiscardWarning.vue"
 import RecordChips from "./RecordChips.vue"
 
 const props = defineProps<{ record: AnyJournalRecord }>()
@@ -48,17 +49,9 @@ const exportable = computed(() => {
 	return true
 })
 
-const discardArmed = ref(false)
-// An armed Confirm discard that never fires must disarm - a stale armed state turns a later
-// stray click into destroying a private deposit's only sealed secret.
-let disarmTimer: ReturnType<typeof setTimeout> | undefined
-watch(discardArmed, (armed) => {
-	clearTimeout(disarmTimer)
-	if (armed)
-		disarmTimer = setTimeout(() => {
-			discardArmed.value = false
-		}, 6000)
-})
+// Armed apart: a Discard armed as the record completes never confirms its Clear.
+const { armed: discardArmed, press: pressDiscard } = useArmedPress()
+const { armed: clearArmed, press: pressClear } = useArmedPress()
 
 const rt = computed(() => journal.runtime.value[props.record.id] ?? {})
 const bridgeWallet = useBridgeWallet()
@@ -338,13 +331,9 @@ function onAction() {
 	else void journal.runWithdrawConsume(props.record.id)
 }
 
-function onDiscard() {
-	if (!discardArmed.value) {
-		discardArmed.value = true
-		return
-	}
-	journal.discard(props.record.id)
-}
+/** A deposit's record holds its claim secret; a private one holds the only copy. */
+const deletesSecret = computed(() => props.record.isPrivate && props.record.direction === "deposit")
+const warnDelete = computed(() => deletesSecret.value && (stage.value === "done" ? clearArmed.value : discardArmed.value))
 </script>
 
 <template>
@@ -501,7 +490,8 @@ function onDiscard() {
 					:variant="discardArmed ? 'destructive' : 'quiet'"
 					class="card-btn"
 					:data-testid="discardArmed ? TESTIDS.journalDiscardConfirm : TESTIDS.journalDiscard"
-					@click="onDiscard"
+					@click="pressDiscard(() => journal.discard(record.id), $event)"
+					@keydown="refuseRepeat"
 				>
 					<Icon v-if="discardArmed" name="close" :size="12" />{{ discardArmed ? "Confirm discard" : "Discard" }}
 				</Button>
@@ -518,12 +508,13 @@ function onDiscard() {
 				<Button
 					v-if="stage === 'done'"
 					size="small"
-					variant="quiet"
+					:variant="clearArmed ? 'destructive' : 'quiet'"
 					class="card-btn"
-					:data-testid="TESTIDS.journalClear"
-					@click="journal.clearDone(record.id)"
+					:data-testid="clearArmed ? TESTIDS.journalClearConfirm : TESTIDS.journalClear"
+					@click="pressClear(() => journal.clearDone(record.id), $event)"
+					@keydown="refuseRepeat"
 				>
-					Clear
+					<Icon v-if="clearArmed" name="close" :size="12" />{{ clearArmed ? "Confirm clear" : "Clear" }}
 				</Button>
 				<button
 					v-else-if="exportable"
@@ -538,13 +529,7 @@ function onDiscard() {
 				</button>
 			</div>
 
-			<p v-if="discardArmed && stage !== 'done' && record.isPrivate && record.direction === 'deposit'" class="discard-warning">
-				<Icon name="square-alert" :size="12" class="note-icon" />
-				<span>
-					Discarding destroys the only copy of this claim's sealed recovery secret — the deposited funds become
-					unclaimable{{ IS_MAINNET ? " — these are real funds" : "" }}.
-				</span>
-			</p>
+			<DiscardWarning v-if="warnDelete" />
 		</template>
 	</article>
 </template>
@@ -660,8 +645,7 @@ function onDiscard() {
 }
 
 .note,
-.attention,
-.discard-warning {
+.attention {
 	display: flex;
 	gap: 8px;
 	align-items: flex-start;
@@ -699,10 +683,6 @@ function onDiscard() {
 }
 
 .journal-card[data-status="lost"] .attention .note-icon {
-	color: var(--ul-lost);
-}
-
-.discard-warning {
 	color: var(--ul-lost);
 }
 

@@ -331,7 +331,7 @@ describe("parse hardening + cap priority", () => {
 	it("a COMPLETED-junk flood never evicts an unfinished record (prioritized retention)", () => {
 		const live = deposit("0xlive", { updatedAt: 5 })
 		const junk: BridgeJournalRecord[] = Array.from({ length: MAX_RECORDS + 50 }, (_, i) =>
-			deposit(`0xjunk${i}`, { completedAt: 1000 + i, updatedAt: 1000 + i }),
+			deposit(`0xjunk${i}`, { claimTxHash: "0xc", completedAt: 1000 + i, updatedAt: 1000 + i }),
 		)
 		const capped = capRecords([...junk, live])
 		expect(capped.some((r) => r.id === "0xlive")).toBe(true)
@@ -406,8 +406,8 @@ describe("load-time deep validation + quarantine", () => {
 describe("prune", () => {
 	it("pruneCompleted drops only old completed records", () => {
 		const kv = memKV()
-		upsertRecord(kv, deposit("0xold", { completedAt: 1000 }))
-		upsertRecord(kv, deposit("0xfresh", { completedAt: 9000 }))
+		upsertRecord(kv, deposit("0xold", { claimTxHash: "0xc", completedAt: 1000 }))
+		upsertRecord(kv, deposit("0xfresh", { claimTxHash: "0xc", completedAt: 9000 }))
 		upsertRecord(kv, deposit("0xinflight"))
 		pruneCompleted(kv, 5000, 10_000)
 		expect(
@@ -415,6 +415,28 @@ describe("prune", () => {
 				.map((r) => r.id)
 				.sort(),
 		).toEqual(["0xfresh", "0xinflight"])
+	})
+
+	it("a deposit completion that names no claim transaction of ours is never pruned or evicted", () => {
+		const kept = [
+			deposit("0xother", { claimedByOther: true, completedAt: 1000 }),
+			deposit("0xotherhashed", { claimTxHash: "0xc", claimedByOther: true, completedAt: 1000 }),
+			deposit("0xhashless", { claimAttempt: true, completedAt: 1000 }),
+		]
+		const kv = memKV()
+		for (const r of [...kept, deposit("0xours", { claimTxHash: "0xc", completedAt: 1000 }), withdraw("0xexit", { completedAt: 1000 })])
+			upsertRecord(kv, r)
+		upsertRecord(
+			kv,
+			crossChainRecord({ id: word("x1"), secretHashHex: word("x1"), leafIndex: "7", claimedByOther: true, completedAt: 1000 }),
+		)
+		pruneCompleted(kv, 5000, 10_000)
+		expect(ids(loadJournal(kv))).toEqual(ids(kept))
+		expect(ids(loadCrossChainJournal(kv))).toEqual([word("x1")])
+		const flood = Array.from({ length: MAX_RECORDS }, (_, i) => deposit(`0xflood${i}`, { claimTxHash: "0xc", completedAt: 2000 + i }))
+		const capped = capRecords([...kept, ...flood])
+		expect(capped).toHaveLength(MAX_RECORDS)
+		expect(ids(capped)).toEqual(expect.arrayContaining(ids(kept)))
 	})
 })
 
