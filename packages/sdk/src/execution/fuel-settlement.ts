@@ -106,7 +106,7 @@ export async function sendStandaloneFjClaim(
 	id: string,
 	budget: PollBudget = {},
 ): Promise<void> {
-	const claimMaxFees = await walletFeesOrNull(env, aztec, recipientAddr, PRIVATE_HUB_CLAIM_GAS)
+	const claimMaxFees = await walletFeesOrNull(env, aztec, PRIVATE_HUB_CLAIM_GAS)
 	if (claimMaxFees === null) throw new FeeStopError("unpriced-by-wallet")
 	const claim = await buildFuelClaimInteraction(
 		{ fuel, isPrivate: false },

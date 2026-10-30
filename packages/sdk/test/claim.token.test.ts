@@ -1,3 +1,4 @@
+import { NO_FROM } from "@aztec-labs/aztec.js/account"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { computeSecretHash } from "@aztec-labs/stdlib/hash"
@@ -15,7 +16,7 @@ import { feeJuiceAddress } from "../src/protocol/fee-juice.ts"
 import { tokenClaimSecretHash } from "../src/protocol/claim-secret.ts"
 import { deriveBridgeSecret } from "../src/protocol/private-fuel.ts"
 import type { DepositRecord, JournalTokenBlock } from "../src/records.ts"
-import { readsOf, testnet, worldOf } from "./fakes.ts"
+import { MANA_MIN_FEE, readsOf, testnet, worldOf } from "./fakes.ts"
 
 vi.mock("../src/protocol/generation-record.ts", async (importOriginal) =>
 	(await import("./fakes.ts")).withSyntheticCode(await importOriginal()),
@@ -38,10 +39,17 @@ vi.mock("../src/execution/hub-l2.ts", async (importOriginal) => ({
 	},
 	claimViaHub: (h: unknown, p: unknown, send: SendOpts) => hub.claimViaHub(h, p, send),
 }))
-vi.mock("../src/execution/fee-ladder.ts", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../src/execution/fee-ladder.ts")>()),
-	resolveHubClaimSendOpts: vi.fn(async () => ({ kind: "opts", opts: {} })),
-}))
+/** Set by a case that drives the real fee ladder and wallet quote instead of the fixed stand-ins. */
+const ladder = vi.hoisted(() => ({ real: false }))
+vi.mock("../src/execution/fee-ladder.ts", async (importOriginal) => {
+	const real = await importOriginal<typeof import("../src/execution/fee-ladder.ts")>()
+	return {
+		...real,
+		resolveHubClaimSendOpts: vi.fn(async (...a: Parameters<typeof real.resolveHubClaimSendOpts>) =>
+			ladder.real ? real.resolveHubClaimSendOpts(...a) : { kind: "opts", opts: {} },
+		),
+	}
+})
 vi.mock("../src/execution/factory-registry.ts", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../src/execution/factory-registry.ts")>()),
 	readRegistration: async () => ({ ...fixture.token, registerKey: REGISTER_KEY, registerIndex: 7n }),
@@ -99,10 +107,14 @@ vi.mock("../src/execution/fuel-claim.ts", async (importOriginal) => {
 		},
 	}
 })
-vi.mock("../src/execution/wallet-fee-budget.ts", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../src/execution/wallet-fee-budget.ts")>()),
-	walletMaxFees: async () => ({ feePerDaGas: 1n, feePerL2Gas: 1n }),
-}))
+vi.mock("../src/execution/wallet-fee-budget.ts", async (importOriginal) => {
+	const real = await importOriginal<typeof import("../src/execution/wallet-fee-budget.ts")>()
+	return {
+		...real,
+		walletMaxFees: async (...a: Parameters<typeof real.walletMaxFees>) =>
+			ladder.real ? real.walletMaxFees(...a) : { feePerDaGas: 1n, feePerL2Gas: 1n },
+	}
+})
 /** The testnet manifest's first token, whose words derive its listed Aztec token. */
 const fixture = vi.hoisted(() => ({ token: undefined as unknown as JournalTokenBlock }))
 const REGISTER_KEY = `0x${"cc".repeat(32)}`
@@ -126,6 +138,7 @@ afterEach(() => {
 	vi.mocked(resolveHubClaimSendOpts).mockClear()
 	hub.bound = true
 	hub.notReady = 0
+	ladder.real = false
 	leafReads.routes = []
 	leafReads.noFuel = false
 	tokenMessage.state = "live"
@@ -437,6 +450,48 @@ describe("claimToken", () => {
 		await claimToken(net, r, aztec, record, { ...rec.run, secrets: { claimSalt, fuelSalt } })
 		expect(send.mock.calls.length).toBe(1)
 		expect(rec.heldBefore("claim-sent")?.fuel?.consumed).toBe(true)
+	})
+
+	it("a private claim's reads carry no sender and name no account; only its own transaction carries the recipient", async () => {
+		const { net, r, aztec } = await setup()
+		ladder.real = true
+		const send = claims()
+		type Call = { args: { toString(): string }[] }
+		const simulated: { payload: { calls: Call[] }; opts: { from: unknown } }[] = []
+		const utilities: { call: Call; opts: { scopes: { toString(): string }[] } }[] = []
+		const wallet = {
+			...(aztec.wallet as object),
+			getWalletFeatures: async () => ["dapp-self-pay"],
+			simulateTx: async (payload: (typeof simulated)[number]["payload"], opts: (typeof simulated)[number]["opts"]) => {
+				simulated.push({ payload, opts })
+				return {
+					publicInputs: {
+						constants: { txContext: { gasSettings: { maxFeesPerGas: { feePerDaGas: 0n, feePerL2Gas: MANA_MIN_FEE } } } },
+					},
+				}
+			},
+			executeUtility: async (call: Call, opts: (typeof utilities)[number]["opts"]) => {
+				utilities.push({ call, opts })
+				return { result: [10n ** 19n] }
+			},
+		}
+		const out = await claimToken(net, r, { wallet: wallet as never, account }, tokenRecord(net, { isPrivate: true }), {
+			...recorder().run,
+			secrets: { claimSalt },
+		})
+		expect(out.via).toBe("claim")
+		const me = account.toString()
+		expect(simulated.length, "the wallet's fee quote was asked").toBeGreaterThan(0)
+		for (const { payload, opts } of simulated) {
+			expect(opts.from).toBe(NO_FROM)
+			expect(payload.calls.flatMap((c) => c.args.map(String))).not.toContain(me)
+		}
+		expect(
+			utilities.map(({ opts }) => opts.scopes.map(String)),
+			"the credit read runs over the account's own notes",
+		).toEqual([[me]])
+		const [, params, opts] = send.mock.calls[0] as [unknown, { from: string }, SendOpts & { from: { toString(): string } }]
+		expect([params.from, opts.from.toString()]).toEqual([me, me])
 	})
 
 	it("a registration paid from held credit is latched before its prompt, and storage that refuses the latch stops it", async () => {

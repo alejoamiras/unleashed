@@ -325,7 +325,7 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	const spent = await settleSpentMessage(leg, p)
 	if (spent) return spent
 	await settleHashlessClaim(leg)
-	const bound = (await hubTokenFor(hub, token.erc20, p.from)) !== undefined
+	const bound = (await hubTokenFor(hub, token.erc20)) !== undefined
 	await resumeRegistration(leg, bound)
 	await settleHashlessAttempt(leg)
 	assertMayPrompt(leg, "the claim")

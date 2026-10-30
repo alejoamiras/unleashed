@@ -425,8 +425,7 @@ export async function flowConcurrentFirstClaims(s: SmokeContext): Promise<string
 
 export async function flowPortalOnlyToken(s: SmokeContext, pxo: ManifestToken): Promise<string> {
 	const amount = 10n ** 18n
-	if (await hubTokenFor(s.hub, pxo.erc20, s.l2.from.toString()))
-		throw new Error("PXO was already registered — the fixture is not portal-only")
+	if (await hubTokenFor(s.hub, pxo.erc20)) throw new Error("PXO was already registered — the fixture is not portal-only")
 	await mint(s.l1, pxo.erc20 as Address, s.l1.account.address, amount)
 	const res = await depositFresh(s, pxo.erc20 as Address, amount)
 	const outcome = await claim(s, res, { amount, isPrivate: false, recipient: s.l2.from })

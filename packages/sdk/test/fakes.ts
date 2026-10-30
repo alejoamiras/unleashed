@@ -39,6 +39,8 @@ export function withSyntheticCode(real: typeof GenerationRecordModule): typeof G
 
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as const
 export const ROLLUP = addr(0xa11)
+/** The rollup's L1 minimum fee per mana, at every timestamp. */
+export const MANA_MIN_FEE = 1_250_000_000_000n
 export const INBOX = addr(0xa12)
 export const OUTBOX = addr(0xa13)
 export const ATTACKER = addr(0xbad)
@@ -87,6 +89,8 @@ export function worldOf(m: ManifestV2): World {
 	set(ROLLUP, "getOutbox", OUTBOX)
 	set(ROLLUP, "getVersion", version)
 	set(ROLLUP, "getFeeAssetPortal", m.feeJuice.portal)
+	set(ROLLUP, "getSlotDuration", 36n)
+	set(ROLLUP, "getManaMinFeeAt", MANA_MIN_FEE)
 	set(m.feeJuice.portal, "UNDERLYING", m.feeJuice.asset)
 	set(m.feeJuice.portal, "ROLLUP", ROLLUP)
 	set(m.feeJuice.portal, "INBOX", INBOX)
@@ -175,6 +179,7 @@ export function readsOf(w: World, extra: Partial<Reads> = {}): Reads {
 			txsLimits: { gas: { daGas: 1_000_000, l2Gas: 6_540_000 } },
 		}),
 		getBlockNumber: async () => 100,
+		getCurrentMinFees: async () => ({ feePerDaGas: 0n, feePerL2Gas: MANA_MIN_FEE }),
 	}
 	return { l1: l1 as never, aztecNode: aztecNode as never, ...extra }
 }
