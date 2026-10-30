@@ -22,7 +22,7 @@ const PINS = [
 		// `contracts/bridge/aztec/scripts/compile.sh --check` (a rebuild must derive this id).
 		name: "TokenBridgeHub",
 		path: join(CONTRACTS, "token_bridge_hub", "target", "token_bridge_hub_contract-TokenBridgeHub.json"),
-		classId: "0x2132a9de52d748417fb251b0924154633658534d6cf806bd9c3d79554d632abe",
+		classId: "0x0ed2767776f1b8b5f701a0538d820f0ed585ceb57005896d373d3677402b3450",
 	},
 ] as const
 
