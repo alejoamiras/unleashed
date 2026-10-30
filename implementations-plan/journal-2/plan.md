@@ -117,7 +117,7 @@ from the shell: couples the shell to the send wiring.
 
 **Asks**: none.
 
-## Phase 1 (arc a1): the remaining writers under the lock
+## ✓ Phase 1 (arc a1): the remaining writers under the lock
 
 1. Merge `origin/main`; confirm `grep -n "export function underJournalLock" apps/tools/src/composables/useBridgeJournal.ts`.
 2. Add `isPrunable` to bridge-core `journal.ts`; use it in `pruneCompleted`.

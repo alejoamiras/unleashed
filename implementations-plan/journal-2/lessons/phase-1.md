@@ -20,3 +20,12 @@
   (`general-purpose`): approve with comment-only fixes, all applied; it traced the frozen-holder path for the awaited
   consume hash (needs #109's conditions). Round 2 (resume): approve with fixes, one: amend #109's text. This session's
   permission mode refused `gh issue comment` as an external write, so the comment is left as a draft.
+
+## Gates
+
+- Forge libraries installed at the pinned commits with `--no-git`; the upstream agent-instruction files removed. The
+  `.env` cleanup pattern was not run: this lane may not search for `.env` files.
+- `e2e:tools -- specs/exits.spec.ts specs/activity.spec.ts specs/deposit-token.spec.ts`, retries 0,
+  `PLAYWRIGHT_BROWSERS_PATH` unset: 16 passed, 26.3 min on chromium. No cell added.
+- The review's comment-only commits came after the run; the tools build at the run's commit and at the final head
+  hash the same (every `dist/*.js`), so the run covers the shipped bundle.
