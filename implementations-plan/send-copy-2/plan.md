@@ -7,10 +7,26 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: approved; a1 merged (#85); a2 implementing
+status: closed; a1 merged (#85); a2 in its PR
 base: main e1d1c4c
 budget: "recon: 1 Sonnet explorer; audit: Codex gpt-6.1-sol at high plus one Opus Plan critique, then a fresh Codex pass; code-review: off"
 ---
+
+## Outcome
+
+- **Status:** closed. a1 merged as #85. a2 delivers ask30 and ask42 in its own PR.
+- **Shipped:**
+  - a1: the cross-chain pause check before any wallet prompt (P9-01 B). It fails closed when the check cannot be
+    made (P10-01 B). Every review starts blank (P9-02 B).
+  - a2: the testnet cross-chain review, progress and card copy as page 10 signed it (P10-02 to P10-04 A, R1 as B1).
+    The exit's declined-token note is unchanged (P10-05 A). The Ethereum review now says "usually 2–4 min end to
+    end" (ask42, on both networks, D9).
+- **Known limits:** #91 (D7).
+- **Open items:** none.
+- **Seeds:** the `/goal` and `/loop` seeds below are retired. They are history, not instructions.
+- **Lessons:** nothing promoted to `lessons.md`. It is already over its 8 KiB budget, and nothing in it is
+  superseded. The import-time `RETRY_WORDS` gotcha stays in `lessons/phase-2.md`. The shared-sandbox shots recipe
+  went to the browser README.
 
 # send-copy-2: the cross-chain pause check, a blank review, plainer testnet cross-chain copy
 
@@ -153,7 +169,7 @@ exit 0, then `bun run e2e:tools -- specs/deposit-crosschain.spec.ts specs/l1-wal
 retry 0 with `PLAYWRIGHT_BROWSERS_PATH` unset (lint, typecheck, unit, jsdom smoke, browser; the last two specs are the
 review's error and decline in the real app, as controls). A SIGBUS counts as the host: rerun that file alone and say so.
 
-## Phase P2 (arc a2): the signed ask30 strings and ask42
+## Phase P2 (arc a2): the signed ask30 strings and ask42 ✓
 
 Starts only after the owner signs, and after a1 merges (`git merge origin/main` first).
 
@@ -224,6 +240,12 @@ shows no `zz-*` spec and no `network.ts` change.
   review, the wizard's band, and mainnet's retry words and expired box). Codex confirmed every signed string as
   drafted and mainnet's text unchanged. Opus beside round 1: the same scope question, plus three lows, all taken
   (a split `.note` rule merged, the stale "Rebuild" comment in `deposit-crosschain.spec.ts`, and the band test gap).
+  Round 2 verified 7edcfab: **no material findings**; D9 matches the originating ask. Converged in 2 rounds. Detail:
+  `lessons/phase-2.md`.
+- a2 deviations:
+  - The gate adds `test:e2e` and `specs/deposit-crosschain.spec.ts` at retry 0 as a control.
+  - The shots cover 12 surfaces, using the display-only labels and with the parked wallet hidden.
+  - The review's switched-account notice stands the review down, so W1 is shown on the expired and unsent cards.
 - a1 deviations: the shots use the sandbox build's own chain labels (no display-only `network.ts` edit), since the
   a1 surfaces are the sentence and its absence; cell 53's before time was measured by running main's cell 53 against
   this build on the same sandbox.
