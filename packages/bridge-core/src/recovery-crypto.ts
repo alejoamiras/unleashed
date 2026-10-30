@@ -2,8 +2,8 @@ import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 
 /**
  * Recovery-secret encryption for the no-server private bridge. The key is derived from a deterministic
- * L1 signature over a PER-RECORD message (recoveryKeyMessage) — binding chain + portal + bridge + the
- * record's secretHash, so EACH sealed blob has its own key: a leaked signature exposes only that one
+ * L1 signature over a PER-RECORD message (recoveryKeyMessage) — binding the app's origin + chain + portal +
+ * bridge + the record's secretHash, so EACH sealed blob has its own key: a leaked signature exposes only that one
  * record, never all of them. Reuses @nulo-sh/wallet-crypto's PBKDF2 + AES-GCM (never roll your
  * own crypto).
  *
@@ -20,7 +20,7 @@ export type KeyText = "legacy" | "site"
 
 /** Binds a sealed record to the app's origin, its chain, bridge contracts, and secret hash (per-record key derivation). */
 export interface RecoveryBinding {
-	/** The build's canonical origin. Key material: changing it strands every key signed over the old value. */
+	/** The build's canonical origin. */
 	site: string
 	chainId: number
 	portal: string
@@ -83,7 +83,7 @@ const normalizeSignature = (signatureHex: string): string => signatureHex.trim()
 
 /**
  * A record's recovery key, labelled with the text it was signed over. Nominal (private constructor and
- * field): only `derive` builds one, so a label can never disagree with its key, and a blob it seals is
+ * field): only `derive`/`deriveTwice` build one, so a label can never disagree with its key, and a blob it seals is
  * tagged with that label.
  */
 export class RecoveryKey {
