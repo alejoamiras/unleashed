@@ -1,8 +1,9 @@
 /**
  * The claim of a record's own Fee Juice message: public Fee Juice paying for its own claim, or private credit at the
  * network's PrivateFPC. It latches the attempt before the wallet is asked and stores the hash once the wallet answers,
- * so a resumed call watches a sent claim, waits out a latched one until its nullifier or its age settles it, and sends
- * again only once nothing it sent can still land. It persists the block consumed and leaves settling to its caller.
+ * so a resumed call watches a sent claim, waits out a latched one until its age lifts it or the wallet's simulate and
+ * the message's nullifier agree it was spent, and sends again only once nothing it sent can still land. It persists the
+ * block consumed and leaves settling to its caller.
  */
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { BridgeError, isAborted, isUserRejection } from "../errors.ts"
@@ -97,12 +98,9 @@ async function readLatchedHash(leg: ClaimLeg): Promise<undefined> {
 	return undefined
 }
 
-/** A latched attempt that never recorded its hash may still land; until it ages out only its nullifier settles it. */
-async function settleOrRefuseInFlight(leg: ClaimLeg): Promise<FuelLanding | undefined> {
-	const fuel = fuelOf(leg)
-	if (!fuel.claimAttempt || fuel.setupInsufficiency) return undefined
-	if ((await fuelNullifierState(leg)) === "nullified") return landed(leg, "claim")
-	if (fuel.claimAttemptAt === undefined || Date.now() - fuel.claimAttemptAt > PRIVATE_ATTEMPT_STALE_MS) return undefined
+/** A latched attempt that never recorded its hash may still land until it ages out: no second claim is sent before. */
+function refuseInFlight(fuel: DepositFuelBlock): void {
+	if (fuel.claimAttemptAt === undefined || Date.now() - fuel.claimAttemptAt > PRIVATE_ATTEMPT_STALE_MS) return
 	throw new BridgeError("claim-not-visible", "an earlier claim of this gas may still land", SUBMITTED, "after-wait")
 }
 
@@ -174,31 +172,56 @@ async function simulateOrStop(interaction: FuelClaimInteraction): Promise<unknow
 	}
 }
 
+/** The arrival gates and the claim's simulate. The Fee Juice message is consumed in private, which names the hash it
+ *  found spent, so only a failure naming this message's hash counts. */
+function awaitFuelClaimable(leg: ClaimLeg, interaction: FuelClaimInteraction, narrated: boolean): Promise<"ready" | "claimed-elsewhere"> {
+	const messageHash = fuelOf(leg).messageHash ?? ""
+	return awaitClaimable(
+		leg,
+		messageHash ? [messageHash] : [],
+		() => simulateOrStop(interaction),
+		() => fuelNullifierState(leg),
+		{ messageHash, publicCounts: false },
+		narrated,
+	)
+}
+
+/** Whether the wallet's simulate of this record's gas claim fails on its Fee Juice message while the node reads the
+ *  message spent: the only evidence a spent reading settles on. Asks the wallet to simulate, so never in `watchOnly`. */
+export async function fuelSpentCorroborated(leg: ClaimLeg): Promise<boolean> {
+	return (await awaitFuelClaimable(leg, await buildClaim(leg), false)) === "claimed-elsewhere"
+}
+
 /**
- * Claims the record's Fee Juice, resuming whatever the record holds. `gated` waits out the arrival gates first; a
- * caller that already saw the deposit's messages land passes false.
+ * Claims the record's Fee Juice, resuming whatever the record holds. `gate: "arrival"` waits out the arrival gates
+ * first, narrated; `"spent"` passes them only to learn whether the wallet's simulate bears out a spent reading, quietly;
+ * a caller that already saw the deposit's messages land passes `"none"`. A spent reading of our own latch is gated
+ * either way: it lands only once the simulate fails on the message too, and one the simulate does not bear out is
+ * waited out as live.
  */
-export async function claimFuelBlock(leg: ClaimLeg, opts: { gated: boolean }): Promise<FuelLanding> {
-	const resumed = (await resumeSentClaim(leg)) ?? (await settleOrRefuseInFlight(leg))
+export async function claimFuelBlock(leg: ClaimLeg, opts: { gate: "arrival" | "spent" | "none" }): Promise<FuelLanding> {
+	const resumed = await resumeSentClaim(leg)
 	if (resumed) return resumed
+	const fuel = fuelOf(leg)
+	// Read before anything below can move the latch: a spend the evidence bears out is then this record's own claim.
+	const ours = !!fuel.claimAttempt && !leg.record.claimedByOther
+	const inFlight = !!fuel.claimAttempt && !fuel.setupInsufficiency
+	const spentReading = inFlight && (await fuelNullifierState(leg)) === "nullified"
+	if (inFlight && !spentReading) refuseInFlight(fuel)
 	assertMayPrompt(leg, "claiming the bridged gas")
 	const interaction = await buildClaim(leg)
-	if (opts.gated) {
-		const hashes = [fuelOf(leg).messageHash].filter((h): h is string => !!h)
-		const ready = await awaitClaimable(
-			leg,
-			hashes,
-			() => simulateOrStop(interaction),
-			() => fuelNullifierState(leg),
-		)
-		if (ready === "claimed-elsewhere") return landed(leg, "claimed-elsewhere")
+	if (opts.gate !== "none" || spentReading) {
+		const verdict = await awaitFuelClaimable(leg, interaction, opts.gate === "arrival")
+		if (verdict === "claimed-elsewhere") return landed(leg, ours ? "claim" : "claimed-elsewhere")
+		if (spentReading) refuseInFlight(fuel)
 	}
 	return sendClaim(leg, interaction)
 }
 
-/** A claim paid from held gas, or a token another submitter claimed, leaves the bridged Fee Juice unspent. The
- *  message's nullifier says whether any landed transaction spent it; if none did, it is claimed on its own (public Fee
- *  Juice, or private credit at the PrivateFPC). `claim: false` only records what the landed token claim spent. */
+/** A claim paid from held gas, or a token another submitter claimed, leaves the bridged Fee Juice unspent. A message
+ *  no landed transaction spent is claimed on its own (public Fee Juice, or private credit at the PrivateFPC); one the
+ *  node reads spent settles only once the claim's simulate fails on it too. `claim: false` only records what the landed
+ *  token claim spent. */
 export async function claimBridgedGas(leg: ClaimLeg, opts: { claim: boolean }): Promise<void> {
 	const fuel = leg.record.fuel
 	if (!fuel?.leafIndex || fuel.consumed || fuel.standaloneClaimed) return
@@ -210,8 +233,7 @@ export async function claimBridgedGas(leg: ClaimLeg, opts: { claim: boolean }): 
 	if (leg.record.isPrivate && !leg.run.secrets?.fuelSalt && !fuel.bridgeSecretSalt)
 		throw new BridgeError("invalid-request", "claiming the bridged private gas needs secrets.fuelSalt", SUBMITTED, "safe")
 	const state = await fuelNullifierState(leg)
-	if (state === "nullified") return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
-	if (state !== "live")
+	if (state !== "live" && state !== "nullified")
 		throw new BridgeError("read-failed", "could not read whether the bridged gas was claimed", SUBMITTED, "after-wait")
-	await claimFuelBlock(leg, { gated: false })
+	await claimFuelBlock(leg, { gate: state === "nullified" ? "spent" : "none" })
 }

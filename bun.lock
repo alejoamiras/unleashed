@@ -88,6 +88,7 @@
         "@aztec-labs/foundation": "6.0.0",
         "@aztec-labs/noir-contracts.js": "6.0.0",
         "@aztec-labs/protocol-contracts": "6.0.0",
+        "@aztec-labs/standard-contracts": "6.0.0",
         "@aztec-labs/stdlib": "6.0.0",
         "@aztec-labs/wallets": "6.0.0",
         "@nulo-sh/resolve-asset": "0.3.0",

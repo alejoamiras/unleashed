@@ -31,7 +31,7 @@ import { patchFuel } from "../execution/fee-env.ts"
 import { type HubClaimFee, resolveHubClaimSendOpts } from "../execution/fee-ladder.ts"
 import { FeeStopError } from "../execution/fee-stop.ts"
 import { isPrivateFuelInsufficiency, PRIVATE_ATTEMPT_STALE_MS } from "../execution/fuel-claim-state.ts"
-import { claimBridgedGas, fuelNullifierState } from "../execution/fuel-block-claim.ts"
+import { claimBridgedGas, fuelNullifierState, fuelSpentCorroborated } from "../execution/fuel-block-claim.ts"
 import { type Registration, readRegistration } from "../execution/factory-registry.ts"
 import { claimViaHub, type HubClaimParams, hubAt, hubTokenFor, probeHubClaim, type SendOpts } from "../execution/hub-l2.ts"
 import { registrationToBlock } from "../execution/send-flow.ts"
@@ -176,17 +176,31 @@ async function settleHashlessClaim(leg: ClaimLeg): Promise<void> {
 	throw new BridgeError("claim-not-visible", "an earlier claim of this deposit may still land", SUBMITTED, "after-wait")
 }
 
-/** A fuel attempt latched without its hash may have landed. Its nullifier settles it, so a private claim pays from the
- *  credit a landed one left instead of minting a spent message again. A public latch aged past landing is lifted, so the
- *  ladder never waits on it forever; the private ladder ages its own. */
-async function settleHashlessAttempt(leg: ClaimLeg): Promise<void> {
+/** A fuel attempt latched without its hash may have landed, and beside a token the node reads spent, so may another
+ *  device's claim with no latch here. Either is spent only once the wallet's simulate of the gas claim fails on its
+ *  message as the node reads it nullified; the claim then pays as the ladder pays for a spent message, never embedding
+ *  it again. A watching call simulates nothing, and a fee stop on that simulate proves nothing: either way the record
+ *  stays. A public latch aged past landing whose message reads live is lifted, so the ladder never waits on it forever;
+ *  the private ladder ages its own. */
+async function settleHashlessAttempt(leg: ClaimLeg, tokenSpent: boolean): Promise<void> {
 	const fuel = leg.record.fuel
-	if (!fuel?.claimAttempt || fuel.claimTxHash !== undefined || fuel.consumed) return
+	if (!fuel || fuel.claimTxHash !== undefined || fuel.consumed) return
+	if (!fuel.claimAttempt && !(tokenSpent && fuel.received && fuel.leafIndex)) return
 	const state = await fuelNullifierState(leg)
-	if (state === "nullified") return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
-	if (leg.record.isPrivate) return
+	if (state === "nullified" && !leg.run.watchOnly && (await spentUnlessStopped(leg)))
+		return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
+	if (leg.record.isPrivate || !fuel.claimAttempt) return
 	const aged = fuel.claimAttemptAt === undefined || Date.now() - fuel.claimAttemptAt > PRIVATE_ATTEMPT_STALE_MS
 	if (state === "live" && aged) return persistClaim(leg, { fuel: { ...fuel, claimAttempt: false } })
+}
+
+async function spentUnlessStopped(leg: ClaimLeg): Promise<boolean> {
+	try {
+		return await fuelSpentCorroborated(leg)
+	} catch (e) {
+		if (e instanceof FeeStopError || (e instanceof BridgeError && e.code === "fee-stop")) return false
+		throw e
+	}
 }
 
 /** Watches the claim the record already sent, which counts only once its message's nullifier shows. A live reading
@@ -299,19 +313,14 @@ async function sendClaim(leg: ClaimLeg, hub: ContractBase, p: HubClaimParams, fe
 	return afterSend(leg, txHash, await watchClaim(leg, txHash, "token"))
 }
 
-/** Before any fee is chosen: a message already spent needs none, one that is not this record's must not be claimed,
- *  and a marker the chain no longer bears out is dropped. */
-async function settleSpentMessage(leg: ClaimLeg, p: HubClaimParams): Promise<ClaimOutcome | undefined> {
+/** Before any fee is chosen: a message that is not this record's must not be claimed, and a marker the chain no
+ *  longer bears out is dropped. Whether the node reads the message spent; that alone settles nothing. */
+async function readsSpent(leg: ClaimLeg, p: HubClaimParams): Promise<boolean> {
 	const state = await tokenState(leg, p.claimValue)
-	// A claim of ours that never stored its hash, or anyone's, may already have spent the message.
-	if (state === "nullified") {
-		const ours = leg.record.claimAttempt || leg.record.fuel?.claimAttempt
-		return landed(leg, ours && !leg.record.claimedByOther ? "claim" : "claimed-elsewhere")
-	}
 	if (state === "invalid")
 		throw new BridgeError("message-invalid", "the record's message is not the one its facts describe", SUBMITTED, "never")
 	if (state === "live" && leg.record.claimedByOther) await persistClaim(leg, { claimedByOther: undefined })
-	return undefined
+	return state === "nullified"
 }
 
 async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome> {
@@ -322,12 +331,15 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	const { aztec, run } = leg
 	const p = await claimParamsOf(leg, token)
 	const hub = hubAt(aztec.wallet, bridge.hub, hubArtifactOf(leg.net))
-	const spent = await settleSpentMessage(leg, p)
-	if (spent) return spent
-	await settleHashlessClaim(leg)
+	// A claim of ours that never stored its hash may be what spent the message: read before any latch below moves.
+	const ours = !!(leg.record.claimAttempt || leg.record.fuel?.claimAttempt) && !leg.record.claimedByOther
+	// A spent reading defers the latch rule until the simulate has spoken: a spend it bears out settles at once, and one
+	// it does not still refuses a second send while an earlier claim may land.
+	const spentReading = await readsSpent(leg, p)
+	if (!spentReading) await settleHashlessClaim(leg)
 	const bound = (await hubTokenFor(hub, token.erc20)) !== undefined
 	await resumeRegistration(leg, bound)
-	await settleHashlessAttempt(leg)
+	await settleHashlessAttempt(leg, spentReading)
 	assertMayPrompt(leg, "the claim")
 	// The record as the settling steps above left it, not as the call opened it.
 	const fee = await resolveHubClaimSendOpts(ladderEnvOf(leg), {
@@ -341,16 +353,22 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	if (fee.kind === "stop") throw new FeeStopError(fee.stop)
 	const hashes = [leg.record.messageHash, leg.record.fuel?.messageHash].filter((h): h is string => !!h)
 	const probe = () => probeHubClaim(hub, p, fee.opts, aztec.wallet)
-	const ready = await awaitClaimable(leg, hashes, probe, () => tokenState(leg, p.claimValue))
-	if (ready === "claimed-elsewhere") return landed(leg, "claimed-elsewhere")
+	// A private claim consumes in private, which names the hash; `claim_public` is the only public consume of a
+	// registered token's claim, while an unregistered token's probe simulates only the registration's fee payload.
+	const evidence = { messageHash: leg.record.messageHash ?? "", publicCounts: bound && !leg.record.isPrivate }
+	const ready = await awaitClaimable(leg, hashes, probe, () => tokenState(leg, p.claimValue), evidence)
+	if (ready === "claimed-elsewhere") return landed(leg, ours ? "claim" : "claimed-elsewhere")
+	if (spentReading) await settleHashlessClaim(leg)
 	return sendClaim(leg, hub, p, fee)
 }
 
 /**
  * Claims a token deposit made by `depositToken` for the account the deposit names, registering the token on its first
  * claim. Persists through `run.persist` before every wallet prompt and before every event that names a new fact; a
- * private claim needs `run.secrets.claimSalt`, and its gas `run.secrets.fuelSalt`. Gas the claim left unspent (it paid
- * from held gas, or another submitter claimed the token) is claimed on its own before the record settles. Throws
+ * private claim needs `run.secrets.claimSalt`, and its gas `run.secrets.fuelSalt`. A message the node reads spent
+ * settles as claimed only once the claim's own simulate fails on that message too, so a `watchOnly` call never settles
+ * on it. Gas the claim left unspent (it paid from held gas, or another submitter claimed the token) is claimed on its
+ * own before the record settles. Throws
  * `BridgeError`: `fee-stop` (with its `stop`) when no fee source can pay now, `claim-not-visible` when an earlier send
  * may still land.
  */

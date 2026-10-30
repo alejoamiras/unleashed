@@ -53,6 +53,7 @@ import {
 	type SmokeContext,
 	tokenBlockOf,
 } from "./context"
+import { handshakeAnnouncementsIn } from "./handshake"
 import { erc20BalanceOf, freshToken, mint, mintFeeAsset, setFuelRate, writeL1 } from "./l1"
 import { withBlockHeartbeat } from "./l2"
 
@@ -126,6 +127,8 @@ export async function flowPrivateDeposit(
 	const outcome = await claim(s, res, { amount, isPrivate: true, recipient: s.l2.from, ...pay.plan })
 	const gained = (await balanceOf(l2Token, s.l2.from, "private")) - before
 	if (gained < amount) throw new Error(`private balance rose by ${gained}, expected ${amount}`)
+	const opened = await handshakeAnnouncementsIn(s.l2.node, s.l2.from, outcome.claimTxHash)
+	if (opened !== 0) throw new Error(`the recipient's own claim opened ${opened} handshake(s) with it, expected none`)
 	return `${outcome.path}, +${gained} ${token.displaySymbol} privately (${await pay.settle()})`
 }
 
@@ -154,7 +157,10 @@ export async function flowRelayedPrivateDeposit(s: SmokeContext, token: Manifest
 	const outcome = await claim(s, res, { amount, isPrivate: true, recipient: s.l2.from, submitter: "relayer" })
 	const gained = (await balanceOf(l2Token, s.l2.from, "private")) - before
 	if (gained < amount) throw new Error(`relayed claim credited ${gained}, expected ${amount}`)
-	return `wrong recipient rejected, then ${outcome.path} submitted by the relayer credited the actor`
+	// Reported, not asserted: only the relayer's first claim for this actor opens a handshake, so
+	// the count is pinned where the actor is fresh.
+	const opened = await handshakeAnnouncementsIn(s.l2.node, s.l2.from, outcome.claimTxHash)
+	return `wrong recipient rejected, then ${outcome.path} submitted by the relayer credited the actor (handshakes opened: ${opened})`
 }
 
 /** The slice has to buy enough Fee Juice to pay the claim it funds, which the swapper's fixed rate
