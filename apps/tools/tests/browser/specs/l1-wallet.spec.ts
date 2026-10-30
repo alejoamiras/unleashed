@@ -103,7 +103,8 @@ test("cell 26e — the Ethereum wallet never answers the deposit: the reloaded r
 	await card.locator(tid(TESTIDS.journalDiscard)).click()
 	await card.locator(tid(TESTIDS.journalDiscardConfirm)).click()
 	await expect(page.locator(tid(TESTIDS.journalCard))).toHaveCount(0)
-	expect((await depositRecords(page)).length).toBe(0)
+	// The card leaves at once; the storage removal waits for the journal lock.
+	await expect.poll(async () => (await depositRecords(page)).length).toBe(0)
 	expect(l1.signatures, "nothing was signed after the hold").toBe(signaturesBefore)
 	expect(l1.calls("eth_sendTransaction"), "nothing was sent after the hold").toBe(transactionsBefore)
 })
