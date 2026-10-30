@@ -1949,7 +1949,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 	it("the startup prune waits for another tab's journal write, and its expired row never shows", async () => {
 		const tab = otherTab()
 		connectJournalDeps({ ...baseDeps(kv), now: () => 8 * DAY, locks: tab.locks })
-		upsertRecord(kv, mkDeposit("0xold", { completedAt: 1 }))
+		upsertRecord(kv, mkDeposit("0xold", { completedAt: 1, claimTxHash: CLAIM_TX }))
 		upsertRecord(kv, mkDeposit("0xlive"))
 		tab.hold(kv, JOURNAL_KEY, mkSend("0xother"))
 		const { records } = useBridgeJournal()
@@ -1962,7 +1962,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 	})
 
 	it("a prune whose write fails keeps its expired row hidden and both rows stored", async () => {
-		upsertRecord(kv, mkDeposit("0xold", { completedAt: 1 }))
+		upsertRecord(kv, mkDeposit("0xold", { completedAt: 1, claimTxHash: CLAIM_TX }))
 		upsertRecord(kv, mkDeposit("0xlive"))
 		const before = kv.getItem(JOURNAL_KEY)
 		const setItem = vi.fn(() => {
@@ -1987,7 +1987,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 		vi.stubGlobal("navigator", { locks: { request } })
 		try {
 			__resetJournalForTests()
-			upsertRecord(kv, mkDeposit("0xold", { completedAt: 1 }))
+			upsertRecord(kv, mkDeposit("0xold", { completedAt: 1, claimTxHash: CLAIM_TX }))
 			connectJournalDeps({ kv, now: () => 8 * DAY })
 			useBridgeJournal()
 			expect(request).toHaveBeenCalledWith(JOURNAL_LOCK, expect.any(Function))
