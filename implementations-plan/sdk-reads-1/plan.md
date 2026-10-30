@@ -11,6 +11,22 @@ quality_bar: production (the bridge moves real funds on mainnet)
 trunk: main
 ---
 
+## Outcome
+
+- **Status**: completed (arc a1 delivered in PR #101; merging it completes the plan).
+- **Shipped**: `readErc20Balances` rejects a refused aggregate (a `CallExecutionError` in an entry's chain, matched by
+  name, walked to depth 8), an address viem cannot encode, a missing entry and a non-`bigint` success; `findDepositTx`
+  answers `"incomplete"` for a `null` transaction or receipt of a logged hash; the app's `readBalancesOn` keeps only
+  its `batchSize: 0` adapter. Closes #73 and #89. No visible change.
+- **Not built, by decision**: rule B and the owner-address check (`OWNER-ASKS.md` ask-1); they change what the app
+  shows and wait on the owner. If the owner declines, ask-1 becomes a closed `known-limit` issue.
+- **Lessons**: none promoted. `lessons.md` sits at its 8 KiB budget, and the viem rule lives in `aggregateFailed`'s
+  doc comment and this plan's recon table.
+- **Known limits:** none.
+- **Open items:** #102 (a refused token metadata read becomes an empty name or a permanent refusal); ask-1, with the
+  owner.
+- The `/goal` and `/loop` seeds at the end of this plan are retired; they are not instructions.
+
 # sdk-reads-1: two SDK reads fail closed
 
 `readErc20Balances` reports zero balances when the aggregate call itself failed (#73). `findDepositTx` drops a logged
