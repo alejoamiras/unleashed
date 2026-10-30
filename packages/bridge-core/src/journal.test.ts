@@ -331,7 +331,7 @@ describe("parse hardening + cap priority", () => {
 	it("a COMPLETED-junk flood never evicts an unfinished record (prioritized retention)", () => {
 		const live = deposit("0xlive", { updatedAt: 5 })
 		const junk: BridgeJournalRecord[] = Array.from({ length: MAX_RECORDS + 50 }, (_, i) =>
-			deposit(`0xjunk${i}`, { completedAt: 1000 + i, updatedAt: 1000 + i }),
+			deposit(`0xjunk${i}`, { claimTxHash: "0xc", completedAt: 1000 + i, updatedAt: 1000 + i }),
 		)
 		const capped = capRecords([...junk, live])
 		expect(capped.some((r) => r.id === "0xlive")).toBe(true)
@@ -417,7 +417,7 @@ describe("prune", () => {
 		).toEqual(["0xfresh", "0xinflight"])
 	})
 
-	it("the prune keeps an old deposit completion that names no claim transaction of ours", () => {
+	it("a deposit completion that names no claim transaction of ours is never pruned or evicted", () => {
 		const kept = [
 			deposit("0xother", { claimedByOther: true, completedAt: 1000 }),
 			deposit("0xotherhashed", { claimTxHash: "0xc", claimedByOther: true, completedAt: 1000 }),
@@ -433,6 +433,10 @@ describe("prune", () => {
 		pruneCompleted(kv, 5000, 10_000)
 		expect(ids(loadJournal(kv))).toEqual(ids(kept))
 		expect(ids(loadCrossChainJournal(kv))).toEqual([word("x1")])
+		const flood = Array.from({ length: MAX_RECORDS }, (_, i) => deposit(`0xflood${i}`, { claimTxHash: "0xc", completedAt: 2000 + i }))
+		const capped = capRecords([...kept, ...flood])
+		expect(capped).toHaveLength(MAX_RECORDS)
+		expect(ids(capped)).toEqual(expect.arrayContaining(ids(kept)))
 	})
 })
 
