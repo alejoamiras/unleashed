@@ -27,3 +27,10 @@
   watch's `claim-waiting`/`claim-proposed`, `claim-landed` and `deposit-recovery`; the scripts were rewritten from the
   observed sequences and the file then passed 9/9. A script that pins a whole event stream breaks on every new event
   kind, so it lists the repeating watch as one group.
+- 6.3, the port: a test that holds the SDK call forever never meets the races the SDK's own writes open. Two review
+  findings were of that kind: a discard waiting for the journal lock while the tab still listed the record, and a stale
+  call's first write refused by the identity guard before the move watch's delay ran out. Both tests now let the fake
+  write first, and each fails without its fix.
+- 6.3: keeping the card's look meant keeping three quiet behaviours the port would have changed by default. The card's
+  gas claim sets no busy flag and watches for four minutes; a private claim ignores "claim without gas"; and a marked
+  record's click sends no token claim.
