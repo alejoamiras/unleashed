@@ -681,4 +681,20 @@ describe("useHubExit", () => {
 		await exit.exit(plan())
 		expect(exit.error.value).toMatch(/confirmation window timed out/)
 	})
+
+	it.each([
+		[
+			"a humanized sentence",
+			"timed out waiting for window",
+			"The wallet's confirmation window timed out before you could sign. Reopen your wallet and retry. If the exit never reached Aztec, nothing left your balance.",
+		],
+		["a raw message", "Failed to fetch", "Failed to fetch. If the exit never reached Aztec, nothing left your balance."],
+	])("an exit failure flags its kept record with %s joined by one full stop", async (_, thrown, note) => {
+		h.exitViaHub.mockImplementation(async () => {
+			throw new Error(thrown)
+		})
+		const exit = useHubExit()
+		const id = await exit.exit(plan())
+		expect(useBridgeJournal().runtime.value[id]).toMatchObject({ attention: "error", note })
+	})
 })

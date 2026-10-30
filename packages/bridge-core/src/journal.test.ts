@@ -18,6 +18,7 @@ import {
 	deriveCrossChainDepositStage,
 	deriveDepositStage,
 	deriveWithdrawStage,
+	insertRecord,
 	loadAllRecords,
 	loadCrossChainJournal,
 	loadJournal,
@@ -195,6 +196,20 @@ describe("journal CRUD", () => {
 		).toEqual(["0xexit1", "wd-pending-y"])
 		// A vanished source is a no-op.
 		expect(rekeyRecordWhen(kv, "gone", () => true, withdraw("0xexit2"))).toBe(false)
+	})
+
+	it("insertRecord writes a free id and refuses one either key holds, leaving the holder unchanged", () => {
+		const kv = memKV()
+		const held = crossChainRecord({ amount: "7" })
+		upsertRecord(kv, held)
+		const stored = kv.store.get(CROSSCHAIN_JOURNAL_KEY)
+		expect(insertRecord(kv, crossChainRecord({ amount: "9" }))).toBe(false)
+		expect(insertRecord(kv, { ...withdraw("0xexit1"), id: held.id })).toBe(false)
+		expect(kv.store.get(CROSSCHAIN_JOURNAL_KEY)).toBe(stored)
+		expect(loadJournal(kv)).toEqual([])
+		expect(insertRecord(kv, withdraw("0xexit1"))).toBe(true)
+		expect(loadJournal(kv).map((r) => r.id)).toEqual(["0xexit1"])
+		expect(loadCrossChainJournal(kv).map((r) => r.amount)).toEqual(["7"])
 	})
 
 	it("remove deletes only the targeted record", () => {

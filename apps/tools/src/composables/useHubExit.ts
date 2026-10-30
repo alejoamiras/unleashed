@@ -612,7 +612,9 @@ function handleExitFailure(e: unknown, ids: { provisionalId: string; finalId: st
 		discard(ids.provisionalId)
 		d.error.value = "Rejected in your wallet — nothing was sent."
 	} else if (rec) {
-		flagRecordError(ids.finalId, `${msg}. If the exit never reached Aztec, nothing left your balance.`)
+		// The app's own copy already ends its sentence; raw wallet and RPC messages usually do not.
+		const sentence = msg.endsWith(".") ? msg : `${msg}.`
+		flagRecordError(ids.finalId, `${sentence} If the exit never reached Aztec, nothing left your balance.`)
 	}
 }
 
