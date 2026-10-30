@@ -348,7 +348,6 @@ describe("useHubExit", () => {
 
 	it("a live exit whose hash another tab is running keeps its provisional record: contention proves nothing", async () => {
 		const exit = useHubExit()
-		// Wired after the composable's own deps: its browser lock adapter is absent under node.
 		const locks = memoryJournalLocks()
 		connectJournalDeps({ locks })
 		let release: () => void = () => {}

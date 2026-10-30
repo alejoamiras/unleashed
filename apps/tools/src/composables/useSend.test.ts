@@ -799,7 +799,6 @@ describe("useSend", () => {
 				return shared.journal(fn)
 			},
 		}
-		// After `useSend()`, whose wiring hands the engine the browser's locks (none under node).
 		const send = useSend()
 		connectJournalDeps({ locks })
 		// The other tab's span: load the lane, then write it back with a record of its own once released.

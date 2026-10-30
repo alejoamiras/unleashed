@@ -15,6 +15,7 @@ import {
 	envelopeMatchesRecord,
 	envelopeV3MatchesRecord,
 	isCrossChainRecord,
+	isPrunable,
 	loadAllRecords,
 	loadCrossChainJournal,
 	loadJournal,
@@ -64,7 +65,7 @@ import { trimTxHash } from "@/lib/format"
 import { humanizeWalletError, isUserRejection } from "@/lib/wallet-errors"
 import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
 import { type ClaimScene, GAS_NEEDS_WALLET, claimFailure, failureText, gasLeftNote, narrateClaim, newScene } from "./claim-narration"
-import { HELD_ELSEWHERE, type JournalLocks } from "@/lib/journal-locks"
+import { HELD_ELSEWHERE, type JournalLocks, webJournalLocks } from "@/lib/journal-locks"
 import type { ExitSearch } from "./exit-attach"
 import { type DisplayAmount, displayAmountOf } from "@/lib/asset-label"
 import { dropPhaseClock } from "@/lib/phase-clock"
@@ -243,8 +244,8 @@ export interface JournalEngineDeps {
 	claimContext?: (opts: { recipient: string; watchOnly: boolean }) => Promise<ClaimContext>
 	/** The card's "Claim without fuel" choice for this record. */
 	withoutGas?: (id: string) => boolean
-	/** The cross-tab locks: a record's runner and the guarded journal writes. Absent ⇒ process-local
-	 *  dedup and synchronous best-effort writes, as before. */
+	/** The cross-tab locks: a record's runner and the guarded journal writes; the browser's by default. Absent (no
+	 *  Web Locks) ⇒ process-local dedup and best-effort writes. */
 	locks?: JournalLocks
 	/** Injectable wait (tests pass a no-op; production uses real timers). */
 	waitMs?: (ms: number) => Promise<void>
@@ -263,7 +264,7 @@ function engineRecords(): BridgeJournalRecord[] {
 
 // Module state, deliberately non-reactive: secrets and locks never enter Vue reactivity.
 const sessionLive = new Set<string>()
-/** Discarded here, its storage removal waiting for the journal lock. */
+/** Discarded or pruned here, its storage removal waiting for the journal lock. */
 const discarding = new Set<string>()
 const inFlight = new Set<string>()
 const secretCache = new Map<string, { secretHex: string; envelope: DepositEnvelopeV2 }>()
@@ -290,7 +291,13 @@ function genOf(id: string): number {
 // across the other lane's await (the ABBA rule).
 const lanes: Record<"l1" | "aztec", Promise<void>> = { l1: Promise.resolve(), aztec: Promise.resolve() }
 
-let deps: JournalEngineDeps = { kv: typeof localStorage === "undefined" ? memoryKV() : localStorage, now: Date.now }
+// The browser's lock adapter from the first call: the shell initialises the journal, and its startup prune writes,
+// before any composable connects the chain deps.
+let deps: JournalEngineDeps = {
+	kv: typeof localStorage === "undefined" ? memoryKV() : localStorage,
+	now: Date.now,
+	locks: webJournalLocks(),
+}
 let initialized = false
 
 function memoryKV(): KV {
@@ -425,8 +432,7 @@ export function initJournal(): void {
 	// that fails it would be dropped for good by the first patch instead of being kept for inspection.
 	const quarantined = quarantineInvalid(deps.kv)
 	if (quarantined > 0) log("quarantined unreadable journal entries", { quarantined })
-	pruneCompleted(deps.kv, PRUNE_AFTER_MS, deps.now())
-	reload()
+	pruneUnderLock()
 	if (typeof window !== "undefined") {
 		// Another tab wrote the journal - rehydrate; per-record merge writes make this loss-free.
 		window.addEventListener("storage", (e) => {
@@ -434,6 +440,23 @@ export function initJournal(): void {
 		})
 	}
 	log("journal initialized", { records: records.value.length })
+}
+
+/** The prune rewrites whole lanes, so it waits for the journal lock; the rows it drops read as gone from the start, as
+ *  a discarded row does. A failed prune keeps them hidden, as they were before it: the next load prunes them. */
+function pruneUnderLock(): void {
+	const now = deps.now()
+	const expired = loadAllRecords(deps.kv)
+		.filter((r) => isPrunable(r, PRUNE_AFTER_MS, now))
+		.map((r) => r.id)
+	for (const id of expired) discarding.add(id)
+	reload()
+	if (expired.length === 0) return
+	void underJournalLock(() => {
+		pruneCompleted(deps.kv, PRUNE_AFTER_MS, now)
+		for (const id of expired) discarding.delete(id)
+		reload()
+	}).catch((e) => log("prune failed - the expired records stay hidden", e instanceof Error ? e.message : String(e)))
 }
 
 /** TEST-ONLY: reset module state between cases. */
@@ -455,7 +478,7 @@ export function __resetJournalForTests(): void {
 	activeFlowId.value = null
 	lanes.l1 = Promise.resolve()
 	lanes.aztec = Promise.resolve()
-	deps = { kv: memoryKV(), now: Date.now }
+	deps = { kv: memoryKV(), now: Date.now, locks: webJournalLocks() }
 }
 
 export function markSessionLive(id: string): void {
@@ -726,18 +749,22 @@ export async function attestSendTokenBlocks(): Promise<JournalTokenBlock[]> {
 			continue
 		}
 		if (reason === null) attested.push(token)
-		else blockTokenRecords(token, reason)
+		else await blockTokenRecords(token, reason)
 	}
 	return attested
 }
 
-function blockTokenRecords(token: JournalTokenBlock, reason: string): void {
+async function blockTokenRecords(token: JournalTokenBlock, reason: string): Promise<void> {
 	const key = token.l2Token.toLowerCase()
-	for (const rec of engineRecords()) {
-		if (!runsAsSend(rec) || rec.intent === "gas" || rec.token.l2Token.toLowerCase() !== key) continue
-		patchRecord(rec.id, { blocked: reason })
-		setRuntime(rec.id, { attention: "stale-deployment", note: reason })
-	}
+	await underJournalLock(() => {
+		// Selected from the stored copy: another tab may have filed a record of this token since the last reload.
+		reload()
+		for (const rec of engineRecords()) {
+			if (!runsAsSend(rec) || rec.intent === "gas" || rec.token.l2Token.toLowerCase() !== key) continue
+			patchRecord(rec.id, { blocked: reason })
+			setRuntime(rec.id, { attention: "stale-deployment", note: reason })
+		}
+	})
 }
 
 /** Copy for a grant that did not end in an approval; "stale" means a newer selection superseded it. */
@@ -755,8 +782,10 @@ async function checkTokenBlock(token: JournalTokenBlock, id: string): Promise<"s
 	if (!deps.validateTokenBlock) throw new Error("Journal deps not connected")
 	const reason = await deps.validateTokenBlock(token)
 	if (!reason) return "proceed"
-	patchRecord(id, { blocked: reason })
-	setRuntime(id, { attention: "stale-deployment", note: reason })
+	await underJournalLock(() => {
+		patchRecord(id, { blocked: reason })
+		setRuntime(id, { attention: "stale-deployment", note: reason })
+	})
 	return "stop"
 }
 
@@ -1050,23 +1079,25 @@ function finishDeposit(rec: ClaimRecord): void {
 	log("deposit complete", rec.id)
 }
 
-function completeWithdraw(rec: ExitRecord | undefined, consumeTxHash?: string): void {
+/** Completes once, on the stored copy. The in-memory side shares the write's span: its reload wakes the form's
+ *  watchers before the caller resumes, and `foreground` is read before they release the takeover. */
+async function completeWithdraw(rec: ExitRecord | undefined, consumeTxHash?: string): Promise<void> {
 	if (!rec) return
-	const current = engineRecords().find((r) => r.id === rec.id)
-	if (!current || current.completedAt) return
-	patchRecord(rec.id, { completedAt: deps.now() })
-	setRuntime(rec.id, { attention: undefined, note: undefined })
-	receiptRounds.delete(rec.id)
-	lastCompleted.value = {
-		id: rec.id,
-		direction: "withdraw",
-		display: displayAmountOf(rec),
-		isPrivate: rec.isPrivate,
-		assetKind: assetKindOf(rec),
-		txHash: consumeTxHash,
-		foreground: activeFlowId.value === rec.id,
-	}
-	log("withdraw complete", rec.id)
+	await underJournalLock(() => {
+		if (!updateRecordWhen(rec.id, (current) => !current.completedAt, { completedAt: deps.now() })) return
+		setRuntime(rec.id, { attention: undefined, note: undefined })
+		receiptRounds.delete(rec.id)
+		lastCompleted.value = {
+			id: rec.id,
+			direction: "withdraw",
+			display: displayAmountOf(rec),
+			isPrivate: rec.isPrivate,
+			assetKind: assetKindOf(rec),
+			txHash: consumeTxHash,
+			foreground: activeFlowId.value === rec.id,
+		}
+		log("withdraw complete", rec.id)
+	})
 }
 
 /**
@@ -1721,13 +1752,15 @@ async function finishSubmittedConsume(rec: ExitRecord, id: string): Promise<void
 	setStep(id, "confirming", "waiting for the Ethereum confirmation")
 	// Read-at-call-time (parity with the original direct call under the caller's dep gate).
 	if (await (deps.waitConsumeReceipt as NonNullable<typeof deps.waitConsumeReceipt>)(rec.consumeTxHash as string)) {
-		completeWithdraw(rec, rec.consumeTxHash as string)
+		await completeWithdraw(rec, rec.consumeTxHash as string)
 		return
 	}
-	patchRecord(id, { consumeTxHash: undefined })
-	setRuntime(id, {
-		attention: "error",
-		note: "The prior finish transaction failed — finish again from this card. Nothing was lost.",
+	await underJournalLock(() => {
+		patchRecord(id, { consumeTxHash: undefined })
+		setRuntime(id, {
+			attention: "error",
+			note: "The prior finish transaction failed — finish again from this card. Nothing was lost.",
+		})
 	})
 }
 
@@ -1871,13 +1904,15 @@ async function runWithdrawConsumeLocked(id: string): Promise<void> {
 
 	setStep(id, "confirming", "waiting for the proven epoch, then one Ethereum confirmation")
 	const { consumeTxHash } = (await exitConsume(rec, (p) => noteProveProgress(id, p))) as { consumeTxHash: string }
-	patchRecord(id, { consumeTxHash })
+	await underJournalLock(() => patchRecord(id, { consumeTxHash }))
 	setStep(id, "confirming", "waiting for the Ethereum confirmation")
 	if (await deps.waitConsumeReceipt(consumeTxHash)) {
-		completeWithdraw(engineRecords().find((r) => r.id === id) as ExitRecord | undefined, consumeTxHash)
+		await completeWithdraw(engineRecords().find((r) => r.id === id) as ExitRecord | undefined, consumeTxHash)
 	} else {
-		patchRecord(id, { consumeTxHash: undefined })
-		setRuntime(id, { attention: "error", note: "The finish transaction failed — finish again from this card. Nothing was lost." })
+		await underJournalLock(() => {
+			patchRecord(id, { consumeTxHash: undefined })
+			setRuntime(id, { attention: "error", note: "The finish transaction failed — finish again from this card. Nothing was lost." })
+		})
 	}
 }
 

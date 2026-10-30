@@ -47,7 +47,6 @@ import { type Ref, ref } from "vue"
 import { HUB, hubArtifact, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"
 import { NETWORK } from "@/lib/network"
-import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
 import { resolveToolsTarget } from "@/lib/network-targets"
 import { findVerifiedExitTx } from "./exit-attach"
@@ -63,6 +62,7 @@ import {
 	attachAndConsume,
 	runOnLane,
 	setRecordStep,
+	underJournalLock,
 	updateRecord,
 	useBridgeJournal,
 } from "./useBridgeJournal"
@@ -265,7 +265,7 @@ async function runSendConsume(
 			portal: rec.token.portal as `0x${string}`,
 			portalAbi: TOKEN_PORTAL_ABI as never,
 			provenTimeoutSec: PROVEN_TIMEOUT_SEC,
-			onSent: (hash) => updateRecord(rec.id, { consumeTxHash: hash }),
+			onSent: (hash) => underJournalLock(() => updateRecord(rec.id, { consumeTxHash: hash })),
 		})
 	} finally {
 		clearInterval(pollTimer)
@@ -306,7 +306,6 @@ export function ensureHubExitDeps(): void {
 		// The generation binding + block check are the same on both lanes: an exit resumed from a
 		// session that never opened the deposit side still validates against the factory.
 		sendBinding: sendBindingOf,
-		locks: webJournalLocks(),
 		findExitTx: (rec, taken) => findExitCandidate(rec, taken),
 		validateTokenBlock: (token) => validateTokenBlock(token, l1),
 		consumeSend: (rec, onProgress) => runSendConsume(l1, rec, onProgress),
@@ -456,7 +455,7 @@ async function readOnlyPreflight(ctx: ExitCtx, l1: ReturnType<typeof useL1Wallet
  * transaction of its own, so the record is opened before that transaction and the simulate runs
  * after it: the same call rejected as unauthorized beforehand is what confirms the authwit took.
  */
-async function authorizeExit(ctx: ExitCtx, open: () => void): Promise<ExitAuth> {
+async function authorizeExit(ctx: ExitCtx, open: () => Promise<void>): Promise<ExitAuth> {
 	// preflightHubExit only simulates (`hub-l2.ts`), so a `CONTRACT_NOT_REGISTERED` from it is safe to
 	// re-register-and-retry once even on the public path, after the authwit transaction has landed.
 	if (ctx.plan.isPrivate) {
@@ -464,10 +463,10 @@ async function authorizeExit(ctx: ExitCtx, open: () => void): Promise<ExitAuth> 
 		await retryOnUnregistered(ctx.session, ctx.aztec as Wallet, async () =>
 			preflightHubExit(await hubOf(ctx), exitParams(ctx), ctx.from, { ...auth, ...(ctx.fee ? { fee: ctx.fee } : {}) }),
 		)
-		open()
+		await open()
 		return auth
 	}
-	open()
+	await open()
 	await sendPublicBurnAuthwit(ctx)
 	await retryOnUnregistered(ctx.session, ctx.aztec as Wallet, async () => preflightHubExit(await hubOf(ctx), exitParams(ctx), ctx.from))
 	return {}
@@ -493,15 +492,18 @@ interface ExitDeps {
 	paused: Ref<"l1" | "l2" | null>
 }
 
-/** The row every exit leg narrates into, opened at the last moment before the first chain write. */
-function openExitRecord(base: SendWithdrawRecord, isPrivate: boolean): void {
-	addRecord(base)
-	markSessionLive(base.id)
-	setRecordStep(
-		base.id,
-		"exiting",
-		isPrivate ? "confirm the exit in your Aztec wallet" : "two Aztec signatures: the authorization, then the exit",
-	)
+/** The row every exit leg narrates into, opened at the last moment before the first chain write. Its marks share the
+ *  write's span: the span's reload shows the row to the wizard's watchers before this flow resumes. */
+function openExitRecord(base: SendWithdrawRecord, isPrivate: boolean): Promise<void> {
+	return underJournalLock(() => {
+		addRecord(base)
+		markSessionLive(base.id)
+		setRecordStep(
+			base.id,
+			"exiting",
+			isPrivate ? "confirm the exit in your Aztec wallet" : "two Aztec signatures: the authorization, then the exit",
+		)
+	})
 }
 
 /** The grant is raised when the token is picked; a wallet that declined it, or a newer selection
