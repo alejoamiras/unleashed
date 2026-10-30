@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest"
-import { ref, shallowRef } from "vue"
+import type { WalletClient } from "viem"
+import { nextTick, ref, shallowRef } from "vue"
 import { type AppSource, readChainOf } from "@/lib/network"
 import { gasMinimumShortfall, PRIVATE_SLICE_SHORT, type ResolvedToken, type SelectableToken } from "@/lib/send-model"
 import { BASE_SEPOLIA, DEST_TOKEN, DEST_USDC, NOW_S, OUT, routeDeps, SRC_USDC, TESTNET_MIN_FUEL_FJ, USER } from "@/test/crosschain"
-import { ROUTE_TTL_MS } from "./useCrossChainRoute"
+import { ROUTE_TTL_MS, routeRecordId } from "./useCrossChainRoute"
 import { type CrossChainSendDeps, useCrossChainSend } from "./useCrossChainSend"
 import type { UseTokenSelectionHandle } from "./useTokenSelection"
 
@@ -13,6 +14,7 @@ vi.mock(import("@/contracts/bridge-generation"), async (actual) => ({
 	FUEL: { slippageBps: 300, fjPerTx: "1", fjRegister: "1", minFuelFj: "1" } as never,
 }))
 vi.mock("@/contracts/hub-binding", () => ({ readHubBinding: async () => undefined }))
+vi.mock(import("./crosschain-deposit-flow"), async (actual) => ({ ...(await actual()), sendCrossChain: vi.fn(async () => "0xsent") }))
 
 const SOURCE: AppSource = {
 	chainId: BASE_SEPOLIA,
@@ -97,6 +99,35 @@ describe("useCrossChainSend", () => {
 		now.value += 1_000
 		await vi.waitFor(() => expect(h.quoted.value).not.toBe(first), { timeout: 10_000 })
 		h.dispose()
+	}, 30_000)
+
+	it("never offers a route a send took again: the same ask is quoted afresh, and the review keeps its answer", async () => {
+		const { h, quoting } = setup()
+		await vi.waitFor(() => expect(h.route.value).not.toBeNull(), { timeout: 10_000 })
+		const [quoted, route] = [h.quoted.value, h.route.value]
+		if (!quoted || !route) throw new Error("no route")
+		quoting.value = false
+		const sent = h.send(quoted, route, DEST_TOKEN, {} as WalletClient)
+		// While it sends, the wizard still reads the answer it froze: the step strip keeps the amount step done.
+		expect([h.route.value, h.ready.value]).toEqual([route, true])
+		await sent
+		quoting.value = true
+		await vi.waitFor(() => expect(h.route.value ?? route).not.toBe(route), { timeout: 10_000 })
+		const next = h.route.value
+		expect(next && routeRecordId(next.secrets)).not.toBe(routeRecordId(route.secrets))
+		expect(next?.lifiTxId).not.toBe(route.lifiTxId)
+		h.dispose()
+
+		// Control: an answer with no route was never sent, so coming back to it quotes nothing.
+		const none = setup({ amount: () => 9_000_000n, routeDeps: (slice) => ({ ...routeDeps({ fixedAt: NOW_S }), slice }) })
+		await vi.waitFor(() => expect(none.h.notice.value?.kind).toBe("over-cap"), { timeout: 10_000 })
+		const answer = none.h.quoted.value
+		none.quoting.value = false
+		await nextTick()
+		none.quoting.value = true
+		await nextTick()
+		expect(none.h.quoted.value).toBe(answer)
+		none.h.dispose()
 	}, 30_000)
 
 	it("says an amount over the fixed-terms cap is over it, not that no route exists", async () => {

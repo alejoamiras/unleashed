@@ -57,9 +57,11 @@ import { GAS_QUOTE_MOVED } from "./useFuelQuote"
 import { fuelOverrideActive } from "./fuel-recovery"
 import {
 	type ClaimRecord,
+	RECORD_NOT_PERSISTED,
 	addRecordVerified,
 	attestSendTokenBlocks,
 	connectJournalDeps,
+	currentRecord,
 	discard,
 	flagRecordError,
 	markApproveOutcome,
@@ -69,7 +71,9 @@ import {
 	runDepositClaim,
 	runOnLane,
 	setRecordStep,
+	underJournalLock,
 	updateRecord,
+	updateRecordWhen,
 	useBridgeJournal,
 	markGrantOutcome,
 } from "./useBridgeJournal"
@@ -542,7 +546,15 @@ function depositPlanOf(plan: SendPlan, recipient: string): DepositPlan {
 async function persistSend(row: SendRow, record: DepositRecord, secrets?: DepositSecrets): Promise<void> {
 	row.latest = record
 	if (row.id === undefined) return openRow(row, record, secrets)
-	updateRecord(row.id, factsOf(rowOf(row.ctx, row.id), record) as never)
+	const id = row.id
+	// Merged onto the stored copy inside the span: a fuel block read before it could be another tab's older one.
+	await underJournalLock(() =>
+		updateRecordWhen(
+			id,
+			() => true,
+			(current) => factsOf(current as SendDepositRecord, record) as never,
+		),
+	)
 }
 
 /** The facts under today's names. The SDK's `depositL2Block` is not one: this lane's rows never carried it, and it
@@ -564,11 +576,19 @@ async function openRow(row: SendRow, record: DepositRecord, secrets: DepositSecr
 	const { plan, actors } = row.ctx
 	row.id = plan.isPrivate ? record.id : makeProvisionalDepositId()
 	const fuel = plan.isPrivate ? privateFuelOf(record, secrets, actors.recipient) : {}
-	addRecordVerified(buildSendRecord({ id: row.id, plan, recipient: actors.recipient, sender: actors.from, ...fuel }))
-	markSessionLive(row.id)
-	// The permission the wallet granted happened before the record existed; it is the run's first, done phase from
-	// the record's first render — the seal's own prompt comes after it.
-	if (row.ctx.granted) markGrantOutcome(row.id)
+	const id = row.id
+	const rec = buildSendRecord({ id, plan, recipient: actors.recipient, sender: actors.from, ...fuel })
+	// The marks share the filing's span: its reload lets the wizard's watcher see the row before this send resumes,
+	// and the wizard adopts only a session-live row. The permission the wallet granted happened before the record
+	// existed; it is the run's first, done phase from the record's first render — the seal's own prompt comes after it.
+	const filed = await underJournalLock(() => {
+		if (!addRecordVerified(rec)) return false
+		markSessionLive(id)
+		if (row.ctx.granted) markGrantOutcome(id)
+		return true
+	})
+	// The id is the SDK's fresh claim hash or a fresh provisional id, so a held one is another record's: never replaced.
+	if (!filed) throw new Error(RECORD_NOT_PERSISTED)
 	// EVERY private send seals, gas-only included: without an envelope its claim material exists only in this tab's
 	// memory, so a reload strands it and a recovery file cannot be exported.
 	if (plan.isPrivate) await sealSend(row.id, plan, secrets ?? {}, actors, () => row.ctx.journal.records.value as ClaimRecord[])
@@ -588,7 +608,7 @@ function privateFuelOf(record: DepositRecord, secrets: DepositSecrets | undefine
  * hash the witness commits to, with its claim material, and read back — that hash is a crashed send's only handle on
  * its own deposit. A failed write throws, and the SDK reports it with nothing signed.
  */
-function nameAtSignature(row: SendRow): void {
+async function nameAtSignature(row: SendRow): Promise<void> {
 	const { ctx } = row
 	const rec = row.latest
 	const known = row.id
@@ -603,13 +623,17 @@ function nameAtSignature(row: SendRow): void {
 			fuelSecretHex: rec.fuel?.secret,
 			fuelSecretHashHex: rec.fuel?.secretHashHex,
 		})
-		// Only the identity and the claim material are new: what the approval already wrote into the provisional row
-		// belongs to this same send and must survive the rename.
-		const opened = rowOf(ctx, known)
-		const renamed: SendDepositRecord = { ...named, createdAt: opened?.createdAt ?? named.createdAt }
-		if (opened?.approveTxHash) renamed.approveTxHash = opened.approveTxHash
-		rekeyJournalRecord(known, renamed)
-		if (!rowOf(ctx, rec.id)) throw new Error("Could not persist the bridge record — aborting before the deposit (storage full?).")
+		// Only the identity and the claim material are new: what the stored provisional row already holds belongs to
+		// this same send and must survive the rename. A row another tab discarded meanwhile is filed all the same: the
+		// signature is about to commit to this claim material.
+		await underJournalLock(() => {
+			const opened = currentRecord(known) as SendDepositRecord | undefined
+			const renamed: SendDepositRecord = { ...named, createdAt: opened?.createdAt ?? named.createdAt }
+			if (opened?.approveTxHash) renamed.approveTxHash = opened.approveTxHash
+			if (opened?.blocked) renamed.blocked = opened.blocked
+			rekeyJournalRecord(known, renamed)
+		})
+		if (!rowOf(ctx, rec.id)) throw new Error(RECORD_NOT_PERSISTED)
 		row.id = rec.id
 	}
 	setRecordStep(rec.id, "signing", "sign the bridge intent in your Ethereum wallet")
@@ -625,7 +649,7 @@ function sdkWallet(row: SendRow): WalletClient {
 	const writeContract = (args: Parameters<WalletClient["writeContract"]>[0]) =>
 		args.functionName === "approve" ? runOnLane("l1", () => w.writeContract(args)) : w.writeContract(args)
 	const signTypedData = async (args: Parameters<WalletClient["signTypedData"]>[0]) => {
-		nameAtSignature(row)
+		await nameAtSignature(row)
 		row.ctx.stage.value = "signing"
 		const signature = await w.signTypedData(args)
 		row.ctx.stage.value = "sending"
@@ -752,7 +776,7 @@ function settleFailedSend(row: SendRow, e: unknown): void {
 async function afterReceipt(id: string, ctx: RunCtx, frozen: JournalTokenBlock | undefined): Promise<void> {
 	if (frozen && frozen.l2Token.toLowerCase() !== previewBlock(ctx.plan).l2Token.toLowerCase()) {
 		log("registration read-back names another token - re-granting", { id })
-		updateRecord(id, { token: frozen } as never)
+		await underJournalLock(() => updateRecord(id, { token: frozen } as never))
 		requestHubToken(hubTokenDesc(frozen), { pinned: true })
 		const outcome = await grantForBlock(frozen)
 		if (outcome !== "granted") {

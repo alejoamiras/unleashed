@@ -8,3 +8,5 @@
 - 2026-10-30: Opus round 1: conditional approve; plan revised (lazy spent mark, marks inside the filing span, locked track, cell 56, #88 first).
 - 2026-10-30: final fresh Codex pass: conditional approve; three conditions applied; resumed verify: approve.
 - 2026-10-30: plan committed; stopped at the approval gate for the orchestrator.
+- 2026-10-30: a1 started; merged origin/main b69462a (#88); writer list re-verified on main: matches plan D3 (useSend lines +3).
+- 2026-10-30: a1 code and tests written (unit suites, cell 56); new unit tests mutation-checked against their regressions.

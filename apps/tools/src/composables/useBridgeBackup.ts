@@ -22,6 +22,7 @@ import {
 	deploymentMatches,
 	runOnLane,
 	sendHeaderMatches,
+	underJournalLock,
 	useBridgeJournal,
 	validateSendRecordBlock,
 } from "./useBridgeJournal"
@@ -70,15 +71,17 @@ async function assertSendRecordImportable(record: AnyJournalRecord): Promise<voi
 }
 
 /** Each record family goes back under its own key; a cross-chain one still on its way is watched at once. A file's
- *  word that its deposit is final is no evidence, so discovery establishes it again. */
-function track(record: AnyJournalRecord): void {
+ *  word that its deposit is final is no evidence, so discovery establishes it again. An id another tab filed since the
+ *  restore's own check keeps the stored copy: only a restore of the same bridge can hold it, and that copy may already
+ *  carry newer facts than the file. */
+async function track(record: AnyJournalRecord): Promise<void> {
 	if (!isCrossChainRecord(record)) {
-		addRecordVerified(record)
+		await underJournalLock(() => addRecordVerified(record))
 		return
 	}
 	const unproven = { ...record, route: { ...record.route, depositFinal: undefined } }
-	addCrossChainRecordVerified(unproven)
-	if (needsWatch(unproven)) void watchCrossChain(record.id, appWatchDeps())
+	const filed = await underJournalLock(() => addCrossChainRecordVerified(unproven))
+	if (filed && needsWatch(unproven)) void watchCrossChain(record.id, appWatchDeps())
 }
 
 export function useBridgeBackup() {
@@ -168,7 +171,7 @@ export function useBridgeBackup() {
 			throw new Error("This bridge is already tracked here — nothing to restore.")
 		}
 		await assertSendRecordImportable(record)
-		track(record)
+		await track(record)
 		log("restored", { id: record.id, direction: record.direction })
 		return record
 	}

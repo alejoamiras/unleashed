@@ -1,5 +1,5 @@
 /**
- * Deposits that start on the sandbox's source chain (cells 50–55): the route rides fixed testnet terms, the relay loop
+ * Deposits that start on the sandbox's source chain (cells 50–56): the route rides fixed testnet terms, the relay loop
  * fills it as the exclusive filler those terms name, LI.FI's compiled receiver and Executor run it into the deposit
  * router, and the app finds it by discovery alone. Every amount stays under the fixed terms' cap of 8 whole tokens.
  */
@@ -27,7 +27,7 @@ import {
 import { transactionFeeOf } from "../pages/journal"
 import { confirmReview, connectL1, openSend, setVisibility, startDeposit, waitForReceipt } from "../pages/send"
 
-test.use({ family: "deposit-crosschain", cells: 6, l1Index: 9 })
+test.use({ family: "deposit-crosschain", cells: 7, l1Index: 9 })
 
 const USDC = 10n ** 6n
 /** Five whole tokens: under the fixed terms' cap, and enough for the gas slice and a token leg. */
@@ -347,4 +347,37 @@ test("cell 55 — a gas slice the venue quotes under the claim minimum is refuse
 	await expect(page.locator(tid(TESTIDS.sendAmountNext))).toBeDisabled()
 	expect(l1.signatures).toBe(0)
 	expect(await erc20BalanceOf(relayer.cc.source, src.srcToken, l1.address), "nothing left the source chain").toBe(USDC)
+})
+
+test("cell 56 — the same ask sent twice, the first run in the background: each send draws its own claim material, and both are tracked after a reload", async ({
+	page,
+	actor,
+	l1,
+	relayer,
+}) => {
+	const src = await fundSource(relayer, l1, 2n * SEND)
+	await relayer.setMode({ kind: "never" })
+	await relayer.syncSourceClock()
+	const plan = planOf(src, "token", false)
+
+	await sendFromSource(page, actor, plan)
+	await crossChainRecordWhen(page, (r) => Boolean(r.route.srcTxHash), "the first send is on the source chain")
+	await page.locator(tid(TESTIDS.stepperBackground)).click()
+	await expect(page.locator(tid(TESTIDS.sendStepToken)), "the wizard starts over").toBeVisible()
+	// The wallet is still on the source chain, so the review goes straight to Confirm.
+	await reviewCrossChain(page, plan)
+	await confirmReview(page)
+
+	await expect
+		.poll(async () => (await crossChainRecords(page)).filter((r) => r.route.srcTxHash).length, {
+			message: "both sends are on the source chain",
+			timeout: 180_000,
+		})
+		.toBe(2)
+	const [first, second] = await crossChainRecords(page)
+	expect(second.id, "a fresh claim secret").not.toBe(first.id)
+	expect(second.route.lifiTxId, "a fresh LI.FI transaction id").not.toBe(first.route.lifiTxId)
+	expect(second.route.srcTxHash, "two source transactions").not.toBe(first.route.srcTxHash)
+	await reloadAndReconnect(page, actor)
+	for (const r of [first, second]) await crossChainCard(page, r.id)
 })
