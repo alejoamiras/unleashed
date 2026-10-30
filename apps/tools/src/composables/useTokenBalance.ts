@@ -21,7 +21,7 @@ export interface UseTokenBalanceHandle {
  * Per-token balance reader. Polls balance_of_public + balance_of_private
  * every 15s. The two paths diverge by Aztec function kind:
  *   - `balance_of_public` is `#[external("public")] #[view]` → read via
- *     `interaction.simulate({from})`. The SDK returns a SimulationResult
+ *     `interaction.simulate({ from: NO_FROM })`. The SDK returns a SimulationResult
  *     `{ result, ... }`, so we extract `.result` and coerce to bigint.
  *   - `balance_of_private` is `#[external("utility")]` → read via
  *     `wallet.executeUtility(call, opts)`. The SDK returns a

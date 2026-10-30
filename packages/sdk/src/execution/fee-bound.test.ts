@@ -45,9 +45,10 @@ describe("feeBoundOf", () => {
 			const { r, reads } = reader(fees)
 			expect(await feeBoundOf(net, r)).toEqual({ feePerDaGas: 0n, feePerL2Gas: FEE_BOUND_MULTIPLE * 9n })
 			expect(reads.map((q) => q.blockNumber)).toEqual(Array(5).fill(BLOCK))
-			expect(reads.slice(0, 2).map((q) => [q.functionName, q.address])).toEqual([
+			expect(reads.map((q) => [q.functionName, q.address])).toEqual([
 				["getCanonicalRollup", REGISTRY],
 				["getSlotDuration", ROLLUP],
+				...Array(3).fill(["getManaMinFeeAt", ROLLUP]),
 			])
 		}
 	})

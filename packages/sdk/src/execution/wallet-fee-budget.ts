@@ -108,10 +108,9 @@ export function forgetWalletFees(): void {
  * both spellings of the option. A wallet that honors a dApp's cap (the Nulo wallet) answers with
  * exactly that, so its users keep a ceiling of `limits × 1×`; a wallet that ignores it answers with
  * whatever it will really submit under. Probing without a proposal would make a cap-honoring
- * wallet answer with its own padded default, and the app would then bind it to that. The call is
- * Fee Juice's `balance_of_public` of the zero address from `NO_FROM`: a static public read that
- * BaseWallet prices through the same fee completion as a send, with no sender, fee payer or
- * argument naming the account.
+ * wallet answer with its own padded default, and the app would then bind it to that. BaseWallet
+ * prices a static read from `NO_FROM` through the same fee completion as a send, and nothing in it
+ * names the account.
  */
 async function probe(node: AztecNode, wallet: SimulatingWallet, gas: GasLimits): Promise<MaxFees> {
 	await readNetworkMax(node)
