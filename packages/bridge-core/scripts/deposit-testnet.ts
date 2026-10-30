@@ -16,7 +16,7 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Abi, Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { ERC20_ABI, TOKEN_PORTAL_ABI } from "@unleashed/sdk/protocol"
-import { consumeWithdrawal, type L1Ctx, exitViaHub, preflightHubExit, runSend } from "@unleashed/sdk/internal"
+import { consumeWithdrawal, type L1Ctx, exitViaHub, preflightHubExit, randomField, runSend } from "@unleashed/sdk/internal"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
 import {
@@ -38,6 +38,7 @@ import {
 	stopwatch,
 } from "./script-bootstrap"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
+import { hubArtifactFor } from "./generation-paths"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -139,7 +140,7 @@ async function runWithdrawLeg(
 	mins: () => string,
 ): Promise<void> {
 	console.log("\n=== withdraw smoke (L2 burn → L1 release) ===")
-	const authwitNonce = Fr.random()
+	const authwitNonce = randomField()
 	const exit = {
 		l2Token: TOKEN.l2Token,
 		recipientL1: l1.account.address,
@@ -214,7 +215,7 @@ async function main() {
 		},
 	})
 
-	const hub = await registerHub(ewallet as never, BRIDGE.l2.hub)
+	const hub = await registerHub(ewallet as never, BRIDGE.l2.hub, hubArtifactFor(CONFIG))
 	const token = await registerHubToken(
 		ewallet as never,
 		AztecAddress.fromStringUnsafe(BRIDGE.l2.hub.address),

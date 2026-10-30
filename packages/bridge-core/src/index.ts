@@ -5,6 +5,7 @@
 
 export * from "./drpc-node"
 export * from "./journal"
+export * from "./claim-view"
 export * from "./recovery-crypto"
 export * from "./relay-claim"
 export * from "./seal-trust"
@@ -19,3 +20,5 @@ export * from "./across-self-built"
 export * from "./crosschain-route"
 export * from "./stargate"
 export * from "./source-chains"
+export * from "./capped-logs"
+export * from "./kept-history"

@@ -139,14 +139,14 @@ snapshots the commit, pins the signer against the plan-pinned address (`PLAN_PIN
 records artifact digests and caps, and corroborates the node's identity claims against L1 via
 `cast`. Then `live-intent.ts verify <intent> [--candidate <path>]` **before every broadcast group
 and at promotion**: it re-probes identity (a rollupVersion that moves mid-arc is a hard stop), re-checks
-the signer, the artifact digests, the candidate's sha256 (the first verify records it; any later
+the signer, the artifact digests, the candidate's and its record's sha256 (the first verify records them; any later
 change means never promote) and the working-tree allowlist (`OPERATIONAL_ALLOWLIST` in
-`live-intent.ts`: the candidate and live manifests, the conductor's `deploy-journal/`, and the named
+`live-intent.ts`: the candidate and live manifests and record directories, the conductor's `deploy-journal/`, and the named
 `lessons/` directories — a new arc adds its lessons directory there first). With `--candidate` it also
 strict-validates the candidate through the full `verify-l1` verifier (code at every address, the
 factory ↔ router ↔ hub cross-bindings, each token's portal derivation, frozen registration and live
-metadata, runtime code hashes against the forge build with immutables and the metadata trailer
-masked) and reads the hub's initialization hash off the node to prove it was initialized with the candidate's
+metadata, runtime code against the candidate record's pins with immutables and the metadata trailer
+masked, and each entry the arc deployed against a fresh build) and reads the hub's initialization hash off the node to prove it was initialized with the candidate's
 `[token_class_id, l1_factory, guardian]`. The caps are recorded and reconciled against the signer's
 balance at `verify` (`maxTotalEthSpend` is the balance delta; incoming ETH can mask a spend, so keep
 your own tally per broadcast group), not enforced per transaction. Committing does not make a dirty
@@ -238,7 +238,11 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      the L2 mana min fee follows the L1 fee, and under anvil's default (1 gwei, decaying with every
      under-target block) it fell about 40,000-fold in five minutes, so the smoke's fragmented-credit
      step failed every time. A hand-started anvil needs the same flag.
-4. **Deploy the generation, candidate-first and journalled:**
+4. **Deploy the generation, candidate-first and journalled.** **Owner's step first, on a reset whose
+   build inputs moved in this arc** (a Noir-line bump edits `contracts/bridge/aztec/`; the list is
+   `BUILD_INPUTS` in `packages/bridge-core/scripts/generation-paths.ts`): the owner tags the commit the
+   deploy builds and pushes the tag to `origin`, after the intent commit. The tag keeps that commit
+   reachable after the squash merge; it authorizes nothing, and an agent never pushes it.
    ```bash
    # from the repo root, like every command in this runbook
    SEED_TOKENS=<fakeUSDC>,<fakeUSDT> bun run --cwd packages/bridge-core deploy:generation deploy --rates <abs path>/rates.json --dry-run   # signer, identity, token list, rates; no broadcast
@@ -280,6 +284,15 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      `--dry-run` validates only their shape. Before the live run confirm each has code and answers
      `decimals()` and `maxMintPerTx()`. A real ERC-20 needs no `pre-create`: the router creates its portal inline on the first send, and the hub
      registers it on the first claim.
+   - **Then write the candidate's generation record**, before anything rebuilds `contracts/bridge/evm/out`
+     or commits: `bun packages/bridge-core/scripts/generation-record.ts write testnet [--tag <tag>]` writes
+     `contracts/bridge/generations/testnet.candidate/` from the candidate manifest. An entry at an address
+     the live record holds is carried byte for byte, `build` included; a new contract takes its trimmed
+     artifact from `out/`, the build the conductor just deployed; a new hub is copied from the hub target
+     with its class id. A new entry's `build.commit` is the merge base with `origin/main` while every build
+     input is unchanged since it and clean in the tree; otherwise the writer refuses until `--tag` names a
+     tag that peels to HEAD locally and on `origin`. Tokens are not in the record, so `pre-create` and
+     calibration never re-write it.
 5. **Faucet**: `bun run --cwd apps/tools deploy:testnet` (idempotent; writes
    `src/contracts/deployments.candidate.json`, which `promote` moves into the live `deployments.json`).
    Independent accounts: runs in parallel with step 4.
@@ -331,11 +344,29 @@ script: an assignment after it is just another argument. `pre-create` and `calib
      under-quoted `fjPerTx` by 18 %. 6.0.0 measured the same nine fees as rc.3 to the wei (the same
      gas, billed at 1.25e12 FJ-wei per unit), so its calibration rewrote the carried budgets unchanged. A
      candidate promoted with the carried placeholders under-quotes the gas slice on the new line.
-   - `live-intent.ts verify <intent> --candidate <candidate>`: records the digest (the intent file
-     changes: **commit it now**, `promote` refuses an uncommitted intent), runs strict `verify-l1` and
-     the hub initialization-hash readback. Then `live-intent.ts promote <intent>` (`--bridge-only`
+   - **Check the candidate record keylessly**, before the digest-recording verify:
+     `bun packages/bridge-core/scripts/generation-record.ts check testnet --candidate --rpc https://ethereum-sepolia-rpc.publicnode.com --rpc https://sepolia.gateway.tenderly.co --node https://aztec-testnet.drpc.org --build-out contracts/bridge/evm/out`.
+     Every entry's deployed code must match its pin on both RPCs and the hub's class its `classId`; an
+     entry this build does not reproduce is reported for the reviewer. It proves the masked runtime at
+     each address, not the bindings `verify` reads; the two public RPCs are a second view of L1 beside
+     the keyed one, while the hub's class comes from dRPC's keyless node, the keyed node's provider.
+   - `live-intent.ts verify <intent> --candidate <candidate>`: records the manifest's and the candidate
+     record's digests (the intent file changes: **commit it now**, `promote` refuses an uncommitted
+     intent), checks the record's integrity and its binding to the candidate, holds every entry at a live
+     address to the live record committed at the intent's build commit (the carry rule), runs strict
+     `verify-l1` against the record's pins, and the hub initialization-hash readback, deriving with the
+     record's kept hub artifact. Then `live-intent.ts promote <intent>` (`--bridge-only`
      when the faucet candidate is not part of this arc), the only thing that touches
-     `testnet-bridge.json`. Never hand-copy.
+     `testnet-bridge.json` and `contracts/bridge/generations/testnet/`: it writes the record first and
+     the manifest last, deletes only record files the candidate does not hold, and converges when re-run
+     after an interruption. Commit both with the receipt. Never hand-copy.
+   - **The promotion PR's reviewer rebuilds each new entry** at its `build.commit` (or tag): a clean
+     checkout there, the README's pinned `forge install … --no-git` lines, `gen-remappings.ts` and
+     `forge build`, then `generation-record.ts check testnet --build-out <that out/>` from the PR's
+     branch must report every new entry equal to that build. A carried entry was proven by the promotion
+     that added it. The promoted manifest is the SDK's bundled network, the
+     only one `parseNetwork` accepts on its chain: publish the SDK once the promotion is on `main`
+     (`packages/sdk/README.md` § Releasing).
    - **On a reset, retire the old live manifest first.** `promote` refuses any network, chain,
      factory or hub move against an existing live manifest ("promotion would change the network
      identity"), and a reset moves all four. Delete `apps/tools/public/testnet-bridge.json` in its
@@ -467,7 +498,10 @@ inventory, the named token pre-creations, the smokes and promotion).
    differs → inventory minted from the permissionless `FeeAssetHandler` up to `10 × fuel.minFuelFj`
    → `DepositRouter(Permit2, FeeJuicePortal, factory, swapper, guardian)` → readback of both → the
    candidate: the base with the new `depositRouter` and `fuelSwapper`, carrying the base's own `fuel`
-   budgets (a base without them is refused).
+   budgets (a base without them is refused). Then `generation-record.ts write testnet`, before anything
+   rebuilds `out/` (Branch B step 4): it carries the factory, the implementation and the hub from the
+   live record and takes the new router and swapper from `out/`, built at the merge base with
+   `origin/main`.
    - **Journalled and resumable.** Both deploys append to `deploy-journal/testnet-generation.jsonl`
      (same identity stamp) with their creation-code hash and constructor arguments, sent at a pinned
      nonce. A re-run adopts a journalled contract only when both match exactly and its address has
@@ -477,7 +511,9 @@ inventory, the named token pre-creations, the smokes and promotion).
      leaves an orphan the re-run replaces, so read the journal's last line against the chain first.
 5. **Pre-create** each named token into the candidate (`testnet-generation.env.example`: it
    registers on the hub): `bun run --cwd packages/bridge-core deploy:generation pre-create --token <erc20> --canonical`
-   for a real token, the flag left off only for a test token with a public mint.
+   for a real token, the flag left off only for a test token with a public mint. It registers the
+   hub with the live record's kept artifact, so a hub source edit on `main` since the generation
+   deployed does not block it.
 6. **Routing.** Re-run the conductor on the candidate with the routing file. Nothing changed, so it
    adopts both, sends nothing, and writes `routing`; every `destToken` must already be a candidate
    token:
@@ -491,16 +527,26 @@ inventory, the named token pre-creations, the smokes and promotion).
    (`testnet-rpc.env.example`). Beyond the generation it checks the router's immutables
    (`SWAP_TARGET` = the swapper, `FACTORY`, `PERMIT2`, `FEE_JUICE_PORTAL`, `FEE_ASSET`, the guardian
    as owner, the app's witness type string), the swapper (fee asset, faucet, guardian as owner, a rate
-   for every token; inventory under the floor is a warning), both runtimes against the forge build,
-   and LI.FI's address book on Sepolia and every routing source: code at each entry and the pinned
+   for every token; inventory under the floor is a warning), every runtime against the candidate
+   record's pins and the two new pins against a fresh build (the carried entries are the live
+   generation's, proven at its promotion), and LI.FI's address book on Sepolia and every routing source: code at each entry and the pinned
    runtime code hashes of the Executor, receivers and fee forwarder, while a facet moved behind the
    Diamond is a warning to review. `BASE_SEPOLIA_RPC_URL` defaults to PublicNode. Then step 7 of
-   Branch B: smokes, calibration (it writes `fuel`), `live-intent.ts verify <intent> --candidate`,
-   commit the intent, `promote --bridge-only`.
+   Branch B: smokes, calibration (it writes `fuel`), the keyless record check,
+   `live-intent.ts verify <intent> --candidate`, commit the intent, `promote --bridge-only`, the
+   reviewer's rebuild.
 
-Once deployed, `DepositRouter.sol` and `TestnetFuelSwapper.sol` are frozen: strict verification
-rebuilds from source, so an edit blocks every later promotion. A change is another router-only
-deploy under a new authorization.
+**A deployed contract's source is not frozen.** Each live generation's record
+(`contracts/bridge/generations/<network>/`) pins the code it runs, and the SDK, the app and strict
+verification check the network against that record, never against a rebuild of `main`. An edit on
+`main` leaves the live generations working, and reaches a network only through a new deploy and its
+promotion under a new authorization. The kept artifacts keep each build replayable. One rule binds
+later work: a change that makes the SDK or the app call something the live code lacks (a new
+function, event or error on a pinned contract, or a hub function the wallet grant names) keeps a path
+selected by the record until the generation that has it is promoted. The compatibility gate
+(`packages/sdk/src/protocol/generation-compat.test.ts`, and the app's half in
+`apps/tools/src/lib/capabilities.test.ts`) stays red otherwise. What the SDK computes off-chain under
+an unchanged interface (message hashes, amount math, how `token_of` packs its value) is not covered.
 
 ### The testnet fuel swapper
 
@@ -594,14 +640,15 @@ canonical rollup's `FeeJuicePortal`; the app sends there once it reads `fuelRout
    `DepositRouter(Permit2, FeeJuicePortal, gate, Diamond, signer)` → readback → the candidate
    `apps/tools/public/mainnet-bridge.candidate.json`: the live placeholder plus `fuelRoute`. Both
    deploys journal to `deploy-journal/mainnet-fuel-route.jsonl` and are adopted on an identical re-run,
-   as in the router-only deploy.
+   as in the router-only deploy. Then `generation-record.ts write mainnet`, before anything rebuilds
+   `out/`: the gate and the router into `contracts/bridge/generations/mainnet.candidate/`.
 4. **Verify.** `bun run --cwd packages/bridge-core verify:l1 --config ../../apps/tools/public/mainnet-bridge.candidate.json --strict`
    checks code at the router, the gate, Permit2 and the portal; the router's immutables (`FACTORY` =
    the gate, `SWAP_TARGET` = the Diamond, the canonical Permit2, `FEE_ASSET` = the portal's
    `UNDERLYING()`), the guardian as owner of both, the gate open (a paused gate fails `--strict`) with
    no pending handover, the canonical rollup's `getFeeAssetPortal()` = the portal, the portal's
    `ROLLUP()` = the registry's canonical one and its `VERSION()` = the manifest's wallet chain id,
-   LI.FI's mainnet book, and both runtimes against the forge build.
+   LI.FI's mainnet book, and both runtimes against the candidate record's pins and a fresh build.
 5. **Canary, then calibrate.** The route's canary is a gas-only send through the candidate's router
    from a pinned mainnet canary key, claimed once as public Fee Juice and once as PrivateFPC credit;
    its paid claims' `transactionFee`s, written as `fees.json` outside the repository
@@ -610,12 +657,16 @@ canonical rollup's `FeeJuicePortal`; the app sends there once it reads `fuelRout
    writes `fuelRoute.fuel.fjPerTx` (a route registers nothing, so no `fjRegister`). No script runs
    that canary yet and `PLAN_PINNED_CANARY_SIGNERS.mainnet` is `null`: until both exist, Branch F
    stops here.
-6. **Promote.** `live-intent.ts verify <intent> --candidate apps/tools/public/mainnet-bridge.candidate.json`
-   records the digest (commit the intent), refuses a candidate that changes the placeholder beyond
+6. **Promote.** First the keyless record check:
+   `bun packages/bridge-core/scripts/generation-record.ts check mainnet --candidate --rpc https://ethereum-rpc.publicnode.com --rpc https://eth.drpc.org --build-out contracts/bridge/evm/out`.
+   Then `live-intent.ts verify <intent> --candidate apps/tools/public/mainnet-bridge.candidate.json`
+   records the manifest's and the record's digests (commit the intent), runs the record checks of
+   Branch B step 7, refuses a candidate that changes the placeholder beyond
    `fuelRoute`, a guardian other than the signer, another registry or Permit2, or `fjPerTx` or
    `minFuelFj` 0, and
    runs strict `verify-l1`. Then `live-intent.ts promote <intent>`: a mainnet promotion moves the
-   bridge manifest alone and runs `check-fpc-version.ts --network mainnet` first.
+   bridge manifest and its record (no faucet) and runs `check-fpc-version.ts --network mainnet` first.
+   The reviewer's rebuild is Branch B step 7's.
 
 The gate's owner pauses every send through the route with `setDepositsPaused(true)`; ownership moves
 only through `Ownable2Step` and can never be renounced.

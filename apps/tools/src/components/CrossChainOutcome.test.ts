@@ -1,8 +1,16 @@
 import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
 import { flushPromises, mount } from "@vue/test-utils"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
 import { XC_CREATED, XC_SRC_TX, XC_TRANSPORT, xcRecord } from "@/test/crosschain-record"
+
+const net = vi.hoisted(() => ({ mainnet: false }))
+vi.mock("@/lib/network", async (original) => ({
+	...(await original<typeof import("@/lib/network")>()),
+	get IS_MAINNET() {
+		return net.mainnet
+	},
+}))
 
 const now = ref(XC_CREATED + 9 * 60_000)
 const attemptFee = ref<string | undefined>()
@@ -28,6 +36,10 @@ const panel = (record: CrossChainDepositRecord, figures?: OutcomeFigures) =>
 const cards = (w: ReturnType<typeof panel>) => w.findAll(".card p:first-of-type").map((p) => p.text())
 
 describe("CrossChainOutcome", () => {
+	afterEach(() => {
+		net.mainnet = false
+	})
+
 	it("delivered: says where the money is, prices nothing it cannot read, and continues with the delivered token", async () => {
 		const rec = xcRecord(ended, { outcome: "delivered-to-wallet", outcomeAmount: "4900000", outcomeTxHash: `0x${"de".repeat(32)}` })
 		const w = panel(rec, { ethHeld: "0.40", continueQuote: { amount: "4.41", symbol: "USDC", gas: "230 FJ" } })
@@ -50,11 +62,15 @@ describe("CrossChainOutcome", () => {
 
 	it("expired and not sent: what happened from the record alone, then a new quote or a changed send", async () => {
 		const expired = panel(xcRecord(ended, { outcome: "expired-on-source" }))
-		expect(expired.get("h2").text()).toBe("Refund pending on Base Sepolia")
-		expect(cards(expired)[0]).toBe(
-			"This transfer waited 2 hours for a manual fill on Ethereum · Sepolia and wasn’t filled, so it expired.",
-		)
-		expect(expired.get(".figure").text()).toBe("5.00 USDC due back in 0x3fA8…c41d on Base Sepolia")
+		expect(expired.get("h2").text()).toBe("Didn’t arrive")
+		expect(cards(expired).slice(0, 3)).toEqual([
+			"It didn’t reach Ethereum · Sepolia in time, so it expired.",
+			"Nothing reached Aztec, so there is nothing to claim. Testnet sends are not refunded automatically, and the network fee is spent.",
+			"Try again, or send from another network.",
+		])
+		expect(expired.get(sel(TESTIDS.xcOutcomeNewQuote)).text()).toBe("Try again")
+		expect(expired.find(".figure").exists(), "testnet promises nothing back").toBe(false)
+		expect(expired.findAll(".tx dt").map((d) => d.text())).toEqual(["Sent on Base Sepolia"])
 		expect(expired.get(sel(TESTIDS.xcOutcomeChangeSend)).text()).toBe("Pick another balance")
 
 		attemptFee.value = "0.000041"
@@ -66,9 +82,9 @@ describe("CrossChainOutcome", () => {
 		expect(cards(notSent)).toEqual([
 			"Base Sepolia rejected the transaction, so it never ran.",
 			"Your USDC never left your wallet. The only cost is the Base Sepolia network fee for the attempt, 0.000041 ETH.",
-			"Get new terms and sign again. Your amount, privacy and gas choice are kept.",
+			"Sign again. Your amount, privacy and gas choice are kept.",
 		])
-		expect(notSent.get(sel(TESTIDS.xcOutcomeNewQuote)).text()).toBe("Get new terms")
+		expect(notSent.get(sel(TESTIDS.xcOutcomeNewQuote)).text()).toBe("Try again")
 		expect(notSent.get(".tx").text()).toBe("Rejected on Base Sepolia0x5757…5757 · reverted, 0 USDC moved")
 		await notSent.get(sel(TESTIDS.xcOutcomeNewQuote)).trigger("click")
 		await notSent.get(sel(TESTIDS.xcOutcomeChangeSend)).trigger("click")
@@ -83,7 +99,7 @@ describe("CrossChainOutcome", () => {
 		expect(cards(w)).toEqual([
 			"The approval on Base Sepolia went through, but the deposit was never signed, so nothing was sent.",
 			"Your USDC never left your wallet, but the approval for it is still open. Revoke it below.",
-			"Revoke the approval, or get new terms and sign again.",
+			"Revoke the approval, or sign again.",
 		])
 		expect(w.find(".tx").exists()).toBe(false)
 		const batch = panel(xcRecord(ended, { outcome: "not-sent", srcTxHash: undefined, srcBatchId: "0x01" }))
@@ -92,11 +108,7 @@ describe("CrossChainOutcome", () => {
 		await w.get(sel(TESTIDS.journalXcRevoke)).trigger("click")
 		await flushPromises()
 		expect(w.find(sel(TESTIDS.journalXcRevoke)).exists()).toBe(false)
-		expect(cards(w)).toEqual([
-			"The deposit was never signed, so nothing was sent.",
-			"Your USDC never left your wallet.",
-			"Get new terms and sign again.",
-		])
+		expect(cards(w)).toEqual(["The deposit was never signed, so nothing was sent.", "Your USDC never left your wallet.", "Sign again."])
 	})
 
 	it("stalled: a bridging send past twice its usual time, with its clock, LI.FI's trail and the last read", async () => {
@@ -119,5 +131,19 @@ describe("CrossChainOutcome", () => {
 				.find("section")
 				.exists(),
 		).toBe(false)
+	})
+
+	it("expired on mainnet: the refund Across makes there keeps its title, figure and row", () => {
+		net.mainnet = true
+		const expired = panel(xcRecord(ended, { outcome: "expired-on-source" }))
+		expect(expired.get("h2").text()).toBe("Refund pending on Base Sepolia")
+		expect(cards(expired)[0]).toBe(
+			"Across’s relayers didn’t deliver this transfer to Ethereum · Sepolia within 2 hours, so it expired.",
+		)
+		expect(cards(expired)[2]).toBe(
+			"Try again with a new quote; routes change from minute to minute. Or send from another network instead.",
+		)
+		expect(expired.get(".figure").text()).toBe("5.00 USDC due back in 0x3fA8…c41d on Base Sepolia")
+		expect(expired.findAll(".tx dt").map((d) => d.text())).toEqual(["Sent on Base Sepolia", "Refund on Base Sepolia"])
 	})
 })

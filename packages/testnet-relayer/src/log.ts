@@ -11,6 +11,7 @@ export type RelayEvent =
 	| "low-inventory"
 	| "busy"
 	| "gas-price"
+	| "late"
 	| "refused"
 	| "restock-requested"
 	| "restock-refused"

@@ -6,15 +6,7 @@
 import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
 import { agoWords } from "@/lib/activity"
 import { chainLabel, chainTxUrl, lifiScanUrl, railLabel } from "@/lib/chains"
-import {
-	assetText,
-	crossChainAsset,
-	crossChainPhase,
-	depositUnsigned,
-	expiryLead,
-	shortAddress,
-	windowWords,
-} from "@/lib/crosschain-activity"
+import { assetText, crossChainAsset, crossChainPhase, depositUnsigned, expiryLead, shortAddress } from "@/lib/crosschain-activity"
 import { RETRY_WORDS } from "@/lib/crosschain-figures"
 import { bridgingLate, crossChainRoute, etaRange } from "@/lib/crosschain-steps"
 import { formatStoredAmount } from "@/lib/format"
@@ -133,27 +125,37 @@ function deliveredCopy(rec: CrossChainDepositRecord, w: Words, endedAgo: string,
 	}
 }
 
-/** Why an expired transfer ended: on testnet it waited out its manual-fill window. */
+/** Why an expired transfer ended: on testnet it waited out our testnet relayer's fill window, which the copy leaves out. */
 function expiryHappened(rec: CrossChainDepositRecord, w: Words): string {
-	if (IS_MAINNET) return `${expiryLead(rec, `this transfer to ${w.l1}`)}, so it expired.`
-	const window = windowWords(rec)
-	return window
-		? `This transfer waited ${window} for a manual fill on ${w.l1} and wasn’t filled, so it expired.`
-		: `${expiryLead(rec, "this transfer")}, so it expired.`
+	return `${IS_MAINNET ? expiryLead(rec, `this transfer to ${w.l1}`) : expiryLead(rec)}, so it expired.`
 }
 
+/** Across refunds an unfilled deposit on mainnet only: on testnet it stays in the source chain's pool. */
 function expiredCopy(rec: CrossChainDepositRecord, w: Words, endedAgo: string): OutcomeCopy {
-	return {
+	const sent = sentTx(rec, `Sent on ${w.src}`, w.sent)
+	const shared = {
 		tag: "Expired",
 		tagTone: "raised",
-		title: `Refund pending on ${w.src}`,
 		when: `expired ${endedAgo}`,
 		happened: expiryHappened(rec, w),
+		nextTone: "raised",
+	} as const
+	if (!IS_MAINNET) {
+		return {
+			...shared,
+			title: "Didn’t arrive",
+			means: "Nothing reached Aztec, so there is nothing to claim. Testnet sends are not refunded automatically, and the network fee is spent.",
+			next: "Try again, or send from another network.",
+			txs: [sent],
+		}
+	}
+	return {
+		...shared,
+		title: `Refund pending on ${w.src}`,
+		next: "Try again with a new quote; routes change from minute to minute. Or send from another network instead.",
 		means: `Nothing reached ${w.l1} or Aztec, and there is nothing to claim. ${w.rail} refunds the ${w.symbol} to your wallet on ${w.src}; the network fee for the send is not returned.`,
 		figure: figureOf(rec, rec.route.srcAmount, "due back in", w.src, w),
-		next: `${RETRY_WORDS.tryAgain} Or send from another network instead.`,
-		nextTone: "raised",
-		txs: [sentTx(rec, `Sent on ${w.src}`, w.sent), { label: `Refund on ${w.src}`, note: `pending · ${w.sent}` }],
+		txs: [sent, { label: `Refund on ${w.src}`, note: `pending · ${w.sent}` }],
 	}
 }
 

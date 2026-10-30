@@ -20,8 +20,8 @@ import { getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { PublicKeys } from "@aztec-labs/aztec.js/keys"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
+import { codeFor } from "@unleashed/bridge-core/generation-paths"
 import { assertManifestTokensDerive, parseManifestV2 } from "@unleashed/sdk/protocol"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { checkDeploymentRecords, type DeploymentsJson } from "../src/contracts/deployment-records.js"
@@ -44,7 +44,8 @@ function parseConfigPath(argv: string[]): string {
  * Bridge-manifest verifier, OPT-IN via `BRIDGE_MANIFEST`. Re-derives the hub from its recorded
  * salt + constructor args and every token from the hub + its words, and asserts both match the
  * committed addresses — an artifact that derives a different address than committed would strand
- * the cutover. Unset ⇒ skipped, so the default run against the live manifest is unaffected.
+ * the cutover. The hub artifact is the one the manifest's generation record keeps (a sandbox's: the
+ * hub target). Unset ⇒ skipped, so the default run against the live manifest is unaffected.
  *
  * `bridge: null` is the legal placeholder the app renders as such (the build gate runs this against
  * BOTH targets' live manifests); refusing a placeholder is promotion's job (`promotion.ts`), not
@@ -58,7 +59,8 @@ async function verifyBridgeManifest(path: string): Promise<boolean> {
 	}
 	const hub = m.bridge.l2.hub
 	const [classId, factory, guardian] = hub.constructorArgs as [string, string, string]
-	const derived = await getContractInstanceFromInstantiationParams(tokenBridgeHubArtifact, {
+	const hubArtifact = codeFor(m).hubArtifact()
+	const derived = await getContractInstanceFromInstantiationParams(hubArtifact, {
 		publicKeys: PublicKeys.default(),
 		deployer: AztecAddress.ZERO,
 		constructorArgs: [Fr.fromHexString(classId), EthAddress.fromString(factory), AztecAddress.fromStringUnsafe(guardian)],
@@ -68,7 +70,7 @@ async function verifyBridgeManifest(path: string): Promise<boolean> {
 	const hubOk = derived.address.toString().toLowerCase() === hub.address.toLowerCase()
 	console.log(`[${hubOk ? "OK" : "DRIFT"}] bridge.hub    computed=${derived.address.toString()} committed=${hub.address}`)
 	try {
-		await assertManifestTokensDerive(m)
+		await assertManifestTokensDerive(m, hubArtifact)
 		for (const t of m.bridge.tokens) console.log(`[OK] bridge.token  ${t.displaySymbol.padEnd(6)} ${t.l2Token}`)
 	} catch (e) {
 		console.error(`[DRIFT] ${e instanceof Error ? e.message : String(e)}`)

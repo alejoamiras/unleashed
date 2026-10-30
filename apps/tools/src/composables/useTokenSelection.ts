@@ -9,18 +9,22 @@
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
-import { type Erc20Metadata, predictPortal, readErc20Balances, readErc20Metadata, toWord } from "@unleashed/sdk/protocol"
+import { type Erc20Metadata, predictPortal, readErc20Metadata, toWord } from "@unleashed/sdk/protocol"
 import { readRegistration, type Registration, tokenStateOf } from "@unleashed/sdk/internal"
 import type { Address, Hex, PublicClient } from "viem"
 import { type Ref, ref, shallowRef } from "vue"
 import { rebuildHubTokenInstance, SEND_GENERATION } from "@/contracts/bridge-generation"
+import { readBalancesOn } from "./useEthereumReader"
 import { assertL1Chain } from "./useSend"
 import type { Direction, MetadataConflict, ResolvedToken, SelectableToken, TokenBalances, TokenWords } from "@/lib/send-model"
 import { userMessage } from "@/lib/errors"
 import { safeDisplay } from "@/lib/token-display"
 
 export interface TokenSelectionDeps {
+	/** Resolves the token; its live chain is asserted against the bridge's L1. */
 	pub: () => PublicClient | undefined
+	/** Reads the Ethereum balance; a client pinned to the bridge's L1, so a wallet on another chain still reads it. */
+	balanceReader: () => PublicClient | undefined
 	l1Account: () => Address | undefined
 	/** The hub's L2 token for an ERC-20, read from the node — no Aztec wallet needed; undefined when unregistered. */
 	readBinding: (erc20: Address) => Promise<string | undefined>
@@ -139,6 +143,13 @@ async function simulateBalance(contract: ContractBase, fn: "balance_of_public" |
 	return toBigInt(raw?.result ?? raw)
 }
 
+/** Undefined where the balance cannot be read: a zero would refuse every amount. */
+async function readL1Balance(reader: PublicClient | undefined, owner: Address | undefined, token: Address): Promise<bigint | undefined> {
+	if (!reader || !owner) return undefined
+	const held = await readBalancesOn(reader, owner, [token]).catch(() => undefined)
+	return held && (held.get(token) ?? 0n)
+}
+
 export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHandle {
 	// Shallow: both are replaced wholesale, and deep reactivity would proxy the chain-shaped
 	// registration object for nothing.
@@ -179,11 +190,12 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 		return out
 	}
 
-	async function loadBalances(pub: PublicClient, token: ResolvedToken, direction: Direction, mine: number): Promise<void> {
+	async function loadBalances(token: ResolvedToken, direction: Direction, mine: number): Promise<void> {
 		const read = ++balanceRead
 		const next: TokenBalances = {}
 		const owner = deps.l1Account()
-		if (owner) next.l1 = (await readErc20Balances(pub, owner, [token.address])).get(token.address) ?? 0n
+		const l1 = await readL1Balance(deps.balanceReader(), owner, token.address)
+		if (l1 !== undefined) next.l1 = l1
 		// The L2 side exists only once the hub has registered the token, and only an exit needs it up
 		// front — a deposit's L2 balance is whatever its own claim will create.
 		if (token.state.kind === "registered" && direction === "l2-to-l1") Object.assign(next, await readL2Balances(token))
@@ -212,7 +224,7 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 		if (stale(mine)) return
 		selected.value = resolved
 		balances.value = {}
-		await loadBalances(pub, resolved, direction, mine)
+		await loadBalances(resolved, direction, mine)
 	}
 
 	async function select(token: SelectableToken, direction: Direction): Promise<void> {
@@ -233,9 +245,8 @@ export function useTokenSelection(deps: TokenSelectionDeps): UseTokenSelectionHa
 
 	async function refreshBalances(): Promise<void> {
 		const token = selected.value
-		const pub = deps.pub()
-		if (!token || !pub || disposed) return
-		await loadBalances(pub, token, lastDirection, epochValue)
+		if (!token || disposed) return
+		await loadBalances(token, lastDirection, epochValue)
 	}
 
 	function dispose(): void {

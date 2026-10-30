@@ -45,6 +45,11 @@ export interface LifiChainBook {
 	/** LI.FI's `FeeForwarder`: the `callTo` of the fee step li.quest prepends to a route. */
 	readonly feeForwarder: Address
 	/**
+	 * The contract each `LIFI_ALLOW_EXCHANGES` venue's swap step calls and approves, the one its late-fill fork proved;
+	 * empty where no fuel swap runs through LI.FI. Read with `Object.hasOwn`: the key is provider text.
+	 */
+	readonly fuelVenues: Readonly<Record<string, Address>>
+	/**
 	 * The facet behind every Diamond selector this app accepts on this chain, and only those: a source route's
 	 * entrypoint, or the fuel swap on the destination. A facet upgrade moves these; the live test notices.
 	 */
@@ -57,6 +62,11 @@ export interface LifiChainBook {
 }
 
 const DIAMOND: Address = "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE"
+/** `callTo` = `approveTo` of the recorded same-chain quotes' swap step (Ethereum block 26,128,931). */
+const ETHEREUM_FUEL_VENUES: Readonly<Record<string, Address>> = {
+	sushiswap: "0xAC4c6e212A361c968F1725b4d055b47E63F80b75",
+	nordstern: "0xa929c559E5e6537359680F39CB4E3708E1a14dd1",
+}
 const FEE_FORWARDER: Address = "0xCE40449B773a3E6E5e769ADb4e567179d4828cbd"
 const ENDPOINT_V2: Address = "0x1a44076050125825900e736c501f859c50fE728c"
 /** Same bytecode at the same address on every mainnet: the owner lives in storage. */
@@ -73,6 +83,7 @@ const ETHEREUM: LifiChainBook = {
 	receiverAcrossV4: "0x07Cc0a0b41641D349240e1988169Fa11b31FC24E",
 	receiverStargateV2: "0xB539B40793171211DCA8834da044fC14bCe64BDC",
 	feeForwarder: FEE_FORWARDER,
+	fuelVenues: ETHEREUM_FUEL_VENUES,
 	// GenericSwapFacetV3: the router's SWAP_TARGET on mainnet is this Diamond.
 	facets: {
 		[SWAP_TOKENS_SINGLE_V3_SELECTOR]: "0x8C9dBA771220Ed09580b77F0765e7153fbDE7790",
@@ -99,6 +110,7 @@ const BASE: LifiChainBook = {
 	receiverAcrossV4: "0x33b255b5db44A78c34381f89f1a454bc0Ef49871",
 	receiverStargateV2: "0x1493e7B8d4DfADe0a178dAD9335470337A3a219A",
 	feeForwarder: FEE_FORWARDER,
+	fuelVenues: {},
 	facets: stargateFacets("0x6e378C84e657C57b2a8d183CFf30ee5CC8989b61"),
 	acrossSpokePool: "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
 	stargate: {
@@ -121,6 +133,7 @@ const ARBITRUM: LifiChainBook = {
 	receiverAcrossV4: "0x33b255b5db44A78c34381f89f1a454bc0Ef49871",
 	receiverStargateV2: "0x1493e7B8d4DfADe0a178dAD9335470337A3a219A",
 	feeForwarder: FEE_FORWARDER,
+	fuelVenues: {},
 	facets: stargateFacets("0x6e378C84e657C57b2a8d183CFf30ee5CC8989b61"),
 	acrossSpokePool: "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A",
 	stargate: {
@@ -143,6 +156,7 @@ const OPTIMISM: LifiChainBook = {
 	receiverAcrossV4: "0xe417AD5eb9e919567620A48B3757cc182cCdf9e4",
 	receiverStargateV2: "0x556701899905f2f83AcA2977D3202Ee3a80f37b7",
 	feeForwarder: FEE_FORWARDER,
+	fuelVenues: {},
 	facets: stargateFacets("0xb6424d61c2c3930c91D93E33D0654f9412bFDD81"),
 	acrossSpokePool: "0x6f26Bf09B1C792e3228e5467807a900A503c0281",
 	stargate: {
@@ -165,6 +179,7 @@ const SEPOLIA: LifiChainBook = {
 	executor: "0x7b01E6A2badAB05e2afaAeFf963f60B5FCF3a533",
 	receiverAcrossV4: "0x51Cd54Fab6Bc72c4c313C7d2DD4E0bE1A4390f44",
 	feeForwarder: "0xB0c62E0952A6388dA4f591B9b832B4234672A0Af",
+	fuelVenues: {},
 	facets: {},
 	acrossSpokePool: "0x5ef6C01E11889d86803e0B23e3cB3F9E9d97B662",
 	codeHashes: {
@@ -181,6 +196,7 @@ const BASE_SEPOLIA: LifiChainBook = {
 	executor: "0xa23f49d4eec23D58f5C000f51969AcEDe42a5E54",
 	receiverAcrossV4: "0x0957F75A2b33f5088FCbE7C6A768fD0a8c2ce1F0",
 	feeForwarder: "0xC7e003943dDAE973d7D6455ab54A22E18302aBeb",
+	fuelVenues: {},
 	facets: { [START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR]: "0xed86e8F84072BC066A353a2180F38E5268F32B26" },
 	acrossSpokePool: "0x82B564983aE7274c86695917BBf8C99ECb6F0F8F",
 	codeHashes: {
@@ -214,7 +230,10 @@ const NONE: Address = zeroAddress
 const NO_CODE_HASHES: LifiCodeHashes = { executor: zeroHash, receiverAcrossV4: zeroHash, feeForwarder: zeroHash }
 const sandboxBooks = new Map<number, LifiChainBook>()
 
-/** What a sandbox does not deploy is the zero address, which every check that reads it refuses. */
+/**
+ * What a sandbox does not deploy is the zero address, which every check that reads it refuses. Its Ethereum book
+ * carries Ethereum's venues: the sandbox replays recorded mainnet swap steps, and its stand-in Diamond ignores them.
+ */
 function sandboxBooksOf(c: SandboxLifiContracts): LifiChainBook[] {
 	const shared = { feeForwarder: NONE, codeHashes: NO_CODE_HASHES }
 	return [
@@ -224,6 +243,7 @@ function sandboxBooksOf(c: SandboxLifiContracts): LifiChainBook[] {
 			diamond: c.source.diamond,
 			executor: NONE,
 			receiverAcrossV4: NONE,
+			fuelVenues: {},
 			facets: { [START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR]: c.source.diamond },
 			acrossSpokePool: c.source.spokePool,
 		},
@@ -233,6 +253,7 @@ function sandboxBooksOf(c: SandboxLifiContracts): LifiChainBook[] {
 			diamond: c.ethereum.diamond,
 			executor: c.ethereum.executor,
 			receiverAcrossV4: c.ethereum.receiverAcrossV4,
+			fuelVenues: ETHEREUM_FUEL_VENUES,
 			facets: {},
 			acrossSpokePool: c.ethereum.spokePool,
 		},

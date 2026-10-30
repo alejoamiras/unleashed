@@ -1,8 +1,10 @@
+import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractInstanceWithAddress } from "@aztec-labs/aztec.js/contracts"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
 import {
 	type BridgeBlock,
+	codeOf,
 	deriveHubTokenInstance,
 	deriveManifestHub,
 	type HubTokenWords,
@@ -11,7 +13,6 @@ import {
 	parseManifestV2,
 } from "@unleashed/sdk/protocol"
 import { legacyRoutersOf, type SendGeneration, sendGenerationOf } from "@unleashed/sdk/internal"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
 import { type Network, parseNetwork, type Reads } from "@unleashed/sdk"
 import rawTestnetConfig from "../../public/testnet-bridge.json"
 
@@ -53,10 +54,26 @@ export const FUEL: FuelBudgets | undefined = GENERATION?.l1.fuel
 /** Routers whose deposits still reconcile; no send uses them. */
 export const LEGACY_ROUTERS: readonly `0x${string}`[] = GENERATION ? legacyRoutersOf(GENERATION) : []
 
+let hub: Promise<ContractArtifact> | undefined
+
+/**
+ * The hub artifact this build's generation deployed: its committed record's on a live chain, this build's own hub
+ * target on a sandbox. Megabytes, so fetched once on first use; a failed load is not remembered.
+ */
+export function hubArtifact(): Promise<ContractArtifact> {
+	hub ??= Promise.resolve()
+		.then(() => codeOf(MANIFEST).hubArtifact())
+		.catch((e: unknown) => {
+			hub = undefined
+			throw e
+		})
+	return hub
+}
+
 /** The generation's hub instance, re-derived from its record so the registered instance is never a carried value. */
 export async function rebuildHubInstance(): Promise<ContractInstanceWithAddress> {
 	if (!GENERATION) throw new Error("no bridge on this network")
-	const instance = await deriveManifestHub(GENERATION)
+	const instance = await deriveManifestHub(GENERATION, await hubArtifact())
 	if (instance.address.toString().toLowerCase() !== GENERATION.l2.hub.address.toLowerCase()) {
 		throw new Error(`hub ${GENERATION.l2.hub.address} is not the instantiation of its manifest record`)
 	}
@@ -69,7 +86,6 @@ export async function rebuildHubTokenInstance(erc20: string, words: HubTokenWord
 	return deriveHubTokenInstance(HUB, erc20, words, TOKEN_CLASS_ID)
 }
 
-export const HUB_ARTIFACT = tokenBridgeHubArtifact
 export const HUB_TOKEN_ARTIFACT = TokenContractArtifact
 
 let network: Promise<Network> | undefined

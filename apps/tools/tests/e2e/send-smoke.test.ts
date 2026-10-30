@@ -61,6 +61,8 @@ const h = vi.hoisted(() => ({
 	fn: {
 		loadTokenList: vi.fn(),
 		depositL1: vi.fn(),
+		assertDepositsOpen: vi.fn(),
+		bridgeNetwork: vi.fn(),
 		claimViaHub: vi.fn(),
 		exitViaHub: vi.fn(),
 		preflightHubExit: vi.fn(),
@@ -99,12 +101,12 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		MANIFEST_TOKENS: bridge.tokens,
 		FUEL: fuel,
 		LEGACY_ROUTERS: internal.legacyRoutersOf(bridge),
-		HUB_ARTIFACT: {},
+		hubArtifact: async () => ({}),
 		HUB_TOKEN_ARTIFACT: {},
 		rebuildHubInstance: async () => ({ address: { toString: () => bridge.l2.hub.address } }),
 		rebuildHubTokenInstance: async (erc20: string) => ({ address: { toString: () => derived(erc20) } }),
 		// The trust-root check reads the chain; the faked deposit below never looks at what it returns.
-		bridgeNetwork: async () => ({}),
+		bridgeNetwork: () => h.fn.bridgeNetwork(),
 	}
 	h.wire.gen = { ...gen, placeholder }
 	// A getter, so one case can turn this network into a placeholder without a module reset.
@@ -118,10 +120,11 @@ vi.mock("@/contracts/bridge-generation", async () => {
 
 vi.mock("@/composables/useL1Wallet", () => ({ useL1Wallet: () => h.wire.l1 }))
 // The pinned per-chain readers would otherwise build real RPC clients; every chain read answers from the fake.
-vi.mock("@/composables/useEthereumReader", () => {
+vi.mock("@/composables/useEthereumReader", async (importOriginal) => {
 	const readClientFor = () => (h.wire.l1 as { publicClient: unknown }).publicClient
 	return {
 		readClientFor,
+		readBalancesOn: (await importOriginal<typeof import("@/composables/useEthereumReader")>()).readBalancesOn,
 		discoveryReadsFor: () => undefined,
 		useEthereumReader: () => ({ ethereum: readClientFor, forChain: readClientFor, discoveryReadsFor: () => undefined }),
 		__resetReadClientsForTests: () => {},
@@ -206,6 +209,7 @@ vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
 vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
 	depositL1: h.fn.depositL1,
+	assertDepositsOpen: h.fn.assertDepositsOpen,
 	claimViaHub: h.fn.claimViaHub,
 	exitViaHub: h.fn.exitViaHub,
 	preflightHubExit: h.fn.preflightHubExit,
@@ -248,7 +252,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { SendDepositRecord } from "@unleashed/bridge-core"
-import type { DepositRecord, DepositSecrets, RunOptions } from "@unleashed/sdk"
+import { BridgeError, type DepositRecord, type DepositSecrets, type RunOptions } from "@unleashed/sdk"
 import type { DepositPlan } from "@unleashed/sdk/internal"
 import { deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
 import { type Hex, keccak256, stringToHex } from "viem"
@@ -256,7 +260,7 @@ import listFixture from "./fixtures/token-list.json"
 
 import { __resetHubExitDepsForTests } from "@/composables/useHubExit"
 import { __resetJournalForTests, connectJournalDeps, useBridgeJournal } from "@/composables/useBridgeJournal"
-import { __resetSendDepsForTests } from "@/composables/useSend"
+import { __resetSendDepsForTests, BRIDGE_UNCHECKED, DEPOSITS_PAUSED } from "@/composables/useSend"
 import { __resetTokenGrantQueueForTests } from "@/composables/useTokenGrant"
 import { TESTIDS } from "@/lib/testids"
 import SendView from "@/views/SendView.vue"
@@ -499,6 +503,7 @@ async function toReview(w: Wrapper): Promise<void> {
 
 const records = () => useBridgeJournal().records.value as SendDepositRecord[]
 const sendRecord = () => records().find((r) => r.schema === 3)
+const paused = () => new BridgeError("paused", "deposits on sandbox are paused", "none", "after-wait")
 
 describe("send wizard smoke", () => {
 	beforeEach(() => {
@@ -533,6 +538,8 @@ describe("send wizard smoke", () => {
 			return { tokens: listFixture.tokens, provenance: "fresh" }
 		})
 		h.fn.depositL1.mockImplementation(fakeDepositL1)
+		h.fn.bridgeNetwork.mockImplementation(async () => ({}))
+		h.fn.assertDepositsOpen.mockImplementation(async () => {})
 		h.fn.claimViaHub.mockImplementation(async (_hub: unknown, p: { token: { erc20: string } }) => claimOutcome(p.token.erc20))
 		h.fn.exitViaHub.mockImplementation(async () => ({ receipt: { txHash: "0xexittx", blockNumber: 5 } }))
 		h.fn.preflightHubExit.mockImplementation(async () => {})
@@ -621,6 +628,41 @@ describe("send wizard smoke", () => {
 		expect(h.fn.depositL1).not.toHaveBeenCalled()
 		expect(records()).toHaveLength(0)
 		expect(w.find(sel(TESTIDS.sendGrantDeclined)).exists()).toBe(true)
+
+		// The retry meets a route paused meanwhile: the decline was the last attempt's reason, not this one's.
+		h.fn.assertDepositsOpen.mockImplementation(async () => {
+			throw paused()
+		})
+		await w.find(sel(TESTIDS.sendReviewConfirm)).trigger("click")
+		await settle()
+		expect(w.find(sel(TESTIDS.sendReviewError)).text()).toBe(DEPOSITS_PAUSED)
+		expect(w.find(sel(TESTIDS.sendGrantDeclined)).exists()).toBe(false)
+		expect(h.fn.retryCapabilities).toHaveBeenCalledTimes(1)
+	})
+
+	it.each([
+		{ name: "a paused route", why: DEPOSITS_PAUSED, fail: () => h.fn.assertDepositsOpen.mockRejectedValue(paused()) },
+		{
+			name: "a bridge it cannot check",
+			why: BRIDGE_UNCHECKED,
+			fail: () => h.fn.bridgeNetwork.mockRejectedValue(new Error("fetch failed")),
+		},
+	])("$name stops at Sign and send with its sentence: no permission screen, no prompt, no record", async ({ why, fail }) => {
+		markRegistered(LIST_WBTC, LIST_DECIMALS)
+		fail()
+		const w = await mountView()
+		await pick(w, LIST_WBTC)
+		await toAmount(w, "1")
+		await toReview(w)
+		await w.find(sel(TESTIDS.sendReviewConfirm)).trigger("click")
+		await settle()
+
+		expect(w.find(sel(TESTIDS.sendStepReview)).exists(), "the review stays; no permission screen").toBe(true)
+		expect(w.find(sel(TESTIDS.sendReviewError)).text()).toBe(why)
+		expect(w.find(sel(TESTIDS.sendGrantDeclined)).exists()).toBe(false)
+		expect(h.fn.retryCapabilities).not.toHaveBeenCalled()
+		expect(h.fn.depositL1).not.toHaveBeenCalled()
+		expect(records()).toHaveLength(0)
 	})
 
 	it("while the wallet decides on the permission, the stepper shows it as the first phase and nothing else can move", async () => {

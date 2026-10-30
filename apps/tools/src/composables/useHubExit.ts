@@ -13,7 +13,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
 import { Contract } from "@aztec-labs/aztec.js/contracts"
-import { Fr } from "@aztec-labs/aztec.js/fields"
+import type { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { OutboxContract } from "@aztec-labs/ethereum/contracts"
@@ -28,8 +28,8 @@ import {
 	hubAt,
 	hubExitsPaused,
 	hubTokenFor,
-	isOutboxMessageConsumed,
 	preflightHubExit,
+	randomField,
 	clampGas,
 	walletMaxFees,
 } from "@unleashed/sdk/internal"
@@ -44,7 +44,7 @@ import {
 import { type SendWithdrawRecord, makeProvisionalWithdrawId } from "@unleashed/bridge-core"
 import { decodeFunctionData } from "viem"
 import { type Ref, ref } from "vue"
-import { HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
+import { HUB, hubArtifact, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"
 import { NETWORK } from "@/lib/network"
 import { webJournalLocks } from "@/lib/journal-locks"
@@ -55,7 +55,6 @@ import type { ExitPlan } from "@/lib/send-model"
 import { normalizeError } from "@/lib/errors"
 import { humanizeWalletError, isUserRejection } from "@/lib/wallet-errors"
 import {
-	type ConsumeOutcome,
 	addRecord,
 	connectJournalDeps,
 	discard,
@@ -238,23 +237,11 @@ async function awaitExitBlock(node: AztecNode, rec: SendWithdrawRecord, onProgre
 	return receipt
 }
 
-/** A consume can fail because the message is already gone: `callerOnL1` is the zero address, so ANY
- *  caller may finish this exit, and one that got there first left nothing to send. The Outbox is
- *  asked directly rather than the revert text, which is not ours to depend on; an unreadable answer
- *  is a NO, so the original failure surfaces as itself instead of a false completion. */
-async function consumedElsewhere(l1: L1Ctx, node: AztecNode, receipt: { txHash: unknown }): Promise<boolean> {
-	try {
-		return await isOutboxMessageConsumed(l1, node as never, receipt)
-	} catch {
-		return false
-	}
-}
-
 async function runSendConsume(
 	l1: ReturnType<typeof useL1Wallet>,
 	rec: SendWithdrawRecord,
 	onProgress: ExitProgress,
-): Promise<ConsumeOutcome> {
+): Promise<{ consumeTxHash: string }> {
 	const wallet = l1.ensureWalletClient()
 	const account = l1.address.value
 	if (!wallet || !account) throw new Error("Connect your Ethereum wallet to finish the withdraw.")
@@ -267,6 +254,8 @@ async function runSendConsume(
 			.catch(() => {})
 	}, 5000)
 	const ctx = { pub: l1.publicClient, wallet, account } as unknown as L1Ctx
+	// A failed consume surfaces as itself even when its message reads as spent: an identical exit carries the same
+	// message, so a consumed one never proves this record finished.
 	try {
 		// The consume runs against THIS token's clone: one portal per ERC-20, and a message from
 		// one clone can never be finished on another.
@@ -278,9 +267,6 @@ async function runSendConsume(
 			provenTimeoutSec: PROVEN_TIMEOUT_SEC,
 			onSent: (hash) => updateRecord(rec.id, { consumeTxHash: hash }),
 		})
-	} catch (e) {
-		if (await consumedElsewhere(ctx, node, receipt)) return { consumedByOther: true }
-		throw e
 	} finally {
 		clearInterval(pollTimer)
 	}
@@ -343,7 +329,8 @@ async function assertExitsOpen(l1: ReturnType<typeof useL1Wallet>, aztec: unknow
 		functionName: "withdrawsPaused",
 	})) as boolean
 	if (paused) throw new ExitPausedError("l1")
-	if (await hubExitsPaused(hubAt(aztec as never, (HUB as AztecAddress).toString()), from)) throw new ExitPausedError("l2")
+	if (await hubExitsPaused(hubAt(aztec as never, (HUB as AztecAddress).toString(), await hubArtifact()), from))
+		throw new ExitPausedError("l2")
 }
 
 interface ExitCtx {
@@ -362,7 +349,7 @@ interface ExitCtx {
 	token: Contract
 }
 
-const hubOf = (ctx: ExitCtx) => hubAt(ctx.aztec as never, (HUB as AztecAddress).toString())
+const hubOf = async (ctx: ExitCtx) => hubAt(ctx.aztec as never, (HUB as AztecAddress).toString(), await hubArtifact())
 
 type ExitAuth = { authWitnesses?: unknown[] }
 
@@ -424,7 +411,7 @@ const exitParams = (ctx: ExitCtx) => ({
 
 async function submitExit(ctx: ExitCtx, auth: ExitAuth): Promise<{ txHash: unknown; blockNumber?: number }> {
 	const opts = { ...ctx.sendOpts, ...auth, ...(ctx.fee ? { fee: ctx.fee } : {}) }
-	const sent = (await runOnLane("aztec", () => exitViaHub(hubOf(ctx), exitParams(ctx), opts))) as {
+	const sent = (await runOnLane("aztec", async () => exitViaHub(await hubOf(ctx), exitParams(ctx), opts))) as {
 		receipt: { txHash: unknown; blockNumber?: number }
 	}
 	return sent.receipt
@@ -433,7 +420,7 @@ async function submitExit(ctx: ExitCtx, auth: ExitAuth): Promise<{ txHash: unkno
 /** The hub's LIVE binding, not the wizard's copy of it: a token the hub never registered holds
  *  nothing of this ERC-20 to burn, and one bound to another L2 token would burn the wrong asset. */
 async function assertHubBinding(ctx: ExitCtx): Promise<void> {
-	const bound = await hubTokenFor(hubOf(ctx), ctx.plan.token.address, ctx.from)
+	const bound = await hubTokenFor(await hubOf(ctx), ctx.plan.token.address, ctx.from)
 	if (!bound) throw new ExitTokenNotRegisteredError()
 	if (bound.toLowerCase() !== ctx.plan.token.l2Token.toLowerCase()) {
 		throw new Error("The bridge binds this Ethereum token to a different Aztec token than this screen shows — nothing was sent.")
@@ -474,15 +461,15 @@ async function authorizeExit(ctx: ExitCtx, open: () => void): Promise<ExitAuth> 
 	// re-register-and-retry once even on the public path, after the authwit transaction has landed.
 	if (ctx.plan.isPrivate) {
 		const auth = await privateBurnWitness(ctx)
-		await retryOnUnregistered(ctx.session, ctx.aztec as Wallet, () =>
-			preflightHubExit(hubOf(ctx), exitParams(ctx), ctx.from, { ...auth, ...(ctx.fee ? { fee: ctx.fee } : {}) }),
+		await retryOnUnregistered(ctx.session, ctx.aztec as Wallet, async () =>
+			preflightHubExit(await hubOf(ctx), exitParams(ctx), ctx.from, { ...auth, ...(ctx.fee ? { fee: ctx.fee } : {}) }),
 		)
 		open()
 		return auth
 	}
 	open()
 	await sendPublicBurnAuthwit(ctx)
-	await retryOnUnregistered(ctx.session, ctx.aztec as Wallet, () => preflightHubExit(hubOf(ctx), exitParams(ctx), ctx.from))
+	await retryOnUnregistered(ctx.session, ctx.aztec as Wallet, async () => preflightHubExit(await hubOf(ctx), exitParams(ctx), ctx.from))
 	return {}
 }
 
@@ -549,7 +536,7 @@ async function performExit(plan: ExitPlan, d: ExitDeps, approvedCeiling?: bigint
 			fromAddr: AztecAddress.fromStringUnsafe(from),
 			plan,
 			approvedCeiling,
-			nonce: Fr.random(),
+			nonce: randomField(),
 			sendOpts: buildExitSendOpts(AztecAddress.fromStringUnsafe(from)),
 			token: await Contract.at(AztecAddress.fromStringUnsafe(plan.token.l2Token), TokenContractArtifact, aztec as never),
 		}

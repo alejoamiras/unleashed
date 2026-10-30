@@ -63,7 +63,7 @@ import { stepperPhases } from "@/lib/bridge-steps"
 import { chainLabel } from "@/lib/chains"
 import { useNow } from "@/lib/clock"
 import { ethereumPrefillOf, sendView } from "@/lib/crosschain-activity"
-import { type CrossChainFigures, countdownText, quoteWord } from "@/lib/crosschain-figures"
+import { type CrossChainFigures, countdownText, quoteBand } from "@/lib/crosschain-figures"
 import { type OutcomeFigures, outcomeVariant } from "@/lib/crosschain-outcome"
 import { crossChainLogLinks } from "@/lib/crosschain-steps"
 import { formatAmount, formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString, trimAddress } from "@/lib/format"
@@ -88,8 +88,8 @@ import {
 	tokenRemainder,
 } from "@/lib/send-model"
 
-/** The rail's own etas, summed and rounded UP — the review must never undersell how long this takes. */
-const DEPOSIT_TAKES = "usually 3–8 min end to end"
+/** The deposit steps' own etas summed (deposit under 1 min, crossing ~1 min, confirm 1–2 min); the claim's signature is the user's time. */
+const DEPOSIT_TAKES = "usually 2–4 min end to end"
 const EXIT_TAKES = "tens of minutes — Aztec proves exits in epoch batches"
 const ONE_TO_ONE = { probeIn: 1n, probeOut: 1n }
 /** What one Aztec transaction is budgeted at on this network; null where nothing can buy gas. */
@@ -143,17 +143,16 @@ const lookup = useAddressLookup({
 	known: () => catalog.tokens.value,
 	chainId: () => catalog.chainId,
 })
-/** No owner while the Ethereum wallet sits on another chain: a balance read there is another
- *  chain's, and the switch back reads afresh. */
-const l1Reader = computed(() => (l1.wrongChain.value ? undefined : (l1.address.value ?? undefined)))
+/** Ethereum balances read through the build's own RPCs, so they stand whichever chain the wallet is on. */
+const bridgeL1 = () => readClientFor(NETWORK.l1ChainId)
+const l1Owner = () => l1.address.value ?? undefined
 const rowBalances = useRowBalances({
-	pub: () => l1.publicClient as unknown as PublicClient,
-	owner: () => l1Reader.value,
+	pub: bridgeL1,
+	owner: l1Owner,
 	tokens: () => catalog.filtered.value,
 })
-// Reads through the build's own RPCs, so the owner stands whichever chain the wallet is on.
 const sourceChain = useSourceChain({
-	owner: () => l1.address.value ?? undefined,
+	owner: l1Owner,
 	walletChainId: () => l1.chainId.value,
 	switchChain: (chainId) => l1.switchChain(chainId),
 })
@@ -163,7 +162,8 @@ const sourceKeys = new Set(sourceChain.rows.map((r) => r.logoKey))
 const isSourceRow = (token: SelectableToken): boolean => sourceKeys.has(token.logoKey)
 const selection = useTokenSelection({
 	pub: () => l1.publicClient as unknown as PublicClient,
-	l1Account: () => l1Reader.value,
+	balanceReader: bridgeL1,
+	l1Account: l1Owner,
 	readBinding: readHubBinding,
 	l2Account: () => bridge.selectedAccount.value ?? undefined,
 	tokenContract: async (l2Token) => {
@@ -894,8 +894,8 @@ function onMinted(): void {
 // outlives both, is what refreshes after one.
 watch(feeAssetMinted, onMinted)
 
-// The row balances re-read themselves when the reader changes; the selected token's are read here.
-watch(l1Reader, () => void selection.refreshBalances())
+// The row balances re-read themselves when the account changes; the selected token's are read here.
+watch(l1Owner, () => void selection.refreshBalances())
 
 function onDirection(next: Direction): void {
 	direction.value = next
@@ -952,7 +952,16 @@ function enterReview(): void {
 	reviewed.value = freezeReview(target)
 	reviewStale.value = false
 	clearCrossChainReview()
+	clearSendErrors()
 	step.value = 2
+}
+
+/** An exit's decline comes from picking the token, not from a send: it stands until the token is picked again. */
+function clearSendErrors(): void {
+	sendFlow.error.value = null
+	exitFlow.error.value = null
+	exitFlow.paused.value = null
+	if (!isExit.value && grantState.value === "declined") grantState.value = "idle"
 }
 
 function goToStep(index: 0 | 1 | 2): void {
@@ -1133,7 +1142,11 @@ async function runCrossChain(snapshot: ReviewSnapshot, frozen: FrozenRoute, targ
 	const sent = await xc.send(frozen.quoted, frozen.route, target.token, client)
 	if ("id" in sent) {
 		if (ownedId.value !== sent.id && backgroundedCanonical.value !== sent.id) adopt(sent.id)
-	} else if ("refused" in sent) xcRefusal.value = refusalState(sent.refused, ask.user)
+		return
+	}
+	// A send backgrounded mid-prompt fails after the wizard moved on: why it stopped belongs to its own review only.
+	if (reviewed.value !== snapshot) return
+	if ("refused" in sent) xcRefusal.value = refusalState(sent.refused, ask.user)
 	else xcError.value = sent.error
 }
 
@@ -1162,26 +1175,61 @@ function adoptRunRecord(): void {
 watch(journal.listedRecords, adoptRunRecord)
 
 /**
- * The gas gate is re-read at CONFIRM, not trusted from when the amount step opened: gas spent
- * elsewhere meanwhile would strand the deposit at its claim. The read holds the buttons but leaves
- * the review live, so an account or chain that moves under it stands it down as usual; only a
- * review still standing when the read returns goes on to sign.
+ * A deposit first passes its check (an Ethereum send the bridge's, a cross-chain send the pause); then the gas gate
+ * is re-read at CONFIRM, not trusted from when the amount step opened: gas spent elsewhere meanwhile would strand the
+ * deposit at its claim. Each read holds the buttons but leaves the review live, so an account or chain that moves
+ * under it stands it down as usual; only a review still standing when the reads return goes on to sign.
  */
 async function preflight(snapshot: ReviewSnapshot): Promise<boolean> {
 	const target = snapshot.plan
 	if (target.direction === "l2-to-l1") return target.isPrivate ? privateExitPreflight(snapshot) : true
+	const checked = snapshot.crossChain ? crossChainChecked(snapshot, target) : bridgeChecked(snapshot, target)
+	if (!(await checked)) return false
 	const privateSlice = target.isPrivate && target.intent === "token+gas" ? (target.gas ?? null) : null
 	if (target.intent !== "token" && !privateSlice) return true
 	const repriced = await preflightReads(target.intent === "token", privateSlice !== null)
-	// The SNAPSHOT must be the one still on screen — not merely its plan, which the wizard caches
-	// across an account switch, so a review re-entered under another account would carry the same
-	// plan object and let a confirm nobody gave for it resume.
-	if (reviewed.value !== snapshot || step.value !== 2) return false
-	if (snapshot.account !== (bridge.selectedAccount.value ?? "")) return false
+	if (!reviewStands(snapshot)) return false
 	const why = preflightStandDown(target, privateSlice, repriced, snapshot.ownGasCeiling)
 	if (why === undefined) return true
 	invalidateReview(why ?? undefined)
 	return false
+}
+
+/** The SNAPSHOT must be the one still on screen — not merely its plan, which the wizard caches across an account
+ *  switch, so a review re-entered under another account would carry the same plan object and let a confirm nobody
+ *  gave for it resume. */
+function reviewStands(snapshot: ReviewSnapshot): boolean {
+	return reviewed.value === snapshot && step.value === 2 && snapshot.account === (bridge.selectedAccount.value ?? "")
+}
+
+/** An Ethereum send's bridge check, before the permission screen and every prompt: a refusal stays on the review in
+ *  the send's place, and only a review still standing when the reads return may act on them. */
+async function bridgeChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
+	const refusal = await heldCheck(() => sendFlow.check(plan))
+	if (!reviewStands(snapshot)) return false
+	sendFlow.error.value = refusal
+	if (refusal === null) return true
+	// An earlier attempt's decline is not why this one stopped.
+	grantState.value = "idle"
+	return false
+}
+
+async function crossChainChecked(snapshot: ReviewSnapshot, plan: SendPlan): Promise<boolean> {
+	const refusal = await heldCheck(() => sendFlow.checkCrossChain(plan))
+	if (!reviewStands(snapshot)) return false
+	xcError.value = refusal
+	return refusal === null
+}
+
+/** A check under the preflighting hold. Its caller must test the review only after this resolves: dropping the hold
+ *  lets a deferred receipt request replace the review, and that watcher runs before the caller resumes. */
+async function heldCheck(run: () => Promise<string | null>): Promise<string | null> {
+	preflighting.value = true
+	try {
+		return await run()
+	} finally {
+		preflighting.value = false
+	}
 }
 
 /** A private exit's confirm re-reads the private gas its fee is paid from, exactly as a token-only
@@ -1609,8 +1657,7 @@ const deliveredPrefill = computed(() => {
 	const v = view.value
 	return v.kind === "outcome" && outcomeVariant(v.record, now.value) === "delivered" ? ethereumPrefillOf(v.record) : null
 })
-// Read from the bridge's L1 whatever chain the wallet is on: after a send from a source chain it is usually there.
-const bridgeL1 = () => readClientFor(NETWORK.l1ChainId)
+// After a send from a source chain the wallet usually sits there, so the continuation reads through `bridgeL1`.
 const continueFuel = useFuelQuote({ pub: bridgeL1 })
 const continueToken = shallowRef<ResolvedToken | null>(null)
 watch(
@@ -1843,8 +1890,7 @@ onBeforeUnmount(() => {
 		</template>
 		<template v-if="step === 2 && xcReview" #band>
 			<p class="quote-band" :data-testid="TESTIDS.sendXcQuoteBand">
-				{{ quoteWord(xcReview.figures).valid }} valid for <span class="clock">{{ countdownText(xcExpiresIn) }}</span> ·
-				{{ quoteWord(xcReview.figures).renewed }} before you sign
+				{{ quoteBand(xcReview.figures).lead }} <span class="clock">{{ countdownText(xcExpiresIn) }}</span>{{ quoteBand(xcReview.figures).tail }}
 			</p>
 		</template>
 	</WizardShell>

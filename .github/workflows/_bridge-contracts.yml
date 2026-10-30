@@ -139,6 +139,9 @@ jobs:
             test -f "contracts/bridge/evm/out/$c.sol/$c.json"
           done
           bun run --cwd packages/sdk test -- factory-abi deposit-router-abi code-pins
+          # Fails on a record's integrity, mask shape or binding; an entry this build no longer
+          # reproduces is reported, since a live generation keeps the code it was deployed with.
+          bun packages/bridge-core/scripts/generation-record.ts check testnet --build-out contracts/bridge/evm/out
 
       # The testnet relayer's run against two anvils, the pool and USDC mocks from the build above placed at
       # their real testnet addresses. It boots and reaps its own anvils.

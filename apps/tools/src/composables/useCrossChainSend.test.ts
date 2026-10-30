@@ -2,8 +2,8 @@
 import { describe, expect, it, vi } from "vitest"
 import { ref, shallowRef } from "vue"
 import { type AppSource, readChainOf } from "@/lib/network"
-import { PRIVATE_SLICE_SHORT, type ResolvedToken, type SelectableToken } from "@/lib/send-model"
-import { BASE_SEPOLIA, DEST_TOKEN, DEST_USDC, NOW_S, OUT, routeDeps, SRC_USDC, USER } from "@/test/crosschain"
+import { gasMinimumShortfall, PRIVATE_SLICE_SHORT, type ResolvedToken, type SelectableToken } from "@/lib/send-model"
+import { BASE_SEPOLIA, DEST_TOKEN, DEST_USDC, NOW_S, OUT, routeDeps, SRC_USDC, TESTNET_MIN_FUEL_FJ, USER } from "@/test/crosschain"
 import { ROUTE_TTL_MS } from "./useCrossChainRoute"
 import { type CrossChainSendDeps, useCrossChainSend } from "./useCrossChainSend"
 import type { UseTokenSelectionHandle } from "./useTokenSelection"
@@ -103,6 +103,23 @@ describe("useCrossChainSend", () => {
 		const { h } = setup({ amount: () => 9_000_000n, routeDeps: (slice) => ({ ...routeDeps({ fixedAt: NOW_S }), slice }) })
 		await vi.waitFor(() => expect(h.notice.value).toEqual({ kind: "over-cap", max: "8.00" }), { timeout: 10_000 })
 		h.dispose()
+	}, 30_000)
+
+	it("shows a slice the venue quotes under the claim minimum as the claim's shortfall, never as an outage", async () => {
+		const { h, gasShare } = setup({ routeDeps: (slice) => ({ ...routeDeps({ venue: "under-floor" }), slice }) })
+		// 1 USDC buys 32 FJ, over the minimum.
+		await vi.waitFor(() => expect(h.route.value).not.toBeNull(), { timeout: 10_000 })
+		// The quote answered again with 0.3 USDC sized as gas: 9.6 FJ.
+		gasShare.propose.mockReturnValue({ fuelAmount: 300_000n, fuelFj: 0n, capped: "half" })
+		h.requote()
+		const short = gasMinimumShortfall(9_600_000_000_000_000_000n, TESTNET_MIN_FUEL_FJ)
+		await vi.waitFor(() => expect(h.gasError.value).toBe(short), { timeout: 10_000 })
+		expect([h.route.value, h.notice.value, h.loading.value, h.ready.value]).toEqual([null, null, false, false])
+		h.dispose()
+
+		const down = setup({ routeDeps: (slice) => ({ ...routeDeps({ venue: "down" }), slice }) })
+		await vi.waitFor(() => expect(down.h.notice.value).toEqual({ kind: "venue" }), { timeout: 10_000 })
+		down.h.dispose()
 	}, 30_000)
 
 	it("refuses a private slice whose floor cannot cover the claim's ceilings", async () => {

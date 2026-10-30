@@ -95,3 +95,12 @@ interface DepositRecordBase {
  */
 export type DepositRecord = DepositRecordBase &
 	({ intent: "token" | "token+gas"; token: JournalTokenBlock } | { intent: "gas"; token?: never })
+
+/**
+ * Whether a record is complete and its claim material may be dropped: the one rule the SDK's claims and a caller's
+ * pruning share. Today, `completedAt` is set; that holds for a record settled with its bridged gas open
+ * (`withoutGas`), whose gas `claimFuel` still claims while the caller keeps the record.
+ */
+export function claimRetired(record: { completedAt?: number }): boolean {
+	return record.completedAt !== undefined
+}

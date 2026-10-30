@@ -17,7 +17,7 @@ import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { ERC20_ABI, type ManifestToken } from "@unleashed/sdk/protocol"
-import { type L1Ctx, hubExitsPaused, hubTokenFor, type SendOpts, runSend, type SendGeneration } from "@unleashed/sdk/internal"
+import { type L1Ctx, hubExitsPaused, hubTokenFor, randomField, type SendOpts, runSend, type SendGeneration } from "@unleashed/sdk/internal"
 import { sendGenerationOf } from "./script-send"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"
@@ -39,6 +39,7 @@ import {
 	stopwatch,
 } from "./script-bootstrap"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
+import { hubArtifactFor } from "./generation-paths"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -139,7 +140,7 @@ async function bridgeOnce(lane: Lane, isPrivate: boolean): Promise<void> {
 			amount: lane.amount,
 			aztecRecipient: lane.from.toString() as `0x${string}`,
 			isPrivate,
-			claimSalt: isPrivate ? Fr.random() : undefined,
+			claimSalt: isPrivate ? randomField() : undefined,
 			nonce: BigInt(`0x${crypto.randomUUID().replaceAll("-", "")}`),
 			deadline: BigInt(Math.floor(Date.now() / 1000) + 1800),
 		},
@@ -213,7 +214,7 @@ async function main(): Promise<void> {
 		},
 	})
 
-	const hub = await registerHub(ewallet, BRIDGE.l2.hub)
+	const hub = await registerHub(ewallet, BRIDGE.l2.hub, hubArtifactFor(MANIFEST))
 	console.log(`registered hub ${hub.address.toString()} (${mins()})`)
 	const generation = sendGenerationOf(MANIFEST, BRIDGE)
 	const lanes: Lane[] = []

@@ -4,6 +4,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { describe, expect, it } from "vitest"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { deriveStorageSlotInMap } from "@aztec-labs/stdlib/hash"
+import { tokenBridgeHubArtifact } from "../protocol/artifacts.ts"
 import {
 	claimSendOpts,
 	claimViaHub,
@@ -473,12 +474,14 @@ describe("hub binding from public storage", () => {
 
 	it("reads the token_of entry at the slot the map derives for the ERC-20, on the hub", async () => {
 		const node = fakeNode(Fr.fromString(token.l2Token))
-		expect(await hubBindingAt(node, HUB, token.erc20)).toBe(token.l2Token)
-		const expected = (await deriveStorageSlotInMap(hubTokenOfSlot(), EthAddress.fromString(token.erc20))).toString()
+		expect(await hubBindingAt(node, HUB, token.erc20, tokenBridgeHubArtifact)).toBe(token.l2Token)
+		const expected = (
+			await deriveStorageSlotInMap(hubTokenOfSlot(tokenBridgeHubArtifact), EthAddress.fromString(token.erc20))
+		).toString()
 		expect(node.reads).toEqual([[AztecAddress.fromStringUnsafe(HUB).toString(), expected]])
 	})
 
 	it("an unwritten slot reads as zero, which is no binding", async () => {
-		expect(await hubBindingAt(fakeNode(Fr.ZERO), HUB, token.erc20)).toBeUndefined()
+		expect(await hubBindingAt(fakeNode(Fr.ZERO), HUB, token.erc20, tokenBridgeHubArtifact)).toBeUndefined()
 	})
 })

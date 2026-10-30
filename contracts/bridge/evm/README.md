@@ -125,8 +125,8 @@ remainder into the fee asset's clone), and two more rules hold:
   only thing that reaches it.
 - **The swap call is fixed at construction.** `SWAP_TARGET` is immutable, `swapData` must carry one of
   two pinned `GenericSwapFacetV3` selectors with `_receiver` equal to the router (a full-word compare),
-  and a non-zero `minFuelOutput` floors the router's own Fee Juice delta, so a selector-valid call that
-  pays someone else reverts. The target's `fuelSlice` approval is exact and revoked after the call.
+  and a non-zero `minFuelOutput` floors the router's own Fee Juice delta, so a call that leaves the
+  router under the signed floor reverts. The target's `fuelSlice` approval is exact and revoked after the call.
 
 ## Value-token hard-blockers (MUST clear before any non-testnet deployment)
 

@@ -30,7 +30,7 @@ import {
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
 } from "@unleashed/sdk/protocol"
-import { type L1Ctx, type HubClaimOutcome, type SendResult, runSend } from "@unleashed/sdk/internal"
+import { type L1Ctx, type HubClaimOutcome, type SendResult, randomField, runSend } from "@unleashed/sdk/internal"
 import { runFpcGate } from "./check-fpc-version"
 import { type FueledClaimResult, settleFueledClaim } from "./fuel-claim-l2"
 import { requirePinnedSigner } from "./live-intent"
@@ -49,6 +49,7 @@ import {
 	stopwatch,
 } from "./script-bootstrap"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
+import { hubArtifactFor } from "./generation-paths"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -159,7 +160,7 @@ async function sendVariant(ctx: VariantCtx, isPrivate: boolean, viaFpc: boolean,
 			amount: TOTAL,
 			aztecRecipient: ctx.from.toString() as `0x${string}`,
 			isPrivate,
-			claimSalt: isPrivate ? Fr.random() : undefined,
+			claimSalt: isPrivate ? randomField() : undefined,
 			gas: {
 				fuelAmount: FUEL_SLICE,
 				fuelRecipient: (viaFpc ? PRIVATE_FPC_ADDRESS : ctx.from.toString()) as `0x${string}`,
@@ -181,7 +182,7 @@ async function runVariant(ctx: VariantCtx, isPrivate: boolean, viaFpc = false): 
 
 	// Private-FPC fuel binds the Fee Juice to the FPC through a claimer-derived secret, so the FPC can
 	// reconstruct it inside mint_and_pay_fee; public fuel lands at the user with a random secret.
-	const bridgeSalt = viaFpc ? Fr.random() : undefined
+	const bridgeSalt = viaFpc ? randomField() : undefined
 	const result = await sendVariant(ctx, isPrivate, viaFpc, bridgeSalt)
 	console.log(`sent: tokenLeaf ${result.tokenLeafIndex}, fuelLeaf ${result.fuelLeafIndex}, fuelReceived ${result.fuelReceived}`)
 
@@ -343,7 +344,7 @@ async function buildL2(l1: L1Ctx, nodeUrl: string, mins: () => string): Promise<
 			console.log(stage === "deploying" ? `deploying L2 account (real proof)… (${mins()})` : `L2 account deployed (${mins()})`),
 	})
 
-	const hub = await registerHub(ewallet as never, BRIDGE.l2.hub)
+	const hub = await registerHub(ewallet as never, BRIDGE.l2.hub, hubArtifactFor(CONFIG))
 	const hubAddress = AztecAddress.fromStringUnsafe(BRIDGE.l2.hub.address)
 	const l2Token = await registerHubToken(ewallet as never, hubAddress, TOKEN, BRIDGE.l2.tokenClassId)
 	const privateFpc = await registerPrivateFpc(ewallet as never)

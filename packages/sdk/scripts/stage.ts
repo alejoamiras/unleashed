@@ -16,12 +16,17 @@ const SRC_DIR = join(PACKAGE_DIR, "src")
 /** The subpaths npm consumers get; every other workspace export stays workspace-only. Sources: the workspace manifest. */
 export const PUBLISHED_ENTRIES: readonly string[] = [".", "./fuel", "./bridge", "./protocol", "./networks"]
 
-/** The hub's Noir artifact, which `./bridge` loads on first use. */
+/** The hub's Noir artifact as this release's sources build it, which a sandbox chain loads on first use. */
 export const HUB_ARTIFACT = "contracts/bridge/aztec/token_bridge_hub/target/token_bridge_hub_contract-TokenBridgeHub.json"
+/** The hub artifact the testnet generation deployed, kept beside its record, which testnet loads on first use. */
+export const TESTNET_HUB_ARTIFACT = "contracts/bridge/generations/testnet/aztec/TokenBridgeHub.json"
 
 /** The out-of-package files a published module may import (repo-relative source → staged path), shipped byte for byte. */
 export const ASSETS: Readonly<Record<string, string>> = {
 	[HUB_ARTIFACT]: "assets/token-bridge-hub.json",
+	[TESTNET_HUB_ARTIFACT]: "assets/generations/testnet/token-bridge-hub.json",
+	"contracts/bridge/generations/testnet/record.json": "assets/generations/testnet/record.json",
+	"contracts/bridge/generations/mainnet/record.json": "assets/generations/mainnet/record.json",
 	"apps/tools/public/testnet-bridge.json": "assets/testnet-bridge.json",
 	"apps/tools/public/mainnet-bridge.json": "assets/mainnet-bridge.json",
 }

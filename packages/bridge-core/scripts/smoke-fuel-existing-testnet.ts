@@ -45,6 +45,7 @@ import {
 	stopwatch,
 } from "./script-bootstrap"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
+import { hubArtifactFor } from "./generation-paths"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -118,7 +119,7 @@ async function buildL2Leg(nodeUrl: string, mins: () => string): Promise<L2Leg> {
 		},
 	})
 
-	const hub = await registerHub(ewallet as never, BRIDGE.l2.hub)
+	const hub = await registerHub(ewallet as never, BRIDGE.l2.hub, hubArtifactFor(CONFIG))
 	const hubAddress = AztecAddress.fromStringUnsafe(BRIDGE.l2.hub.address)
 	const l2Token = await registerHubToken(ewallet as never, hubAddress, TOKEN, BRIDGE.l2.tokenClassId)
 	const feeJuice = await feeJuiceFor(ewallet as never, node)

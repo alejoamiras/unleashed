@@ -74,7 +74,7 @@ vi.mock("@/contracts/bridge-generation", async () => {
 	const { AztecAddress } = await import("@aztec-labs/aztec.js/addresses")
 	return {
 		HUB: AztecAddress.fromStringUnsafe(`0x${"4".padStart(64, "0")}`),
-		HUB_ARTIFACT: { name: "TokenBridgeHub" },
+		hubArtifact: async () => ({ name: "TokenBridgeHub" }),
 		HUB_TOKEN_ARTIFACT: { name: "Token" },
 		MANIFEST_TOKENS: [
 			{

@@ -50,8 +50,9 @@ export interface ToolsTarget {
 	l1ExplorerBaseUrl: string
 	/** CSP `connect-src` for this target — the node host MUST be listed or the app can't reach it. */
 	cspConnectSrc: string
-	/** Keyless read RPCs per chain id, preferred first, each serving `eth_getLogs` without silently truncating it:
-	 *  what watches a cross-chain deposit without a wallet. A chain absent here has no wallet-independent reads. */
+	/** Keyless read RPCs per chain id, preferred first, each refusing an `eth_getLogs` range past its cap rather than
+	 *  truncating it: what watches a cross-chain deposit without a wallet. A chain absent here has no
+	 *  wallet-independent reads. */
 	readRpcUrls: Readonly<Record<number, readonly string[]>>
 	/** The Across API base the testnet rail asks for its relay fee; absent where no route is quoted through it. */
 	acrossApiUrl?: string
@@ -82,8 +83,12 @@ const LI_QUEST_SOURCE = "https://li.quest"
  */
 const TESTNET_NODE_SOURCE = "https://aztec-testnet.drpc.org"
 
-/** PublicNode answered consistent supersets over 1k–50k-block `Transfer` scans; the gateways that truncated were refused. */
-const SEPOLIA_READ_RPCS = ["https://ethereum-sepolia-rpc.publicnode.com"] as const
+/**
+ * PublicNode answered consistent supersets over 1k–50k-block `Transfer` scans; the gateways that truncated were refused.
+ * It refuses logs older than about 10,000 blocks (4444) and answers their receipts `null`, so older reads go on to
+ * ethPandaOps, which keeps full history and matched PublicNode on every compared range.
+ */
+const SEPOLIA_READ_RPCS = ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.sepolia.ethpandaops.io"] as const
 /** bridge-core's `SOURCE_CHAINS[84532].rpcUrls`, spelled out to stay Node-safe; the test pins the two equal. */
 const BASE_SEPOLIA_READ_RPCS = ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"] as const
 /** The CSP sources for a target's read RPCs and Across API: each origin once. */

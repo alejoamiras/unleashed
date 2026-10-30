@@ -53,6 +53,7 @@ describe("stepperPhases - a cross-chain send", () => {
 			link: { href: `https://scan.li.fi/tx/${XC_SRC_TX}`, lead: "Track on LI.FI" },
 		})
 		expect(p.deposit).toMatchObject({ state: "pending", estimate: "~1 min", note: "+ 0.49 USDC swapped into gas on Aztec" })
+		expect(p.sync).toMatchObject({ state: "pending", estimate: "~1 min" })
 		expect(p.claim).toMatchObject({ state: "pending", estimate: "your signature", signs: true })
 	})
 
@@ -93,7 +94,7 @@ describe("stepperPhases - a cross-chain send", () => {
 		expect(running.claimAction).toBeUndefined()
 
 		const crossing = byKey(deposited({ depositL2Block: 100 }), { step: "syncing", syncBlock: 102 }).sync
-		expect(crossing).toMatchObject({ state: "active", meter: "block", progress: { current: 2, target: 3 } })
+		expect(crossing).toMatchObject({ state: "active", eta: "usually ~1 min", meter: "block", progress: { current: 2, target: 3 } })
 	})
 
 	it("an outcome stops the rail at the phase that decided it, live with 'finalizing' until that chain finalizes", () => {
@@ -152,13 +153,17 @@ describe("stepperPhases - a cross-chain send", () => {
 		expect(crossChainStalled(bridging())).toBe(false)
 	})
 
-	it("a send on fixed terms waits for its manual fill until the deadline, and is never late", () => {
+	it("a send on fixed terms waits for our testnet relayer until the deadline, is never late, and names no window", () => {
 		const fixed = bridging({ terms: "fixed", etaSeconds: 7_200 })
 		expect(bridgingLate(fixed, XC_CREATED + 24 * 3_600_000)).toBe(false)
 		expect(byKey(fixed).bridge).toMatchObject({
 			state: "active",
-			detail: "Across holds your USDC until a manual fill on Ethereum · Sepolia. Nothing for you to do; unfilled after 2 hours, it is refunded on Base Sepolia.",
-			eta: "manual fill, up to 2 hours",
+			detail: "Moving your USDC to Ethereum · Sepolia. Nothing for you to do.",
+			eta: "usually a few minutes",
+		})
+		expect(byKey(xcRecord({}, { srcTxHash: undefined, terms: "fixed", etaSeconds: 7_200 })).bridge).toMatchObject({
+			state: "pending",
+			estimate: "a few min",
 		})
 	})
 

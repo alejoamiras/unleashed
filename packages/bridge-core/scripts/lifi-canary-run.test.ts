@@ -172,15 +172,20 @@ describe("the canary's gas ceilings", () => {
 
 	it("send with explicit gas and fee caps, and refuse a send whose worst case passes what the chain's cap has left", async () => {
 		const fees = { maxFeePerGas: 4n * GWEI, maxPriorityFeePerGas: GWEI }
+		const signer = { address: CANARY, type: "local" }
 		const wallet = {
-			account: { address: CANARY },
-			chain: undefined,
+			account: signer,
+			chain: { id: 84532 },
 			writeContract: vi.fn(async (_: object) => `0x${"01".repeat(32)}`),
 			sendTransaction: vi.fn(async (_: object) => `0x${"02".repeat(32)}`),
 		}
 		const l1 = {
-			account: { address: CANARY },
-			pub: { estimateGas: vi.fn(async () => 80_000n), estimateFeesPerGas: vi.fn(async () => fees) },
+			account: signer,
+			pub: {
+				estimateGas: vi.fn(async () => 80_000n),
+				estimateFeesPerGas: vi.fn(async () => fees),
+				getTransactionCount: vi.fn(async () => 4),
+			},
 			wallet,
 		} as unknown as L1Ctx
 		const budget = new GasBudget("source", 14n * 10n ** 14n)
@@ -188,9 +193,9 @@ describe("the canary's gas ceilings", () => {
 
 		// 80,000 estimated + a quarter = 100,000 gas at 4 gwei: a worst case of 4 × 10^14 wei per send, which the
 		// approval also holds back for its revoke.
-		await bounded.sendTransaction({ to: CANARY, data: "0x1234", account: CANARY } as never)
+		await bounded.sendTransaction({ to: CANARY, data: "0x1234", account: signer } as never)
 		await bounded.writeContract({ address: CANARY, abi: ERC20_MIN_ABI, functionName: "approve", args: [CANARY, 1n] } as never)
-		const terms = { gas: 100_000n, ...fees }
+		const terms = { gas: 100_000n, ...fees, nonce: 4, chainId: 84532 }
 		expect(wallet.sendTransaction.mock.calls[0]?.[0]).toMatchObject(terms)
 		expect(wallet.writeContract.mock.calls[0]?.[0]).toMatchObject(terms)
 		expect(budget.left).toBe(2n * 10n ** 14n)
@@ -213,10 +218,11 @@ describe("the canary's gas ceilings", () => {
 			if (w.functionName === "approve") allowance = w.args[1] as bigint
 			return `0x${"01".repeat(32)}` as Hex
 		})
-		const wallet = { account: { address: CANARY }, chain: undefined, writeContract }
+		const wallet = { account: { address: CANARY, type: "local" }, chain: { id: 11155111 }, writeContract }
 		const pub = {
 			estimateGas: async () => 80_000n,
 			estimateFeesPerGas: async () => fees,
+			getTransactionCount: async () => 0,
 			simulateContract: async () => ({}),
 			getBlockNumber: async () => 1n,
 			simulateBlocks: async ({ blocks }: { blocks: { calls: { to: Address }[] }[] }) => [

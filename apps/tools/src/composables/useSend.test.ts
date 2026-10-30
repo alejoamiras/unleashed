@@ -61,8 +61,11 @@ const h = vi.hoisted(() => ({
 	hubToken: { value: undefined as string | undefined },
 	sendStandaloneFjClaim: vi.fn(async (_aztec: unknown, _to: unknown, _fuel: unknown, _id: string) => {}),
 	depositL1: vi.fn(),
+	assertDepositsOpen: vi.fn(async (_net: unknown, _reads: unknown, _intent: string) => {}),
 	bridgeNetwork: vi.fn(),
 	rebuiltL2Token: { value: "" as string },
+	/** The build's pinned Ethereum reader; undefined = the build pins none. */
+	pinned: { value: undefined as unknown },
 }))
 
 vi.mock("@/contracts/bridge-generation", async () => {
@@ -87,6 +90,7 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		FUEL_ASSET: manifest.feeJuice.asset,
 		FUEL_MIN_FJ: BigInt(manifest.feeJuice.minFj),
 		rebuildHubTokenInstance: async () => ({ address: { toString: () => h.rebuiltL2Token.value } }),
+		hubArtifact: async () => ({ name: "TokenBridgeHub" }),
 		bridgeNetwork: (reads: unknown) => h.bridgeNetwork(reads),
 	}
 })
@@ -115,7 +119,7 @@ vi.mock("@/composables/useWalletConnection", async (importOriginal) => {
 // No pinned Ethereum reader by default, so every Ethereum read goes through the mocked wallet below.
 vi.mock("./useEthereumReader", async (orig) => ({
 	...(await orig<typeof import("./useEthereumReader")>()),
-	readClientFor: () => undefined,
+	readClientFor: () => h.pinned.value,
 }))
 
 vi.mock("@/composables/useTokenGrant", () => ({
@@ -171,6 +175,7 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
 	depositL1: h.depositL1,
+	assertDepositsOpen: h.assertDepositsOpen,
 	claimViaHub: async () => ({ path: "claim", claimTxHash: "0xhubclaim" }),
 	probeHubClaim: async () => ({}),
 	hubAt: () => ({ methods: {} }),
@@ -194,7 +199,7 @@ import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
 import { __resetJournalForTests, addRecord, connectJournalDeps, runDepositClaim, useBridgeJournal } from "./useBridgeJournal"
 import { GAS_QUOTE_MOVED } from "./useFuelQuote"
-import { __resetSendDepsForTests, previewBlock, useSend, validateTokenBlock } from "./useSend"
+import { __resetSendDepsForTests, BRIDGE_UNCHECKED, DEPOSITS_PAUSED, previewBlock, useSend, validateTokenBlock } from "./useSend"
 import { useOpsInFlight } from "./useOpsInFlight"
 
 /** What the mocked hub derives before a case points it somewhere else. */
@@ -466,6 +471,8 @@ describe("useSend", () => {
 		h.resolveHubClaimSendOpts.mockImplementation(async () => ({ kind: "opts", opts: {} }))
 		h.depositL1.mockImplementation(fakeDeposit())
 		h.bridgeNetwork.mockImplementation(async () => ({}))
+		h.assertDepositsOpen.mockImplementation(async () => {})
+		h.pinned.value = undefined
 		h.signTypedData.mockImplementation(async () => "0xsig")
 		h.writeContract.mockImplementation(async () => "0xl1tx")
 	})
@@ -791,7 +798,7 @@ describe("useSend", () => {
 		expect(h.depositL1).not.toHaveBeenCalled()
 	})
 
-	it("hands the SDK the reviewed plan, leaving a paused route to the router as before", async () => {
+	it("hands the SDK the reviewed plan, leaving its own pause read on", async () => {
 		await useSend().send(plan())
 		expect(h.depositL1.mock.calls[0][3]).toEqual({
 			intent: "token",
@@ -801,8 +808,90 @@ describe("useSend", () => {
 			isPrivate: false,
 			tokenBlock: previewBlock(plan()),
 			registers: true,
-			pauseCheck: false,
 		})
+	})
+
+	const paused = () => new BridgeError("paused", "deposits on sandbox are paused", "none", "after-wait")
+	it.each([
+		{ name: "a paused route", gate: paused, network: undefined, want: DEPOSITS_PAUSED },
+		{ name: "a node that does not answer", gate: undefined, network: () => new Error("fetch failed"), want: BRIDGE_UNCHECKED },
+		{
+			name: "contracts that are not this release's",
+			gate: undefined,
+			network: () => new BridgeError("invalid-network", "the deployed contracts are not this release's network: x", "none", "never"),
+			want: BRIDGE_UNCHECKED,
+		},
+		{
+			name: "a wallet that moved chain",
+			gate: undefined,
+			network: () => new BridgeError("wrong-chain", "the Ethereum reads are on chain 1, not 31337", "none", "safe"),
+			want: "Your Ethereum wallet is on chain 1, but this bridge lives on chain 31337",
+		},
+	])("the confirm's check names $name in this app's words", async ({ gate, network, want }) => {
+		if (network)
+			h.bridgeNetwork.mockImplementation(async () => {
+				throw network()
+			})
+		if (gate)
+			h.assertDepositsOpen.mockImplementation(async () => {
+				throw gate()
+			})
+		expect(await useSend().check(plan())).toContain(want)
+	})
+
+	it("the confirm's check passes a bridge it read, with the reviewed intent", async () => {
+		const net = {}
+		h.bridgeNetwork.mockImplementation(async () => net)
+		expect(await useSend().check(plan({ intent: "gas" }))).toBeNull()
+		expect(h.assertDepositsOpen.mock.calls[0]?.[0]).toBe(net)
+		expect(h.assertDepositsOpen.mock.calls[0]?.[2]).toBe("gas")
+	})
+
+	const PINNED = { readContract: async () => false, getChainId: async () => 31337 }
+	it.each([
+		{ name: "a pause it reads", gate: paused, network: undefined, want: DEPOSITS_PAUSED },
+		{ name: "a node that does not answer", gate: undefined, network: () => new Error("fetch failed"), want: BRIDGE_UNCHECKED },
+		{
+			name: "contracts that are not this release's",
+			gate: undefined,
+			network: () => new BridgeError("invalid-network", "the deployed contracts are not this release's network: x", "none", "never"),
+			want: BRIDGE_UNCHECKED,
+		},
+	])("the cross-chain check refuses $name in this app's words", async ({ gate, network, want }) => {
+		h.pinned.value = PINNED
+		if (network)
+			h.bridgeNetwork.mockImplementation(async () => {
+				throw network()
+			})
+		if (gate)
+			h.assertDepositsOpen.mockImplementation(async () => {
+				throw gate()
+			})
+		expect(await useSend().checkCrossChain(plan())).toBe(want)
+	})
+
+	it("the cross-chain check reads Ethereum through the pinned reader, never the wallet on the source chain", async () => {
+		const net = {}
+		h.pinned.value = PINNED
+		h.bridgeNetwork.mockImplementation(async () => net)
+		expect(await useSend().checkCrossChain(plan({ intent: "gas" }))).toBeNull()
+		expect(h.bridgeNetwork.mock.calls[0]?.[0]).toMatchObject({ l1: PINNED })
+		expect(h.assertDepositsOpen.mock.calls[0]).toEqual([net, expect.objectContaining({ l1: PINNED }), "gas"])
+	})
+
+	it("a build with no pinned Ethereum reader cannot check a cross-chain send, and reads nothing through the wallet", async () => {
+		expect(await useSend().checkCrossChain(plan())).toBe(BRIDGE_UNCHECKED)
+		expect(h.bridgeNetwork).not.toHaveBeenCalled()
+		expect(h.assertDepositsOpen).not.toHaveBeenCalled()
+	})
+
+	it("a route the SDK finds paused after the check reads in this app's words", async () => {
+		h.depositL1.mockImplementation(async () => {
+			throw paused()
+		})
+		const send = useSend()
+		expect(await send.send(plan())).toBe("")
+		expect(send.error.value).toBe(DEPOSITS_PAUSED)
 	})
 
 	it("dispose releases the grant and voids the epoch a late completion would be matched against", async () => {

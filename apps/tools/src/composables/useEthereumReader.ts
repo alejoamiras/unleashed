@@ -4,8 +4,9 @@
  * chain the build pins no RPC for has no reader, and whatever needs one reports that instead of borrowing the
  * wallet's transport.
  */
-import type { DiscoveryChainReads, DiscoveryReads } from "@unleashed/bridge-core"
-import { createPublicClient, fallback, http, type PublicClient } from "viem"
+import { cappedLogs, type DiscoveryChainReads, type DiscoveryReads, keptLogs, receiptOrNext, sourceChain } from "@unleashed/bridge-core"
+import { type Erc20Client, readErc20Balances } from "@unleashed/sdk/protocol"
+import { type Address, BaseError, CallExecutionError, createPublicClient, fallback, http, type PublicClient } from "viem"
 import { NETWORK, readChainOf } from "@/lib/network"
 
 /** One read must never hold a watcher forever; discovery's own budget bounds the whole scan. */
@@ -19,10 +20,17 @@ export function readClientFor(chainId: number): PublicClient | undefined {
 	if (cached) return cached
 	const read = readChainOf(chainId)
 	if (!read || read.rpcUrls.length === 0) return undefined
-	const client = createPublicClient({
-		chain: read.chain,
-		transport: fallback(read.rpcUrls.map((url) => http(url, { timeout: READ_TIMEOUT_MS, retryCount: 1 }))),
-	}) as PublicClient
+	const source = sourceChain(chainId)
+	const endpoint = (url: string, i: number) => {
+		const cap = source?.maxLogBlocks?.[url]
+		const kept = source?.logRetentionBlocks?.[url]
+		let transport = http(url, { timeout: READ_TIMEOUT_MS, retryCount: 1 })
+		if (cap !== undefined) transport = cappedLogs(transport, cap)
+		if (kept !== undefined) transport = keptLogs(transport, kept)
+		// The last endpoint's `null` receipt must stay viem's "not found", which receipt polling waits through.
+		return i < read.rpcUrls.length - 1 ? receiptOrNext(transport) : transport
+	}
+	const client = createPublicClient({ chain: read.chain, transport: fallback(read.rpcUrls.map(endpoint)) }) as PublicClient
 	clients.set(chainId, client)
 	return client
 }
@@ -37,6 +45,23 @@ export function discoveryReadsFor(srcChainId: number): DiscoveryReads | undefine
 
 export function useEthereumReader() {
 	return { ethereum: () => readClientFor(NETWORK.l1ChainId), forChain: readClientFor, discoveryReadsFor }
+}
+
+/**
+ * ERC-20 balances through `pub` in one `eth_call`: viem would split past 28 tokens, so callers bound the list. A call
+ * that fails rejects: viem's `allowFailure` reports it as every token failing, which `readErc20Balances` reads as zero.
+ */
+export function readBalancesOn(pub: PublicClient, owner: Address, tokens: readonly Address[]): Promise<Map<Address, bigint>> {
+	const client: Erc20Client = {
+		multicall: async (args) => {
+			const results = await pub.multicall({ ...args, batchSize: 0 })
+			const lost = results.find((r) => r.error instanceof BaseError && r.error.walk((e) => e instanceof CallExecutionError))
+			if (lost) throw lost.error
+			return results
+		},
+		call: (args) => pub.call(args),
+	}
+	return readErc20Balances(client, owner, tokens)
 }
 
 /** Test-only: forget every built client. */

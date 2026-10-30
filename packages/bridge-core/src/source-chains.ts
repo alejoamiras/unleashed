@@ -12,10 +12,22 @@ export interface SourceChain {
 	/** The Ethereum chain this source delivers into; a manifest for any other L1 may not enable it. */
 	l1ChainId: number
 	/**
-	 * Keyless read RPCs, preferred first, each serving `eth_getLogs` without silently truncating it. Empty where none is
-	 * chosen yet: the caller must supply one.
+	 * Keyless read RPCs, preferred first, each refusing an `eth_getLogs` range past its cap rather than truncating it.
+	 * Empty where none is chosen yet: the caller must supply one.
 	 */
 	rpcUrls: readonly string[]
+	/**
+	 * Per URL of `rpcUrls`, the most blocks (inclusive) one `eth_getLogs` request may span, set at or below the measured
+	 * limit. A reader splits a wider range into requests within it (`cappedLogs`).
+	 */
+	maxLogBlocks?: Readonly<Record<string, number>>
+	/**
+	 * Per URL of `rpcUrls`, how many of the latest blocks the endpoint answers `eth_getLogs` completely for, set at or
+	 * below the measured retention. Older, it may answer short or empty without an error, so a reader refuses such a
+	 * range before sending it and asks the next URL (`keptLogs`). Absent: the endpoint keeps all logs, or refuses the
+	 * ones it does not.
+	 */
+	logRetentionBlocks?: Readonly<Record<string, number>>
 }
 
 const SEPOLIA = 11_155_111
@@ -27,8 +39,16 @@ export const SOURCE_CHAINS: Readonly<Record<number, SourceChain>> = {
 		name: "Base Sepolia",
 		nativeSymbol: "ETH",
 		l1ChainId: SEPOLIA,
-		// PublicNode refuses an over-large log query outright; the official endpoint caps a query at 500 blocks.
 		rpcUrls: ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"],
+		// As measured: PublicNode refuses `to − from > 50,000` (-32701) and answers of over 20,000 logs (-32602); the
+		// official endpoint refuses `to − from > 200` (-32614).
+		maxLogBlocks: { "https://base-sepolia-rpc.publicnode.com": 50_000, "https://sepolia.base.org": 200 },
+		// As measured at head ≈ 51,950,000: PublicNode keeps logs complete from block 47,000,000, answers `[]` for the
+		// half-million blocks before it and refuses older ones (4444); it answers receipts below 47,000,000 `null`. Why
+		// the boundary sits there is unknown and a resync can move it anywhere; only the live check detects a shrink
+		// past this value. The official endpoint serves logs and receipts far older; both refuse block reads below
+		// 46,500,000, which bounds every record discovery can still read.
+		logRetentionBlocks: { "https://base-sepolia-rpc.publicnode.com": 3_000_000 },
 	},
 	8453: { chainId: 8453, name: "Base", nativeSymbol: "ETH", l1ChainId: ETHEREUM, rpcUrls: [] },
 	42161: { chainId: 42161, name: "Arbitrum One", nativeSymbol: "ETH", l1ChainId: ETHEREUM, rpcUrls: [] },

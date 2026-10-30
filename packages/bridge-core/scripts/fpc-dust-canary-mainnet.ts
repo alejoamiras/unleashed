@@ -33,6 +33,7 @@ import {
 	deriveBridgeSecret,
 	privateMintAndPayFee,
 } from "@unleashed/sdk/protocol"
+import { randomField } from "@unleashed/sdk/internal"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
 import { resolveDeployerKeys } from "./deployer-keys"
 import { redactSecrets } from "./keyed-env"
@@ -115,7 +116,7 @@ async function main() {
 		console.log(`L2 deployer landed (public FJ ${bal})`)
 	}
 
-	const bridgeSalt = Fr.random()
+	const bridgeSalt = randomField()
 	const plan = await planPrivateFuelDeposit(from, dust, bridgeSalt)
 	const allowance = (await pub.readContract({
 		address: asset,
