@@ -5,6 +5,7 @@ import { Button, Icon } from "@unleashed/design"
 import { computed } from "vue"
 
 /** Composables */
+import { useArmedPress } from "@/composables/useArmedPress"
 import { useBridgeJournal } from "@/composables/useBridgeJournal"
 import { useEthHeld } from "@/composables/useEthHeld"
 import { useShell } from "@/composables/useShell"
@@ -15,19 +16,22 @@ import { assetText, type CrossChainPhase, depositUnsigned, ethereumPrefillOf, ph
 import { TESTIDS } from "@/lib/testids"
 
 /** Components */
+import DiscardWarning from "./DiscardWarning.vue"
 import LeftoverApproval from "./LeftoverApproval.vue"
 import StateNotice from "./send/StateNotice.vue"
 
 /**
  * A cross-chain card's guide and actions while it is not a plain deposit. Only an ended send can be
  * dismissed: before its outcome is final the funds may still be on their way, and the record holds
- * their claim.
+ * their claim. Dismiss deletes that record, so it takes two presses, and the backup stays offered to the end.
  */
 const props = defineProps<{ record: CrossChainDepositRecord; phase: CrossChainPhase; exportable: boolean }>()
 const emit = defineEmits<{ backup: [] }>()
 
 const journal = useBridgeJournal()
 const shell = useShell()
+const { armed: dismissArmed, press: pressDismiss } = useArmedPress()
+const dismiss = () => pressDismiss(() => journal.discard(props.record.id))
 
 const delivered = computed(() => props.phase.kind === "delivered")
 const ethHeld = useEthHeld(() => (delivered.value ? props.record.route.srcSender : undefined))
@@ -58,9 +62,11 @@ function onContinue(): void {
 			tone="lost"
 			icon="close"
 			title="Not sent"
-			action="Dismiss"
-			:action-testid="TESTIDS.journalXcDismiss"
-			@act="journal.discard(record.id)"
+			:action="dismissArmed ? 'Confirm dismiss' : 'Dismiss'"
+			:action-icon="dismissArmed ? 'close' : undefined"
+			:action-armed="dismissArmed"
+			:action-testid="dismissArmed ? TESTIDS.journalXcDismissConfirm : TESTIDS.journalXcDismiss"
+			@act="dismiss"
 		>
 			<span :data-testid="TESTIDS.journalXcGuide"
 				>{{ notSent.lead }}, so nothing moved. Your <span class="mono">{{ notSent.sent }}</span> is still in
@@ -68,6 +74,7 @@ function onContinue(): void {
 			>
 		</StateNotice>
 		<p v-else class="guide-line" :data-testid="TESTIDS.journalXcGuide">{{ guide }}</p>
+		<DiscardWarning v-if="notSent && dismissArmed && record.isPrivate" />
 		<LeftoverApproval v-if="notSent" :record="record" />
 		<div class="actions">
 			<Button v-if="prefill" size="small" class="card-btn" :data-testid="TESTIDS.journalXcContinue" @click="onContinue">
@@ -76,18 +83,18 @@ function onContinue(): void {
 			<Button
 				v-if="final && !notSent"
 				size="small"
-				variant="secondary"
+				:variant="dismissArmed ? 'destructive' : 'secondary'"
 				class="card-btn"
-				:data-testid="TESTIDS.journalXcDismiss"
-				@click="journal.discard(record.id)"
+				:data-testid="dismissArmed ? TESTIDS.journalXcDismissConfirm : TESTIDS.journalXcDismiss"
+				@click="dismiss"
 			>
-				Dismiss
+				<Icon v-if="dismissArmed" name="close" :size="12" />{{ dismissArmed ? "Confirm dismiss" : "Dismiss" }}
 			</Button>
 			<a v-if="trackUrl" class="track" :href="trackUrl" target="_blank" rel="noopener noreferrer" :data-testid="TESTIDS.journalXcTrack"
 				>Track on LI.FI<Icon name="external-link" :size="12"
 			/></a>
 			<button
-				v-if="exportable && !final"
+				v-if="exportable"
 				type="button"
 				class="backup ul-notch"
 				aria-label="Back up this bridge"
@@ -98,6 +105,7 @@ function onContinue(): void {
 				<Icon name="save" :size="24" />
 			</button>
 		</div>
+		<DiscardWarning v-if="!notSent && dismissArmed && record.isPrivate" />
 	</div>
 </template>
 

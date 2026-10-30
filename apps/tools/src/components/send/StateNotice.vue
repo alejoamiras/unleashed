@@ -14,6 +14,8 @@ const props = defineProps<{
 	actionTestid?: string
 	/** A glyph before the action's words. */
 	actionIcon?: IconName
+	/** The action is armed to delete: the box's fill is already the destructive one, so only its words turn red. */
+	actionArmed?: boolean
 }>()
 const emit = defineEmits<{ act: [] }>()
 </script>
@@ -24,7 +26,14 @@ const emit = defineEmits<{ act: [] }>()
 		<span class="body">
 			<strong class="title">{{ title }}</strong>
 			<span v-if="$slots.default"><slot /></span>
-			<button v-if="action" type="button" class="action ul-notch" :data-testid="actionTestid" @click="emit('act')">
+			<button
+				v-if="action"
+				type="button"
+				class="action ul-notch"
+				:data-armed="actionArmed || undefined"
+				:data-testid="actionTestid"
+				@click="emit('act')"
+			>
 				<Icon v-if="actionIcon" :name="actionIcon" :size="12" />{{ action }}
 			</button>
 		</span>
@@ -81,5 +90,9 @@ const emit = defineEmits<{ act: [] }>()
 	font: 600 14px/1 var(--ul-font-body);
 	color: var(--ul-ink);
 	cursor: pointer;
+}
+
+.action[data-armed] {
+	color: var(--ul-lost);
 }
 </style>
