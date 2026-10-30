@@ -183,10 +183,12 @@ export async function readErc20Metadata(client: Erc20Client, token: Address): Pr
 
 /** Whether a failed entry is the aggregate's own failure, which viem reports on every entry: only its `call` makes a
  *  `CallExecutionError`, never a token that reverts or answers garbage inside a call that ran. Matched by name, since
- *  a second viem copy defeats `instanceof`. */
+ *  a second viem copy defeats `instanceof`; the depth bound stops a cyclic `cause` (viem's sits at depth 1 or 2). */
 function aggregateFailed(error: unknown): boolean {
-	for (let e = error; typeof e === "object" && e !== null; e = (e as { cause?: unknown }).cause) {
-		if ((e as { name?: unknown }).name === "CallExecutionError") return true
+	for (let at: unknown = error, depth = 0; at && typeof at === "object" && depth < 8; depth++) {
+		const o = at as { name?: unknown; cause?: unknown }
+		if (o.name === "CallExecutionError") return true
+		at = o.cause
 	}
 	return false
 }
@@ -195,7 +197,8 @@ function aggregateFailed(error: unknown): boolean {
  * Balances for many tokens in one `multicall`, keyed by the address AS PASSED (so `get(tokens[i])`
  * hits regardless of casing). The client may send it as several `eth_call`s: viem splits past
  * 1,024 calldata bytes unless the call passes `batchSize: 0`. A token that reverts, or is not an
- * ERC-20 at all, reports `0n` — one bad entry must never cost the caller the whole list.
+ * ERC-20 at all, reports `0n` — one bad entry must never cost the caller the whole list, unless it
+ * makes the aggregate call itself fail.
  *
  * A read that never ran reports nothing. Rejects with the client's error when the RPC refused the
  * aggregate call, before any call when a token address fails viem's `isAddress` (viem would fail to

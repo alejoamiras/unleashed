@@ -208,8 +208,7 @@ async function isRecordCall(
 	privateFpc: string,
 ): Promise<boolean> {
 	const tx = await read(() => l1.getTransaction({ hash }))
-	// The scan's own logs named this hash, so a `null` here (and for its receipt) is a backend behind the one that
-	// served the log, not an answer.
+	// The scan's own logs named this hash: a `null` for it or its receipt (a lagging backend, a reorg) is not an answer.
 	if (!tx) throw new ScanIncomplete("a logged transaction was not served")
 	if (!hexEq(tx.to, router.address) || !router.shape.calldataMatches(rec, tx.input, privateFpc)) return false
 	return router.shape.logNamesPayer || rec.sender === undefined || hexEq(tx.from, rec.sender)
