@@ -18,6 +18,7 @@ import type { DepositRecord, JournalTokenBlock } from "@unleashed/sdk"
 import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GrantOutcome } from "@/lib/send-model"
+import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
 import { memoryJournalLocks } from "@/lib/journal-locks"
 import type { ExitSearch } from "./exit-attach"
 
@@ -505,17 +506,24 @@ describe("useBridgeJournal engine", () => {
 		})
 	})
 
-	it("a throwing claim SURFACES on the record (UI call sites void the promise) and clears the step", async () => {
+	it.each([
+		["a raw message", "boom - not a sync revert", "boom - not a sync revert. Your funds are not lost — retry from this card."],
+		[
+			"a sentence of the app's own",
+			FEE_STOP_COPY["fuel-claim-pending"],
+			`${FEE_STOP_COPY["fuel-claim-pending"]} Your funds are not lost — retry from this card.`,
+		],
+	])("a throwing claim SURFACES %s on the record (UI call sites void the promise) with one full stop", async (_, message, note) => {
 		const sdk = fakeClaimSdk()
 		sdk.script("token", async (c) => {
 			c.emit({ type: "claim-requested", leg: "token" })
-			throw new Error("boom - not a sync revert")
+			throw new Error(message)
 		})
 		connectJournalDeps(claimDeps(kv, sdk))
 		addRecord(mkSend("0xboom"))
 		await runDepositClaim("0xboom") // resolves - the failure lands on the record instead.
 		expect(rt("0xboom")).toMatchObject({ attention: "error", step: undefined, busy: false })
-		expect(rt("0xboom")?.note).toMatch(/boom.*funds are not lost/i)
+		expect(rt("0xboom")?.note).toBe(note)
 	})
 
 	it("foreground CAS - claim suppresses the card; stale release no-ops; takeover works", async () => {
