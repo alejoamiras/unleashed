@@ -73,7 +73,7 @@ const tokenArrives = computed(() => {
 const visibility = computed(() => {
 	if (props.plan.direction !== "l1-to-l2") return null
 	return props.plan.isPrivate
-		? { word: "Private", note: "only you can see it", icon: "eye-off" as const }
+		? { word: "Private", note: "your account stays hidden", icon: "eye-off" as const }
 		: { word: "Public", note: "visible on Aztec", icon: "eye" as const }
 })
 

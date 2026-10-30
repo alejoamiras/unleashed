@@ -6,11 +6,19 @@
 
 use crate::TokenBridgeHub;
 use aztec::{
+    ephemeral::EphemeralArray,
     hash::compute_secret_hash,
-    protocol::{
-        address::{AztecAddress, EthAddress}, contract_class_id::ContractClassId,
-        contract_instance::ContractInstance, traits::ToField, utils::field::field_from_bytes,
+    messages::processing::{
+        log_retrieval_request::{LogRetrievalRequest, LogSource},
+        log_retrieval_response::LogRetrievalResponse,
     },
+    oracle::message_processing::get_logs_by_tag,
+    protocol::{
+        address::{AztecAddress, EthAddress}, constants::DOM_SEP__NON_INTERACTIVE_HANDSHAKE_LOG_TAG,
+        contract_class_id::ContractClassId, contract_instance::ContractInstance, hash::compute_log_tag,
+        traits::ToField, utils::field::field_from_bytes,
+    },
+    standard_addresses::STANDARD_HANDSHAKE_REGISTRY_ADDRESS,
     test::helpers::{test_environment::TestEnvironment, txe_oracles},
 };
 use claim_secret_lib::derive_claim_secret;
@@ -237,4 +245,26 @@ pub unconstrained fn fund_private(
         recipient,
         crate::TokenBridgeHub::at(h.hub).claim_private(token, recipient, amount, salt, leaf),
     );
+}
+
+/// Counts the handshake registry's announcements of a non-interactive handshake with `account`.
+/// The PXE serves only the executing contract's logs, so the query runs as the registry.
+pub unconstrained fn handshake_announcements(env: TestEnvironment, account: AztecAddress) -> u32 {
+    env.utility_context_at(STANDARD_HANDSHAKE_REGISTRY_ADDRESS, |_ctx| {
+        let requests: EphemeralArray<LogRetrievalRequest> = EphemeralArray::empty_at(0x5ca7);
+        requests.push(
+            LogRetrievalRequest {
+                contract_address: STANDARD_HANDSHAKE_REGISTRY_ADDRESS,
+                unsiloed_tag: compute_log_tag(
+                    account.to_field(),
+                    DOM_SEP__NON_INTERACTIVE_HANDSHAKE_LOG_TAG,
+                ),
+                source: LogSource.PRIVATE,
+                from_block: Option::none(),
+                to_block: Option::none(),
+            },
+        );
+        let responses: EphemeralArray<EphemeralArray<LogRetrievalResponse>> = get_logs_by_tag(requests);
+        responses.get(0).len()
+    })
 }

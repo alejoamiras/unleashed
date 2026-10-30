@@ -371,18 +371,19 @@ describe("AmountStep", () => {
 		const toggle = () => w.find(sel(TESTIDS.sendPrivateToggle))
 		const label = () => w.get(`#${toggle().attributes("aria-describedby")}`).text()
 		expect(toggle().attributes("aria-label")).toBe("Private")
-		expect(label()).toBe("Private — only you can see it")
+		expect(label()).toBe("Private — your account stays hidden")
 		await w.setProps({ isPrivate: false })
 		expect(toggle().attributes("aria-label")).toBe("Private")
 		expect(label()).toBe("Public — visible on Aztec")
 		w.unmount()
 	})
 
-	it("a private deposit's veil line hides the amount from others and shows what arrives to you", () => {
+	it("a private deposit's veil line shows others what arrives and hides the account it goes to", () => {
 		const w = step({ intent: "token+gas", gas: GAS, amount: "5" })
 		const line = w.get(sel(TESTIDS.sendPrivacyVeil))
-		expect(line.text()).toContain("you see 3.00 USDC")
-		expect(line.get('[role="img"]').attributes("aria-label")).toBe("hidden amount")
+		expect(line.text()).toContain("Others see 3.00 USDC go to")
+		expect(line.text()).toContain("you see your account")
+		expect(line.get('[role="img"]').attributes("aria-label")).toBe("hidden account")
 		w.unmount()
 	})
 
