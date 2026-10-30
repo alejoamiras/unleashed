@@ -21,6 +21,7 @@ import {
 	awaitMessageCheckpoints,
 	classifyConsumable,
 	type GateClock,
+	type SpentEvidence,
 } from "./arrival.ts"
 import { classifyClaimReceipt } from "./claim-receipt.ts"
 import { findDepositTx } from "./deposit-reconcile.ts"
@@ -43,10 +44,11 @@ export interface AztecSigner {
 export interface ClaimOptions extends RunOptions {
 	/** The salts the deposit's `persist` stored: a private claim needs them, and no record or event carries them. */
 	secrets?: DepositSecrets
-	/** Never asks the wallet to sign or send: recovers the deposit's facts, watches a sent claim, waits out an
+	/** Never asks the wallet to sign, send or simulate: recovers the deposit's facts, watches a sent claim, waits out an
 	 *  interrupted one and reads the messages' nullifiers, then throws `needs-prompt` (retry "safe") where the call would
-	 *  next price a fee or prompt. It still reads through the wallet (its network, the token's registration). For a page
-	 *  that resumes its records on load. */
+	 *  next price a fee or prompt. A spent reading settles nothing here: only the wallet's simulate can corroborate it. It
+	 *  still reads through the wallet (its network, the token's registration). For a page that resumes its records on
+	 *  load. */
 	watchOnly?: boolean
 	/** Pays a public token + gas claim from gas the account already holds and settles without claiming the bridged
 	 *  gas, which `claimFuel` claims later. A private claim's fee comes from its private credit either way. */
@@ -333,14 +335,15 @@ function arrivalReporter(leg: ClaimLeg) {
 
 /**
  * Waits through the countdown, the checkpoint gate and the claim simulate. Resolves "ready" once the simulate passes,
- * "claimed-elsewhere" when the message's nullifier is already on chain. `nullifier` reads it ("unknown" when it
- * cannot).
+ * "claimed-elsewhere" only when the simulate fails on the message `evidence` names and its nullifier, read by
+ * `nullifier` ("unknown" when it cannot), is already on chain: the one verdict a spent message settles on.
  */
 export async function awaitClaimable(
 	leg: ClaimLeg,
 	hashes: readonly string[],
 	simulate: () => Promise<unknown>,
 	nullifier: () => Promise<TokenMessageState>,
+	evidence: SpentEvidence,
 ): Promise<"ready" | "claimed-elsewhere"> {
 	const { r, run } = leg
 	const clock = clockOf(run)
@@ -363,7 +366,7 @@ export async function awaitClaimable(
 		},
 		checkpointsPassed: () => report({ type: "arrival", stage: "counting", checkpointsLeft: 0 }),
 	})
-	const verdict = await awaitClaimSimulate(simulate, (e) => classifyConsumable(e, nullifier), clock, gate, {
+	const verdict = await awaitClaimSimulate(simulate, (e) => classifyConsumable(e, nullifier, evidence), clock, gate, {
 		consumableWait: (g) => leg.emit({ type: "arrival", stage: "wallet-sync", counted: g.counted }),
 	})
 	if (verdict === "ready") {

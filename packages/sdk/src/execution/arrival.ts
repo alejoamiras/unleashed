@@ -125,13 +125,32 @@ async function firstBlocked(
 
 export type ConsumableVerdict = "not-ready" | "claimed-elsewhere" | "invalid" | "error"
 
-/** A simulate failure sorted: not anchored keeps polling; a consumed-shaped error is "claimed elsewhere" only once
- *  the chain's nullifier agrees (the simulate speaks for the wallet's view, the nullifier for the chain); every other
- *  case is an error. `nullifier` answers "unknown" when it cannot read. */
-export async function classifyConsumable(e: unknown, nullifier: () => Promise<TokenMessageState>): Promise<ConsumableVerdict> {
+/** Which spent message a simulate failure may speak for. A private consume names the hash it found spent; a public
+ *  consume names none, so it counts only when the simulated transaction consumes no other message publicly. */
+export interface SpentEvidence {
+	messageHash: string
+	publicCounts: boolean
+}
+
+const NAMED_SPENT = /for message hash (0x[0-9a-f]{64})/i
+
+function spentIsThisMessage(msg: string, evidence: SpentEvidence): boolean {
+	const named = NAMED_SPENT.exec(msg)?.[1]
+	return named === undefined ? evidence.publicCounts : named.toLowerCase() === evidence.messageHash.toLowerCase()
+}
+
+/** A simulate failure sorted: not anchored keeps polling; a consumed-shaped error about this message is "claimed
+ *  elsewhere" only once the chain's nullifier agrees (the simulate speaks for the wallet's view, the nullifier for the
+ *  chain); every other case, a spent message the error does not attribute to this one included, is an error.
+ *  `nullifier` answers "unknown" when it cannot read. */
+export async function classifyConsumable(
+	e: unknown,
+	nullifier: () => Promise<TokenMessageState>,
+	evidence: SpentEvidence,
+): Promise<ConsumableVerdict> {
 	const msg = e instanceof Error ? e.message : String(e)
 	if (isMsgNotReady(msg)) return "not-ready"
-	if (!isMsgConsumed(msg)) return "error"
+	if (!isMsgConsumed(msg) || !spentIsThisMessage(msg, evidence)) return "error"
 	const state = await nullifier()
 	if (state === "nullified") return "claimed-elsewhere"
 	if (state === "invalid") return "invalid"
