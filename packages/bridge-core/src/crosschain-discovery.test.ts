@@ -321,6 +321,15 @@ function chain(o: ChainOptions): DiscoveryChainReads & { fillReads: unknown[] } 
 const sourceTx = (r: Receipts): Tx => ({ hash: SRC_TX, block: SRC_BLOCK, logs: r.source.logs })
 const baseTx = (): Tx => ({ hash: SRC_TX, block: BigInt(COMPOSE.base.block), logs: COMPOSE.sourceLogs, from: MAINNET.user })
 const fillTx = (logs: RawLog[], over: Partial<Tx> = {}): Tx => ({ hash: FILL_TX, block: ETH_BLOCK, logs, ...over })
+/** The send's source receipt with its SpokePool `FundsDeposited` fields replaced by `change`. */
+const rewrittenSource = (change: Record<string, unknown>): Tx => ({
+	...sourceTx(ROUTED),
+	logs: ROUTED.source.logs.map((l) => {
+		if (!eq(l.address, RAIL.source.spokePool)) return l
+		const { args } = decodeEventLog({ abi: [FUNDS_DEPOSITED], data: l.data, topics: l.topics as [Hex, ...Hex[]] })
+		return { ...l, ...log(l.address as Address, FUNDS_DEPOSITED, { ...args, ...change }) }
+	}),
+})
 
 function reads(sourceTxs: Tx[], ethTxs: Tx[], eth: Partial<ChainOptions> = {}, source: Partial<ChainOptions> = {}) {
 	return {
@@ -337,6 +346,9 @@ const verdictOf = (d: CrossChainDiscovery) => (d.verdict === "incomplete" ? `inc
 
 const DEPOSITED = getAbiItem({ abi: DEPOSIT_ROUTER_ABI, name: "Deposited" }) as AbiEvent
 const ERC20_TRANSFER = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)")
+const FUNDS_DEPOSITED = parseAbiItem(
+	"event FundsDeposited(bytes32 inputToken, bytes32 outputToken, uint256 inputAmount, uint256 outputAmount, uint256 indexed destinationChainId, uint256 indexed depositId, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityDeadline, bytes32 indexed depositor, bytes32 recipient, bytes32 exclusiveRelayer, bytes message)",
+)
 const COMPLETED = parseAbiItem(
 	"event LiFiTransferCompleted(bytes32 indexed transactionId, address receivingAssetId, address receiver, uint256 amount, uint256 timestamp)",
 )
@@ -720,6 +732,50 @@ describe("discoverCrossChain", () => {
 		expect((await discover(record(), reads([sourceTx(ROUTED)], [], { timestamp: () => deadline }))).verdict).toBe("pending")
 		const filled = reads([sourceTx(ROUTED)], [], { timestamp: () => deadline + 1n, fillStatus: 2n })
 		expect(verdictOf(await discover(record(), filled))).toBe("incomplete: filled by the finalized block, yet no fill was found")
+	})
+
+	it.each([
+		[FLOOR, "incomplete: a claimable deposit contradicts the reverted source"],
+		[FLOOR - 1n, "not-sent"],
+	])(
+		"a reverted source with a claimable deposit at or above the floor decides nothing; one below it is still not-sent (%s)",
+		async (amount, verdict) => {
+			const reverted: Tx = {
+				hash: SRC_TX,
+				block: SRC_BLOCK,
+				logs: [],
+				status: "reverted",
+				input: PUBLIC.calldata,
+				to: RAIL.source.diamond,
+			}
+			const deposit: Tx = { hash: label("deposit"), block: ETH_BLOCK - 5n, logs: [await gift(amount, 900n)] }
+			const d = await discover(record(), reads([reverted], [deposit]))
+			expect(verdictOf(d)).toBe(verdict)
+			if (d.verdict === "incomplete") expect(discoveryPatch(record(), d, 7)).toBeUndefined()
+		},
+	)
+
+	it("a source log cannot expire a send before the record's deadline", async () => {
+		const deadline = BigInt(RAIL.inputs.fillDeadline)
+		const early = rewrittenSource({ fillDeadline: RAIL.inputs.fillDeadline - 600 })
+		const between = await discover(record(), reads([early], [], { timestamp: () => deadline - 1n }))
+		expect(verdictOf(between)).toBe("pending")
+		const past = await discover(record(), reads([early], [], { timestamp: () => deadline + 1n }))
+		expect(verdictOf(past)).toBe("expired-on-source")
+	})
+
+	it("an expiry beside a claimable deposit at or above the floor decides nothing", async () => {
+		const deadline = BigInt(RAIL.inputs.fillDeadline)
+		// Another deposit id names a relay no fill matches; Ethereum holds the send's own fill and deposit.
+		const unfilled = rewrittenSource({ depositId: 999_999n })
+		// The fill's block is stamped 12 s before the deadline, the finalized head 12 s after it.
+		const past = { finalized: ETH_BLOCK + 2n, timestamp: (n: bigint) => deadline - 12n + 12n * (n - ETH_BLOCK) }
+		const d = await discover(record(), reads([unfilled], [fillTx(ROUTED.destination.logs)], past))
+		expect(verdictOf(d)).toBe("incomplete: a claimable deposit contradicts the expiry")
+		expect(discoveryPatch(record(), d, 7)).toBeUndefined()
+
+		const dust: Tx = { hash: label("dust"), block: ETH_BLOCK - 5n, logs: [await gift(FLOOR - 1n, 900n)] }
+		expect(verdictOf(await discover(record(), reads([unfilled], [dust], past)))).toBe("expired-on-source")
 	})
 
 	it("a chain switch, a reorg during the scan or a node behind the record is incomplete, never a verdict", async () => {

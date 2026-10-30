@@ -18,10 +18,13 @@ describe.skipIf(!INTEGRATION)("deposits", () => {
 		expect(await flowPrivateDeposit(a.s, usdc, await a.l2TokenOf(usdc), "credit")).toContain("privately (")
 	})
 
-	it("a relayer cannot redirect a private claim, then submits it for the actor", async () => {
+	// The opened handshake is also the control that the private-deposit flows' handshake query finds one.
+	it("a relayer cannot redirect a private claim, then submits it for the actor through a handshake", async () => {
 		const a = await freshActor()
 		const { usdc } = await sandbox()
-		expect(await flowRelayedPrivateDeposit(a.s, usdc, await a.l2TokenOf(usdc))).toContain("wrong recipient rejected")
+		const evidence = await flowRelayedPrivateDeposit(a.s, usdc, await a.l2TokenOf(usdc))
+		expect(evidence).toContain("wrong recipient rejected")
+		expect(evidence).toContain("(handshakes opened: 1)")
 	})
 
 	it("token-only claim paid from held public Fee Juice (cell 5)", async () => {
