@@ -11,7 +11,7 @@
  * `decimals` is mandatory — the factory refuses a token without it, so a missing/oversized value is
  * a hard failure here rather than a silent default.
  */
-import { type Address, encodeFunctionData, type Hex, hexToBytes } from "viem"
+import { type Address, encodeFunctionData, type Hex, hexToBytes, isAddress } from "viem"
 
 export const ERC20_ABI = [
 	{ type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
@@ -181,22 +181,43 @@ export async function readErc20Metadata(client: Erc20Client, token: Address): Pr
 	return { name: displayString(nameRaw), symbol: displayString(symbolRaw), decimals, nameRaw, symbolRaw }
 }
 
+/** Whether a failed entry is the aggregate's own failure, which viem reports on every entry: only its `call` makes a
+ *  `CallExecutionError`, never a token that reverts or answers garbage inside a call that ran. Matched by name, since
+ *  a second viem copy defeats `instanceof`. */
+function aggregateFailed(error: unknown): boolean {
+	for (let e = error; typeof e === "object" && e !== null; e = (e as { cause?: unknown }).cause) {
+		if ((e as { name?: unknown }).name === "CallExecutionError") return true
+	}
+	return false
+}
+
 /**
  * Balances for many tokens in one `multicall`, keyed by the address AS PASSED (so `get(tokens[i])`
  * hits regardless of casing). The client may send it as several `eth_call`s: viem splits past
  * 1,024 calldata bytes unless the call passes `batchSize: 0`. A token that reverts, or is not an
  * ERC-20 at all, reports `0n` — one bad entry must never cost the caller the whole list.
+ *
+ * A read that never ran reports nothing. Rejects with the client's error when the RPC refused the
+ * aggregate call, before any call when a token address fails viem's `isAddress` (viem would fail to
+ * encode the whole aggregate and report every token as failed), and when an entry is missing or its
+ * success is not a `bigint`.
  */
 export async function readErc20Balances(client: Erc20Client, owner: Address, tokens: readonly Address[]): Promise<Map<Address, bigint>> {
 	const balances = new Map<Address, bigint>()
 	if (tokens.length === 0) return balances
+	const unencodable = tokens.find((address) => !isAddress(address))
+	if (unencodable !== undefined) throw new Error(`${unencodable} is not an address viem can encode`)
 	const results = await client.multicall({
 		allowFailure: true,
 		contracts: tokens.map((address) => ({ address, abi: ERC20_ABI, functionName: "balanceOf" as const, args: [owner] as const })),
 	})
 	tokens.forEach((address, i) => {
 		const result = results[i]
-		balances.set(address, result?.status === "success" && typeof result.result === "bigint" ? result.result : 0n)
+		if (result?.status === "failure") {
+			if (aggregateFailed(result.error)) throw result.error
+			balances.set(address, 0n)
+		} else if (typeof result?.result === "bigint") balances.set(address, result.result)
+		else throw new Error(`the balance read gave no balance for ${address}`)
 	})
 	return balances
 }
