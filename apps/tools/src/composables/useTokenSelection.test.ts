@@ -132,7 +132,7 @@ function makePub(b: PubBehaviour) {
 	const call = vi.fn(async (args: { data: Hex }) => ({ data: metadataReturn(b.metadata, args.data) }))
 	const multicall = vi.fn(async () => [{ status: "success", result: b.l1Balance ?? 0n }])
 	const getChainId = vi.fn(async () => b.chainId ?? 31337)
-	return { readContract, call, multicall, getChainId } as unknown as PublicClient
+	return { readContract, call, multicall, getChainId, ccipRead: false } as unknown as PublicClient
 }
 
 function makeBindingReader(bindings: Map<string, string>) {

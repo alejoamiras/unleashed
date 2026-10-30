@@ -1,9 +1,11 @@
 import {
 	type Address,
+	type ClientConfig,
 	createPublicClient,
 	custom,
 	decodeFunctionData,
 	encodeAbiParameters,
+	encodeErrorResult,
 	encodeFunctionResult,
 	ExecutionRevertedError,
 	type Hex,
@@ -41,6 +43,7 @@ function fakeClient(results: Erc20CallResult[], returndata: Record<string, Hex> 
 			return { data: value }
 		}),
 		gasCaps,
+		ccipRead: false,
 	} as unknown as FakeClient
 }
 
@@ -128,16 +131,23 @@ describe("readErc20Metadata", () => {
 })
 
 describe("readErc20Metadata through viem's call", () => {
-	/** A node that answers every metadata read of one healthy token, except the selector `fails` names. */
-	function node(fails: Record<string, () => Error> = {}): PublicClient {
+	/** A node that answers every metadata read of one healthy token, except the selector `fails` names. An explicit
+	 *  `ccipRead: undefined` in `opts` keeps viem's default; an absent one builds the client with `ccipRead: false`. */
+	function node(
+		fails: Record<string, () => Error> = {},
+		opts: { ccipRead?: ClientConfig["ccipRead"]; calls?: string[] } = {},
+	): PublicClient {
 		const answers: Record<string, Hex> = { [NAME]: abiString("Token"), [SYMBOL]: abiString("TKN"), [DECIMALS]: word(18) }
+		const { calls = [] } = opts
 		return createPublicClient({
 			chain: sepolia,
+			ccipRead: "ccipRead" in opts ? opts.ccipRead : false,
 			transport: custom(
 				{
 					request: async ({ method, params }) => {
 						if (method !== "eth_call") throw new Error(`unexpected ${method}`)
 						const selector = (params as [{ data: Hex }])[0].data.slice(0, 10)
+						calls.push(selector)
 						const fail = fails[selector]
 						if (fail) throw fail()
 						return answers[selector]
@@ -185,6 +195,76 @@ describe("readErc20Metadata through viem's call", () => {
 			symbolRaw: new Uint8Array(0),
 		})
 		await expect(readErc20Metadata(node({ [DECIMALS]: revert }), TOKEN)).rejects.toBeInstanceOf(Erc20MetadataError)
+	})
+
+	const LOOKUP = encodeErrorResult({
+		abi: [
+			{
+				type: "error",
+				name: "OffchainLookup",
+				inputs: [
+					{ name: "sender", type: "address" },
+					{ name: "urls", type: "string[]" },
+					{ name: "callData", type: "bytes" },
+					{ name: "callbackFunction", type: "bytes4" },
+					{ name: "extraData", type: "bytes" },
+				],
+			},
+		],
+		errorName: "OffchainLookup",
+		args: [TOKEN, ["https://gateway.invalid/{sender}/{data}.json"], "0x", "0xdeadbeef", "0x"],
+	})
+
+	const lookupRevert = () => Object.assign(new Error("execution reverted"), { code: 3, data: LOOKUP })
+
+	it.each([
+		["code 3", lookupRevert],
+		[
+			"a wallet's -32603 around the node's code 3",
+			() =>
+				Object.assign(new Error("Internal JSON-RPC error."), {
+					code: -32603,
+					data: { code: 3, message: "execution reverted", data: LOOKUP },
+				}),
+		],
+	] as const)(
+		"reads a name() that reverts with an off-chain lookup (%s) as reverted, fetching and calling nothing else",
+		async (_label, lookup) => {
+			const fetch = vi.fn(async () => Response.json({ data: abiString("Gateway") }))
+			vi.stubGlobal("fetch", fetch)
+			try {
+				const calls: string[] = []
+				await expect(readErc20Metadata(node({ [NAME]: lookup }, { calls }), TOKEN)).resolves.toEqual({
+					name: "",
+					symbol: "TKN",
+					decimals: 18,
+					nameRaw: new Uint8Array(0),
+					symbolRaw: new TextEncoder().encode("TKN"),
+				})
+				expect(fetch).not.toHaveBeenCalled()
+				expect(calls.sort()).toEqual([NAME, SYMBOL, DECIMALS].sort())
+				await expect(readErc20Metadata(node(), TOKEN)).resolves.toMatchObject({ name: "Token", symbol: "TKN", decimals: 18 })
+			} finally {
+				vi.unstubAllGlobals()
+			}
+		},
+	)
+
+	it.each([
+		["omitted", undefined],
+		["a custom resolver", { request: vi.fn(async (): Promise<Hex> => "0x") }],
+	] as const)("refuses a client whose ccipRead is %s, before any call", async (_label, ccipRead) => {
+		const fetch = vi.fn(async () => Response.json({ data: abiString("Gateway") }))
+		vi.stubGlobal("fetch", fetch)
+		try {
+			const calls: string[] = []
+			await expect(readErc20Metadata(node({ [NAME]: lookupRevert }, { ccipRead, calls }), TOKEN)).rejects.toThrow("ccipRead: false")
+			expect([calls, fetch.mock.calls]).toEqual([[], []])
+			if (ccipRead) expect(ccipRead.request).not.toHaveBeenCalled()
+			await expect(readErc20Metadata(node(), TOKEN)).resolves.toMatchObject({ name: "Token" })
+		} finally {
+			vi.unstubAllGlobals()
+		}
 	})
 })
 

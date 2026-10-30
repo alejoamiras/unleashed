@@ -71,6 +71,9 @@ export interface Erc20Client {
 		}[]
 	}): Promise<readonly Erc20CallResult[]>
 	call(args: { to: Address; data: Hex; gas: bigint }): Promise<{ data?: Hex | undefined }>
+	/** Must be `false` for `readErc20Metadata`: viem resolves an EIP-3668 off-chain lookup inside `call` otherwise, so
+	 *  the read would leave this client's RPC for a URL the token names, outside the gas cap. */
+	readonly ccipRead?: unknown
 }
 
 /** Thrown when a token cannot be bridged because its `decimals` is absent or out of uint8 range. */
@@ -206,9 +209,11 @@ function displayString(raw: Uint8Array): string {
 /**
  * Metadata read: three gas-capped raw calls in parallel, and nothing else. A `name()` or `symbol()` the node reports
  * as reverted reads as empty and a reverted `decimals()` throws `Erc20MetadataError`, as the factory reads them. Any
- * other failed call rejects with the client's error: the read may never have run, so its metadata is unknown.
+ * other failed call rejects with the client's error: the read may never have run, so its metadata is unknown. Rejects
+ * before any call when the client was not built with `ccipRead: false`.
  */
 export async function readErc20Metadata(client: Erc20Client, token: Address): Promise<Erc20Metadata> {
+	if (client.ccipRead !== false) throw new Error("readErc20Metadata needs a client built with ccipRead: false")
 	const [nameRaw, symbolRaw, decimals] = await Promise.all([
 		rawMetadata(client, token, NAME_SELECTOR),
 		rawMetadata(client, token, SYMBOL_SELECTOR),

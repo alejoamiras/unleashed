@@ -30,7 +30,12 @@ export function readClientFor(chainId: number): PublicClient | undefined {
 		// The last endpoint's `null` receipt must stay viem's "not found", which receipt polling waits through.
 		return i < read.rpcUrls.length - 1 ? receiptOrNext(transport) : transport
 	}
-	const client = createPublicClient({ chain: read.chain, transport: fallback(read.rpcUrls.map(endpoint)) }) as PublicClient
+	// `ccipRead: false`: a read stays on the pinned RPCs, never at a URL the called contract names (EIP-3668).
+	const client = createPublicClient({
+		chain: read.chain,
+		transport: fallback(read.rpcUrls.map(endpoint)),
+		ccipRead: false,
+	}) as PublicClient
 	clients.set(chainId, client)
 	return client
 }

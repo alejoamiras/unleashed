@@ -32,10 +32,12 @@ function getProvider(): EIP1193Provider | undefined {
  * which the tools app's CSP `connect-src` refuses, breaking every L1 read + receipt wait. Delegating to the
  * wallet's EIP-1193 provider makes the extension perform the `eth_call` (no page fetch, so the page CSP
  * never applies) using the user's own RPC. Every L1 read is gated on a connected wallet, so the provider
- * is present whenever a read actually runs.
+ * is present whenever a read actually runs. `ccipRead: false` keeps every read on that provider, never at a URL the
+ * called contract names (EIP-3668).
  */
 const publicClient = createPublicClient({
 	chain: NETWORK.viemChain,
+	ccipRead: false,
 	transport: custom({
 		async request(args: { method: string; params?: unknown }) {
 			const provider = getProvider()

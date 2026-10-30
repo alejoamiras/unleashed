@@ -67,13 +67,13 @@ export function createL1Clients<TChain extends Chain, TAccount extends Account>(
 		chain: opts.chain,
 		transport: http(opts.rpcUrl),
 	}) as unknown as WalletClient<Transport, TChain, TAccount>
-	const pub = createPublicClient({ chain: opts.chain, transport: http(opts.rpcUrl) })
+	const pub = createPublicClient({ chain: opts.chain, transport: http(opts.rpcUrl), ccipRead: false })
 	return { wallet, pub }
 }
 
 /** Read-only L1 client, for scripts (or extra clients) with no signing side. */
 export function createL1PublicClient(opts: { chain: Chain; rpcUrl: string }): PublicClient {
-	return createPublicClient({ chain: opts.chain, transport: http(opts.rpcUrl) })
+	return createPublicClient({ chain: opts.chain, transport: http(opts.rpcUrl), ccipRead: false })
 }
 
 /** Aztec node client. Separate from the wallet factory: conductors create the

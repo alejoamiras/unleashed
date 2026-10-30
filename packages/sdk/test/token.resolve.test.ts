@@ -39,6 +39,34 @@ describe("resolveToken", () => {
 		})
 	})
 
+	it.each([
+		["omitted", undefined],
+		["a custom resolver", { request: async () => "0x" }],
+	] as const)("refuses an l1 client whose ccipRead is %s before any read", async (_label, ccipRead) => {
+		const w = worldOf(testnet())
+		const token = w.m.bridge?.tokens[0]
+		if (!token || !w.m.bridge) throw new Error("the testnet manifest lists a token")
+		const { decimals, nameWord, symbolWord, portal } = token
+		const registerKey = `0x${"ab".repeat(32)}`
+		w.reads.set(`${w.m.bridge.l1.factory.toLowerCase()}:registrationOf`, () => ({
+			portal,
+			decimals,
+			registerIndex: 1n,
+			nameWord,
+			symbolWord,
+			registerKey,
+		}))
+		const r = readsOf(w)
+		const net = await parseNetwork(w.m, r)
+		const read = vi.fn(async () => {
+			throw new Error("no read expected")
+		})
+		const lookups = { ...r, l1: { ...(r.l1 as object), ccipRead, readContract: read, call: read } as never }
+		await expect(resolveToken(net, lookups, token.erc20 as Address)).rejects.toMatchObject({ code: "invalid-request", retry: "never" })
+		expect(read).not.toHaveBeenCalled()
+		await expect(resolveToken(net, r, token.erc20 as Address)).resolves.toMatchObject({ erc20: token.erc20 })
+	})
+
 	it("reports a first-time token's refused metadata read as one to retry, and a reverted decimals() as final", async () => {
 		const w = worldOf(testnet())
 		if (!w.m.bridge) throw new Error("the testnet manifest has a bridge")

@@ -150,6 +150,7 @@ const eth = (a: string) => ({ toString: () => a })
 /** The reads a world answers. An unanswered read throws, so a test sees every call it did not expect. */
 export function readsOf(w: World, extra: Partial<Reads> = {}): Reads {
 	const l1 = {
+		ccipRead: false,
 		getChainId: async () => w.chainId,
 		readContract: async ({ address, functionName, args }: { address: string; functionName: string; args?: readonly unknown[] }) => {
 			const k = key(address, functionName)

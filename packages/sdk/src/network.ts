@@ -20,11 +20,19 @@ import { assertManifestTokensDerive, type ManifestToken, type ManifestV2, parseM
 import { walletChainIdOf } from "./protocol/wallet-chain-id.ts"
 
 /** The reads every call makes. Nothing here signs. `fetch` reaches li.quest, which needs no key; the global one is
- *  used when absent. */
+ *  used when absent. `l1` must be built with `ccipRead: false`: the calls that read a token refuse any other. */
 export interface Reads {
 	l1: PublicClient
 	aztecNode: AztecNode
 	fetch?: typeof fetch
+}
+
+/** Refuses an `l1` client that resolves EIP-3668 off-chain lookups. viem resolves one inside `call` unless the client
+ *  sets `ccipRead: false`, so a token's read would leave the caller's RPC for a URL the token names. */
+export function assertNoOffchainLookups(r: Reads): void {
+	if (r.l1.ccipRead !== false) {
+		throw refusal("invalid-request", "Reads.l1 must be built with ccipRead: false; the SDK reads token contracts only through your RPC")
+	}
 }
 
 export type Privacy = "public" | "private"
