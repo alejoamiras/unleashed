@@ -59,6 +59,13 @@ export function pinOfBuild(built: Uint8Array, immutables: Record<string, Immutab
 	return { length: built.length, trailerStart, immutables: groups, hash: maskedHash(built, groups, trailerStart) }
 }
 
+/** Whether two pins are one build's. The hash alone does not commit to the immutable groups, so a pin whose copies
+ *  were split into groups of their own hashes alike yet lets those copies disagree. */
+export function samePin(a: CodePin, b: CodePin): boolean {
+	const spans = (p: CodePin) => JSON.stringify(p.immutables.map((copies) => copies.map((s) => [s.start, s.length])))
+	return a.hash === b.hash && a.length === b.length && a.trailerStart === b.trailerStart && spans(a) === spans(b)
+}
+
 /** Whether every copy of each immutable holds the same bytes: a getter reads one copy, so a check through it binds
  *  the others only when they agree. */
 function copiesAgree(code: Uint8Array, immutables: readonly (readonly ImmutableSpan[])[]): boolean {

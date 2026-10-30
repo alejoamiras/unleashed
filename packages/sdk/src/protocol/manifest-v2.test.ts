@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { getAddress } from "viem"
 import { describe, expect, it } from "vitest"
+import { tokenBridgeHubArtifact as HUB_ARTIFACT } from "./artifacts.ts"
 import { deriveHubTokenInstance } from "./hub-token.ts"
 import { assertManifestTokensDerive, deriveManifestHub, manifestToken, parseManifestV2, parseManifestV2Strict } from "./manifest-v2.ts"
 import { predictPortal } from "./portal-address.ts"
@@ -26,7 +27,10 @@ const HUB_RECORD = {
 	constructorArgs: [TOKEN_CLASS_ID, FACTORY, GUARDIAN],
 }
 const HUB = (
-	await deriveManifestHub({ l2: { hub: { ...HUB_RECORD, address: "" } } } as unknown as Parameters<typeof deriveManifestHub>[0])
+	await deriveManifestHub(
+		{ l2: { hub: { ...HUB_RECORD, address: "" } } } as unknown as Parameters<typeof deriveManifestHub>[0],
+		HUB_ARTIFACT,
+	)
 ).address.toString()
 
 async function fixture() {
@@ -79,7 +83,7 @@ async function fixture() {
 
 describe("manifest v2 (strict, self-deriving)", () => {
 	it("accepts a coherent manifest and derives every token", async () => {
-		const m = await parseManifestV2Strict(await fixture())
+		const m = await parseManifestV2Strict(await fixture(), HUB_ARTIFACT)
 		expect(m.bridge?.tokens[0].displaySymbol).toBe("TST")
 		expect(manifestToken(m, ERC20.toUpperCase())?.erc20).toBe(ERC20)
 		expect(manifestToken(m, "0x0000000000000000000000000000000000000009")).toBeUndefined()
@@ -88,7 +92,7 @@ describe("manifest v2 (strict, self-deriving)", () => {
 	it("accepts bridge: null (the placeholder network)", async () => {
 		const m = parseManifestV2({ ...(await fixture()), bridge: null })
 		expect(m.bridge).toBeNull()
-		await expect(assertManifestTokensDerive(m)).resolves.toBeUndefined()
+		await expect(assertManifestTokensDerive(m, HUB_ARTIFACT)).resolves.toBeUndefined()
 	})
 
 	it("rejects a portal that is not the factory's CREATE2 for the token", async () => {
@@ -100,13 +104,13 @@ describe("manifest v2 (strict, self-deriving)", () => {
 	it("rejects an l2Token the hub would not derive", async () => {
 		const raw = await fixture()
 		raw.bridge.tokens[0].l2Token = `0x${"1".repeat(64)}`
-		await expect(parseManifestV2Strict(raw)).rejects.toThrow(/is not the hub's derivation/)
+		await expect(parseManifestV2Strict(raw, HUB_ARTIFACT)).rejects.toThrow(/is not the hub's derivation/)
 	})
 
 	it("rejects a hub address that is not the instantiation of its own record, and a salt that is not the factory", async () => {
 		const carried = await fixture()
 		carried.bridge.l2.hub.address = `0x${"2".repeat(64)}`
-		await expect(parseManifestV2Strict(carried)).rejects.toThrow(/not the instantiation of its own record/)
+		await expect(parseManifestV2Strict(carried, HUB_ARTIFACT)).rejects.toThrow(/not the instantiation of its own record/)
 		const foreignSalt = await fixture()
 		foreignSalt.bridge.l2.hub.salt = `0x${"3".repeat(64)}`
 		expect(() => parseManifestV2(foreignSalt)).toThrow(/hub salt must be the factory/)

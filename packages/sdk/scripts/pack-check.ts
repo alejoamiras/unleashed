@@ -13,6 +13,7 @@ import { pathToFileURL } from "node:url"
 import {
 	DIST_DIR,
 	HUB_ARTIFACT,
+	TESTNET_HUB_ARTIFACT,
 	PACKAGE_DIR,
 	type PublishedManifest,
 	PUBLISHED_ENTRIES,
@@ -171,7 +172,8 @@ function checkAssets(installed: string, staged: Staged): void {
 		const shipped = sha256(join(installed, asset.staged))
 		if (shipped !== sha256(join(REPO_DIR, asset.source))) fail(`${asset.staged} sha256 ${shipped} differs from ${asset.source}`)
 	}
-	if (!staged.assets.some((asset) => asset.source === HUB_ARTIFACT)) fail("the hub artifact was not staged")
+	for (const hub of [HUB_ARTIFACT, TESTNET_HUB_ARTIFACT])
+		if (!staged.assets.some((asset) => asset.source === hub)) fail(`the hub artifact ${hub} was not staged`)
 }
 
 /** Imports the consumer in one runtime and holds its report to the installed tarball. */
@@ -185,7 +187,7 @@ function runConsumer(command: string, args: string[], scratch: string, installed
 	const root = `${pathToFileURL(installed).href}/`
 	const elsewhere = Object.entries(report.entries).filter(([, entry]) => !entry.url.startsWith(root))
 	if (elsewhere.length > 0) fail(`${report.runtime} resolved ${elsewhere.map(([key, e]) => `${key} → ${e.url}`).join(", ")}`)
-	const hubName = readJson<{ name: string }>(join(REPO_DIR, HUB_ARTIFACT)).name
+	const hubName = readJson<{ name: string }>(join(REPO_DIR, TESTNET_HUB_ARTIFACT)).name
 	if (report.hub !== hubName) fail(`${report.runtime} loaded hub artifact ${report.hub}, want ${hubName}`)
 	if (report.manifests.some((kind) => kind !== "object")) fail(`${report.runtime} bundled manifests ${report.manifests.join(", ")}`)
 	return report

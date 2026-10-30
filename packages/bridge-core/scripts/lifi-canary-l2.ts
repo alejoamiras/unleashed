@@ -23,6 +23,7 @@ import {
 	registerPrivateFpc,
 	sponsoredFpcFee,
 } from "./script-l2"
+import { hubArtifactFor } from "./generation-paths"
 
 /** One row's claim, from the router's `Deposited` and the secrets the row kept. */
 export interface RowClaim {
@@ -124,7 +125,7 @@ export async function openCanaryL2(o: {
 		fee: sponsored,
 		log: (s) => console.log(`L2 account ${s} (${o.mins()})`),
 	})
-	const hub = await registerHub(ewallet as never, bridge.l2.hub)
+	const hub = await registerHub(ewallet as never, bridge.l2.hub, hubArtifactFor(o.manifest))
 	const hubAddress = AztecAddress.fromStringUnsafe(bridge.l2.hub.address)
 	const l2Tokens = new Map<string, ContractBase>()
 	for (const t of o.tokens)

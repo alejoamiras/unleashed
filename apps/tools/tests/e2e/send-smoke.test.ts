@@ -101,7 +101,7 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		MANIFEST_TOKENS: bridge.tokens,
 		FUEL: fuel,
 		LEGACY_ROUTERS: internal.legacyRoutersOf(bridge),
-		HUB_ARTIFACT: {},
+		hubArtifact: async () => ({}),
 		HUB_TOKEN_ARTIFACT: {},
 		rebuildHubInstance: async () => ({ address: { toString: () => bridge.l2.hub.address } }),
 		rebuildHubTokenInstance: async (erc20: string) => ({ address: { toString: () => derived(erc20) } }),

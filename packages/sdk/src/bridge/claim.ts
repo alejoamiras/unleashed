@@ -37,7 +37,7 @@ import { claimViaHub, type HubClaimParams, hubAt, hubTokenFor, probeHubClaim, ty
 import { registrationToBlock } from "../execution/send-flow.ts"
 import { isMsgNotReady } from "../execution/message-errors.ts"
 import { hubMessageState, type TokenMessageState } from "../execution/message-nullifier.ts"
-import type { Network, Reads, TokenRoute } from "../network.ts"
+import { hubArtifactOf, type Network, type Reads, type TokenRoute } from "../network.ts"
 import { tokenClaimSecretHash } from "../protocol/claim-secret.ts"
 import { deriveHubTokenInstance } from "../protocol/hub-token.ts"
 import type { DepositRecord, JournalTokenBlock } from "../records.ts"
@@ -321,7 +321,7 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	if (resumed) return resumed
 	const { aztec, run } = leg
 	const p = await claimParamsOf(leg, token)
-	const hub = hubAt(aztec.wallet, bridge.hub)
+	const hub = hubAt(aztec.wallet, bridge.hub, hubArtifactOf(leg.net))
 	const spent = await settleSpentMessage(leg, p)
 	if (spent) return spent
 	await settleHashlessClaim(leg)

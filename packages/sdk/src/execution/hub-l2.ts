@@ -5,6 +5,7 @@
  * registers between the read and the send, the registration path fails on the already-consumed
  * register leaf and the claim is retried as a plain one — the deposit is never stranded on a race.
  */
+import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract, type ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
@@ -12,12 +13,12 @@ import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import type { GasUsed } from "@aztec-labs/stdlib/gas"
 import { deriveStorageSlotInMap } from "@aztec-labs/stdlib/hash"
-import { tokenBridgeHubArtifact } from "../protocol/artifacts.ts"
 import type { JournalTokenBlock } from "../records.ts"
 import { type FuelClaimRetry, simulateFeePayload } from "./fuel-claim.ts"
 
-export function hubAt(wallet: Wallet, hub: string): ContractBase {
-	return Contract.at(AztecAddress.fromStringUnsafe(hub), tokenBridgeHubArtifact, wallet)
+/** The hub at `hub`, called through `artifact`: the one its generation deployed. */
+export function hubAt(wallet: Wallet, hub: string, artifact: ContractArtifact): ContractBase {
+	return Contract.at(AztecAddress.fromStringUnsafe(hub), artifact, wallet)
 }
 
 const ZERO_FIELD = `0x${"0".repeat(64)}`
@@ -27,9 +28,9 @@ export interface PublicStorageReader {
 	getPublicStorageAt(block: "latest", contract: AztecAddress, slot: Fr): Promise<Fr>
 }
 
-/** The `token_of` map's base slot, from the artifact the hub was deployed from. */
-export function hubTokenOfSlot(): Fr {
-	const slot = tokenBridgeHubArtifact.storageLayout.token_of?.slot
+/** The `token_of` map's base slot, from `artifact`, the one the hub was deployed from. */
+export function hubTokenOfSlot(artifact: ContractArtifact): Fr {
+	const slot = artifact.storageLayout.token_of?.slot
 	if (!slot) throw new Error("the hub artifact declares no token_of storage")
 	return slot
 }
@@ -39,8 +40,13 @@ export function hubTokenOfSlot(): Fr {
  * the map's `PublicImmutable` packs, so the entry's own slot holds it, and zero — the value an
  * unwritten slot reads as — means unregistered, since the hub never binds to the zero address.
  */
-export async function hubBindingAt(node: PublicStorageReader, hub: string, erc20: string): Promise<string | undefined> {
-	const slot = await deriveStorageSlotInMap(hubTokenOfSlot(), EthAddress.fromString(erc20))
+export async function hubBindingAt(
+	node: PublicStorageReader,
+	hub: string,
+	erc20: string,
+	artifact: ContractArtifact,
+): Promise<string | undefined> {
+	const slot = await deriveStorageSlotInMap(hubTokenOfSlot(artifact), EthAddress.fromString(erc20))
 	const value = await node.getPublicStorageAt("latest", AztecAddress.fromStringUnsafe(hub), slot)
 	return value.isZero() ? undefined : value.toString()
 }

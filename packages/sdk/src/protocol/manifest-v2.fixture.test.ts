@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import { tokenBridgeHubArtifact } from "./artifacts.ts"
 import { parseManifestV2Strict } from "./manifest-v2.ts"
 
 /**
@@ -14,7 +15,7 @@ const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", 
 
 describe("the sandbox generation manifest", () => {
 	it("parses strictly and re-derives every token", async () => {
-		const manifest = await parseManifestV2Strict(JSON.parse(readFileSync(FIXTURE, "utf8")))
+		const manifest = await parseManifestV2Strict(JSON.parse(readFileSync(FIXTURE, "utf8")), tokenBridgeHubArtifact)
 		expect(manifest.network).toBe("sandbox")
 		expect(manifest.bridge?.tokens.length).toBeGreaterThan(0)
 	})
