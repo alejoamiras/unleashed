@@ -2333,15 +2333,6 @@ describe("useBridgeJournal - a hash-less exit attached by its recomputed message
 		await holder
 	})
 
-	it("attached but already finished on L1 ⇒ done as consumed by another", async () => {
-		const deps = attachDeps(kv, found, { consumeSend: vi.fn(async () => ({ consumedByOther: true as const })) })
-		connectJournalDeps(deps)
-		addRecord(pending())
-		await runWithdrawConsume("wd-pending-1")
-		expect(recordOf(H)?.consumedByOther).toBe(true)
-		expect(recordOf(H)?.completedAt).toBe(999)
-	})
-
 	it.each([
 		["none", "error", /No exit for this record was found/],
 		["ambiguous", "unknown-outcome", /More than one matching exit/],

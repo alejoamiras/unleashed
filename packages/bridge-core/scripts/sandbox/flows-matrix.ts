@@ -18,6 +18,7 @@ import {
 import {
 	consumeWithdrawal,
 	isOutboxMessageConsumed,
+	withdrawMessageHash,
 	exitViaHub,
 	type HubExitParams,
 	preflightHubExit,
@@ -340,16 +341,30 @@ export async function flowDiscoveredRouteSend(s: SmokeContext, token: ManifestTo
 // ─── The Outbox ──────────────────────────────────────────────────────────────
 
 /** Cell 32: an exit's L2→L1 message reads as NOT consumed the moment it is proposed, and after
- *  finalization the consume lands. Positive coverage only: the automine local network proves a
- *  block as soon as it is proposed, so the unproven window — in which the Outbox holds no root and
- *  refuses the consume — is not observable here. */
+ *  finalization the consume lands and the Outbox its portal names reads it consumed. Positive coverage
+ *  only: the automine local network proves a block as soon as it is proposed, so the unproven window —
+ *  in which the Outbox holds no root and refuses the consume — is not observable here. */
 export async function flowOutboxRoundTrip(s: SmokeContext, token: ManifestToken, l2Token: ContractBase): Promise<string> {
 	const amount = toWei(token, 1n)
 	const receipt = await sendPublicExit(s, token, l2Token, amount)
-	if (await isOutboxMessageConsumed(s.l1, s.l2.node as never, receipt)) throw new Error("a just-proposed exit read as already consumed")
+	const info = await s.l2.node.getNodeInfo()
+	const expected = {
+		portal: token.portal as Address,
+		messageHash: await withdrawMessageHash({
+			hub: s.bridge.l2.hub.address,
+			portal: token.portal,
+			recipientL1: s.l1.account.address,
+			amount,
+			chainId: info.l1ChainId,
+			rollupVersion: info.rollupVersion,
+		}),
+	}
+	const consumed = () => isOutboxMessageConsumed(s.l1, s.l2.node as never, receipt, expected)
+	if (await consumed()) throw new Error("a just-proposed exit read as already consumed")
 	const status = String((await s.l2.node.getTxReceipt(receipt.txHash as never)).status ?? "")
 	const released = await finishExit(s, token, receipt, amount)
-	return `exit ${status} at the first read, not consumed; after finalization the consume released ${released}`
+	if (!(await consumed())) throw new Error("a finished exit does not read as consumed on its portal's Outbox")
+	return `exit ${status} at the first read, not consumed; after finalization the consume released ${released} and reads consumed`
 }
 
 /** The public burn's authwit, then the exit itself — PROPOSED when this returns. */

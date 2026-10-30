@@ -4,14 +4,16 @@ import { describe, expect, it, vi } from "vitest"
 // (witness → portal.withdraw) is exercised without a node. ContractBase is type-only
 // (erased), so a full mock of /contracts only needs waitForProven.
 vi.mock("@aztec-labs/aztec.js/contracts", () => ({ waitForProven: vi.fn() }))
-vi.mock("@aztec-labs/stdlib/messaging", () => ({ computeL2ToL1MembershipWitness: vi.fn() }))
+vi.mock("@aztec-labs/stdlib/messaging", () => ({ computeL2ToL1MembershipWitness: vi.fn(), getL2ToL1MessageLeafId: vi.fn(() => 77n) }))
 // 5.0: consumeWithdrawal constructs an OutboxContract (L1 roots reader) — mock it; getRoots is
 // only invoked inside the mocked computeL2ToL1MembershipWitness, so a bare mock suffices.
 vi.mock("@aztec-labs/ethereum/contracts", () => ({ OutboxContract: vi.fn() }))
 
 import { waitForProven } from "@aztec-labs/aztec.js/contracts"
+import { Fr } from "@aztec-labs/aztec.js/fields"
+import { OutboxContract } from "@aztec-labs/ethereum/contracts"
 import { computeL2ToL1MembershipWitness } from "@aztec-labs/stdlib/messaging"
-import { consumeWithdrawal } from "./flows.ts"
+import { consumeWithdrawal, isOutboxMessageConsumed } from "./flows.ts"
 
 const makeL1 = () => ({
 	account: { address: "0xL1ACC" },
@@ -72,5 +74,46 @@ describe("flows — consumeWithdrawal (L2→L1 finalization)", () => {
 				},
 			),
 		).rejects.toThrow(/no L2→L1 message/)
+	})
+})
+
+describe("flows — isOutboxMessageConsumed", () => {
+	const PORTAL = "0x00000000000000000000000000000000000000a1"
+	const BOUND = "0x00000000000000000000000000000000000000b0"
+	const EXPECTED = new Fr(0x5eedn)
+
+	/** Every Outbox reports every message consumed, so only the address and message the read picks decide. */
+	function setup(reported: Fr) {
+		const outboxes: string[] = []
+		vi.mocked(OutboxContract).mockImplementation(function (_pub: unknown, address: string) {
+			outboxes.push(address)
+			return { hasMessageBeenConsumedAtEpoch: vi.fn(async () => true) }
+		} as never)
+		vi.mocked(computeL2ToL1MembershipWitness).mockResolvedValue({ epochNumber: 5 } as never)
+		const readContract = vi.fn(async (_a: unknown) => BOUND)
+		const node = {
+			getTxEffect: vi.fn(async () => ({ data: { l2ToL1Msgs: [reported] } })),
+			getNodeInfo: vi.fn(async () => ({ l1ContractAddresses: { outboxAddress: "0x00000000000000000000000000000000000000ee" } })),
+		}
+		const l1 = { pub: { readContract }, wallet: {}, account: {} }
+		const consumed = () =>
+			isOutboxMessageConsumed(l1 as never, node as never, { txHash: "0xTX" }, { portal: PORTAL, messageHash: EXPECTED.toString() })
+		return { consumed, readContract, node, outboxes }
+	}
+
+	it("reads the Outbox the portal names, for the record's own message", async () => {
+		const { consumed, readContract, node, outboxes } = setup(EXPECTED)
+		await expect(consumed()).resolves.toBe(true)
+		expect(readContract).toHaveBeenCalledWith(expect.objectContaining({ address: PORTAL, functionName: "OUTBOX" }))
+		expect(outboxes).toEqual([BOUND])
+		expect(vi.mocked(computeL2ToL1MembershipWitness).mock.calls.at(-1)?.[2]).toEqual(EXPECTED)
+		expect(node.getNodeInfo).not.toHaveBeenCalled()
+	})
+
+	it("a transaction whose message is not the record's never reads as consumed", async () => {
+		const { consumed, readContract, outboxes } = setup(new Fr(0xbadn))
+		await expect(consumed()).resolves.toBe(false)
+		expect(readContract).not.toHaveBeenCalled()
+		expect(outboxes).toEqual([])
 	})
 })

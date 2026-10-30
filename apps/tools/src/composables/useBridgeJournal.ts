@@ -177,10 +177,6 @@ export type ClaimMaterial = { secretHex: string; envelope?: DepositEnvelopeV2 }
  *  is missing evidence (no material, no hash, a failed read) and always means "as today". */
 export type MessageState = "nullified" | "live" | "invalid" | "unknown"
 
-/** What finishing an exit on L1 can end in: our own consume transaction, or the discovery that
- *  someone else's already spent the message. */
-export type ConsumeOutcome = { consumeTxHash: string } | { consumedByOther: true }
-
 /**
  * Chain/wallet boundaries injected so the engine is unit-testable with plain fakes. Production
  * wiring lives in the composables that own the real clients (useSend / useHubExit) and passes these
@@ -246,13 +242,11 @@ export interface JournalEngineDeps {
 		send: () => Promise<{ txHash: string; registerTxHash?: string }>
 	}>
 	/** A schema-3 exit's L1 tail: the consume runs against the record's OWN portal clone, so it
-	 *  cannot share the single-portal dep above. `consumedByOther` reports the one outcome that has
-	 *  no transaction of ours behind it — the Outbox message was already spent when the consume
-	 *  failed, so the funds are out and there is nothing left to send. */
+	 *  cannot share the single-portal dep above. */
 	consumeSend?: (
 		rec: SendWithdrawRecord,
 		onProgress: (p: { provenBlock?: number; targetBlock?: number }) => void,
-	) => Promise<ConsumeOutcome>
+	) => Promise<{ consumeTxHash: string }>
 	/** The identity check for a rediscovered schema-3 consume tx (its `to` is the token's clone). */
 	verifyConsumeIdentitySend?: (rec: SendWithdrawRecord, txHash: string) => Promise<boolean>
 	/** Current Aztec block height (latest, not proven) - drives the sync countdown. */
@@ -2108,15 +2102,6 @@ function reportExitSearch(id: string, outcome: "none" | "ambiguous" | "incomplet
 	}
 }
 
-/** A message someone else consumed is DONE, not failed: it named this record's L1 recipient, so the
- *  funds landed where the burn said they would. Recorded as its own fact — no consume transaction of
- *  ours exists to show — and terminal, because retrying can only ever fail the same way. */
-function completeConsumedByOther(id: string): void {
-	patchRecord(id, { consumedByOther: true } as Partial<BridgeJournalRecord>)
-	completeWithdraw(engineRecords().find((r) => r.id === id) as ExitRecord | undefined)
-	log("exit finished by another caller - marking complete", id)
-}
-
 function noteProveProgress(id: string, p: { provenBlock?: number; targetBlock?: number }): void {
 	const rt = runtime.value[id]
 	const provenBlock = p.provenBlock ?? rt?.provenBlock
@@ -2146,9 +2131,7 @@ async function runWithdrawConsumeLocked(id: string): Promise<void> {
 	if (rec.consumeTxHash) return finishSubmittedConsume(rec, id)
 
 	setStep(id, "confirming", "waiting for the proven epoch, then one Ethereum confirmation")
-	const consumed = await exitConsume(rec, (p) => noteProveProgress(id, p))
-	if (consumed && "consumedByOther" in consumed) return completeConsumedByOther(id)
-	const consumeTxHash = (consumed as { consumeTxHash: string }).consumeTxHash
+	const { consumeTxHash } = (await exitConsume(rec, (p) => noteProveProgress(id, p))) as { consumeTxHash: string }
 	patchRecord(id, { consumeTxHash })
 	setStep(id, "confirming", "waiting for the Ethereum confirmation")
 	if (await deps.waitConsumeReceipt(consumeTxHash)) {
