@@ -1102,7 +1102,9 @@ function surfaceRunFailure(id: string, e: unknown): void {
 	const msg = humanizeWalletError(e instanceof Error ? e.message : String(e))
 	log("run failed:", id, msg)
 	if (!engineRecords().some((r) => r.id === id)) return
-	setRuntime(id, { attention: "error", note: `${msg}. Your funds are not lost — retry from this card.` })
+	// The app's own copy already ends its sentence; raw wallet and RPC messages usually do not.
+	const sentence = msg.endsWith(".") ? msg : `${msg}.`
+	setRuntime(id, { attention: "error", note: `${sentence} Your funds are not lost — retry from this card.` })
 }
 
 async function runDepositClaimInner(id: string, opts: ClaimRunOptions): Promise<void> {
