@@ -727,13 +727,14 @@ export function removeRecord(kv: KV, id: string): void {
 	}
 }
 
-/** Drop retirable records completed more than `olderThanMs` ago (the 7-day prune). A completion is as sound as what
- *  settled it: a claim transaction the node reported landed, or the wallet's simulate and the node agreeing that the
- *  message is spent. */
+/** Drop retirable records completed more than `olderThanMs` ago (the 7-day prune). A deposit that completed with no
+ *  claim transaction of ours (claimed by another, or settled from its spent message) rests on reads alone, and its
+ *  record holds the claim secret: it stays until the user clears it. */
 export function pruneCompleted(kv: KV, olderThanMs: number, now = Date.now()): void {
+	const settledByRead = (r: AnyJournalRecord) => r.direction === "deposit" && (r.claimedByOther === true || r.claimTxHash === undefined)
 	for (const lane of LANES) {
 		const records = loadLane(kv, lane)
-		const next = records.filter((r) => !isRetirable(r) || now - (r.completedAt ?? now) < olderThanMs)
+		const next = records.filter((r) => !isRetirable(r) || settledByRead(r) || now - (r.completedAt ?? now) < olderThanMs)
 		if (next.length !== records.length) writeLane(kv, lane, next)
 	}
 }

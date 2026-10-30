@@ -406,8 +406,8 @@ describe("load-time deep validation + quarantine", () => {
 describe("prune", () => {
 	it("pruneCompleted drops only old completed records", () => {
 		const kv = memKV()
-		upsertRecord(kv, deposit("0xold", { completedAt: 1000 }))
-		upsertRecord(kv, deposit("0xfresh", { completedAt: 9000 }))
+		upsertRecord(kv, deposit("0xold", { claimTxHash: "0xc", completedAt: 1000 }))
+		upsertRecord(kv, deposit("0xfresh", { claimTxHash: "0xc", completedAt: 9000 }))
 		upsertRecord(kv, deposit("0xinflight"))
 		pruneCompleted(kv, 5000, 10_000)
 		expect(
@@ -415,6 +415,24 @@ describe("prune", () => {
 				.map((r) => r.id)
 				.sort(),
 		).toEqual(["0xfresh", "0xinflight"])
+	})
+
+	it("the prune keeps an old deposit completion that names no claim transaction of ours", () => {
+		const kept = [
+			deposit("0xother", { claimedByOther: true, completedAt: 1000 }),
+			deposit("0xotherhashed", { claimTxHash: "0xc", claimedByOther: true, completedAt: 1000 }),
+			deposit("0xhashless", { claimAttempt: true, completedAt: 1000 }),
+		]
+		const kv = memKV()
+		for (const r of [...kept, deposit("0xours", { claimTxHash: "0xc", completedAt: 1000 }), withdraw("0xexit", { completedAt: 1000 })])
+			upsertRecord(kv, r)
+		upsertRecord(
+			kv,
+			crossChainRecord({ id: word("x1"), secretHashHex: word("x1"), leafIndex: "7", claimedByOther: true, completedAt: 1000 }),
+		)
+		pruneCompleted(kv, 5000, 10_000)
+		expect(ids(loadJournal(kv))).toEqual(ids(kept))
+		expect(ids(loadCrossChainJournal(kv))).toEqual([word("x1")])
 	})
 })
 
