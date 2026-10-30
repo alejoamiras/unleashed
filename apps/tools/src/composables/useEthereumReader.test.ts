@@ -135,6 +135,10 @@ describe("readClientFor — reads that need no wallet", () => {
 		expect(discoveryReadsFor(BASE_SEPOLIA)).toBeDefined()
 		expect(readClientFor(SEPOLIA)?.chain?.id).toBe(SEPOLIA)
 	})
+
+	it("builds every reader with ccipRead: false, so a read stays on the pinned RPCs", () => {
+		expect([readClientFor(SEPOLIA)?.ccipRead, readClientFor(BASE_SEPOLIA)?.ccipRead]).toEqual([false, false])
+	})
 })
 
 /**

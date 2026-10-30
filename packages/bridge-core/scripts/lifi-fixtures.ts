@@ -320,8 +320,8 @@ function label(name: string): Address {
 }
 
 async function recordTestnetRail(): Promise<string> {
-	const base = createPublicClient({ transport: http(BASE_SEPOLIA_RPC) })
-	const sepolia = createPublicClient({ transport: http(SEPOLIA_RPC) })
+	const base = createPublicClient({ transport: http(BASE_SEPOLIA_RPC), ccipRead: false })
+	const sepolia = createPublicClient({ transport: http(SEPOLIA_RPC), ccipRead: false })
 	const [srcChain, dstChain] = await Promise.all([base.getChainId(), sepolia.getChainId()])
 	if (srcChain !== TESTNET_RAIL.source.chainId || dstChain !== TESTNET_RAIL.destination.chainId) {
 		throw new Error(`RPC chain ids ${srcChain}/${dstChain}, expected Base Sepolia/Sepolia`)
@@ -378,7 +378,7 @@ async function recordTestnetRail(): Promise<string> {
 }
 
 async function chainHead(rpc: string, chainId: number): Promise<{ block: number; timestamp: number }> {
-	const client = createPublicClient({ transport: http(rpc) })
+	const client = createPublicClient({ transport: http(rpc), ccipRead: false })
 	const actual = await client.getChainId()
 	if (actual !== chainId) throw new Error(`RPC ${rpc} is chain ${actual}, expected ${chainId}`)
 	const pinned = await pinnedBlock(client)

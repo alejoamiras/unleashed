@@ -28,9 +28,14 @@ Aztec version cannot use this release.
 import { parseNetwork, type Reads } from "@unleashed/sdk"
 import { TESTNET_MANIFEST } from "@unleashed/sdk/networks"
 
+const publicClient = createPublicClient({ transport: http(l1RpcUrl), ccipRead: false })
 const reads: Reads = { l1: publicClient, aztecNode: createAztecNodeClient(aztecNodeUrl) }
 const net = await parseNetwork(TESTNET_MANIFEST, reads)
 ```
+
+Build `Reads.l1` with `ccipRead: false`, so a token read never leaves your RPC for an EIP-3668 off-chain lookup.
+`resolveToken` and the deposits refuse any other client (`invalid-request`, nothing sent), and `readErc20Metadata`
+rejects it before any call.
 
 Every call that signs takes a `Network` and refuses one `parseNetwork` did not build. `parseNetwork` refuses
 (`BridgeError`, nothing sent) a manifest that:
@@ -176,8 +181,9 @@ by hand) or `incomplete`. A claim reports `claim-dropped` and `claim-reverted` w
 
 ## Content Security Policy
 
-The SDK connects only where you point it: your Ethereum RPC (`Reads.l1`), your Aztec node (`Reads.aztecNode`), and,
-on a network without a pinned swapper, `https://li.quest` (keyless, through `Reads.fetch` or the global `fetch`).
+The SDK connects only where you point it: your Ethereum RPC (`Reads.l1`, built with `ccipRead: false`), your Aztec
+node (`Reads.aztecNode`), and, on a network without a pinned swapper, `https://li.quest` (keyless, through
+`Reads.fetch` or the global `fetch`).
 Its Poseidon2 hashes run in `@aztec-foundation/bb.js`'s WebAssembly, which it fetches from a `data:` URL: `connect-src`
 needs those three origins and `data:`, and `script-src` needs `'wasm-unsafe-eval'`, as any aztec.js page does.
 

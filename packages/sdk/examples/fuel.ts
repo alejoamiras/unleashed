@@ -42,7 +42,10 @@ export async function buyGas(p: {
 	/** Stores the record, and the salts sealed apart from it, before the call goes on. */
 	persist: RunOptions["persist"]
 }): Promise<ClaimOutcome> {
-	const reads: Reads = { l1: createPublicClient({ transport: http(p.l1Rpc) }), aztecNode: createAztecNodeClient(p.aztecNodeUrl) }
+	const reads: Reads = {
+		l1: createPublicClient({ transport: http(p.l1Rpc), ccipRead: false }),
+		aztecNode: createAztecNodeClient(p.aztecNodeUrl),
+	}
 	const net = await parseNetwork(TESTNET_MANIFEST, reads)
 	const quote = await quoteFuel(net, reads, {
 		token: p.token,

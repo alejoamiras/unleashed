@@ -152,6 +152,26 @@ describe("the events of a deposit", () => {
 			code: "invalid-request",
 		})
 		expect([entries.length, log.length]).toEqual([0, 0])
+		// An `l1` client that would resolve an off-chain lookup is refused before any read, persist or wallet step.
+		for (const ccipRead of [undefined, { request: async () => "0x" }]) {
+			const touched: string[] = []
+			const l1 = new Proxy(r.l1 as object, {
+				get(target, key) {
+					if (key === "ccipRead") return ccipRead
+					const value = Reflect.get(target, key)
+					if (typeof value !== "function") return value
+					return (...args: unknown[]) => {
+						touched.push(String(key))
+						return value(...args)
+					}
+				},
+			})
+			await expect(depositToken(net, { ...r, l1: l1 as never }, walletOf(log, net.l1ChainId), quote, run)).rejects.toMatchObject({
+				code: "invalid-request",
+				retry: "never",
+			})
+			expect([touched, entries.length, log.length]).toEqual([[], 0, 0])
+		}
 		const record = await depositToken(net, r, walletOf(log, net.l1ChainId), quote, run)
 		expect(events().map((e) => e.type)).toEqual(["prepared", "signature-requested", "deposit-sent", "deposit-confirmed"])
 		assertPersistedFirst(entries)
