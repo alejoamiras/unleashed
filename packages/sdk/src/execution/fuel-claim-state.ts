@@ -31,7 +31,7 @@ export interface FuelClaimEvidence {
 	fuelReceived?: bigint
 	/** The network's current minimum claim fee (base units), when known. */
 	currentMinFee?: bigint
-	/** Durable "the FJ message was consumed by our attempt" - persisted once seen, so a later
+	/** Durable "the FJ message was consumed" (by our attempt, or corroborated spent) - persisted once seen, so a later
 	 *  UNREACHABLE node (receiptStatus probe returns `pending`) cannot strand a known consumption
 	 *  in `wait` forever. A conclusive `dropped` receipt still overrides it. */
 	consumed?: boolean
@@ -76,6 +76,9 @@ export function decideFuelClaim(e: FuelClaimEvidence): FuelClaimDecision {
 	// escape resolves it safely - own gas works whether or not the unknown tx consumed the fuel).
 	if (e.attempt) return e.consumed ? { action: "own-gas", offerManual: false } : { action: "wait", offerManual }
 
+	// A message spent with no attempt of ours (another device's claim, corroborated by a failing simulate) is gone too.
+	if (e.consumed) return { action: "own-gas", offerManual: false }
+
 	// Trigger 2 - fee insufficiency from two record-local quantities: the claimed fuel cannot
 	// cover its own claim tx. Claim the token from the wallet's own gas AND land the FJ as balance standalone.
 	if (e.fuelReceived !== undefined && e.currentMinFee !== undefined && e.fuelReceived < e.currentMinFee * FUEL_FEE_MARGIN) {
@@ -111,7 +114,7 @@ export interface PrivateFuelClaimEvidence {
 	txHashKnown: boolean
 	/** The attempt tx's receipt state, when a hash is known and probed. */
 	receiptStatus?: FuelReceiptStatus
-	/** Durable "the FJ message was consumed by our included attempt". */
+	/** Durable "the FJ message was consumed" (by our included attempt, or corroborated spent). */
 	consumed?: boolean
 	/** The last send threw the exact `mint_and_pay_fee` insufficiency assert (pre-inclusion, no hash).
 	 *  This is the ONLY retryable no-hash signal - the narrow allow-list (string-matched, no typed selector). */
@@ -131,7 +134,8 @@ export const PRIVATE_ATTEMPT_STALE_MS = 15 * 60_000
 export function decidePrivateFuelClaim(e: PrivateFuelClaimEvidence): { action: PrivateFuelClaimAction } {
 	if (e.attempt && e.txHashKnown) return decideHashedAttempt(e)
 	if (e.attempt) return decideHashlessAttempt(e)
-	return { action: "private-fpc" } // fresh record ⇒ first private claim attempt
+	// Spent with no attempt of ours: another device's claim, corroborated by a failing simulate.
+	return e.consumed ? { action: "consumed" } : { action: "private-fpc" }
 }
 
 /** Attempt latched AND the tx hash is known — receipt evidence drives the call. */

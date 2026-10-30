@@ -1241,10 +1241,10 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		expect(sdk.calls).toHaveLength(1)
 	})
 
-	it("a marked record is verified by a watching call: the chain's word settles it; a marker the chain drops ends the run quietly", async () => {
+	it("a watching call leaves a marked record open and drops a marker the chain contradicts", async () => {
 		const sdk = fakeClaimSdk()
 		sdk.script("token", async (c) => {
-			if (c.record.id === "0xtrue") return c.settle("claimed-elsewhere")
+			if (c.record.id === "0xtrue") throw bridgeError("needs-prompt")
 			await c.persist({ claimedByOther: undefined })
 			// Whatever the watch meets after the marker is gone, the ordinary claim is the record's next step.
 			throw bridgeError("message-timeout")
@@ -1253,28 +1253,22 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		addRecord(mkSend("0xtrue", { claimedByOther: true }))
 		addRecord(mkSend("0xfalse", { claimedByOther: true }))
 		resumeSessionWork()
-		await vi.waitFor(() => expect(depositOf("0xtrue")?.completedAt).toBeDefined())
 		await vi.waitFor(() => expect(depositOf("0xfalse")?.claimedByOther).toBeUndefined())
-		await vi.waitFor(() => expect(rt("0xfalse")?.busy).toBe(false))
+		await vi.waitFor(() => expect([rt("0xtrue")?.busy, rt("0xfalse")?.busy]).toEqual([false, false]))
 		expect(sdk.calls.map((c) => [c.view.id, c.run.watchOnly])).toEqual([
 			["0xtrue", true],
 			["0xfalse", true],
 		])
-		expect(rt("0xfalse")).toMatchObject({ attention: undefined, note: undefined })
+		expect([depositOf("0xtrue")?.completedAt, depositOf("0xtrue")?.claimedByOther]).toEqual([undefined, true])
+		for (const id of ["0xtrue", "0xfalse"]) expect(rt(id)).toMatchObject({ attention: undefined, note: undefined })
 		expect(depositOf("0xfalse")?.completedAt).toBeUndefined()
 	})
 
-	it("a click on a record whose tokens another claimed claims the gas they left through the gas entry; a resume leaves it", async () => {
+	it("a click on a marked record runs one non-watching token call after the watch; a resume leaves it open", async () => {
 		const sdk = fakeClaimSdk()
-		const gasOf = (c: { record: DepositRecord }) => c.record.fuel as NonNullable<DepositRecord["fuel"]>
 		sdk.script("token", async (c) => {
-			if (gasOf(c).consumed) return c.settle("claimed-elsewhere")
-			c.emit({ type: "claim-landed", via: "claimed-elsewhere" })
-			throw bridgeError("needs-prompt")
-		})
-		sdk.script("fuel", async (c) => {
-			await c.persist({ fuel: { ...gasOf(c), consumed: true } })
-			return { record: c.record, via: "claim" as const }
+			if (c.run.watchOnly) throw bridgeError("needs-prompt")
+			return c.settle("claimed-elsewhere")
 		})
 		connectJournalDeps(claimDeps(kv, sdk))
 		addRecord(mkFueled("0xresumed", { claimedByOther: true }))
@@ -1283,14 +1277,13 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		expect(depositOf("0xresumed")?.completedAt).toBeUndefined()
 		addRecord(mkFueled("0xclicked", { claimedByOther: true }))
 		await runDepositClaim("0xclicked")
-		// The token entry only ever watches: whatever the chain says between passes, the click sends no token claim.
+		// The SDK's one call settles the tokens and claims the gas they left: the app makes no gas call of its own.
 		expect(sdk.calls.map((c) => [c.view.id, c.entry, c.run.watchOnly])).toEqual([
 			["0xresumed", "token", true],
 			["0xclicked", "token", true],
-			["0xclicked", "fuel", false],
-			["0xclicked", "token", true],
+			["0xclicked", "token", false],
 		])
-		expect(depositOf("0xclicked")?.completedAt).toBeDefined()
+		expect([depositOf("0xclicked")?.completedAt !== undefined, depositOf("0xclicked")?.claimedByOther]).toEqual([true, true])
 	})
 
 	it("a marked private record: a resume without its material reads nothing; a click unseals once and verifies", async () => {
@@ -1392,20 +1385,24 @@ describe("useBridgeJournal - a claim on the SDK's entries", () => {
 		expect(depositOf("0xdone")?.fuel?.consumed).toBe(true)
 	})
 
-	it("the card's gas claim finishes a record another submitter's claim left open, and throws its failure's words", async () => {
+	it("the card's gas claim finishes the record through a non-watching token call, and throws its failure's words", async () => {
 		const sdk = fakeClaimSdk()
 		sdk.script(
 			"fuel",
 			async (c) => ({ record: c.record, via: "claim" as const }),
 			failsWith(bridgeError("fee-stop", { stop: "fuel-short" })),
 		)
-		sdk.script("token", (c) => c.settle("claimed-elsewhere"))
+		sdk.script("token", async (c) => {
+			if (c.run.watchOnly) throw bridgeError("needs-prompt")
+			return c.settle("claimed-elsewhere")
+		})
 		connectJournalDeps(claimDeps(kv, sdk))
 		addRecord(mkFueled("0xleft", { claimedByOther: true }))
 		await runGasClaim("0xleft")
 		expect(sdk.calls.map((c) => [c.entry, c.run.watchOnly])).toEqual([
 			["fuel", false],
 			["token", true],
+			["token", false],
 		])
 		expect(depositOf("0xleft")?.completedAt).toBeDefined()
 		addRecord(mkFueled("0xshort", { completedAt: 5 }))
