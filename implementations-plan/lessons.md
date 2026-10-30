@@ -5,6 +5,7 @@ What already bit this repository, one line each, linking to the detail. Read it 
 - A new worktree lacks the gitignored `contracts/bridge/evm/{lib,out,cache}`, so the sandbox cannot boot: run the README's pinned `forge install` lines, each with `--no-git` (else a commit ships gitlinks), or copy `lib/` only; a copied cache names the other checkout ([phase 4](archive/unleashed-reskin/lessons/phase-4.md)).
 - A native TXE oracle crash (`Napi::Error`) mid-suite turns every later hub test into "Failed calling external resolver": re-run that block alone before suspecting code.
 - Tree-mode `git grep` skips symlink blobs; a scan of every byte a push sends reads the objects (`git cat-file --batch`), replacement refs off.
+- A fake that holds an async call forever never meets the races its writes open: let it write first ([a6](archive/sdk-1/lessons/phase-6.md)).
 - Under `set -o pipefail`, `producer | grep -q` can SIGPIPE the producer: capture its output, then grep it.
 - Vite inlines assets under `assetsInlineLimit` (4096 B) as `data:` URIs, font subsets included: keep the build's guard ([phase 1](archive/unleashed-reskin/lessons/phase-1.md)).
 - `--ul-notch` inherits, so every notch host declares both `--ul-fill` and `--ul-notch`; the fill is an absolute `::before` on the padding box, so a notch host cannot scroll ([phase 3](archive/unleashed-reskin/lessons/phase-3.md)).
@@ -28,7 +29,6 @@ What already bit this repository, one line each, linking to the detail. Read it 
 - Anvil can answer a send before its block is queryable: wait for the receipt, never read once ([phase 9](archive/lifi-routing/lessons/phase-9.md)).
 - Overlapping runs held at their first broadcast sign one transaction at one nonce, proving nothing about interleaving: hold a run at a named write (`functionName`) ([phase 5](archive/relayer-1/lessons/phase-5.md)).
 - Bun accepts `fetch` options workerd rejects (`redirect: "error"`: use `"manual"`), and a `wrangler deploy --dry-run` bundle test executes nothing: assert exact options in unit tests, checked against workerd's docs (wrangler 4.129.1, [a3](archive/relayer-1/lessons/phase-a3.md)).
-- Workers Builds can put the branch name in `WORKERS_CI_COMMIT_SHA` (the first build after an import): trust only a 40-hex SHA, else `git rev-parse HEAD`, else fail ([phase 6](archive/landing/lessons/phase-6.md)).
 - Workers Builds' import opens a pull request (automatic configuration) when its root directory has no Wrangler file: set it to the app's own directory ([phase 6](archive/landing/lessons/phase-6.md)).
 - Software-rendered WebKit here starves past about eight parallel pages or under load, failing other canvas-timing cases each run: compare a control host ([phase 7](archive/landing/lessons/phase-7.md)).
 - A Single Redirect runs before a Worker custom domain, so attach under a live rule and toggle it; only `PUT …/workers/scripts/<name>/domains/records` with `override_existing_dns_record` replaces a DNS record ([phase 7](archive/landing/lessons/phase-7.md)).

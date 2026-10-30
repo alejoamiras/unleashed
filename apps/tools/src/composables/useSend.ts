@@ -9,9 +9,6 @@
  * anything is claimed against it.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { Fr } from "@aztec-labs/aztec.js/fields"
-import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { TxHash } from "@aztec-labs/aztec.js/tx"
 import { type SendDepositRecord, type SiteKey, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
 import {
 	type DepositRecord,
@@ -24,32 +21,23 @@ import {
 import {
 	type DepositPlan,
 	type Registration,
-	type SendOpts,
 	type SendStage,
 	assertDepositsOpen,
 	depositL1,
-	probeHubClaim,
-	claimViaHub,
-	hubAt,
-	hubTokenFor,
-	l1ToL2MessageReadiness,
 	readRegistration,
-	classifyClaimReceipt,
-	findDepositTx,
-	hubMessageState,
 } from "@unleashed/sdk/internal"
-import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret } from "@unleashed/sdk/protocol"
+import { claimToken } from "@unleashed/sdk/bridge"
+import { claimFuel } from "@unleashed/sdk/fuel"
+import { deriveBridgeSecret } from "@unleashed/sdk/protocol"
 import { type PublicClient, WaitForTransactionReceiptTimeoutError, type WalletClient } from "viem"
 import { type Ref, effectScope, ref, watch } from "vue"
 import {
 	FUEL_PORTAL,
 	HUB,
-	LEGACY_ROUTERS,
 	MANIFEST_CHAIN,
 	SEND_GENERATION,
 	TOKEN_CLASS_ID,
 	bridgeNetwork,
-	hubArtifact,
 	rebuildHubTokenInstance,
 } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"
@@ -66,8 +54,7 @@ import { appWatchDeps } from "./crosschain-deposit-flow"
 import { resumeCrossChainWatches } from "./crosschain-watch"
 import { readClientFor } from "./useEthereumReader"
 import { GAS_QUOTE_MOVED } from "./useFuelQuote"
-import { reconcileFuelConsumed, fuelOverrideActive, launchStandaloneFuelClaim } from "./fuel-recovery"
-import { resolveToolsTarget } from "@/lib/network-targets"
+import { fuelOverrideActive } from "./fuel-recovery"
 import {
 	type ClaimRecord,
 	addRecordVerified,
@@ -86,30 +73,16 @@ import {
 	useBridgeJournal,
 	markGrantOutcome,
 } from "./useBridgeJournal"
-import {
-	type HubClaimFee,
-	buildFeeJuiceClaimDep,
-	failStopInteraction,
-	recoverDepositLeg,
-	resolveHubClaimSendOpts,
-	sealPrivateRecord,
-} from "./deposit-flow"
+import { sealPrivateRecord } from "./deposit-flow"
+import { claimContextOf } from "./claim-context"
 import { useBridgeWallet } from "./useBridgeWallet"
 import { useL1Wallet } from "./useL1Wallet"
 import { withOperation } from "./useOpsInFlight"
-import {
-	contractsReadinessRefusal,
-	requestHubToken,
-	retainPinnedHubTokens,
-	retryOnUnregistered,
-	useWalletConnection,
-} from "./useWalletConnection"
+import { contractsReadinessRefusal, requestHubToken, retainPinnedHubTokens, useWalletConnection } from "./useWalletConnection"
 import { useTokenGrant } from "./useTokenGrant"
 
 // Ids, stages and tx hashes ONLY - secrets, salts, amounts and addresses never reach this log.
 const log = (...args: unknown[]) => console.log("[bridge:send]", ...args)
-
-const NODE_URL = NETWORK.nodeUrl
 
 // The finalized-envelope re-seal key, held in memory only for records this session sealed.
 const sealKeys = new Map<string, SiteKey>()
@@ -174,37 +147,10 @@ export function ensureSendJournalDeps(): void {
 		sendBinding: sendBindingOf,
 		validateTokenBlock: (token) => validateTokenBlock(token, l1),
 		ensureTokenGrant: (token) => grantForBlock(token),
-		claimSend: (rec, claimValueHex, envelope) => buildHubClaim({ rec, claimValueHex, sealedSalt: envelope?.salt }, bridgeWallet),
-		// The only deposit that does NOT go through the hub is a gas-only one: it claims Fee Juice.
-		claim: async (rec, secretHex, envelope) => {
-			const aztec = bridgeWallet.wallet.value
-			if (!aztec) throw new Error("Connect your Aztec wallet first.")
-			return buildFeeJuiceClaimDep(rec, secretHex, envelope, aztec, (op) => retryOnUnregistered(bridgeWallet, aztec, op))
-		},
-		recoverDepositLeg: (rec) => recoverDepositLeg(rec, l1.publicClient as never, SEND_GENERATION),
-		findDepositTx: (rec) =>
-			SEND_GENERATION
-				? findDepositTx(rec, l1.publicClient as never, {
-						chainId: MANIFEST_CHAIN.l1ChainId,
-						router: SEND_GENERATION.router,
-						legacyRouters: LEGACY_ROUTERS,
-						privateFpc: PRIVATE_FPC_ADDRESS,
-						chainEpoch: () => l1.chainChanges.value,
-					})
-				: Promise.resolve("incomplete" as const),
+		claimEntries: { token: claimToken, fuel: claimFuel },
+		claimContext: ({ recipient, watchOnly }) => claimContextOf(bridgeWallet, l1, recipient, watchOnly),
+		withoutGas: fuelOverrideActive,
 		retainPinnedTokens: (needed) => retainPinnedHubTokens(needed),
-		l2BlockNumber: async () => Number(await createAztecNodeClient(NODE_URL).getBlockNumber()),
-		messageReadiness: (messageHash) => messageReadiness(messageHash),
-		messageNullified: (rec, material) =>
-			hubMessageState(
-				rec,
-				material,
-				resolveToolsTarget(),
-				async (nullifier) =>
-					(await createAztecNodeClient(NODE_URL).getNullifierMembershipWitness("checkpointed", nullifier)) !== undefined,
-			),
-		reconcileFuel: (id) => reconcileFuelConsumed(id),
-		claimReceiptStatus: (txHash) => claimReceiptStatus(txHash),
 		locks: webJournalLocks(),
 	})
 	// Reads only: a transfer still crossing from another chain is watched without any wallet.
@@ -216,19 +162,6 @@ function signL1With(l1: ReturnType<typeof useL1Wallet>, message: string): Promis
 	const account = l1.address.value
 	if (!wallet || !account) throw new Error("Connect your Ethereum wallet first.")
 	return wallet.signMessage({ account, message } as never) as Promise<string>
-}
-
-const messageReadiness = (messageHash: string) => l1ToL2MessageReadiness(createAztecNodeClient(NODE_URL), messageHash)
-
-async function claimReceiptStatus(txHash: string) {
-	try {
-		const receipt = await createAztecNodeClient(NODE_URL).getTxReceipt(TxHash.fromString(txHash))
-		return classifyClaimReceipt(receipt as { status?: unknown; executionResult?: unknown })
-	} catch (e) {
-		// A dead RPC must read as connectivity, never as a slow claim.
-		log("receipt lookup failed:", e instanceof Error ? e.message : String(e))
-		return "unreachable" as const
-	}
 }
 
 /** The register key/index are compared only when the block declares them: a record written before
@@ -305,91 +238,6 @@ function grantForBlock(token: JournalTokenBlock) {
 		},
 		() => 0,
 	)
-}
-
-type HubHandles = { simulate: () => Promise<unknown>; send: () => Promise<{ txHash: string; registerTxHash?: string }> }
-
-/** A stop from the fee ladder reaches the engine as a failing interaction, exactly as it does on
- *  the token-bridge claim: the engine surfaces the reason on the card and never sends. */
-const stopHandles = (fee: Extract<HubClaimFee, { kind: "stop" }>): HubHandles => failStopInteraction(fee.why, fee.sendWhy) as HubHandles
-
-/** `sealedSalt` is the gas salt the engine unsealed from this record's envelope — authenticated,
- *  unlike the journal's plaintext copy, and so the one the private fee ladder rebuilds from. */
-async function buildHubClaim(
-	claim: { rec: SendDepositRecord; claimValueHex: string; sealedSalt?: string },
-	bridgeWallet: ReturnType<typeof useBridgeWallet>,
-): Promise<HubHandles> {
-	const { rec, claimValueHex, sealedSalt } = claim
-	const aztec = bridgeWallet.wallet.value
-	if (!aztec || !HUB) throw new Error("Connect your Aztec wallet first.")
-	const recipientAddr = AztecAddress.fromStringUnsafe(rec.recipient)
-	const hub = hubAt(aztec as never, HUB.toString(), await hubArtifact())
-	// Whether THIS claim registers the token is a live fact (someone may have registered it since
-	// the send): it decides which transaction spends the fuel, and what a claim from held gas sets
-	// aside; the hub re-checks at send time.
-	const registers = (await hubTokenFor(hub, (rec.token as JournalTokenBlock).erc20, rec.recipient)) === undefined
-	const fee = await resolveHubClaimSendOpts({
-		rec,
-		recipientAddr,
-		aztec,
-		sealedSalt,
-		userOverride: fuelOverrideActive(rec.id),
-		registers,
-	})
-	if (fee.kind === "stop") return stopHandles(fee)
-	const params = {
-		token: rec.token as JournalTokenBlock,
-		recipient: rec.recipient,
-		amount: BigInt(rec.amount),
-		claimValue: Fr.fromString(claimValueHex),
-		leafIndex: BigInt(rec.leafIndex ?? "0"),
-		isPrivate: rec.isPrivate,
-		from: rec.recipient,
-	}
-	return {
-		simulate: () => probeHubClaim(hub, params, fee.opts, aztec, (op) => retryOnUnregistered(bridgeWallet, aztec, op)),
-		send: async () => {
-			const { seams, fuelOnRegistration } = hubClaimSeams(rec.id, fee)
-			try {
-				const outcome = await claimViaHub(hub, params, { ...fee.opts, ...seams })
-				if (!fuelOnRegistration()) fee.onTxHash?.(outcome.claimTxHash)
-				// The ladder left the bridged Fee Juice for a transaction of its own; fire it now the
-				// claim is away, or the gas never arrives.
-				if (fee.standalone) void launchStandaloneFuelClaim(rec.id, aztec, recipientAddr, fee.standalone)
-				return { txHash: outcome.claimTxHash, registerTxHash: outcome.registerTxHash }
-			} catch (e) {
-				fee.onFailure?.(e)
-				throw e
-			}
-		},
-	}
-}
-
-/** The seams a hub claim hands to bridge-core: the fuel's attempt and hash latch against the
- *  transaction that actually spends it — the registration when the ladder put the fuel there and
- *  this call did register, else the claim — and the registration is journalled the moment its hash
- *  exists, with the wait for the claimer's own view narrated in between. */
-function hubClaimSeams(id: string, fee: Extract<HubClaimFee, { kind: "opts" }>) {
-	let registeredHere = false
-	const fuelOnRegistration = () => registeredHere && fee.fuelOnRegister === true
-	const seams: SendOpts = {
-		// The wallet hands the registration's receipt back before it is mined; the node says how it ended.
-		receiptOf: (txHash) => createAztecNodeClient(NODE_URL).getTxReceipt(TxHash.fromString(txHash)),
-		onRegisterSend: () => {
-			if (fee.fuelOnRegister) fee.onAttempt?.()
-		},
-		onRegistered: (registerTxHash: string) => {
-			registeredHere = true
-			if (fee.fuelOnRegister && fee.onRegistered) fee.onRegistered(registerTxHash)
-			else updateRecord(id, { registerTxHash } as never)
-			setRecordStep(id, "sending", "registered — preparing the claim")
-		},
-		onClaimSend: () => {
-			if (!fuelOnRegistration()) fee.onAttempt?.()
-			if (registeredHere) setRecordStep(id, "sending", "confirm the claim in your Aztec wallet")
-		},
-	}
-	return { seams, fuelOnRegistration }
 }
 
 interface SendActors {

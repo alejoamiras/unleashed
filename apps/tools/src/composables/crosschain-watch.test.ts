@@ -2,15 +2,15 @@
 import {
 	type CrossChainDiscovery,
 	type CrossChainOutcome,
-	type DepositEnvelopeV2,
 	deriveCrossChainDepositStage,
 	keyTextOf,
 	openDepositEnvelope,
 	openDepositEnvelopeV3,
 	RecoveryKey,
 	sealDepositEnvelopeV3,
-	type SendDepositRecord,
 } from "@unleashed/bridge-core"
+import { BridgeError, type DepositRecord } from "@unleashed/sdk"
+import type { ClaimOptions } from "@unleashed/sdk/fuel"
 import { recoveryBindingOf } from "@/lib/send-record"
 import { predictPortal } from "@unleashed/sdk/protocol"
 import type { Hex } from "viem"
@@ -19,6 +19,7 @@ import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, SEPOLIA
 import { type CrossChainReads, type CrossChainWallet, crossChainSealKey, sendCrossChain } from "./crosschain-deposit-flow"
 import { type CrossChainWatchDeps, resumeCrossChainWatches, watchCrossChain } from "./crosschain-watch"
 import {
+	type ClaimEntry,
 	type ClaimRecord,
 	__resetJournalForTests,
 	connectJournalDeps,
@@ -196,29 +197,28 @@ describe("the cross-chain watcher", () => {
 		const sealedV3 = currentCrossChainRecord(id)?.sealedEnvelope
 		if (!key || !sealedV3) throw new Error("the record must be sealed")
 		const hub = currentCrossChainRecord(id)?.bridge as string
-		const builtFor: { leafIndex?: string; sealed?: string }[] = []
-		const claimSend = vi.fn(async (rec: SendDepositRecord, _value: string, envelope?: DepositEnvelopeV2) => {
-			builtFor.push({ leafIndex: rec.leafIndex, sealed: envelope?.leafIndex })
-			return { simulate: async () => {}, send: () => new Promise<never>(() => {}) }
+		// The claim waits at its arrival gate until the engine stops it: only leaf 9's messages would ever arrive.
+		const builtFor: (string | undefined)[] = []
+		const claimToken = vi.fn(async (_net: unknown, _r: unknown, _a: unknown, view: DepositRecord, run: ClaimOptions) => {
+			builtFor.push(view.leafIndex)
+			run.onEvent?.({ id: view.id, seq: 1, type: "arrival", stage: "unfolded" })
+			return new Promise<never>((_, reject) =>
+				run.signal?.addEventListener("abort", () => reject(new BridgeError("aborted", "stopped", "submitted", "after-wait"))),
+			)
 		})
-		// Only the messages of the deposit at leaf 9 ever reach Aztec: leaf 7's fill was reorged away.
-		const messageReadiness = vi.fn(async (h: string) =>
-			h === hashOf(80) || h === hashOf(81) ? { checkpoint: 1, anchor: 1 } : { checkpoint: 5, anchor: 0 },
-		)
-		const gateWaits: (() => void)[] = []
 		const signL1 = vi.fn(async (m: string) => signatureOf(m))
+		const pollWaits: (() => void)[] = []
 		connectJournalDeps({
 			kv: storage,
 			signL1,
+			waitMs: () => new Promise<void>((r) => pollWaits.push(r)),
 			connectedL1: () => USER,
 			connectedAztec: () => ask().recipient,
 			sendBinding: () => ({ ...LANE, hub }),
 			validateTokenBlock: async () => null,
 			ensureTokenGrant: async () => "granted",
-			claimSend,
-			claimReceiptStatus: async () => "pending",
-			messageReadiness,
-			waitMs: () => new Promise<void>((r) => gateWaits.push(r)),
+			claimEntries: { token: claimToken as unknown as ClaimEntry, fuel: vi.fn() },
+			claimContext: async () => ({ reads: {} as never, aztec: {} as never, network: async () => ({}) as never }),
 		})
 		const verdicts = [
 			deposited("4500000", { leaf: 7, final: false }),
@@ -240,19 +240,16 @@ describe("the cross-chain watcher", () => {
 		})
 
 		// The claim starts at the first deposit and waits for leaf 7's message; the envelope keeps its window.
-		await vi.waitFor(() => expect(messageReadiness).toHaveBeenCalledWith(hashOf(78)))
+		await vi.waitFor(() => expect(builtFor).toEqual(["7"]))
 		expect(currentCrossChainRecord(id)?.sealedEnvelope).toBe(sealedV3)
 
-		// Discovery finds the fill again at leaf 9: the waiting claim notices and is rebuilt from the new facts, its
-		// material included.
+		// Discovery finds the fill again at leaf 9: at its next poll the waiting claim is stopped and rebuilt from the
+		// new facts, its material included (cached for leaf 9 by discovery, or unsealed again).
 		await next(2)
 		await vi.waitFor(() => expect(roundWaits).toHaveLength(1))
-		for (const r of gateWaits.splice(0)) r()
-		await vi.waitFor(() => expect(claimSend).toHaveBeenCalledTimes(2))
-		expect(builtFor).toEqual([
-			{ leafIndex: "7", sealed: "7" },
-			{ leafIndex: "9", sealed: "9" },
-		])
+		await vi.waitFor(() => expect(pollWaits.length).toBeGreaterThan(0))
+		for (const r of pollWaits.splice(0)) r()
+		await vi.waitFor(() => expect(builtFor).toEqual(["7", "9"]))
 		expect(signL1).toHaveBeenCalledTimes(inMemory ? 0 : 2)
 		expect(currentCrossChainRecord(id)?.sealedEnvelope).toBe(sealedV3)
 

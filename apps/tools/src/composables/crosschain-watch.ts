@@ -32,6 +32,7 @@ import {
 	markRecordChecked,
 	setRecordStep,
 	storedCrossChainRecords,
+	underJournalLock,
 	updateCrossChainRecord,
 } from "./useBridgeJournal"
 import { readClientFor } from "./useEthereumReader"
@@ -83,10 +84,12 @@ async function useSealKey(rec: CrossChainDepositRecord, key: RecoveryKey | undef
 	cacheSecret(rec.id, v3.secret, { v: 2, secret: v3.secret, sealerL1: v3.sealerL1, ...deposited, ...(v3.salt ? { salt: v3.salt } : {}) })
 	if (!rec.route.depositFinal) return
 	const exact = await resealExactEnvelope(key, v3, deposited)
-	updateCrossChainRecord(
-		rec.id,
-		{ sealedEnvelope: exact },
-		(current) => current.sealedEnvelope === rec.sealedEnvelope && depositKey(current) === depositKey(rec),
+	await underJournalLock(() =>
+		updateCrossChainRecord(
+			rec.id,
+			{ sealedEnvelope: exact },
+			(current) => current.sealedEnvelope === rec.sealedEnvelope && depositKey(current) === depositKey(rec),
+		),
 	)
 }
 
@@ -110,8 +113,8 @@ export async function watchRound(id: string, deps: CrossChainWatchDeps): Promise
 		return "again"
 	}
 	markRecordChecked(id, deps.now())
-	// Computed from the copy the write merges into: the claim lanes may have written since this run read.
-	const written = updateCrossChainRecord(id, (current) => discoveryPatch(current, d, deps.now()) ?? {})
+	// Computed from the copy the write merges into, under the journal lock: a claim may be writing this record.
+	const written = await underJournalLock(() => updateCrossChainRecord(id, (current) => discoveryPatch(current, d, deps.now()) ?? {}))
 	if (!written) return "done"
 	// The flow flags a send the wallet took without answering; once discovery finds it, it is in flight again.
 	if (!handedOver(rec) && handedOver(written)) clearRecordError(id)
