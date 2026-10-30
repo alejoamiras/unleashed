@@ -1,4 +1,3 @@
-import type { EncryptionKey } from "@nulo-sh/wallet-crypto"
 import {
 	type AnyJournalRecord,
 	type BridgeJournalRecord,
@@ -13,33 +12,47 @@ import {
 	isProvisionalWithdrawId,
 } from "./journal"
 import type { JournalTokenBlock } from "@unleashed/sdk"
-import { openSecret, sealSecret } from "./recovery-crypto"
+import { type KeyText, type RecoveryKey, type SiteKey, keyTextOf } from "./recovery-crypto"
 
 /**
  * Per-bridge recovery file: ONE journal record, ALWAYS sealed (public deposits hold their claim
- * secret plaintext in the record - it must never touch disk readable). The header carries
- * routing/UX copies of a few fields; it is NOT authenticated, so every header field is re-checked
- * against the unsealed record on open, and an unseal failure cannot be attributed - it reads as
- * "wrong wallet OR tampered/corrupted file". v1-only open (the envelope's no-fallback rule).
+ * secret plaintext in the record - it must never touch disk readable). The header carries the
+ * routing fields the restore needs to build the key's text before its one signature; it is NOT
+ * authenticated, so every header field is re-checked against the unsealed record on open, and an
+ * unseal failure cannot be attributed - it reads as "wrong wallet OR tampered/corrupted file".
  */
 
 export const BACKUP_FORMAT = "unleashed-bridge-backup"
 
-export interface BridgeBackupFile {
+interface BackupHeader {
 	format: typeof BACKUP_FORMAT
-	v: 1
 	chainId: number
 	portal: string
 	bridge: string
 	direction: "deposit" | "withdraw"
 	id: string
-	/** Captured at export (NOT a journal field for public/withdraw records) - display + routing only. */
-	sealerL1: string
 	blob: string
 }
 
+/** Format 2, the only one written: sealed under a site key and names no account; the account whose
+ *  signature made that key restores it. */
+export interface BridgeBackupFile extends BackupHeader {
+	v: 2
+}
+
+/** Format 1, still restored: sealed under a legacy key. `sealerL1` was the exporting account. */
+export interface LegacyBridgeBackupFile extends BackupHeader {
+	v: 1
+	sealerL1: string
+}
+
+export type AnyBridgeBackupFile = BridgeBackupFile | LegacyBridgeBackupFile
+
+/** The text whose key opens a parsed file: its format fixes it, and the parse holds its blob to the same. */
+export const backupKeyText = (file: AnyBridgeBackupFile): KeyText => (file.v === 2 ? "site" : "legacy")
+
 /** Parse + shape-check a candidate file. Throws specific, user-facing messages per ladder step. */
-export function parseBackupFile(raw: unknown): BridgeBackupFile {
+export function parseBackupFile(raw: unknown): AnyBridgeBackupFile {
 	let parsed: unknown = raw
 	if (typeof raw === "string") {
 		try {
@@ -48,11 +61,11 @@ export function parseBackupFile(raw: unknown): BridgeBackupFile {
 			throw new Error("This is not an Unleashed bridge recovery file.")
 		}
 	}
-	const f = parsed as Partial<BridgeBackupFile> | null
+	const f = parsed as Partial<BackupHeader & { v: unknown; sealerL1: unknown }> | null
 	if (!f || typeof f !== "object" || f.format !== BACKUP_FORMAT) {
 		throw new Error("This is not an Unleashed bridge recovery file.")
 	}
-	if (f.v !== 1) {
+	if (f.v !== 1 && f.v !== 2) {
 		throw new Error("This recovery file was made by a newer version of the app — update and retry.")
 	}
 	if (
@@ -62,16 +75,16 @@ export function parseBackupFile(raw: unknown): BridgeBackupFile {
 		(f.direction !== "deposit" && f.direction !== "withdraw") ||
 		typeof f.id !== "string" ||
 		f.id.length === 0 ||
-		typeof f.sealerL1 !== "string" ||
+		(f.v === 1 && typeof f.sealerL1 !== "string") ||
 		typeof f.blob !== "string" ||
-		f.blob.length === 0
+		keyTextOf(f.blob) !== (f.v === 2 ? "site" : "legacy")
 	) {
 		throw new Error("This recovery file is malformed.")
 	}
 	if (isProvisionalWithdrawId(f.id)) {
 		throw new Error("This file holds a half-started withdraw with nothing restorable in it.")
 	}
-	return f as BridgeBackupFile
+	return f as AnyBridgeBackupFile
 }
 
 const isDecimalString = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v)
@@ -404,7 +417,7 @@ interface BackupPayload {
 /** Seal ONE record into a recovery file. Refuses records with nothing restorable in them:
  *  provisional records on either lane, and private deposits whose envelope hasn't been sealed yet -
  *  a file without the recovery material would toast success today and strand the claim later. */
-export async function sealBridgeBackup(key: EncryptionKey, record: AnyJournalRecord, sealerL1: string): Promise<BridgeBackupFile> {
+export async function sealBridgeBackup(key: SiteKey, record: AnyJournalRecord): Promise<BridgeBackupFile> {
 	if (isProvisionalRecordId(record.id)) {
 		throw new Error("This transfer has not reached its own transaction yet — there is nothing restorable to save.")
 	}
@@ -414,37 +427,36 @@ export async function sealBridgeBackup(key: EncryptionKey, record: AnyJournalRec
 	const payload: BackupPayload = { bk: 1, record }
 	return {
 		format: BACKUP_FORMAT,
-		v: 1,
+		v: 2,
 		chainId: record.chainId,
 		portal: record.portal,
 		bridge: record.bridge,
 		direction: record.direction,
 		id: record.id,
-		sealerL1,
-		blob: await sealSecret(key, JSON.stringify(payload)),
+		blob: await key.seal(JSON.stringify(payload)),
 	}
 }
 
 /** Unseal + deep-validate + header-cross-check an Ethereum-origin record (schemas 1–3). A cross-chain
  *  file is refused as invalid, as a pre-schema-4 bundle refuses it; `openAnyBridgeBackup` opens both. */
-export function openBridgeBackup(key: EncryptionKey, file: BridgeBackupFile): Promise<BridgeJournalRecord> {
+export function openBridgeBackup(key: RecoveryKey, file: AnyBridgeBackupFile): Promise<BridgeJournalRecord> {
 	return openBackupWith(key, file, validateAnyBackupRecord)
 }
 
 /** `openBridgeBackup` for every record shape either journal key holds, schema 4 included. */
-export function openAnyBridgeBackup(key: EncryptionKey, file: BridgeBackupFile): Promise<AnyJournalRecord> {
+export function openAnyBridgeBackup(key: RecoveryKey, file: AnyBridgeBackupFile): Promise<AnyJournalRecord> {
 	return openBackupWith(key, file, validateJournalRecord)
 }
 
-/** GCM failure throws the attribution-honest copy. */
+/** GCM failure, or a key of another text than the file's, throws the attribution-honest copy. */
 async function openBackupWith<R extends AnyJournalRecord>(
-	key: EncryptionKey,
-	file: BridgeBackupFile,
+	key: RecoveryKey,
+	file: AnyBridgeBackupFile,
 	validate: (rec: unknown) => R,
 ): Promise<R> {
 	let plaintext: string
 	try {
-		plaintext = await openSecret(key, file.blob)
+		plaintext = await key.open(file.blob)
 	} catch {
 		throw new Error("Couldn't open this file: it wasn't sealed by the connected Ethereum account, or the file is corrupted/tampered.")
 	}
@@ -460,15 +472,15 @@ async function openBackupWith<R extends AnyJournalRecord>(
 	}
 	const record = validate(payload.record)
 	// The header is unauthenticated routing data - the SEALED copies are authoritative. Every
-	// header field with a sealed counterpart is re-checked (sealerL1 only exists inside private
-	// deposit records); refuse on any edit rather than trust either side.
+	// header field with a sealed counterpart is re-checked (a format-1 sealerL1 only against private
+	// deposit records, which hold one); refuse on any edit rather than trust either side.
 	if (
 		record.id !== file.id ||
 		record.direction !== file.direction ||
 		record.chainId !== file.chainId ||
 		record.portal !== file.portal ||
 		record.bridge !== file.bridge ||
-		(record.direction === "deposit" && record.sealerL1 !== undefined && record.sealerL1 !== file.sealerL1)
+		(file.v === 1 && record.direction === "deposit" && record.sealerL1 !== undefined && record.sealerL1 !== file.sealerL1)
 	) {
 		throw new Error("This file's label doesn't match its sealed contents — it was modified. Refusing to restore.")
 	}

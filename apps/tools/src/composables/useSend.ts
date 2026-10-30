@@ -9,7 +9,7 @@
  * anything is claimed against it.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { type EncryptionKey, type SendDepositRecord, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
+import { type SendDepositRecord, type SiteKey, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
 import {
 	type DepositRecord,
 	type DepositSecrets,
@@ -88,10 +88,10 @@ import { useTokenGrant } from "./useTokenGrant"
 const log = (...args: unknown[]) => console.log("[bridge:send]", ...args)
 
 // The finalized-envelope re-seal key, held in memory only for records this session sealed.
-const sealKeys = new Map<string, EncryptionKey>()
+const sealKeys = new Map<string, SiteKey>()
 
 /** Same-session retained seal key - lets a backup export of a record sealed here skip the signature. */
-export function getRetainedSealKey(id: string): EncryptionKey | undefined {
+export function getRetainedSealKey(id: string): SiteKey | undefined {
 	return sealKeys.get(id)
 }
 

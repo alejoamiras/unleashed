@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import {
 	type DepositEnvelopeV2,
 	type DepositJournalRecord,
@@ -10,11 +11,13 @@ import {
 	loadJournal,
 	markSealTrusted,
 	removeRecord,
-	recoveryKeyFromSignature,
+	RecoveryKey,
+	recoveryKeyMessage,
 	rekeyRecord,
 	sealDepositEnvelope,
 	upsertRecord,
 } from "@unleashed/bridge-core"
+import { recoveryBindingOf } from "@/lib/send-record"
 import type { DepositRecord, JournalTokenBlock } from "@unleashed/sdk"
 import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -184,7 +187,7 @@ function envelopeOf(rec: DepositJournalRecord | SendDepositRecord, over: Envelop
 
 async function sealEnvelopeFor(rec: DepositJournalRecord | SendDepositRecord, over: EnvelopeFields = {}) {
 	const { v: _v, ...envelope } = envelopeOf(rec, over)
-	return sealDepositEnvelope(await recoveryKeyFromSignature(SIG), envelope)
+	return sealDepositEnvelope(await RecoveryKey.derive(async () => SIG, recoveryBindingOf(rec, rec.secretHashHex), "site"), envelope)
 }
 
 const depositOf = (id: string) => useBridgeJournal().records.value.find((r) => r.id === id) as SendDepositRecord | undefined
@@ -352,6 +355,32 @@ describe("useBridgeJournal engine", () => {
 			["0xresumed", true, undefined],
 			["0xclicked", false, PRIV_SECRET],
 		])
+	})
+
+	it.each(["legacy", "site"] as const)("a rediscovered claim sealed under the %s text signs exactly that text, once", async (text) => {
+		const sign = async (m: string) => `0x${createHash("sha256").update(m).digest("hex")}`
+		const signL1 = vi.fn(sign)
+		connectJournalDeps({ ...claimDeps(kv, fakeClaimSdk()), signL1 })
+		const rec = mkSend(`0x${text}`, { isPrivate: true, secret: undefined, sealerL1: SEALER })
+		const binding = recoveryBindingOf(rec, rec.secretHashHex)
+		const { v: _v, ...envelope } = envelopeOf(rec)
+		rec.sealedEnvelope = await sealDepositEnvelope(await RecoveryKey.derive(sign, binding, text), envelope)
+		addRecord(rec)
+		await runDepositClaim(rec.id)
+		expect(signL1.mock.calls).toEqual([[recoveryKeyMessage(binding, text)]])
+		expect(depositOf(rec.id)?.completedAt).toBeDefined()
+	})
+
+	it("an envelope under a marker this build does not know is refused unsigned, and seal trust stays", async () => {
+		markSealTrusted(kv, DEPLOY.chainId, SEALER, "rabby")
+		const rec = mkSend("0xnext", { isPrivate: true, secret: undefined, sealerL1: SEALER, sealedEnvelope: "next:AAAA" })
+		const signL1 = vi.fn(async () => SIG)
+		connectJournalDeps({ ...claimDeps(kv, fakeClaimSdk()), signL1 })
+		addRecord(rec)
+		await runDepositClaim("0xnext")
+		expect(rt("0xnext")?.attention).toBe("unseal-failed")
+		expect(signL1).not.toHaveBeenCalled()
+		expect(isSealTrusted(kv, DEPLOY.chainId, SEALER, "rabby")).toBe(true)
 	})
 
 	it("⑩ rediscovered consumeTxHash waits on the receipt - consume() never re-prompts", async () => {

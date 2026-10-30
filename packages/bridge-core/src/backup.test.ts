@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 import {
 	type BridgeBackupFile,
+	type LegacyBridgeBackupFile,
 	openBridgeBackup,
 	parseBackupFile,
 	sealBridgeBackup,
@@ -10,12 +11,23 @@ import {
 } from "./backup"
 import type { DepositJournalRecord, SendDepositRecord, SendWithdrawRecord, WithdrawJournalRecord } from "./journal"
 import type { JournalTokenBlock } from "@unleashed/sdk"
+import { type RecoveryBinding, RecoveryKey, keyTextOf } from "./recovery-crypto"
 
 const SEALER = "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d"
 const DEPLOY = { chainId: 11155111, portal: "0xportal", bridge: "0xbridge" }
 
-const key = await EncryptionKey.fromPassword("0xsig-deterministic")
-const otherKey = await EncryptionKey.fromPassword("0xsig-other-wallet")
+const BINDING: RecoveryBinding = { site: "https://testnet.app.unleashed.systems", ...DEPLOY, secretHashHex: "0xdep" }
+const wallet = (name: string) => async (message: string) => `0x${createHash("sha256").update(`${name}:${message}`).digest("hex")}`
+const key = await RecoveryKey.derive(wallet("sealer"), BINDING, "site")
+const otherKey = await RecoveryKey.derive(wallet("other"), BINDING, "site")
+const legacyKey = await RecoveryKey.derive(wallet("sealer"), BINDING, "legacy")
+
+/** What the format-1 exporter wrote: the exporting account in the header, the blob under a legacy key. */
+async function legacyFile(record: Parameters<typeof sealBridgeBackup>[1], exporter = SEALER): Promise<LegacyBridgeBackupFile> {
+	const { chainId, portal, bridge, direction, id } = record
+	const blob = await legacyKey.seal(JSON.stringify({ bk: 1, record }))
+	return { format: "unleashed-bridge-backup", v: 1, chainId, portal, bridge, direction, id, sealerL1: exporter, blob }
+}
 
 function publicDeposit(over: Partial<DepositJournalRecord> = {}): DepositJournalRecord {
 	return {
@@ -66,7 +78,7 @@ function withdraw(over: Partial<WithdrawJournalRecord> = {}): WithdrawJournalRec
 describe("bridge backup files", () => {
 	it("round-trips public deposit, private deposit, and withdraw records", async () => {
 		for (const rec of [publicDeposit(), privateDeposit(), withdraw()]) {
-			const file = await sealBridgeBackup(key, rec, SEALER)
+			const file = await sealBridgeBackup(key, rec)
 			expect(file.format).toBe("unleashed-bridge-backup")
 			expect(file.id).toBe(rec.id)
 			const reopened = await openBridgeBackup(key, file)
@@ -75,25 +87,25 @@ describe("bridge backup files", () => {
 	})
 
 	it("the file NEVER contains the plaintext claim secret (seal-everything)", async () => {
-		const file = await sealBridgeBackup(key, publicDeposit(), SEALER)
+		const file = await sealBridgeBackup(key, publicDeposit())
 		expect(JSON.stringify(file)).not.toContain("0xplaintext-bearer-secret")
 	})
 
 	it("wrong wallet key refuses with the attribution-honest copy", async () => {
-		const file = await sealBridgeBackup(key, publicDeposit(), SEALER)
+		const file = await sealBridgeBackup(key, publicDeposit())
 		expect(openBridgeBackup(otherKey, file)).rejects.toThrow(
 			/wasn't sealed by the connected Ethereum account, or the file is corrupted/,
 		)
 	})
 
 	it("a tampered blob refuses (GCM auth)", async () => {
-		const file = await sealBridgeBackup(key, publicDeposit(), SEALER)
+		const file = await sealBridgeBackup(key, publicDeposit())
 		const tampered: BridgeBackupFile = { ...file, blob: `${file.blob.slice(0, -4)}AAAA` }
 		expect(openBridgeBackup(key, tampered)).rejects.toThrow(/corrupted|tampered/)
 	})
 
 	it("a swapped header (unauthenticated) is caught against the sealed copies", async () => {
-		const file = await sealBridgeBackup(key, publicDeposit(), SEALER)
+		const file = await sealBridgeBackup(key, publicDeposit())
 		expect(openBridgeBackup(key, { ...file, id: "0xother" })).rejects.toThrow(/label doesn't match its sealed contents/)
 		expect(openBridgeBackup(key, { ...file, chainId: 1 })).rejects.toThrow(/label doesn't match/)
 		expect(openBridgeBackup(key, { ...file, direction: "withdraw" })).rejects.toThrow(/label doesn't match/)
@@ -101,26 +113,51 @@ describe("bridge backup files", () => {
 
 	it("a private deposit without its sealed envelope refuses to export (no false recovery promise)", async () => {
 		const unsealed = publicDeposit({ id: "0xunsealed", secretHashHex: "0xunsealed", isPrivate: true, secret: undefined })
-		expect(sealBridgeBackup(key, unsealed, SEALER)).rejects.toThrow(/hasn't sealed its recovery secret/)
+		expect(sealBridgeBackup(key, unsealed)).rejects.toThrow(/hasn't sealed its recovery secret/)
 	})
 
-	it("a swapped sealerL1 header on a private deposit is caught against the sealed copy", async () => {
-		const file = await sealBridgeBackup(key, privateDeposit(), SEALER)
-		await expect(openBridgeBackup(key, { ...file, sealerL1: "0xevil" })).rejects.toThrow(/label doesn't match/)
+	it("a new recovery file names no account and its blob names its text", async () => {
+		const file = await sealBridgeBackup(key, privateDeposit())
+		expect(Object.keys(file).sort()).toEqual(["blob", "bridge", "chainId", "direction", "format", "id", "portal", "v"])
+		expect([file.v, keyTextOf(file.blob)]).toEqual([2, "site"])
+		expect(parseBackupFile(JSON.stringify(file))).toEqual(file)
+	})
+
+	it("a format-1 file still opens under the legacy text; neither format opens under the other's key", async () => {
+		const old = parseBackupFile(JSON.stringify(await legacyFile(privateDeposit())))
+		expect(await openBridgeBackup(legacyKey, old)).toEqual(privateDeposit())
+		await expect(openBridgeBackup(key, old)).rejects.toThrow(/wasn't sealed by the connected Ethereum account/)
+		await expect(openBridgeBackup(legacyKey, await sealBridgeBackup(key, privateDeposit()))).rejects.toThrow(
+			/wasn't sealed by the connected Ethereum account/,
+		)
+	})
+
+	it("a file exported by another account than the sealer restores; format 1 refused it on its header", async () => {
+		const record = privateDeposit()
+		expect(await openBridgeBackup(otherKey, await sealBridgeBackup(otherKey, record))).toEqual(record)
+		await expect(openBridgeBackup(legacyKey, await legacyFile(record, "0xother"))).rejects.toThrow(/label doesn't match/)
 	})
 
 	it("provisional withdraws refuse at seal AND at parse", async () => {
 		const prov = withdraw({ id: "wd-pending-abc12345", exitTxHash: undefined })
-		expect(sealBridgeBackup(key, prov, SEALER)).rejects.toThrow(/nothing restorable/)
-		const forged = { ...(await sealBridgeBackup(key, withdraw(), SEALER)), id: "wd-pending-abc12345" }
+		expect(sealBridgeBackup(key, prov)).rejects.toThrow(/nothing restorable/)
+		const forged = { ...(await sealBridgeBackup(key, withdraw())), id: "wd-pending-abc12345" }
 		expect(() => parseBackupFile(forged)).toThrow(/half-started withdraw/)
 	})
 
 	it("parseBackupFile ladder: junk, foreign format, future version, malformed fields", () => {
 		expect(() => parseBackupFile("not json {")).toThrow(/not an Unleashed bridge recovery file/)
 		expect(() => parseBackupFile({ format: "something-else" })).toThrow(/not an Unleashed bridge recovery file/)
-		expect(() => parseBackupFile({ format: "unleashed-bridge-backup", v: 2 })).toThrow(/newer version/)
+		expect(() => parseBackupFile({ format: "unleashed-bridge-backup", v: 3 })).toThrow(/newer version/)
 		expect(() => parseBackupFile({ format: "unleashed-bridge-backup", v: 1, chainId: "nope" })).toThrow(/malformed/)
+	})
+
+	it("a file whose blob names another text than its format refuses before any key is derived", async () => {
+		const current = await sealBridgeBackup(key, publicDeposit())
+		const old = await legacyFile(publicDeposit())
+		expect(() => parseBackupFile({ ...current, blob: old.blob })).toThrow(/malformed/)
+		expect(() => parseBackupFile({ ...old, blob: current.blob })).toThrow(/malformed/)
+		expect(() => parseBackupFile({ ...old, sealerL1: undefined })).toThrow(/malformed/)
 	})
 
 	it("schema-2 fuel records validate strictly; malformed fuel rejects restore", () => {
@@ -176,7 +213,7 @@ describe("bridge backup files", () => {
 			fuel,
 		} as never)
 		// Round-trips with the variant + private extras intact.
-		const file = await sealBridgeBackup(key, fjPriv, SEALER)
+		const file = await sealBridgeBackup(key, fjPriv)
 		expect(await openBridgeBackup(key, file)).toEqual(fjPriv)
 		// Malformed private-fuel extras reject the restore (recovery inputs — never guessed through).
 		expect(() => validateBackupRecord(publicDeposit({ schema: 2, fuel: { ...fuel, bridgeSecretSalt: 7 } } as never))).toThrow(
@@ -202,9 +239,9 @@ describe("bridge backup files", () => {
 
 	it("keeps a recorded sender through seal and open; a pre-field record and an unlisted key still validate", async () => {
 		for (const rec of [publicDeposit({ sender: SEALER }), withdraw({ sender: `0x${"0a".repeat(32)}` })]) {
-			expect(await openBridgeBackup(key, await sealBridgeBackup(key, rec, SEALER))).toEqual(rec)
+			expect(await openBridgeBackup(key, await sealBridgeBackup(key, rec))).toEqual(rec)
 		}
-		const preField = await openBridgeBackup(key, await sealBridgeBackup(key, publicDeposit(), SEALER))
+		const preField = await openBridgeBackup(key, await sealBridgeBackup(key, publicDeposit()))
 		expect(preField).not.toHaveProperty("sender")
 		expect(validateAnyBackupRecord(preField)).toEqual(publicDeposit())
 		// An older bundle's validator treats a newer optional field as unlisted, so this is what lets it load one.
@@ -213,10 +250,8 @@ describe("bridge backup files", () => {
 	})
 
 	it("a forged payload (valid JSON, wrong inner marker) refuses", async () => {
-		const raw = JSON.stringify({ notBk: true })
-		const enc = new TextEncoder().encode(raw)
-		const blob = Buffer.from(await key.encrypt(enc)).toString("base64")
-		const file = await sealBridgeBackup(key, publicDeposit(), SEALER)
+		const blob = await key.seal(JSON.stringify({ notBk: true }))
+		const file = await sealBridgeBackup(key, publicDeposit())
 		expect(openBridgeBackup(key, { ...file, blob })).rejects.toThrow(/not a valid bridge record/)
 	})
 })

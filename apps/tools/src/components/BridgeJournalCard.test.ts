@@ -346,6 +346,34 @@ describe("BridgeJournalCard", () => {
 		expect(discard).toHaveBeenCalledWith("0xdep")
 	})
 
+	it.each([
+		{ isPrivate: true, warns: true },
+		{ isPrivate: false, warns: false },
+	])("clear is two-step: Clear arms, Confirm clear clears; private $isPrivate warns $warns", async ({ isPrivate, warns }) => {
+		const w = mountCard(deposit({ isPrivate, leafIndex: "7", claimedByOther: true, completedAt: 1 }))
+		expect(w.find(sel(TESTIDS.journalDiscardWarning)).exists()).toBe(false)
+		await w.get(sel(TESTIDS.journalClear)).trigger("click")
+		expect(clearDone).not.toHaveBeenCalled()
+		const confirm = w.get(sel(TESTIDS.journalClearConfirm))
+		expect(confirm.text()).toBe("Confirm clear")
+		expect(w.find(sel(TESTIDS.journalDiscardWarning)).exists()).toBe(warns)
+		await confirm.trigger("click")
+		expect(clearDone).toHaveBeenCalledWith("0xdep")
+	})
+
+	it("a double-click on Clear only arms it", async () => {
+		const w = mountCard(deposit({ leafIndex: "7", claimedByOther: true, completedAt: 1 }))
+		const click = async (testid: string, detail: number) => {
+			w.get(sel(testid)).element.dispatchEvent(new MouseEvent("click", { detail, bubbles: true }))
+			await flushPromises()
+		}
+		await click(TESTIDS.journalClear, 1)
+		await click(TESTIDS.journalClearConfirm, 2)
+		expect(clearDone).not.toHaveBeenCalled()
+		await click(TESTIDS.journalClearConfirm, 1)
+		expect(clearDone).toHaveBeenCalledWith("0xdep")
+	})
+
 	it("the ⤓ export icon: unfinished cards show it, done cards swap to ✕, provisional withdraws hide it", () => {
 		expect(
 			mountCard(deposit({ leafIndex: "7" }))
