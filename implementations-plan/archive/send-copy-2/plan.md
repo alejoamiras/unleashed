@@ -7,10 +7,26 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: approved; a1 implemented and looped, PR open; a2 waits for page 10 and a1's merge
+status: closed; a1 merged (#85); a2 in its PR
 base: main e1d1c4c
 budget: "recon: 1 Sonnet explorer; audit: Codex gpt-6.1-sol at high plus one Opus Plan critique, then a fresh Codex pass; code-review: off"
 ---
+
+## Outcome
+
+- **Status:** closed. a1 merged as #85. a2 delivers ask30 and ask42 in its own PR.
+- **Shipped:**
+  - a1: the cross-chain pause check before any wallet prompt (P9-01 B). It fails closed when the check cannot be
+    made (P10-01 B). Every review starts blank (P9-02 B).
+  - a2: the testnet cross-chain review, progress and card copy as page 10 signed it (P10-02 to P10-04 A, R1 as B1).
+    The exit's declined-token note is unchanged (P10-05 A). The Ethereum review now says "usually 2–4 min end to
+    end" (ask42, on both networks, D9).
+- **Known limits:** #91 (D7).
+- **Open items:** none.
+- **Seeds:** the `/goal` and `/loop` seeds below are retired. They are history, not instructions.
+- **Lessons:** nothing promoted to `lessons.md`. It is already over its 8 KiB budget, and nothing in it is
+  superseded. The import-time `RETRY_WORDS` gotcha stays in `lessons/phase-2.md`. The shared-sandbox shots recipe
+  went to the browser README.
 
 # send-copy-2: the cross-chain pause check, a blank review, plainer testnet cross-chain copy
 
@@ -28,9 +44,12 @@ waits for the sign-off; a1 does not. Mainnet copy is unchanged. Issues: none.
 - **P10-01 Option B** (page 10, folded into a1): a Base Sepolia send whose pause check cannot be made stops before
   any wallet prompt with the Ethereum send's sentence: "This app could not check the bridge on this network. Nothing
   was sent."
-- **ask30**: the direction is recorded; no string is signed. a2 builds only the entries of `OWNER-ASKS.md` §1–§3 the
-  owner signs, with their before and after shots. Nothing else a user sees changes. §0 is signed as P10-01 B and
-  ships in a1. §5 (an exit's decline from selection stays, D4) is signed as P10-05 A.
+- **ask30** (a2), page 10: **P10-02 Option A**: "Approve the review drafts as shown, with the top testnet notice
+  removed." **P10-03 Option A**: "Approve the progress drafts as shown." **P10-04 Option A**: "Approve the card
+  drafts as shown." **P10-05 Option A**: "Keep it until the token is picked again, as today." a2 builds
+  `OWNER-ASKS.md` §1–§3 exactly as drafted (R1 as B1), with before and after shots; §5 changes nothing.
+- **ask42** (a2), approved by the owner in chat: the Ethereum send's review gives the end-to-end estimate as
+  "usually 2–4 min" in place of "usually 3–8 min" (`OWNER-ASKS.md` §6). Every other string stays.
 
 ## Outcome & Quality Bar
 
@@ -113,11 +132,12 @@ Good enough: one browser step for P9-01; a2 changes strings only, on the testnet
 
 - A1 (`OWNER-ASKS.md` §0): resolved by P10-01 B; a check that cannot be made refuses.
 - A3 (`OWNER-ASKS.md` §5): an exit's decline from token selection stays after Back then Next.
-- A2: a2 builds only signed entries; S2 ships in a2 only if gas-floor-1 leaves that line alone.
+- A2: resolved. Every §1–§3 entry is signed (page 10); the orchestrator assigned S2 to this lane, and gas-floor-1
+  left both S2 lines as they were (`crosschain-steps.ts:254-255` at 565cdb1).
 
 ## Disposition
 
-- ask30 → a2, once signed. P9-01, P9-02, P10-01 → a1. Issues: none. #65 is out of scope.
+- ask30, ask42 → a2. P9-01, P9-02, P10-01 → a1. Issues: none. #65 is out of scope.
 
 ## Phase P1 (arc a1): P9-01 and P9-02 ✓
 
@@ -149,22 +169,25 @@ exit 0, then `bun run e2e:tools -- specs/deposit-crosschain.spec.ts specs/l1-wal
 retry 0 with `PLAYWRIGHT_BROWSERS_PATH` unset (lint, typecheck, unit, jsdom smoke, browser; the last two specs are the
 review's error and decline in the real app, as controls). A SIGBUS counts as the host: rerun that file alone and say so.
 
-## Phase P2 (arc a2): the signed ask30 strings
+## Phase P2 (arc a2): the signed ask30 strings and ask42 ✓
 
 Starts only after the owner signs, and after a1 merges (`git merge origin/main` first).
 
-1. Replace each signed string (`OWNER-ASKS.md` §1–§3, by id) in the files the before list names; keep every unsigned one.
+1. Replace each signed string (`OWNER-ASKS.md` §1–§3, by id) in the files the before list names, and ask42's
+   `DEPOSIT_TAKES` (`SendWizard.vue:92`).
 2. Update the assertions in `CrossChainReview.test.ts`, `crosschain-steps.test.ts`, `CrossChainOutcome.test.ts`,
-   `BridgeJournalCard.crosschain.test.ts`. Keep each mainnet control green unchanged; add one where a signed string
-   gains a branch it lacks today (for example the Quote band).
+   `BridgeJournalCard.crosschain.test.ts`, plus one in `SendWizard.test.ts` for ask42. Keep each mainnet control
+   green unchanged; add one where a signed string gains a branch it lacks today (for example the Quote band).
 3. After shots: Chromium, 1280×900, light and dark, by send-copy-1's method (`archive/send-copy-1/plan.md` § P3 step
    3): a throwaway `specs/zz-send-copy-shots.spec.ts` through `scripts/e2e/agent.sh`, never committed. Shoot the
    review (Details closed and open, and expired; and at 390 px wide for R6's phone bar), the Bridge step, the expired
    card, its outcome panel and an unsent card. Use the display-only label change in `apps/tools/src/lib/network.ts`
    and revert it. Save to `implementations-plan/send-copy-2/design/after-*.png` (gitignored).
 
-**Gate**: `bun run lint && bun run typecheck:all && bun run test:all && bun run audit:tools` exit 0; every shot
-exists; `git status` shows no `zz-*` spec and no `network.ts` change.
+**Gate**: `bun run lint && bun run typecheck:all && bun run test:all && bun run --cwd apps/tools test:e2e && bun run
+audit:tools` exit 0; `bun run e2e:tools -- specs/deposit-crosschain.spec.ts` at retry 0 as a control (no spec asserts
+the copy, but its cells drive the review's expiry and the cards); every before and after shot exists; `git status`
+shows no `zz-*` spec and no `network.ts` change.
 
 ## Decision ledger
 
@@ -178,6 +201,12 @@ exists; `git status` shows no `zz-*` spec and no `network.ts` change.
 - D5 one browser step, in cell 53, not a new cell: same setup, about +15 s, serial shard.
 - D6 two arcs: a1 needs no signature; a2 waits for one. They share only `SendWizard.vue`'s band (R6), which a2 edits
   after merging a1.
+- D8 page 10 signs §1–§3 as drafted (R1 as B1) and keeps §5 as it is; ask42's estimate is signed in chat. a2
+  builds those strings and nothing else; a string that differs from its draft goes back, never ships.
+- D9 ask42 changes `DEPOSIT_TAKES` on both networks. Codex and Opus each flagged mainnet as a scope question. Kept:
+  the signed words name no network, the ask comes from gas-floor-1's own owner ask, which offered the one shared
+  constant, and its reason (the crossing in about a minute) holds on mainnet too. A testnet-only branch would be a
+  visible choice nobody signed. The PR states it, for the orchestrator to veto.
 - D7 a send still running in the background can write its error after a newer review opened. The wizard's own
   write (`runCrossChain`'s `xcRefusal`/`xcError`) is guarded with the existing snapshot. `runSend`'s tail write needs no
   guard: it writes `"declined"` only when no grant exists, which is before any record, so before any background. The
@@ -206,6 +235,17 @@ exists; `git status` shows no `zz-*` spec and no `network.ts` change.
   commit: **no material findings**. Converged in 2 rounds. After the loop, P10-01 B was folded into the arc
   (b9dc86d). Round 3, the last allowed, verified it and the merge of origin/main: **no material findings**.
   Detail: `lessons/phase-1.md`.
+- a2 Codex fix loop (gpt-6.1-sol, high), round 1: one medium, ask42 reaching mainnet (D9: kept, stated in the PR),
+  and two lows, both taken (the `DEPOSIT_TAKES` comment no longer claims rounding up; tests now cover W1 on the
+  review, the wizard's band, and mainnet's retry words and expired box). Codex confirmed every signed string as
+  drafted and mainnet's text unchanged. Opus beside round 1: the same scope question, plus three lows, all taken
+  (a split `.note` rule merged, the stale "Rebuild" comment in `deposit-crosschain.spec.ts`, and the band test gap).
+  Round 2 verified 7edcfab: **no material findings**; D9 matches the originating ask. Converged in 2 rounds. Detail:
+  `lessons/phase-2.md`.
+- a2 deviations:
+  - The gate adds `test:e2e` and `specs/deposit-crosschain.spec.ts` at retry 0 as a control.
+  - The shots cover 12 surfaces, using the display-only labels and with the parked wallet hidden.
+  - The review's switched-account notice stands the review down, so W1 is shown on the expired and unsent cards.
 - a1 deviations: the shots use the sandbox build's own chain labels (no display-only `network.ts` edit), since the
   a1 surfaces are the sentence and its absence; cell 53's before time was measured by running main's cell 53 against
   this build on the same sandbox.
@@ -216,8 +256,9 @@ exists; `git status` shows no `zz-*` spec and no `network.ts` change.
   `feat(tools): check the pause before a cross-chain send and start every review blank`. Body: what and why, P9-01 B,
   P9-02 B and P10-01 B quoted by id and text, the gates with outcomes, cell 53's wall-clock before and after, the `a1-*`
   shots by name (the orchestrator attaches them). It delivers no ask, so its body names none.
-- a2 = P2, same branch after `git merge origin/main`. PR title: `feat(tools): plainer testnet cross-chain send copy`.
-  Body: the signed ask30 strings quoted by id and text, `Delivers ask30`, the shots by name, the gates.
+- a2 = P2, same branch after `git merge origin/main`. PR title: `feat(tools): plainer testnet cross-chain copy and a
+  2–4 min ethereum estimate`. Body: P10-02 to P10-05 and ask42's approval quoted by id and text, `Delivers ask30,
+  Delivers ask42`, the before and after shots by name, the gates.
 - Both bodies end with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. The close-out rides a2.
 - Parallelism: none worth it; a2 is gated on a person, not on a1.
 

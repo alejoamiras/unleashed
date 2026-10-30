@@ -85,7 +85,7 @@ describe("BridgeJournalCard — a cross-chain send", () => {
 			name: "expired",
 			rec: xcRecord(done, { outcome: "expired-on-source" }),
 			chip: "Expired",
-			guide: "It wasn’t filled on Ethereum · Sepolia within 2 hours.",
+			guide: "It didn’t reach Ethereum · Sepolia in time.",
 			actions: [TESTIDS.journalXcDismiss],
 		},
 	])("$name: the sent amount, its chip, its guide and only its own actions", ({ rec, chip, guide, actions }) => {

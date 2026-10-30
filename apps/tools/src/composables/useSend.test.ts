@@ -90,6 +90,7 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		FUEL_ASSET: manifest.feeJuice.asset,
 		FUEL_MIN_FJ: BigInt(manifest.feeJuice.minFj),
 		rebuildHubTokenInstance: async () => ({ address: { toString: () => h.rebuiltL2Token.value } }),
+		hubArtifact: async () => ({ name: "TokenBridgeHub" }),
 		bridgeNetwork: (reads: unknown) => h.bridgeNetwork(reads),
 	}
 })

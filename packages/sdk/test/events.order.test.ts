@@ -11,11 +11,9 @@ import type { DepositRecord } from "../src/records.ts"
 import type { DepositSecrets } from "../src/run.ts"
 import { allowanceAfterApprove, readsOf, type Step, testnet, walletOf, worldOf } from "./fakes.ts"
 
-vi.mock("../src/protocol/code-hash.ts", async (importOriginal) => {
-	const real = await importOriginal<typeof import("../src/protocol/code-hash.ts")>()
-	const { syntheticPins } = await import("./fakes.ts")
-	return { ...real, CODE_PINS: syntheticPins(real.pinOfBuild) }
-})
+vi.mock("../src/protocol/generation-record.ts", async (importOriginal) =>
+	(await import("./fakes.ts")).withSyntheticCode(await importOriginal()),
+)
 vi.mock("../src/execution/send-flow.ts", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../src/execution/send-flow.ts")>()),
 	confirmSend: async (_l1: unknown, _g: unknown, s: { tok?: unknown; fuel?: unknown }, txHash: string) => ({

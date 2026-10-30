@@ -13,19 +13,23 @@
  *    words, and the live ERC-20 still sanitizes to exactly those words at exactly that `decimals()`;
  *  - with `routing`, LI.FI's address book on the manifest's L1 and every source chain: code at each
  *    entry and the pinned runtime code hashes (a facet moved behind the Diamond is a warning);
- *  - the deployed runtime code of the implementation, factory, DepositRouter and fuel swapper against
- *    this checkout's forge build, with each artifact's immutable slots (per-deployment values) and metadata
- *    trailer (per-checkout paths) masked out, so it passes from any checkout of the deployed sources.
+ *  - the deployed runtime code of the implementation, factory or gate, DepositRouter and fuel swapper,
+ *    with each build's immutable slots (per-deployment values) and metadata trailer (per-checkout paths)
+ *    masked out: on a live chain against the generation record the manifest binds, on a sandbox against
+ *    this checkout's forge build and the SDK's pins.
  *
  * A fuel-only route (no bridge) gets its own: code at the router, the gate, Permit2 and the portal; the router's
  * immutables and owner; the gate's owner and pause; the portal paying the manifest's fee asset into the registry's
  * canonical rollup at the manifest's version; LI.FI's book on mainnet, or the swapper on the sandbox; the code hashes.
  *
- * `--strict` is the promotion gate: the artifacts are rebuilt from source into a fresh directory first
- * (never over a shared `out/` a running sandbox deploys from), and every input a pass cannot obtain is
- * a FAILURE rather than a noted skip — a stale or planted `out/` would otherwise bless whatever runtime
- * it was written to match. Without it (the default) the code-hash pass reuses whatever build is on disk
- * and skips when there is none.
+ * `--strict` is the promotion gate: every input a pass cannot obtain is a FAILURE rather than a noted
+ * skip. A record is then held to its kept artifacts, and each entry the live baseline does not hold (one
+ * this arc deployed) to a fresh build of this checkout, compiled into a fresh directory (never over a
+ * shared `out/` a running sandbox deploys from, and never trusting a stale or planted one). Without it
+ * (the default) a sandbox's code-hash pass reuses whatever build is on disk and skips when there is none.
+ *
+ * A live manifest's record is the working tree's live or candidate record that binds it, and its baseline
+ * the live record as committed at HEAD.
  *
  * Needs an L1 RPC: ETH_RPC_URL for a mainnet manifest, else SEPOLIA_RPC_URL or ETH_RPC_URL (bun auto-loads
  * packages/bridge-core/.env), a read
@@ -40,13 +44,18 @@ import { fileURLToPath } from "node:url"
 import { FeeJuicePortalAbi } from "@aztec-foundation/l1-artifacts"
 import { type Address, type Hex, hexToBytes, keccak256, type PublicClient } from "viem"
 import {
+	assertRecordBinds,
+	assertRecordIntegrity,
 	CANONICAL_PERMIT2,
 	CODE_PINS,
 	type CodePin,
 	deployedHash,
 	type ImmutableSpan,
 	type PinnedContract,
+	pinnedContractsOf,
 	pinOfBuild,
+	SANDBOX_LIFI_CHAIN_IDS,
+	samePin,
 	readErc20Metadata,
 	FUEL_SWAP_SELECTORS,
 	LIFI_BOOK,
@@ -72,6 +81,7 @@ import {
 	routerBindings,
 	swapTargetOf,
 } from "@unleashed/sdk/internal"
+import { liveBaseline, liveNetworkOf, type RecordSource, recordFor } from "./generation-paths"
 import { redactSecrets } from "./keyed-env"
 import { runKeyed } from "./keyed-run"
 import { resolveBin, run } from "./run"
@@ -480,31 +490,6 @@ interface ForgeArtifact {
 	deployedBytecode?: { object?: Hex; immutableReferences?: Record<string, ImmutableSpan[]> }
 }
 
-interface CodeTarget {
-	contract: string
-	address: string
-}
-
-/** Each deployed contract the manifest names and the forge artifact its runtime must equal. */
-function codeTargets(route: { bridge: BridgeBlock } | { fuelRoute: FuelRouteBlock }): CodeTarget[] {
-	if ("fuelRoute" in route) {
-		const r = route.fuelRoute
-		return [
-			{ contract: "DepositRouter", address: r.depositRouter },
-			{ contract: "FuelOnlyGate", address: r.gate },
-			...(r.fuelSwapper ? [{ contract: "TestnetFuelSwapper", address: r.fuelSwapper }] : []),
-		]
-	}
-	const b = route.bridge
-	const targets: CodeTarget[] = [
-		{ contract: "TokenPortalImpl", address: b.l1.implementation },
-		{ contract: "PortalFactory", address: b.l1.factory },
-	]
-	if (b.l1.depositRouter) targets.push({ contract: "DepositRouter", address: b.l1.depositRouter })
-	if (b.l1.fuelSwapper) targets.push({ contract: "TestnetFuelSwapper", address: b.l1.fuelSwapper })
-	return targets
-}
-
 type ForgeBuild = { out: string; dispose: () => void } | { why: string }
 
 function forgeBinary(): string {
@@ -540,47 +525,90 @@ function unavailable(strict: boolean, label: string, why: string): void {
 	else skip(label, why)
 }
 
-async function checkCodeHash(pub: PublicClient, out: string, contract: string, address: Address, strict: boolean): Promise<void> {
-	const label = `${contract} runtime code`
+/** The pin of `contract` in a forge build, or why there is none. */
+function buildPinIn(out: string, contract: PinnedContract): CodePin | string {
 	const artifactPath = join(out, `${contract}.sol`, `${contract}.json`)
-	if (!existsSync(artifactPath)) {
-		unavailable(strict, label, `the build has no ${contract}.sol/${contract}.json`)
-		return
-	}
+	if (!existsSync(artifactPath)) return `the build has no ${contract}.sol/${contract}.json`
 	const artifact = JSON.parse(readFileSync(artifactPath, "utf8")) as ForgeArtifact
 	const object = artifact.deployedBytecode?.object
-	if (!object) {
-		unavailable(strict, label, "the artifact carries no deployedBytecode")
-		return
-	}
+	if (!object) return "the artifact carries no deployedBytecode"
 	// forge omits immutableReferences for a contract with none (FuelOnlyGate). An empty mask compares every
 	// byte, and the build holds zeros where immutables sit, so dropped spans fail unless the deployed values are zero too.
-	const pin = pinOfBuild(hexToBytes(object), artifact.deployedBytecode?.immutableReferences)
+	return pinOfBuild(hexToBytes(object), artifact.deployedBytecode?.immutableReferences)
+}
+
+async function checkDeployed(pub: PublicClient, contract: PinnedContract, address: Address, pin: CodePin, source: string): Promise<void> {
 	const onChain = hexToBytes(((await pub.getCode({ address })) ?? "0x") as Hex)
 	const deployed = deployedHash(onChain, pin)
-	if (deployed === undefined) throw new Error(`length ${onChain.length} != build ${pin.length}, or an immutable's copies disagree`)
-	same(`${label} hash (immutables and metadata masked)`, deployed, pin.hash, "build")
-	// The SDK refuses a network whose code is not its pinned build, so the build verified here must be that one.
-	sameBuild(contract as PinnedContract, pin)
+	if (deployed === undefined) throw new Error(`length ${onChain.length} != ${source} ${pin.length}, or an immutable's copies disagree`)
+	same(`${contract} runtime code hash (immutables and metadata masked)`, deployed, pin.hash, source)
 }
 
-function sameBuild(contract: PinnedContract, pin: CodePin): void {
-	same(`${contract} build`, pin.hash, CODE_PINS[contract].hash, "the SDK's code pin")
+/** What a manifest's code is checked against: the record it binds on a live chain, this checkout's build on a sandbox. */
+export type CodeCheck = { kind: "record"; record: RecordSource; baseline?: RecordSource } | { kind: "build" }
+
+/** Refuses a live chain given no record, and any chain that is neither live nor a sandbox: a live generation is never
+ *  checked against what the current sources build. */
+export function codeCheckOf(manifest: ManifestV2, options: Pick<VerifyL1Options, "record" | "baseline">): CodeCheck {
+	if (options.record) return { kind: "record", record: options.record, baseline: options.baseline }
+	if (liveNetworkOf(manifest.l1ChainId) || !SANDBOX_LIFI_CHAIN_IDS.includes(manifest.l1ChainId))
+		throw new Error(`chain ${manifest.l1ChainId} is checked only against a generation record, and none was given — STOP`)
+	return { kind: "build" }
 }
 
-async function checkCodeHashes(
-	pub: PublicClient,
-	route: { bridge: BridgeBlock } | { fuelRoute: FuelRouteBlock },
-	strict: boolean,
-): Promise<void> {
+/** An entry the baseline holds at the same address was proven when it was promoted, from its own build commit. */
+const inBaseline = (baseline: RecordSource | undefined, contract: PinnedContract, address: string) =>
+	baseline?.record.evm[contract]?.address === address.toLowerCase()
+
+/** A fresh build's pin of `contract`, or why there is none. */
+function freshPin(build: ForgeBuild | undefined, contract: PinnedContract): CodePin | string {
+	if (!build) return "no fresh build was made"
+	return "out" in build ? buildPinIn(build.out, contract) : `no fresh build: ${build.why}`
+}
+
+function checkFreshBuild(build: ForgeBuild | undefined, contract: PinnedContract, recorded: CodePin): void {
+	const pin = freshPin(build, contract)
+	if (typeof pin === "string") fail(`${contract} build`, pin)
+	else if (samePin(pin, recorded)) ok(`${contract} build = ${pin.hash}`)
+	else fail(`${contract} build`, `${pin.hash} is not the record's pin ${recorded.hash} (code, immutable spans or trailer)`)
+}
+
+async function checkAgainstRecord(pub: PublicClient, m: ManifestV2, check: Extract<CodeCheck, { kind: "record" }>, strict: boolean) {
+	const { record, read, dir } = check.record
+	await guarded("generation record", async () => {
+		assertRecordBinds(record, m)
+		if (strict) await assertRecordIntegrity(record, read)
+		ok(`${dir} binds the manifest${strict ? ", intact and solc-shaped" : ""}`)
+	})
+	const arcDeployed = pinnedContractsOf(m).filter(([c, a]) => !inBaseline(check.baseline, c, a))
+	const fresh = strict && arcDeployed.length > 0 ? forgeBuild(true) : undefined
+	try {
+		for (const [contract, address] of pinnedContractsOf(m)) {
+			const entry = record.evm[contract]
+			if (!entry) continue
+			await guarded(`${contract} runtime code`, () => checkDeployed(pub, contract, address as Address, entry.pin, "the record"))
+			if (strict && !inBaseline(check.baseline, contract, address)) checkFreshBuild(fresh, contract, entry.pin)
+		}
+	} finally {
+		if (fresh && "out" in fresh) fresh.dispose()
+	}
+}
+
+async function checkAgainstBuild(pub: PublicClient, m: ManifestV2, strict: boolean): Promise<void> {
 	const build = forgeBuild(strict)
 	if (!("out" in build)) {
 		unavailable(strict, "runtime code hashes", `no usable forge build of contracts/bridge/evm: ${build.why}`)
 		return
 	}
 	try {
-		for (const t of codeTargets(route)) {
-			await guarded(`${t.contract} runtime code`, () => checkCodeHash(pub, build.out, t.contract, t.address as Address, strict))
+		for (const [contract, address] of pinnedContractsOf(m)) {
+			await guarded(`${contract} runtime code`, async () => {
+				const pin = buildPinIn(build.out, contract)
+				if (typeof pin === "string") return unavailable(strict, `${contract} runtime code`, pin)
+				await checkDeployed(pub, contract, address as Address, pin, "build")
+				// The SDK checks a sandbox's code against its pinned build, so the build verified here must be that one.
+				same(`${contract} build`, pin.hash, CODE_PINS[contract].hash, "the SDK's code pin")
+			})
 		}
 	} finally {
 		build.dispose()
@@ -588,8 +616,13 @@ async function checkCodeHashes(
 }
 
 export interface VerifyL1Options {
-	/** The promotion gate: rebuild the artifacts, fail on any input a check cannot obtain. */
+	/** The promotion gate: fail on any input a check cannot obtain, hold the record to its files and the entries this
+	 *  arc deployed to a fresh build. */
 	strict?: boolean
+	/** The generation record the manifest binds; required on a live chain. */
+	record?: RecordSource
+	/** The live record as committed at the arc's build; its entries are not rebuilt. */
+	baseline?: RecordSource
 	/** A routing source's read RPC; defaults to its env override, then the source catalogue's keyless provider. */
 	sourceRpcUrl?: (chainId: number) => string | undefined
 }
@@ -597,10 +630,12 @@ export interface VerifyL1Options {
 /**
  * Every L1 check over a manifest — the generation's bindings and each token, or a fuel route's, then LI.FI's address
  * book where the manifest routes through it, then the code hashes. Returns the failure count; warnings never count.
- * `strict` fails on any input a check cannot obtain, a missing deposit router included. Throws for a placeholder.
+ * `strict` fails on any input a check cannot obtain, a missing deposit router included. Throws for a placeholder, and
+ * for a live chain given no record (`codeCheckOf`).
  */
 export async function verifyL1Manifest(manifest: ManifestV2, rpcUrl: string, options: VerifyL1Options = {}): Promise<number> {
 	const route = requireRoute(manifest)
+	const codeCheck = codeCheckOf(manifest, options)
 	const pub = createL1PublicClient({
 		chain: manifestL1Chain(manifest, rpcUrl, CANONICAL_MULTICALL3),
 		rpcUrl,
@@ -618,7 +653,8 @@ export async function verifyL1Manifest(manifest: ManifestV2, rpcUrl: string, opt
 		await checkFuelRoute(pub, manifest, route.fuelRoute, strict)
 	}
 	await checkLifiBook(pub, manifest, strict, options.sourceRpcUrl ?? ((chainId) => sourceRpcUrl(chainId)))
-	await checkCodeHashes(pub, route, strict)
+	if (codeCheck.kind === "record") await checkAgainstRecord(pub, manifest, codeCheck, strict)
+	else await checkAgainstBuild(pub, manifest, strict)
 	const warned = warnings > 0 ? ` (${warnings} warning(s) to review)` : ""
 	console.log(failures === 0 ? `\n✓ L1 verification passed${warned}` : `\n✗ ${failures} check(s) FAILED${warned}`)
 	return failures
@@ -637,7 +673,9 @@ async function main(): Promise<number> {
 		)
 		return 1
 	}
-	return (await verifyL1Manifest(manifest, rpcUrl, { strict: process.argv.includes("--strict") })) === 0 ? 0 : 1
+	const network = liveNetworkOf(manifest.l1ChainId)
+	const records = network ? { record: recordFor(manifest), baseline: liveBaseline(network, "HEAD") } : {}
+	return (await verifyL1Manifest(manifest, rpcUrl, { strict: process.argv.includes("--strict"), ...records })) === 0 ? 0 : 1
 }
 
 if (import.meta.main)

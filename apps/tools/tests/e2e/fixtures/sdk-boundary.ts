@@ -67,12 +67,14 @@ export const privateFpcModule = () => ({
 
 // Same treatment for the generation's hub + hub-token instances the connect registers on a live
 // bridge manifest: their re-derivation runs bb.js address math the gutted aztec.js mocks answer with
-// `0x0`, which the instantiation check rightly refuses. The manifest constants stay real.
+// `0x0`, which the instantiation check rightly refuses; and for the hub artifact, which the generation
+// imports on first use like the PrivateFPC's. The manifest constants stay real.
 export async function bridgeGenerationModule(importActual: <T>() => Promise<T>) {
 	const actual = await importActual<typeof import("@/contracts/bridge-generation")>()
 	const instanceAt = (address: string) => ({ address: { toString: () => address, equals: () => false } })
 	return {
 		...actual,
+		hubArtifact: vi.fn(async () => ({ name: "TokenBridgeHub" })),
 		rebuildHubInstance: vi.fn(async () => instanceAt(actual.GENERATION?.l2.hub.address ?? "0xhub")),
 		rebuildHubTokenInstance: vi.fn(async (erc20: string) =>
 			instanceAt(actual.MANIFEST_TOKENS.find((t) => t.erc20.toLowerCase() === erc20.toLowerCase())?.l2Token ?? "0xhubtoken"),

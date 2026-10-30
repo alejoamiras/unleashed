@@ -1,14 +1,15 @@
 /**
- * The on-chain half of a network's trust roots: the deployed router, factory or gate, implementation and swapper are
- * this release's builds, and every pointer they froze resolves through the manifest's registry to its canonical
+ * The on-chain half of a network's trust roots: the deployed router, factory or gate, implementation and swapper run
+ * the code their generation's record pins (this release's builds on a sandbox), and every pointer they froze resolves through the manifest's registry to its canonical
  * rollup. A genuine factory built on a hostile registry would freeze a foreign Outbox that releases every clone's
  * reserve, so the registry itself is anchored by the caller (to the Aztec node's, or the mainnet pin).
  */
 import { FeeJuicePortalAbi, RegistryAbi, RollupAbi } from "@aztec-foundation/l1-artifacts"
 import { type Address, hexToBytes, type PublicClient, parseAbi } from "viem"
-import { CODE_PINS, deployedHash, type PinnedContract } from "../protocol/code-hash.ts"
+import { deployedHash, type PinnedContract } from "../protocol/code-hash.ts"
 import { DEPOSIT_ROUTER_ABI } from "../protocol/deposit-router-abi.ts"
 import { PORTAL_FACTORY_ABI, PORTAL_IMPL_CONSTANTS_ABI } from "../protocol/factory-abi.ts"
+import { type GenerationCode, pinnedContractsOf } from "../protocol/generation-record.ts"
 import { DEPOSIT_WITNESS_TYPE_STRING } from "../protocol/l1.ts"
 import { lifiBook, SANDBOX_LIFI_CHAIN_IDS } from "../protocol/lifi-addresses.ts"
 import type { ManifestV2 } from "../protocol/manifest-v2.ts"
@@ -157,19 +158,26 @@ export async function portalBindings(pub: ChainReader, portal: Address, feeAsset
 	]
 }
 
-/** Each deployed contract's runtime under its build's mask, against this release's pin. */
-export async function codeBindings(pub: ChainReader, targets: readonly (readonly [PinnedContract, Address])[]): Promise<Binding[]> {
+/** Each deployed contract's runtime under its build's mask, against the pin of the code its generation runs. */
+export async function codeBindings(
+	pub: ChainReader,
+	targets: readonly (readonly [PinnedContract, Address])[],
+	code: Pick<GenerationCode, "pins" | "record">,
+): Promise<Binding[]> {
+	const source = code.record ? `the ${code.record.network} generation's record` : "this release's build"
 	return Promise.all(
 		targets.map(async ([contract, address]) => {
-			const pin = CODE_PINS[contract]
+			const pin = code.pins[contract]
+			if (!pin) return bind(`${contract} runtime at ${address}`, "(unpinned)", "(a pinned build)", source)
 			const onChain = hexToBytes((await pub.getCode({ address })) ?? "0x")
 			const actual = deployedHash(onChain, pin) ?? `${onChain.length} bytes`
-			return bind(`${contract} runtime at ${address}`, actual, pin.hash, "this release's build")
+			return bind(`${contract} runtime at ${address}`, actual, pin.hash, source)
 		}),
 	)
 }
 
-const SWAPPER_ABI = parseAbi(["function FEE_ASSET() view returns (address)"])
+/** The testnet swapper getter the SDK reads. */
+export const SWAPPER_ABI = parseAbi(["function FEE_ASSET() view returns (address)"])
 
 /** The testnet swapper's code is pinned; what it swaps into is an immutable, read here. */
 async function swapperBindings(pub: ChainReader, swapper: Address, feeAsset: string): Promise<Binding[]> {
@@ -185,26 +193,19 @@ export function swapTargetOf(l1ChainId: number, fuelSwapper: string | undefined)
 	return fuelSwapper
 }
 
-/** Every on-chain trust root of a manifest's route. The registry it reads through must already be anchored. */
-export async function networkBindings(pub: ChainReader, m: ManifestV2): Promise<Binding[]> {
+/** Every on-chain trust root of a manifest's route, its code against `code`. The registry it reads through must already
+ *  be anchored. */
+export async function networkBindings(pub: ChainReader, m: ManifestV2, code: Pick<GenerationCode, "pins" | "record">): Promise<Binding[]> {
 	const route = m.bridge?.l1 ?? m.fuelRoute
 	if (!route?.depositRouter) throw new Error("the manifest has no deposit router")
 	const factory = (m.bridge ? m.bridge.l1.factory : m.fuelRoute?.gate) as Address
 	const rollup = await readRollupBinding(pub, route.registry as Address)
 	const router = route.depositRouter as Address
 	const swapTarget = swapTargetOf(m.l1ChainId, route.fuelSwapper)
-	const code: [PinnedContract, Address][] = [
-		["DepositRouter", router],
-		[m.bridge ? "PortalFactory" : "FuelOnlyGate", factory],
-		...(m.bridge ? [["TokenPortalImpl", m.bridge.l1.implementation as Address] as [PinnedContract, Address]] : []),
-		...(m.l1ChainId !== 1 && route.fuelSwapper
-			? [["TestnetFuelSwapper", route.fuelSwapper as Address] as [PinnedContract, Address]]
-			: []),
-	]
 	const want = { factory, permit2: route.permit2, feeJuicePortal: m.feeJuice.portal, feeAsset: m.feeJuice.asset, swapTarget }
 	const bridge = m.bridge && { factory, implementation: m.bridge.l1.implementation as Address, hub: m.bridge.l2.hub.address }
 	const groups = await Promise.all([
-		codeBindings(pub, code),
+		codeBindings(pub, pinnedContractsOf(m) as [PinnedContract, Address][], code),
 		routerBindings(pub, router, want),
 		portalBindings(pub, m.feeJuice.portal as Address, m.feeJuice.asset, rollup),
 		bridge ? factoryBindings(pub, bridge, rollup) : [],

@@ -36,6 +36,7 @@ import { parseClaimDescriptor, type RelayClaimDescriptor, redactDescriptorForLog
 import { createL2Wallet, createNode, loadManifestV2FromConfigArg, requireBridge } from "./script-bootstrap"
 import { claimTokensUntilSynced, deployAccountIfAbsent, registerHub, registerHubToken, sponsoredFpcFee } from "./script-l2"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
+import { hubArtifactFor } from "./generation-paths"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const MANIFEST_PATH = process.env.BRIDGE_MANIFEST ?? join(here, "..", "..", "..", "apps", "tools", "public", "testnet-bridge.json")
@@ -138,7 +139,7 @@ async function main(): Promise<void> {
 	console.log(`relaying ${token.displaySymbol} claim:`, redactDescriptorForLog(descriptor))
 
 	const { ewallet, from, sendOpts } = await relayerWallet(relayerSecret, nodeUrl)
-	const hub = await registerHub(ewallet, bridge.l2.hub)
+	const hub = await registerHub(ewallet, bridge.l2.hub, hubArtifactFor(manifest))
 	await registerHubToken(ewallet, hub.address, token, bridge.l2.tokenClassId)
 
 	const claim: HubClaimParams = {

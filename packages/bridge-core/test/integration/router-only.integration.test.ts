@@ -9,6 +9,7 @@ import { join } from "node:path"
 import type { Address } from "viem"
 import { afterAll, describe, expect, it } from "vitest"
 import type { L1Ctx } from "@unleashed/sdk/internal"
+import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
 import { parseManifestV2Strict } from "@unleashed/sdk/protocol"
 import { openDeployJournal, readCandidate, readDeployJournal } from "../../scripts/deploy-manifest"
 import { deployDepositRouter } from "../../scripts/generation"
@@ -107,7 +108,7 @@ describe.skipIf(!INTEGRATION)("router-only deploy, rehearsed on the sandbox gene
 	it("the candidate names the new router, parses strictly and passes verify:l1 --strict", async () => {
 		const candidate = readCandidate(options.candidatePath)
 		if (!candidate?.bridge) throw new Error("the conductor wrote no candidate")
-		await parseManifestV2Strict(candidate)
+		await parseManifestV2Strict(candidate, tokenBridgeHubArtifact)
 		expect(candidate.bridge.l1).toMatchObject({
 			depositRouter: first.depositRouter.address,
 			fuelSwapper: first.fuelSwapper.address,

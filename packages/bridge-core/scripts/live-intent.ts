@@ -19,8 +19,10 @@
  * the committed Noir targets); the git source snapshot; and the spend caps.
  *
  * `verify` re-probes identity + signer + digests and fails on ANY divergence; with `--candidate` it
- * also digest-pins the candidate manifest, strict-validates it, cross-reads the fee-juice portal's
- * UNDERLYING() + handler's FEE_ASSET(), and reads the generation's own bindings back off L1 and L2.
+ * also digest-pins the candidate manifest and the candidate generation record, strict-validates both
+ * (the record against its kept artifacts, the manifest's addresses and the live record as committed at
+ * the intent's build), cross-reads the fee-juice portal's UNDERLYING() + handler's FEE_ASSET(), and
+ * reads the generation's own bindings back off L1 and L2.
 
  */
 import { createHash } from "node:crypto"
@@ -29,19 +31,25 @@ import { homedir } from "node:os"
 import { dirname, join, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
+import { type ContractArtifact, loadContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Address, PublicClient } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import {
+	assertRecordBinds,
+	assertRecordIntegrity,
 	CANONICAL_PERMIT2,
 	DEPOSIT_ROUTER_ABI,
+	KEPT_HUB_ARTIFACT,
+	keptEvmArtifact,
 	MAINNET_L1,
 	PORTAL_FACTORY_ABI,
 	type BridgeBlock,
 	type ManifestV2,
+	type PinnedContract,
+	parseGenerationRecord,
 	parseManifestV2,
-	parseManifestV2Strict,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_FPC_SALT,
 	walletChainIdOf,
@@ -49,6 +57,15 @@ import {
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
 import { legacyRoutersOf } from "@unleashed/sdk/internal"
 import { type DeployIdentity, type DeployStep, readDeployJournal } from "./deploy-manifest"
+import {
+	assertRealPath,
+	GENERATION_PATHS,
+	liveBaseline,
+	RECORD_FILE,
+	RECORD_FILES,
+	type RecordSource,
+	workingTreeRecord,
+} from "./generation-paths"
 import { git, resolveBin, run } from "./run"
 import { aztecPin } from "./sandbox/local-network"
 import { createL1PublicClient, createNode, requireBridge } from "./script-bootstrap"
@@ -212,6 +229,8 @@ export interface DeployIntent {
 	artifacts: { privateFpc: { address: string; salt: string; sha256: string }; noirTargets: Record<string, string> }
 	source: { commit: string; treeClean: boolean; operationalAllowlist: string[] }
 	candidateSha256?: string
+	/** The candidate generation record's `record.json`, pinned with `candidateSha256`; its digests cover the kept files. */
+	recordSha256?: string
 	/** Present on a router-only intent: the generation the arc may not move, and the only changes it may make. */
 	routerOnly?: RouterOnlyScope
 	/** Absent on a testnet intent, every one of which predates the field. */
@@ -265,6 +284,8 @@ const OPERATIONAL_ALLOWLIST = [
 	"implementations-plan/archive/aztec-rc3/lessons/",
 	"implementations-plan/archive/aztec-6-stable/lessons/",
 	"apps/tools/public/testnet-bridge.journal.jsonl",
+	// Promotion rewrites the live records, which the carry rule therefore reads at the intent's build commit.
+	...Object.values(GENERATION_PATHS).flatMap((p) => [`${p.liveRecord}/`, `${p.candidateRecord}/`]),
 ]
 
 /** The conductor's testnet journal, repo-relative: the router-only scope reads what was appended since `build`. */
@@ -289,8 +310,8 @@ const NETWORKS: Readonly<Record<IntentNetwork["name"], IntentNetwork>> = {
 		name: "testnet",
 		l1RpcEnv: "SEPOLIA_RPC_URL",
 		journal: TESTNET_JOURNAL,
-		bridgeCandidate: "apps/tools/public/testnet-bridge.candidate.json",
-		bridgeLive: "apps/tools/public/testnet-bridge.json",
+		bridgeCandidate: GENERATION_PATHS.testnet.candidateManifest,
+		bridgeLive: GENERATION_PATHS.testnet.liveManifest,
 		descriptor: "private-fpc-canonical.json",
 		caps: CAPS,
 	},
@@ -298,8 +319,8 @@ const NETWORKS: Readonly<Record<IntentNetwork["name"], IntentNetwork>> = {
 		name: "mainnet",
 		l1RpcEnv: "ETH_RPC_URL",
 		journal: MAINNET_JOURNAL,
-		bridgeCandidate: "apps/tools/public/mainnet-bridge.candidate.json",
-		bridgeLive: "apps/tools/public/mainnet-bridge.json",
+		bridgeCandidate: GENERATION_PATHS.mainnet.candidateManifest,
+		bridgeLive: GENERATION_PATHS.mainnet.liveManifest,
 		descriptor: "private-fpc-canonical-mainnet.json",
 		caps: MAINNET_CAPS,
 	},
@@ -845,11 +866,11 @@ function assertFeeJuicePins(m: ManifestV2, intent: DeployIntent, l1Rpc: string):
  * hash and class commit to `[token_class_id, l1_factory, guardian]`, so a hub initialized with any
  * other factory or class cannot sit at the manifest address with the manifest salt.
  */
-async function reportHubBindings(b: BridgeBlock, nodeUrl: string): Promise<void> {
+async function reportHubBindings(b: BridgeBlock, nodeUrl: string, hubArtifact: ContractArtifact): Promise<void> {
 	const node = createNode(nodeUrl)
 	const instance = await node.getContract(AztecAddress.fromStringUnsafe(b.l2.hub.address))
 	if (!instance) throw new Error(`no contract at the manifest hub ${b.l2.hub.address} on the node — STOP`)
-	const derived = await deriveHubInstance(b.l2.hub)
+	const derived = await deriveHubInstance(b.l2.hub, hubArtifact)
 	const same = (label: string, got: { toString(): string }, want: { toString(): string }) => {
 		if (got.toString().toLowerCase() !== want.toString().toLowerCase())
 			throw new Error(`deployed hub ${label} ${got.toString()} != manifest derivation ${want.toString()} — STOP`)
@@ -887,9 +908,10 @@ async function depositRouterBindings(pub: PublicClient, b: BridgeBlock, router: 
  * The generation's privileged bindings, read off the chains that hold them — a digest cannot catch
  * a wrong owner, a foreign swap target, or an implementation the factory does not clone — followed
  * by the complete L1 verifier (every router/factory constant, every token, the runtime code hashes),
- * so a lookalike router that only answers the readbacks here correctly cannot promote.
+ * so a lookalike router that only answers the readbacks here correctly cannot promote. The code is the
+ * candidate record's, and the hub is derived from its kept artifact.
  */
-async function verifyGenerationBindings(m: ManifestV2, rpcUrl: string, nodeUrl: string): Promise<void> {
+async function verifyGenerationBindings(m: ManifestV2, rpcUrl: string, nodeUrl: string, records: CandidateRecords): Promise<void> {
 	const b = requireBridge(m)
 	const router = b.l1.depositRouter as Address | undefined
 	if (!router) throw new Error("the candidate names no depositRouter, so nothing could send through it — STOP")
@@ -923,8 +945,8 @@ async function verifyGenerationBindings(m: ManifestV2, rpcUrl: string, nodeUrl: 
 	for (const [label, got, want] of bindings) {
 		if (String(got).toLowerCase() !== want.toLowerCase()) throw new Error(`${label} ${String(got)} != manifest ${want} — STOP`)
 	}
-	await reportHubBindings(b, nodeUrl)
-	const failures = await verifyL1Manifest(m, rpcUrl, { strict: true })
+	await reportHubBindings(b, nodeUrl, keptHubArtifact(records.record))
+	const failures = await verifyL1Manifest(m, rpcUrl, { strict: true, ...records })
 	if (failures > 0) throw new Error(`${failures} L1 verification check(s) failed on the candidate — STOP`)
 }
 
@@ -951,10 +973,112 @@ function assertCandidateIdentity(intent: DeployIntent, candidate: ManifestV2, l1
 	}
 }
 
-/** The candidate, strict-parsed: a generation's must carry a bridge and tokens, a fuel route's the placeholder's
- *  `bridge: null`, which `assertFuelRouteScope` then pins. */
-function candidateOf(intent: DeployIntent, raw: string): Promise<ManifestV2> {
-	return intent.fuelRoute ? parseManifestV2Strict(JSON.parse(raw)) : assertFaucetCandidateShape(JSON.parse(raw))
+/** The candidate record and the live record as committed at the intent's build, which the carry rule and the fresh
+ *  rebuild of the arc's own entries read. */
+interface CandidateRecords {
+	record: RecordSource
+	baseline?: RecordSource
+}
+
+/** The candidate record and every file it names, read once and pinned: verify checks and promote writes these bytes. */
+interface CandidateRecordBytes {
+	source: RecordSource
+	files: ReadonlyMap<string, Buffer>
+	sha256: string
+}
+
+function readCandidateRecord(network: IntentNetwork["name"], root = repoRoot): CandidateRecordBytes {
+	const dir = GENERATION_PATHS[network].candidateRecord
+	const files = new Map<string, Buffer>()
+	const readOnce = (relative: string): Buffer => {
+		assertRealPath(root, `${dir}/${relative}`)
+		const bytes = readFileSync(join(root, dir, relative))
+		files.set(relative, bytes)
+		return bytes
+	}
+	const raw = readOnce(RECORD_FILE)
+	const record = parseGenerationRecord(JSON.parse(raw.toString("utf8")))
+	for (const contract of Object.keys(record.evm)) readOnce(keptEvmArtifact(contract as PinnedContract))
+	if (record.aztec) readOnce(KEPT_HUB_ARTIFACT)
+	const read = (relative: string): Buffer => {
+		const bytes = files.get(relative)
+		if (!bytes) throw new Error(`${dir}/${relative} is not one of the record's files — STOP`)
+		return bytes
+	}
+	return { source: { dir, record, read }, files, sha256: sha256Of(raw) }
+}
+
+/** The candidate record as promote writes it: read once more, at the digest verify recorded, with every file the one
+ *  the record's digests name. verify read the files separately, so a byte moved since stops here, before a live write. */
+export async function promotableRecord(
+	network: IntentNetwork["name"],
+	recordedSha: string | undefined,
+	root = repoRoot,
+): Promise<CandidateRecordBytes> {
+	const record = readCandidateRecord(network, root)
+	if (record.sha256 !== recordedSha) {
+		throw new Error(`candidate record bytes changed between verify and promote: ${record.sha256} != recorded ${recordedSha} — STOP`)
+	}
+	await assertRecordIntegrity(record.source.record, record.source.read)
+	return record
+}
+
+function keptHubArtifact(source: RecordSource): ContractArtifact {
+	if (!source.record.aztec) throw new Error(`${source.dir} records no hub — STOP`)
+	return loadContractArtifact(JSON.parse(source.read(KEPT_HUB_ARTIFACT).toString("utf8")))
+}
+
+/** Every candidate entry at an address the baseline holds is the baseline's entry and file, byte for byte: a carried
+ *  contract keeps the build its own promotion proved, and only promotion's review moves it. */
+export function assertCarried(candidate: RecordSource, baseline: RecordSource | undefined): void {
+	if (!baseline) return
+	const carried: Array<[string, unknown, unknown, string]> = [
+		...Object.entries(candidate.record.evm).map(([c, e]): [string, unknown, unknown, string] => [
+			c,
+			e,
+			baseline.record.evm[c as PinnedContract],
+			keptEvmArtifact(c as PinnedContract),
+		]),
+		...(candidate.record.aztec
+			? [
+					["TokenBridgeHub", candidate.record.aztec.TokenBridgeHub, baseline.record.aztec?.TokenBridgeHub, KEPT_HUB_ARTIFACT] as [
+						string,
+						unknown,
+						unknown,
+						string,
+					],
+				]
+			: []),
+	]
+	for (const [label, entry, live, file] of carried) {
+		const address = (entry as { address: string }).address
+		if ((live as { address?: string } | undefined)?.address !== address) continue
+		if (!isDeepStrictEqual(asJson(entry), asJson(live)) || !candidate.read(file).equals(baseline.read(file)))
+			throw new Error(
+				`the candidate record's ${label} at ${address} is not the live record's entry — a carried contract keeps its record; STOP`,
+			)
+	}
+}
+
+/** The candidate record derives from its files, names exactly the candidate's contracts and carries every live entry
+ *  unchanged. */
+async function assertCandidateRecord(intent: DeployIntent, candidate: ManifestV2, record: RecordSource): Promise<CandidateRecords> {
+	await assertRecordIntegrity(record.record, record.read)
+	assertRecordBinds(record.record, candidate)
+	const baseline = liveBaseline(networkOf(intent).name, intent.source.commit, repoRoot)
+	assertCarried(record, baseline)
+	console.log(
+		`✓ candidate record intact, bound to the candidate, every live entry carried${baseline ? "" : " (no live record at build)"}`,
+	)
+	return { record, baseline }
+}
+
+/** The candidate, strict-parsed: a generation's must carry a bridge and tokens, derived from the candidate record's
+ *  hub; a fuel route's the placeholder's `bridge: null`, which `assertFuelRouteScope` then pins. */
+export function candidateOf(intent: Pick<DeployIntent, "fuelRoute">, raw: string, record: RecordSource): Promise<ManifestV2> {
+	return intent.fuelRoute
+		? Promise.resolve(parseManifestV2(JSON.parse(raw)))
+		: assertFaucetCandidateShape(JSON.parse(raw), keptHubArtifact(record))
 }
 
 /** Digest-pin the candidate bytes, strict-parse them, then prove the generation or the fuel route they name. */
@@ -970,11 +1094,20 @@ async function verifyCandidate(
 	if (intent.candidateSha256 && intent.candidateSha256 !== digest) {
 		throw new Error(`candidate digest CHANGED since recorded: ${digest} != ${intent.candidateSha256} — never promote`)
 	}
-	const candidate = await candidateOf(intent, raw)
+	if (intent.candidateSha256 && !intent.recordSha256) {
+		throw new Error("the intent pinned a candidate but no generation record — build a new intent; STOP")
+	}
+	const recordBytes = readCandidateRecord(networkOf(intent).name)
+	if (intent.recordSha256 && intent.recordSha256 !== recordBytes.sha256) {
+		throw new Error(`candidate record digest CHANGED since recorded: ${recordBytes.sha256} != ${intent.recordSha256} — never promote`)
+	}
+	const candidate = await candidateOf(intent, raw, recordBytes.source)
+	const records = await assertCandidateRecord(intent, candidate, recordBytes.source)
 	if (!intent.candidateSha256) {
 		intent.candidateSha256 = digest
+		intent.recordSha256 = recordBytes.sha256
 		writeFileSync(intentPath, `${JSON.stringify(intent, null, "\t")}\n`)
-		console.log(`✓ candidate digest recorded: ${digest}`)
+		console.log(`✓ candidate digests recorded: manifest ${digest}, record ${recordBytes.sha256}`)
 	}
 	assertFeeJuicePins(candidate, intent, l1Rpc)
 	assertCandidateIdentity(intent, candidate, l1Rpc)
@@ -982,10 +1115,10 @@ async function verifyCandidate(
 	if (intent.fuelRoute) {
 		// The build commit's copy: the live file is allowlisted, so HEAD's may have moved since.
 		assertFuelRouteScope(intent.signer, candidate, manifestAt(intent.source.commit, networkOf(intent)))
-		const failures = await verifyL1Manifest(candidate, l1Rpc, { strict: true })
+		const failures = await verifyL1Manifest(candidate, l1Rpc, { strict: true, ...records })
 		if (failures > 0) throw new Error(`${failures} L1 verification check(s) failed on the candidate — STOP`)
 	} else {
-		await verifyGenerationBindings(candidate, l1Rpc, nodeUrl)
+		await verifyGenerationBindings(candidate, l1Rpc, nodeUrl, records)
 	}
 	console.log("✓ candidate strict-valid + privileged readbacks agree")
 }
@@ -1107,10 +1240,15 @@ function readPromotionBytes(paths: PromotionPaths, bridgeOnly: boolean, recorded
 	}
 }
 
-/** Re-verify what actually landed: the bridge manifest re-parses, the faucet derivation is re-proven
- *  through the real gate, and a --bridge-only promotion must have left the faucet file untouched. */
-function verifyWritten(paths: PromotionPaths, faucetLivePin: string | null): void {
-	parseManifestV2(JSON.parse(readFileSync(paths.bridgeLive, "utf8")))
+/** Re-verify what actually landed: the bridge manifest re-parses, the live record derives from its files and binds
+ *  it, the faucet derivation is re-proven through the real gate, and a --bridge-only promotion must have left the
+ *  faucet file untouched. */
+async function verifyWritten(net: IntentNetwork, paths: PromotionPaths, faucetLivePin: string | null): Promise<void> {
+	const live = parseManifestV2(JSON.parse(readFileSync(paths.bridgeLive, "utf8")))
+	const record = workingTreeRecord(GENERATION_PATHS[net.name].liveRecord, repoRoot)
+	if (!record) throw new Error(`no record landed in ${GENERATION_PATHS[net.name].liveRecord} — investigate NOW`)
+	await assertRecordIntegrity(record.record, record.read)
+	assertRecordBinds(record.record, live)
 	run("bun", [join(repoRoot, "apps/tools/scripts/verify-deployments.ts")], { stdio: "inherit" })
 	if (!faucetLivePin) return
 	const after = sha256Of(readFileSync(paths.faucetLive))
@@ -1139,6 +1277,24 @@ function writeAtomic(target: string, bytes: Buffer, sha: string): void {
 	if (written !== sha) throw new Error(`re-hash mismatch after write: ${target} ${written} != ${sha} — investigate before committing`)
 }
 
+/**
+ * Replaces the live record with the candidate's files, each atomically: the kept artifacts first, `record.json` after
+ * them, then any file of the closed set the candidate does not hold. Nothing outside the closed set is touched, and a
+ * re-run after an interrupted one converges on the same bytes.
+ */
+export function writeLiveRecord(dir: string, files: ReadonlyMap<string, Buffer>, root = repoRoot): void {
+	const order = [...files.keys()].sort((a, b) => Number(a === RECORD_FILE) - Number(b === RECORD_FILE))
+	for (const relative of order) {
+		assertRealPath(root, `${dir}/${relative}`)
+		const bytes = files.get(relative) as Buffer
+		writeAtomic(join(root, dir, relative), bytes, sha256Of(bytes))
+	}
+	for (const relative of RECORD_FILES.filter((f) => !files.has(f))) {
+		assertRealPath(root, `${dir}/${relative}`)
+		rmSync(join(root, dir, relative), { force: true })
+	}
+}
+
 /** The receipt lives beside the intent it settles, so each arc keeps its own record. */
 function writeReceipt(intentPath: string, mode: string, bridge: unknown, faucet: unknown, firstPromotion: boolean): string {
 	const receiptPath = join(dirname(resolvePath(repoRoot, intentPath)), "promotion-receipt.json")
@@ -1159,7 +1315,8 @@ function writeReceipt(intentPath: string, mode: string, bridge: unknown, faucet:
 }
 
 /**
- * Crash-safe, receipted promotion of both candidates to their live paths:
+ * Crash-safe, receipted promotion of the candidates to their live paths:
+ *   contracts/bridge/generations/testnet.candidate/      → testnet/ (the generation record, first)
  *   apps/tools/public/testnet-bridge.candidate.json      → testnet-bridge.json
  *   apps/tools/src/contracts/deployments.candidate.json  → deployments.json
  *
@@ -1193,7 +1350,8 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 
 	assertPromotablePaths(paths, bridgeOnly)
 	const bytes = readPromotionBytes(paths, bridgeOnly, intent.candidateSha256)
-	const candidate = await candidateOf(intent, bytes.bridge.toString("utf8"))
+	const record = await promotableRecord(net.name, intent.recordSha256)
+	const candidate = await candidateOf(intent, bytes.bridge.toString("utf8"), record.source)
 	// Prove the faucet candidate's derivation BEFORE any live write; otherwise a junk candidate
 	// fails only after the live file was overwritten.
 	if (bytes.faucet) {
@@ -1204,14 +1362,21 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 	if (live) assertZeroSeed(candidate, live)
 	else console.log("no live manifest yet — first promotion; the generation interlock has nothing to compare against")
 
+	// The record first and the manifest last: a manifest is never live without the record that binds it.
+	writeLiveRecord(GENERATION_PATHS[net.name].liveRecord, record.files)
 	writeAtomic(paths.bridgeLive, bytes.bridge, bytes.bridgeSha)
 	if (bytes.faucet && bytes.faucetSha) writeAtomic(paths.faucetLive, bytes.faucet, bytes.faucetSha)
-	verifyWritten(paths, bytes.faucetLivePin)
+	await verifyWritten(net, paths, bytes.faucetLivePin)
 
 	const receiptPath = writeReceipt(
 		intentPath,
 		bridgeOnly ? "bridge-only" : "bridge+faucet",
-		{ candidateSha256: bytes.bridgeSha, live: net.bridgeLive },
+		{
+			candidateSha256: bytes.bridgeSha,
+			live: net.bridgeLive,
+			recordSha256: record.sha256,
+			record: GENERATION_PATHS[net.name].liveRecord,
+		},
 		bytes.faucetSha
 			? { candidateSha256: bytes.faucetSha, live: "apps/tools/src/contracts/deployments.json" }
 			: { unchangedSha256: bytes.faucetLivePin, live: "apps/tools/src/contracts/deployments.json" },

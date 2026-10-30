@@ -6,11 +6,9 @@ import { parseNetwork } from "../src/network.ts"
 import { feeJuiceAddress } from "../src/protocol/fee-juice.ts"
 import { readsOf, testnet, worldOf } from "./fakes.ts"
 
-vi.mock("../src/protocol/code-hash.ts", async (importOriginal) => {
-	const real = await importOriginal<typeof import("../src/protocol/code-hash.ts")>()
-	const { syntheticPins } = await import("./fakes.ts")
-	return { ...real, CODE_PINS: syntheticPins(real.pinOfBuild) }
-})
+vi.mock("../src/protocol/generation-record.ts", async (importOriginal) =>
+	(await import("./fakes.ts")).withSyntheticCode(await importOriginal()),
+)
 
 const L2_TOKEN = "0x0000000000000000000000000000000000000000000000000000000000000abc"
 

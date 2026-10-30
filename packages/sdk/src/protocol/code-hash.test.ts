@@ -1,6 +1,6 @@
 import { concat, type Hex, hexToBytes, toHex } from "viem"
 import { describe, expect, it } from "vitest"
-import { deployedHash, type ImmutableSpan, pinOfBuild } from "./code-hash.ts"
+import { deployedHash, type ImmutableSpan, pinOfBuild, samePin } from "./code-hash.ts"
 
 /** A runtime laid out as solc emits it: code, an INVALID guard, then the CBOR metadata map
  *  `{ipfs: <34 bytes>, solc: <3 bytes>}` and its 2-byte length. */
@@ -33,6 +33,12 @@ describe("deployedHash under a build's pin", () => {
 		const pin = pinOfBuild(runtime(two("00", "00"), 0x22), refs)
 		expect(deployedHash(runtime(two("ab", "ab"), 0x11), pin)).toBe(pin.hash)
 		expect(deployedHash(runtime(two("ab", "cd"), 0x11), pin)).toBeUndefined()
+		// The same spans as two immutables of one copy each: the hash is the build's, but the copies may now disagree.
+		const split = pinOfBuild(runtime(two("00", "00"), 0x22), { "7": [{ start: 1, length: 32 }], "8": [{ start: 35, length: 32 }] })
+		expect(split.hash).toBe(pin.hash)
+		expect(deployedHash(runtime(two("ab", "cd"), 0x11), split)).toBe(pin.hash)
+		expect(samePin(split, pin)).toBe(false)
+		expect(samePin(structuredClone(pin), pin)).toBe(true)
 	})
 
 	it("matches a deployment that differs from the build only in its immutables and metadata trailer", () => {

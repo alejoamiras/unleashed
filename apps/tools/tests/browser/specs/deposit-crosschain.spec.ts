@@ -55,7 +55,7 @@ async function openCrossChainReview(page: Page, actor: { address: string }, plan
 	await reviewCrossChain(page, plan)
 }
 
-/** A review held past the 60 s route TTL shows Rebuild in Sign's place: rebuilt, it can be confirmed again. */
+/** A review held past the 60 s route TTL shows Refresh in Sign's place: refreshed, it can be confirmed again. */
 async function liveTerms(page: Page) {
 	const confirm = page.locator(`${tid(TESTIDS.sendReviewConfirm)}:enabled`)
 	const rebuild = page.locator(tid(TESTIDS.sendXcRefresh))

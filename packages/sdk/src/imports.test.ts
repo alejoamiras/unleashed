@@ -65,15 +65,21 @@ function staticGraph(entry: string): Set<string> {
 	return seen
 }
 
-// The hub artifact is megabytes: a gas-only integrator must not load it, so only a dynamic import reaches it.
-describe("the hub artifact", () => {
-	it.each(["index.ts", "fuel/index.ts"])("is out of %s's static import graph", (entry) => {
-		const graph = staticGraph(entry)
-		expect(graph.size).toBeGreaterThan(5)
-		expect([...graph].map((f) => f.slice(SRC.length + 1)).filter((f) => f === "protocol/artifacts.ts")).toEqual([])
-	})
+// The hub artifacts are megabytes: no entry loads one statically, and a network loads only its own generation's.
+describe("the hub artifacts", () => {
+	const HUBS = ["protocol/artifacts.ts", "protocol/hub-artifact-testnet.ts"]
 
-	it("is in ./bridge's", () => {
-		expect([...staticGraph("bridge/index.ts")].map((f) => f.slice(SRC.length + 1))).toContain("protocol/artifacts.ts")
+	it.each(["index.ts", "fuel/index.ts", "bridge/index.ts", "protocol/index.ts", "networks.ts"])(
+		"are out of %s's static import graph",
+		(entry) => {
+			const graph = [...staticGraph(entry)].map((f) => f.slice(SRC.length + 1))
+			expect(graph.length).toBeGreaterThan(entry === "networks.ts" ? 1 : 5)
+			expect(graph.filter((f) => HUBS.includes(f))).toEqual([])
+		},
+	)
+
+	it("are each reached by the generation selector's dynamic import", () => {
+		const dynamic = specifiersIn(join(SRC, "protocol", "generation-record.ts")).map((spec) => join("protocol", spec))
+		expect(HUBS.map((h) => dynamic.includes(h))).toEqual([true, true])
 	})
 })

@@ -1,5 +1,6 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { describe, expect, it } from "vitest"
+import { tokenBridgeHubArtifact as HUB_ARTIFACT } from "@unleashed/sdk/artifacts"
 import { deriveHubTokenInstance, deriveManifestHub, type ManifestV2, predictPortal } from "@unleashed/sdk/protocol"
 import { assertFaucetCandidateShape, assertZeroSeed } from "./promotion"
 
@@ -15,7 +16,10 @@ const HUB_RECORD = {
 	constructorArgs: [TOKEN_CLASS_ID, FACTORY, GUARDIAN],
 }
 const HUB = (
-	await deriveManifestHub({ l2: { hub: { ...HUB_RECORD, address: "" } } } as unknown as Parameters<typeof deriveManifestHub>[0])
+	await deriveManifestHub(
+		{ l2: { hub: { ...HUB_RECORD, address: "" } } } as unknown as Parameters<typeof deriveManifestHub>[0],
+		HUB_ARTIFACT,
+	)
 ).address.toString()
 
 const NAME_WORD = "0x005465737420546f6b656e000000000000000000000000000000000000000000"
@@ -80,24 +84,28 @@ const parsed = (overrides?: Parameters<typeof raw>[0]): ManifestV2 => raw(overri
 
 describe("assertFaucetCandidateShape", () => {
 	it("returns the parsed manifest for a promotable candidate", async () => {
-		expect((await assertFaucetCandidateShape(raw())).bridge?.tokens[0].displaySymbol).toBe("TST")
+		expect((await assertFaucetCandidateShape(raw(), HUB_ARTIFACT)).bridge?.tokens[0].displaySymbol).toBe("TST")
 	})
 
 	it("rejects a placeholder manifest and a bridge with no tokens", async () => {
-		await expect(assertFaucetCandidateShape({ ...raw(), bridge: null })).rejects.toThrow(/no bridge \(placeholder network\)/)
+		await expect(assertFaucetCandidateShape({ ...raw(), bridge: null }, HUB_ARTIFACT)).rejects.toThrow(
+			/no bridge \(placeholder network\)/,
+		)
 		const empty = raw()
 		empty.bridge.tokens = []
-		await expect(assertFaucetCandidateShape(empty)).rejects.toThrow(/carries no tokens/)
+		await expect(assertFaucetCandidateShape(empty, HUB_ARTIFACT)).rejects.toThrow(/carries no tokens/)
 	})
 
 	it("rejects anything the strict schema rejects (a carried portal, a foreign claim mode, an L2 token the hub would not derive)", async () => {
 		const carried = raw()
 		carried.bridge.tokens[0].portal = "0x00000000000000000000000000000000000000ee"
-		await expect(assertFaucetCandidateShape(carried)).rejects.toThrow(/not the factory's CREATE2/)
-		await expect(assertFaucetCandidateShape({ ...raw(), privateClaimMode: "secret-v1" })).rejects.toThrow(/failed strict validation/)
+		await expect(assertFaucetCandidateShape(carried, HUB_ARTIFACT)).rejects.toThrow(/not the factory's CREATE2/)
+		await expect(assertFaucetCandidateShape({ ...raw(), privateClaimMode: "secret-v1" }, HUB_ARTIFACT)).rejects.toThrow(
+			/failed strict validation/,
+		)
 		const foreign = raw()
 		foreign.bridge.tokens[0].l2Token = `0x${"5".repeat(64)}`
-		await expect(assertFaucetCandidateShape(foreign)).rejects.toThrow(/is not the hub's derivation/)
+		await expect(assertFaucetCandidateShape(foreign, HUB_ARTIFACT)).rejects.toThrow(/is not the hub's derivation/)
 	})
 })
 

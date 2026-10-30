@@ -36,6 +36,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [fuel-l1-mint](fuel-l1-mint/plan.md) — archived — Fuel L1 mint — `/blueprint light`
 - [fuel-portal-v5-fix](fuel-portal-v5-fix/plan.md) — archived — Fuel-bridge Fee-Juice portal V5 fix
 - [gas-floor-1](gas-floor-1/plan.md) — archived — gas-floor-1 — a cross-chain gas slice under the claim minimum shows the claim's shortfall, not an outage; Cross to Aztec ~1 min
+- [gen-pins-1](gen-pins-1/plan.md) — archived — gen-pins-1 — a committed record of the code each live bridge generation runs, checked by the SDK, the app and the tooling
 - [journal-engine-decomposition](journal-engine-decomposition/plan.md) — archived — journal-engine-decomposition (arc 4, monster 3 of 3)
 - [keyed-logs-1](keyed-logs-1/plan.md) — archived — keyed-logs-1 — one redacted entry for every keyed script (runKeyed, keyedNodeUrl)
 - [landing](landing/plan.md) — archived — option C "Dither tide" at unleashed.systems and www, on its own assets-only Worker
@@ -52,6 +53,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [rpc-floor-1](rpc-floor-1/plan.md) — archived — rpc-floor-1 — old cross-chain windows read from a keyless reader that keeps them
 - [sdk-1](sdk-1/plan.md) — archived — sdk-1 — `@unleashed/sdk` with fuel and bridge entries, the app's sends and claims on it, and the mainnet fuel-only route
 - [send-copy-1](send-copy-1/plan.md) — archived — send-copy-1 — testnet send wording, and two refusals before any wallet prompt
+- [send-copy-2](send-copy-2/plan.md) — archived — send-copy-2 — the cross-chain pause check, a blank review, plainer testnet cross-chain copy
 - [send-wizard-ux](send-wizard-ux/plan.md) — archived — Send wizard UX redesign
 - [swap-fuel](swap-fuel/plan.md) — archived — swap-fuel — bridge-and-fuel on the live Sepolia ↔ Aztec testnet bridge
 - [tools-console](tools-console/plan.md) — archived — Tools Console — the shell around the Send wizard
