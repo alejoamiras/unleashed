@@ -36,6 +36,7 @@ describe("cspConnectSrc", () => {
 				KEYLESS_TESTNET_NODE,
 				TOKEN_LIST_URL,
 				"https://ethereum-sepolia-rpc.publicnode.com",
+				"https://rpc.sepolia.ethpandaops.io",
 				"https://base-sepolia-rpc.publicnode.com",
 				"https://sepolia.base.org",
 			].sort(),

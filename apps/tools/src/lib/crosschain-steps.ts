@@ -16,7 +16,6 @@ import {
 	UNSEAL_PROMPT,
 } from "@/lib/bridge-steps"
 import { chainLabel, chainTxUrl, lifiScanUrl, railLabel } from "@/lib/chains"
-import { waitText } from "@/lib/crosschain-figures"
 import { formatStoredAmount, trimTxHash } from "@/lib/format"
 import { safeAddressText, safeDisplay, safeSentence } from "@/lib/token-display"
 
@@ -87,14 +86,12 @@ export function etaRange(seconds: number): string {
 	return `${lo}–${hi} min`
 }
 
-/** The bridging line the stepper and the card share. A send on fixed terms (testnet only) waits for our testnet
- *  relayer, its exclusive filler; its `etaSeconds` is the whole fill window, not an estimate. */
+/** The bridging line the stepper and the card share. On fixed terms (testnet only) `etaSeconds` is the whole fill
+ *  window, not an estimate, so the line names no time. */
 export function bridgingPrompt(rec: CrossChainDepositRecord, symbol: string): string {
-	const rail = railLabel(rec.route.rail)
 	const l1 = chainLabel(rec.chainId)
-	if (rec.route.terms !== "fixed")
-		return `${rail} is moving your ${symbol} to ${l1}. Nothing for you to do; usually ${etaRange(rec.route.etaSeconds)}.`
-	return `${rail} holds your ${symbol} until our testnet relayer fills it on ${l1}. Nothing for you to do.`
+	if (rec.route.terms === "fixed") return `Moving your ${symbol} to ${l1}. Nothing for you to do.`
+	return `${railLabel(rec.route.rail)} is moving your ${symbol} to ${l1}. Nothing for you to do; usually ${etaRange(rec.route.etaSeconds)}.`
 }
 
 const LATE_FLOOR_MINUTES = 5
@@ -247,12 +244,12 @@ function bridgeCopy(rec: CrossChainDepositRecord, w: Words): PhaseCopy {
 	const tx = rec.route.srcTxHash
 	const scan = tx ? lifiScanUrl(tx) : ""
 	const fixed = rec.route.terms === "fixed"
-	const range = fixed ? waitText(rec.route.etaSeconds) : etaRange(rec.route.etaSeconds)
+	const range = etaRange(rec.route.etaSeconds)
 	return {
 		label: `Bridge to ${w.l1}`,
 		prompt: bridgingPrompt(rec, w.token?.symbol ?? "funds"),
-		eta: fixed ? `usually a few minutes, up to ${range}` : `usually ${range}`,
-		estimate: fixed ? `up to ${range}` : `~${range}`,
+		eta: fixed ? "usually a few minutes" : `usually ${range}`,
+		estimate: fixed ? "a few min" : `~${range}`,
 		compact: { label: "Bridge", weight: 1.6 },
 		done: tx ? linkOf(scan, tx, "on LI.FI") : {},
 		live: { lifi: true, ...(tx ? linkOf(scan, tx, "Track on LI.FI") : {}) },

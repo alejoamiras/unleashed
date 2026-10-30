@@ -68,8 +68,8 @@ const box = computed<Box>(() => {
 			return {
 				tone: "attention",
 				icon: "hourglass",
-				title: IS_MAINNET ? "This quote expired." : "These terms expired.",
-				action: IS_MAINNET ? "Refresh quote" : "Rebuild terms",
+				title: IS_MAINNET ? "This quote expired." : "This review expired.",
+				action: IS_MAINNET ? "Refresh quote" : "Refresh",
 				actionTestid: TESTIDS.sendXcRefresh,
 				actionIcon: "reload",
 			}
@@ -125,7 +125,7 @@ const box = computed<Box>(() => {
 			<template v-if="state.field">Field that differs: <span class="mono">{{ state.field }}</span>. </template>Nothing was signed and
 			nothing moved.
 		</template>
-		<template v-else-if="state.kind === 'expired' && !IS_MAINNET">They’re rebuilt from the latest block; nothing was signed.</template>
+		<template v-else-if="state.kind === 'expired' && !IS_MAINNET">Nothing was signed.</template>
 		<template v-else-if="state.kind === 'expired'">Fees and amounts may have moved since it was made.</template>
 		<template v-else-if="state.kind === 'venue'">
 			The gas swap on {{ chainLabel(NETWORK.l1ChainId) }} could not be read. Nothing was signed.
