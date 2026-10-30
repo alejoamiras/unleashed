@@ -3,7 +3,7 @@ import {
 	type BridgeJournalRecord,
 	type CrossChainDepositRecord,
 	type DepositEnvelopeV2,
-	type EncryptionKey,
+	RecoveryKey,
 	type DepositJournalRecord,
 	type KV,
 	type SendDepositRecord,
@@ -27,8 +27,7 @@ import {
 	patchRecordWhen as journalPatchWhen,
 	pruneCompleted,
 	quarantineInvalid,
-	recoveryKeyFromSignature,
-	recoveryKeyMessage,
+	keyTextOf,
 	rekeyRecord,
 	rekeyRecordWhen,
 	removeRecord,
@@ -58,6 +57,7 @@ import type { GrantOutcome } from "@/lib/send-model"
 import { NETWORK } from "@/lib/network"
 import { computed, ref, watch } from "vue"
 import { FUEL_PORTAL } from "@/contracts/bridge-generation"
+import { recoveryBindingOf } from "@/lib/send-record"
 import { SYNC_TARGET_MARGIN_BLOCKS, stepLogLines } from "@/lib/bridge-steps"
 import { crossChainLogFacts } from "@/lib/crosschain-steps"
 import { trimTxHash } from "@/lib/format"
@@ -818,11 +818,11 @@ function handleUnsealFailure(rec: ClaimRecord, e: unknown, connected: string | n
 	if (connected && rec.sealerL1 && connected === rec.sealerL1.toLowerCase()) {
 		revokeSealTrust(deps.kv, rec.chainId, connected)
 	}
-	setRuntime(rec.id, {
-		attention: "unseal-failed",
-		note: "Your signature didn't open this record. If this address lives in more than one wallet app, retry with the one used at deposit time. Nothing was deleted.",
-	})
+	setRuntime(rec.id, { attention: "unseal-failed", note: UNSEAL_FAILED })
 }
+
+const UNSEAL_FAILED =
+	"Your signature didn't open this record. If this address lives in more than one wallet app, retry with the one used at deposit time. Nothing was deleted."
 
 /**
  * A cross-chain record seals a v3 amount window until its deposit is final. Opened with the key in hand, it
@@ -830,7 +830,7 @@ function handleUnsealFailure(rec: ClaimRecord, e: unknown, connected: string | n
  * every later open reads an ordinary v2 envelope. Null when the deposit is not known yet or falls outside
  * the sealed window.
  */
-export async function openClaimEnvelope(key: EncryptionKey, rec: ClaimRecord, blob: string): Promise<DepositEnvelopeV2 | null> {
+export async function openClaimEnvelope(key: RecoveryKey, rec: ClaimRecord, blob: string): Promise<DepositEnvelopeV2 | null> {
 	const xc = rec as AnyJournalRecord
 	if (!isCrossChainRecord(xc)) return openDepositEnvelope(key, blob)
 	const v3 = await openDepositEnvelopeV3(key, blob).catch(() => null)
@@ -865,12 +865,16 @@ async function resolvePrivateSecret(rec: ClaimRecord): Promise<{ secretHex: stri
 		})
 		return null
 	}
-	const binding = { chainId: rec.chainId, portal: rec.portal, bridge: rec.bridge, secretHashHex: rec.secretHashHex }
+	// The blob names the text its key was signed over; a marker this build does not know is refused unsigned.
+	const text = keyTextOf(rec.sealedEnvelope)
+	if (!text) {
+		setRuntime(rec.id, { attention: "unseal-failed", note: UNSEAL_FAILED })
+		return null
+	}
 	let envelope: DepositEnvelopeV2 | null
 	try {
-		const key = await recoveryKeyFromSignature(
-			await runOnLane("l1", () => deps.signL1?.(recoveryKeyMessage(binding)) as Promise<string>),
-		)
+		const sign = (message: string) => runOnLane("l1", () => deps.signL1?.(message) as Promise<string>)
+		const key = await RecoveryKey.derive(sign, recoveryBindingOf(rec, rec.secretHashHex), text)
 		envelope = await openClaimEnvelope(key, rec, rec.sealedEnvelope)
 	} catch (e) {
 		handleUnsealFailure(rec, e, connected)
