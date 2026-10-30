@@ -19,7 +19,7 @@ import {MintableERC20} from "../src/MintableERC20.sol";
 import {ILiFiSwap} from "../src/interfaces/ILiFiSwap.sol";
 import {DepositRouterFixture} from "./mocks/DepositRouterFixture.sol";
 import {CapturingOutbox, FakeRegistry} from "./mocks/AztecFakes.sol";
-import {FeeOnTransferERC20, PlainERC20} from "./mocks/MetadataERC20s.sol";
+import {FeeOnTransferERC20, PlainERC20, SenderSurchargeERC20} from "./mocks/MetadataERC20s.sol";
 
 // ═══════════════════════════ hostile actors ═══════════════════════════
 
@@ -409,6 +409,22 @@ contract DepositRouterBlackhatTest is DepositRouterFixture {
         router.bridgeWithPermit(_plainIntent(address(taxed), false), "", AMOUNT, _permit(1));
         vm.expectRevert(DepositRouter.InexactPull.selector);
         router.bridgeFromCaller(_plainIntent(address(taxed), false), "", AMOUNT, AMOUNT);
+        vm.stopPrank();
+    }
+
+    /// The clone checks its caller's exact debit, so a balance the router already holds cannot make up a difference.
+    function test_clone_requiresExactRouterDebit() public {
+        SenderSurchargeERC20 sur = new SenderSurchargeERC20(100);
+        uint256 extra = AMOUNT / 100;
+        sur.mint(address(router), extra);
+        sur.mint(user, AMOUNT + extra);
+        vm.startPrank(user);
+        sur.approve(address(permit2), type(uint256).max);
+        sur.approve(address(router), type(uint256).max);
+        vm.expectRevert(TokenPortalImpl.InexactTransfer.selector);
+        router.bridgeWithPermit(_plainIntent(address(sur), false), "", AMOUNT, _permit(1));
+        vm.expectRevert(TokenPortalImpl.InexactTransfer.selector);
+        router.bridgeFromCaller(_plainIntent(address(sur), false), "", AMOUNT, AMOUNT);
         vm.stopPrank();
     }
 

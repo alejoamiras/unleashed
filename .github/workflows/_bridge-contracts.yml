@@ -81,7 +81,7 @@ jobs:
             }
           done <<'EXPECTED'
           2 FormalFactoryTest
-          2 FormalCloneTest
+          4 FormalCloneTest
           11 FormalDepositRouterTest
           3 FormalFuelOnlyGateTest
           EXPECTED
@@ -89,6 +89,8 @@ jobs:
           # A name listed twice is proved by two contracts, so it must pass twice: one passing
           # line cannot cover the other contract's renamed proof.
           cat > proofs.want <<'PROOFS'
+          check_deposit_refusesInexactPull
+          check_deposit_refusesReservePastL2Max
           check_deposit_revertsWhenPaused
           check_fromCaller_boundedPull
           check_fromCaller_conservesReceived
