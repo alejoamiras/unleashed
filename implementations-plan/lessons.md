@@ -13,7 +13,7 @@ What already bit this repository, one line each, linking to the detail. Read it 
 - `EmbeddedWallet.create` without `ephemeral` persists a 15 MB store to `./aztec-wallet-data`, untracked and not gitignored ([phase 9](archive/unleashed-reskin/lessons/phase-9.md)).
 - `gh stack sync` fast-forwards the local trunk, so with `main` checked out in another worktree deliver with `gh stack push` and `gh stack submit`; `submit --auto` opens drafts unless given `--open`.
 - After a stack push, an aggregator can read FAILURE from the run the push cancelled until its replacement reports: check that run before re-running.
-- Releasing a `ref` hold runs its gated watcher before the awaiting caller resumes: re-check guards after the await ([phase 1](archive/send-copy-1/lessons/phase-1.md)).
+- A watcher runs before an awaiting caller resumes (a released `ref` hold, a locked reload): re-check guards after it; set what it reads in the span ([1](archive/send-copy-1/lessons/phase-1.md), [2](archive/journal-1/lessons/phase-0.md)).
 - Vue's whitespace condensing drops a space at the edge of conditional text ("accountmain"): put it inside the interpolation (``{{ q ? ` ${q}` : "" }}``) ([phase 15](archive/aprime-fidelity/lessons/phase-15.md)).
 - A component rendered in a parent's template, slots included, carries the parent's scope id, so its scoped rules reach it; jsdom runs no styles, so pin that in a browser ([phase 4](archive/aprime-fidelity/lessons/phase-4.md)).
 - Most screen readers do not announce a live region (`aria-live`, `role="log"`) inserted with its text: mount it empty and unconditionally, then fill it ([phase 19](archive/aprime-fidelity/lessons/phase-19.md)).
