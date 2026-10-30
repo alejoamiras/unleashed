@@ -215,8 +215,10 @@ describe("readErc20Metadata through viem's call", () => {
 		args: [TOKEN, ["https://gateway.invalid/{sender}/{data}.json"], "0x", "0xdeadbeef", "0x"],
 	})
 
+	const lookupRevert = () => Object.assign(new Error("execution reverted"), { code: 3, data: LOOKUP })
+
 	it.each([
-		["code 3", () => Object.assign(new Error("execution reverted"), { code: 3, data: LOOKUP })],
+		["code 3", lookupRevert],
 		[
 			"a wallet's -32603 around the node's code 3",
 			() =>
@@ -252,11 +254,17 @@ describe("readErc20Metadata through viem's call", () => {
 		["omitted", undefined],
 		["a custom resolver", { request: vi.fn(async (): Promise<Hex> => "0x") }],
 	] as const)("refuses a client whose ccipRead is %s, before any call", async (_label, ccipRead) => {
-		const calls: string[] = []
-		await expect(readErc20Metadata(node({}, { ccipRead, calls }), TOKEN)).rejects.toThrow("ccipRead: false")
-		expect(calls).toEqual([])
-		if (ccipRead) expect(ccipRead.request).not.toHaveBeenCalled()
-		await expect(readErc20Metadata(node(), TOKEN)).resolves.toMatchObject({ name: "Token" })
+		const fetch = vi.fn(async () => Response.json({ data: abiString("Gateway") }))
+		vi.stubGlobal("fetch", fetch)
+		try {
+			const calls: string[] = []
+			await expect(readErc20Metadata(node({ [NAME]: lookupRevert }, { ccipRead, calls }), TOKEN)).rejects.toThrow("ccipRead: false")
+			expect([calls, fetch.mock.calls]).toEqual([[], []])
+			if (ccipRead) expect(ccipRead.request).not.toHaveBeenCalled()
+			await expect(readErc20Metadata(node(), TOKEN)).resolves.toMatchObject({ name: "Token" })
+		} finally {
+			vi.unstubAllGlobals()
+		}
 	})
 })
 
