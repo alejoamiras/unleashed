@@ -13,3 +13,10 @@
 - The first `onSent` revert passed: the other tab's hold was requested, but its span had not loaded the lane when
   the unlocked write ran, so the hold read the write. `hold` now resolves once the lane is loaded and every arm
   awaits it. Lesson: a lost-write test must let the other tab's load happen before the write under test.
+
+## Review
+
+- Codex round 1 (gpt-6.1-sol, high), session `01a18e29-49c8-71d3-bf97-6763ae6941ae`: approve, no findings. Opus
+  (`general-purpose`): approve with comment-only fixes, all applied; it traced the frozen-holder path for the awaited
+  consume hash (needs #109's conditions). Round 2 (resume): approve with fixes, one: amend #109's text. This session's
+  permission mode refused `gh issue comment` as an external write, so the comment is left as a draft.

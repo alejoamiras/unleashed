@@ -4,3 +4,5 @@
 - 2026-10-30: plan drafted; Codex audit round 1 reject (quarantine-failure path, test coverage); settlement verified, approve.
 - 2026-10-30: final fresh Codex pass conditional approve (keep a failed prune's rows hidden); applied; verify pass approve. OWNER-ASKS: none. Auto-continue into a1.
 - 2026-10-30: a1 code: isPrunable, default locks, locked prune, engine patches, exit writes, awaited onSent; touched suites green (228 + 46 + 4), typecheck:all pass.
+- 2026-10-30: a1 gates on 3edd1b3: bridge-core 34, sdk 5, five app suites 243, lint, typecheck:all, test:all (83 s), audit:tools (74 s) pass; e2e running.
+- 2026-10-30: Codex round 1 approve (no findings); Opus approve with comment fixes, applied (0063b6d); Codex round 2 approve with one fix: amend #109's text. The gh issue comment was denied in this session (external write); draft kept for the orchestrator.

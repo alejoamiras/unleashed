@@ -95,7 +95,8 @@ from the shell: couples the shell to the send wiring.
   forever. No new span runs inside another (recon, Nesting); the fee ladder stays unwrapped for this reason (D3).
 - **A prune that runs before the lock helper exists**: D5 gives the engine its adapter at module load. Without Web
   Locks the prune is a deferred, unlocked call (#109).
-- **Starvation**: spans stay synchronous; Web Locks grant in request order. A frozen holder delays, never loses (#109).
+- **Starvation**: spans stay synchronous; Web Locks grant in request order. A frozen holder delays every write; a tab
+  closed while its awaited consume hash waits leaves a sent consume unrecorded (#109's frozen-holder path).
 - **Least privilege, crypto, supply chain**: no dependency, credential or primitive added; frozen lockfile.
 
 ## Assumptions
@@ -217,6 +218,15 @@ Final fresh Codex pass (new session): **conditional approve**, one condition, ve
 `:651-655`) and applied: a failed prune keeps its rows hidden instead of restoring them, pinned by a throwing-storage
 test. Facts, inferences, D1–D3 and D5 confirmed. Resumed verify pass: **approve** (no regression: hidden ids stay
 in storage and in every whole-lane write).
+
+**Implementation audit (a1).** Round 1 on the arc diff: Codex **approve**, no findings. Opus (`general-purpose`):
+**approve with fixes**, comments only, each applied: the SDK's `onSent` TSDoc now says a throw rejects although the
+consume is sent; the prune's TSDoc and the `discarding` note say a failed prune leaves rows hidden for the session;
+`openExitRecord` names why its marks share the span (the wizard adopts only a session-live row); `webJournalLocks`
+no longer calls a lock-less write synchronous. Opus also traced that an awaited `onSent` behind a frozen holder can
+lose the hash if this tab closes: needs #109's frozen-holder conditions; recorded in Security. Round 2 (resumed
+Codex): **approve with fixes**, one: #109's text still says a frozen holder never loses a write. A comment on #109
+is drafted; this session may not write to GitHub issues, so the orchestrator posts it.
 
 ## Seeds (draft; the orchestrator runs the arc)
 
