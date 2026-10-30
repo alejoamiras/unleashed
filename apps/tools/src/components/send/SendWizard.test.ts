@@ -843,6 +843,7 @@ describe("SendWizard", () => {
 		amountStep().vm.$emit("next")
 		await flushPromises()
 		const review = w.findComponent({ name: "ReviewStep" })
+		expect(review.props("estimate").takes).toBe("usually 2–4 min end to end")
 		expect(review.props("estimate").networkFee).toBe("up to ≈ 0.01 FJ")
 		expect(review.props("estimate").networkFeeNote).toContain(
 			"from the Fee Juice you already hold — paid by your account as its own fee",

@@ -63,7 +63,7 @@ import { stepperPhases } from "@/lib/bridge-steps"
 import { chainLabel } from "@/lib/chains"
 import { useNow } from "@/lib/clock"
 import { ethereumPrefillOf, sendView } from "@/lib/crosschain-activity"
-import { type CrossChainFigures, countdownText, quoteWord } from "@/lib/crosschain-figures"
+import { type CrossChainFigures, countdownText, quoteBand } from "@/lib/crosschain-figures"
 import { type OutcomeFigures, outcomeVariant } from "@/lib/crosschain-outcome"
 import { crossChainLogLinks } from "@/lib/crosschain-steps"
 import { formatAmount, formatCompact, formatDisplayAmount, parseAmountStrict, toDecimalString, trimAddress } from "@/lib/format"
@@ -89,7 +89,7 @@ import {
 } from "@/lib/send-model"
 
 /** The rail's own etas, summed and rounded UP — the review must never undersell how long this takes. */
-const DEPOSIT_TAKES = "usually 3–8 min end to end"
+const DEPOSIT_TAKES = "usually 2–4 min end to end"
 const EXIT_TAKES = "tens of minutes — Aztec proves exits in epoch batches"
 const ONE_TO_ONE = { probeIn: 1n, probeOut: 1n }
 /** What one Aztec transaction is budgeted at on this network; null where nothing can buy gas. */
@@ -1890,8 +1890,7 @@ onBeforeUnmount(() => {
 		</template>
 		<template v-if="step === 2 && xcReview" #band>
 			<p class="quote-band" :data-testid="TESTIDS.sendXcQuoteBand">
-				{{ quoteWord(xcReview.figures).valid }} valid for <span class="clock">{{ countdownText(xcExpiresIn) }}</span> ·
-				{{ quoteWord(xcReview.figures).renewed }} before you sign
+				{{ quoteBand(xcReview.figures).lead }} <span class="clock">{{ countdownText(xcExpiresIn) }}</span>{{ quoteBand(xcReview.figures).tail }}
 			</p>
 		</template>
 	</WizardShell>

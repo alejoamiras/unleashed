@@ -16,3 +16,4 @@
 - 2026-10-29 a1 Codex round 3 (P10-01 b9dc86d + merge): no material findings.
 - 2026-10-29 a1 final head 377d0de: lint, typecheck:all, test:all (tools 1711), test:e2e (30), audit:tools exit 0; browser 15 passed at retry 0 (19.0 min; cell 53 1.4 min); a1 shots retaken incl. a1-unchecked-*.
 - 2026-10-29 a1 merged main b8c2289 (#76, #77) at 995d8a9: lint, typecheck:all, test:all (tools 1714), test:e2e (30), audit:tools exit 0; browser 15 passed at retry 0 (19.0 min; cell 53 1.4 min).
+- 2026-10-29 a2 started: merged origin/main 565cdb1 (#85 merged); page 10 (P10-02..05 A) and ask42 recorded in OWNER-ASKS §1–§6 and the ledger (D8); before strings verified on the merged tree.

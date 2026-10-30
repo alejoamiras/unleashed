@@ -12,7 +12,7 @@ import {
 	feeLineLabels,
 	feeShareText,
 	feeTotalText,
-	quoteWord,
+	quoteBand,
 	waitText,
 } from "@/lib/crosschain-figures"
 import { formatAmount, formatCompact, formatDisplayAmount, trimAddress } from "@/lib/format"
@@ -72,7 +72,7 @@ const limits = computed(() => {
 
 const fixedTerms = computed(() => {
 	const cap = formatDisplayAmount(selfBuiltMaxDeposit(decimals.value), decimals.value)
-	return `Fixed testnet terms: the relay fee is ${feeShareText(props.figures.feeBps)} of the amount, and one send carries at most ${cap} ${props.symbol}.`
+	return `Fee ${feeShareText(props.figures.feeBps)} of the amount. At most ${cap} ${props.symbol} per send.`
 })
 
 const gasLine = computed(() => {
@@ -88,8 +88,7 @@ const gasLine = computed(() => {
 })
 
 const takes = computed(() => {
-	if (props.figures.fixed)
-		return `Usually a few minutes for our testnet relayer to fill it on ${l1}, a few minutes for Aztec to pick it up, then your claim.`
+	if (props.figures.fixed) return "Usually a few minutes, then you claim it on Aztec."
 	const minutes = Math.max(1, Math.ceil(props.figures.etaSeconds / 60))
 	return `About ${minutes} min to reach ${l1}, a few minutes for Aztec to pick it up, then your claim.`
 })
@@ -116,11 +115,6 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 
 <template>
 	<section class="step" :data-testid="TESTIDS.sendXcReview">
-		<p v-if="figures.fixed" class="testnet ul-notch" :data-testid="TESTIDS.sendXcTestnetNotice">
-			<span class="glyph"><Icon name="info-box" :size="24" /></span>
-			<span>Testnet: our testnet relayer fills this send on {{ l1 }}, usually within a few minutes.</span>
-		</p>
-
 		<dl class="lines">
 			<div class="line send ul-notch" :data-testid="TESTIDS.sendReviewSend">
 				<dt>Send</dt>
@@ -195,8 +189,8 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 				instead. You can continue from Ethereum later; that needs a little ETH there for gas.</span
 			>
 			<span v-else
-				>If the deposit can’t run on <span class="whole">{{ l1 }}</span>, the {{ destSymbol }} goes to your own address <span class="mono ink">{{ user }}</span> there
-				instead. You can continue from there later; that needs a little test ETH for gas.</span
+				>If the deposit on <span class="whole">{{ l1 }}</span> fails, the {{ destSymbol }} goes to your address <span class="mono ink">{{ user }}</span> there
+				instead. Moving it on from there needs a little test ETH.</span
 			>
 		</p>
 
@@ -238,7 +232,7 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 				</div>
 				<div class="row">
 					<dt>Quote</dt>
-					<dd>{{ figures.fixed ? "Fixed testnet terms, rebuilt every 60\u00a0s" : "Refreshes every 60\u00a0s" }}</dd>
+					<dd>{{ figures.fixed ? "Valid for 60\u00a0s" : "Refreshes every 60\u00a0s" }}</dd>
 				</div>
 			</dl>
 		</div>
@@ -257,10 +251,7 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 		</p>
 
 		<div class="nav">
-			<span class="quote-line"
-				>{{ quoteWord(figures).valid }} valid for <span class="clock">{{ quoteLine }}</span> · {{ quoteWord(figures).renewed }} before you
-				sign</span
-			>
+			<span class="quote-line">{{ quoteBand(figures).lead }} <span class="clock">{{ quoteLine }}</span>{{ quoteBand(figures).tail }}</span>
 			<div class="buttons">
 				<Button variant="secondary" size="large" :disabled="busy" :data-testid="TESTIDS.sendReviewBack" @click="emit('back')">Back</Button>
 				<Button
@@ -287,7 +278,6 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 	gap: 16px;
 }
 
-.testnet,
 .note {
 	--ul-notch: var(--ul-notch-2);
 	display: flex;
@@ -296,15 +286,6 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 	margin: 0;
 	padding: 12px 14px;
 	font: 400 14px/1.45 var(--ul-font-body);
-}
-
-.testnet {
-	--ul-fill: var(--ul-attention-bg);
-	color: var(--ul-ink);
-}
-
-.testnet .glyph {
-	color: var(--ul-attention);
 }
 
 .note {

@@ -43,6 +43,9 @@ send behaves the same today.
 
 **What ships now.** Today's text for every row.
 
+**Signed: P10-02 A**: "Approve the review drafts as shown, with the top testnet notice removed." R1 ships as B1;
+R2 to R7 and W1 ship as drafted. Built in a2.
+
 ## §2 Progress steps (mock: `design/progress.png`)
 
 | Id | When it shows | Before | After |
@@ -54,6 +57,9 @@ S2 is a step estimate, which the gas-floor-1 lane also edits. If you sign it, th
 ships it; this lane ships it only if gas-floor-1 leaves that line alone.
 
 **What ships now.** Today's text.
+
+**Signed: P10-03 A**: "Approve the progress drafts as shown." The orchestrator assigned S2 to this lane, and
+gas-floor-1 left both S2 lines as they were. Built in a2.
 
 ## §3 Card (mock: `design/card.png`)
 
@@ -69,6 +75,8 @@ ships it; this lane ships it only if gas-floor-1 leaves that line alone.
 The expired card's buttons become [Try again] (W1) and [Pick another balance] (unchanged).
 
 **What ships now.** Today's text.
+
+**Signed: P10-04 A**: "Approve the card drafts as shown." Built in a2.
 
 ## §4 Activity row (mock: `design/activity.png`)
 
@@ -86,6 +94,15 @@ Picking the token again is what asks.
 **Options.** A. It stays until the token is picked again (today). B. It clears with the send errors.
 
 **What ships now.** A. **Recommendation.** A: the exit still cannot go until the token is granted.
+
+**Signed: P10-05 A**: "Keep it until the token is picked again, as today." No change.
+
+## §6 The Ethereum review's end-to-end estimate (ask42)
+
+**Surface.** The Ethereum send's review, the Takes row: "usually 3–8 min end to end".
+
+**Signed in chat** (ask42): "usually 2–4 min" in place of "usually 3–8 min", since the crossing into Aztec now takes
+about a minute. The row reads "usually 2–4 min end to end"; the rest of the review stays. Built in a2.
 
 ## Not proposed
 
