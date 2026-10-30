@@ -129,7 +129,7 @@ const claimedByOtherLine = computed(() => {
 			: "Claimed by another submitter — your tokens arrived."
 	const lead = lost.value ? "Previously recorded as claimed by another submitter." : "Your tokens were claimed by another submitter."
 	return props.record.isPrivate
-		? `${lead} Your private gas is still sealed in this record — keep it. Claiming private gas on its own is not available yet.`
+		? `${lead} Your private gas is still in this record — press Claim to claim it.`
 		: `${lead} Your gas is still yours to claim — press Claim your gas.`
 })
 const fuelRecovering = ref(false)

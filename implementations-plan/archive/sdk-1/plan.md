@@ -7,12 +7,42 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: approved; the owner answered OWNER-ASKS §1–§7 and §10 (ask26); a6 in progress
+status: closed; delivered (a1–a6)
 base: main fb90e366
 budget: "recon: 3 Sonnet explorers; drafts: driver + Codex + Opus 5.5; code-review: off; Codex gpt-6.1-sol at high"
 ---
 
 # sdk-1: a publishable bridge SDK, the app on it, and mainnet fuel through LI.FI
+
+## Outcome
+
+- **Closed; delivered** in seven PRs: a1 #33, a2 #47, a3 #51, a4 #56, a5 #57, a6 #69, and the a6 PR that carries this
+  close-out. The owner merges, squash.
+- **Shipped: ask5.**
+  - The mainnet gas-only fuel route behind a fuel-only gate (a1).
+  - `@unleashed/sdk`, with its fuel and bridge entries, verified deposits and resumable claims (a2).
+  - The app's send lanes (a3) and claims (a4, a6) on the SDK.
+  - The publish setup: README, typechecked examples, `publish-sdk.yml` and `pack:check` in `pr-quick` (a5).
+  - Publishing the package is the owner's act, by hand from `main`.
+- **Shipped: ask3.** The keyless LI.FI client runs through the SDK in the browser (a3).
+- **Shipped: ask26** (a6).
+  - The SDK's claim entries report the claim card's progress, resume watching without prompting (`watchOnly`), report
+    the Ethereum confirmation wait, and take the claim-without-gas choice (`withoutGas`).
+  - They keep the early fee check, the gas a claimed-elsewhere token left, and no second fee after an interrupted
+    prompt.
+  - The app's claims run on them through a field-delta journal writer under the journal lock.
+  - The card's visible changes are §10's items 1, 2, 3, 7 and 8, P7-02's sentence and the private claimed-elsewhere
+    line; every other state shows what it did before.
+- **Dropped.**
+  - Exits, the cross-chain source leg, Drip and the AZTEC mint stay on private code: v1 covers ask5's flows only.
+  - The app does not show the Ethereum confirmation wait (D83): §10 item 6 was outside the budget.
+- **Known limits:**
+  - #30 and #31 (a1);
+  - #43, #44 and #45 (a4);
+  - #79: a node whose nullifier state trails its receipts holds a resumed claim's completion back.
+- **Open items:**
+  - #80: the send flow's journal writes stay outside the journal lock (D82).
+- **Seeds retired:** the `/goal` and `/loop` seeds below are history.
 
 ## Summary
 
@@ -498,7 +528,7 @@ panel found none that is reachable (D86).
 Two PRs: 6.1 and 6.2 change the SDK and the journal and leave the app's behaviour as it is; 6.3 ports the claims and
 carries the close-out.
 
-**Phase 6.1: the SDK's claim entries (PR 1).**
+**Phase 6.1: the SDK's claim entries (PR 1).** ✓
 - Events. All additive except `arrival`, `claim-requested` and `claim-sent`, which change before the first publish:
   - `deposit-recovery`: `searching` before a hash-less record's search, `reading` (txHash) before the receipt read,
     `waiting` (txHash) when a direct read finds the deposit unmined; the signal is checked before the run waits (the
@@ -537,7 +567,7 @@ carries the close-out.
 - Validation gate: `bun run lint`, `bun run typecheck:all`, `bun run test:all`, `bun run --cwd packages/sdk
   pack:check`, the sandbox integration suite. Layers: unit, integration.
 
-**Phase 6.2: the journal's claim writer and record views (PR 1).**
+**Phase 6.2: the journal's claim writer and record views (PR 1).** ✓
 - `claim-view.ts` (bridge-core): `claimView(rec): DepositRecord | undefined`. Schema 3 as stored; schema 4 without
   `route`, as schema 3; schema 2 with `assetKind: "fee-juice"` and a fuel block as intent `gas`, without
   `assetKind`. Anything else is undefined (D86).
@@ -563,7 +593,7 @@ carries the close-out.
   is refused. The interleaving over the in-memory locks is tested in 6.3, with the writers that take them.
 - Validation gate: base commands; `bun run test:all`. Layer: unit.
 
-**Phase 6.3: the app's claims on the SDK (PR 2, with the close-out).**
+**Phase 6.3: the app's claims on the SDK (PR 2, with the close-out).** ✓
 - `useBridgeJournal.ts` keeps what is not the claim's: `claimTarget`, the malformed-hash and recipient guards, the
   token-block check and wallet grant (`prepareSendLane`), the unseal and its secret cache, the record lock and its
   release between receipt rounds, the generation, the resume selection, the claimed-by-other revalidation's stop,
@@ -1042,6 +1072,44 @@ Arc a6, PR 1 (`git diff 890edac..HEAD`):
   reports a recovered read still settled (checked after that event too); an abort while a latch was written still
   opened the prompt (checked right before each wallet send, the known-unsent latch lifted).
 - **Round 3, Codex (same session): APPROVE.** Both reproductions abort with nothing settled or sent. Converged.
+
+Arc a6, PR 2 (`git diff bc5e585..HEAD`):
+
+- **Round 1, Codex: APPROVE WITH CHANGES, 4 Medium; all verified and fixed with tests.**
+  - A discard waiting for the journal lock still listed the record, so a rejected exit was adopted: the record now
+    leaves this tab's lists and readers at once.
+  - Failure text unwrapped the wallet's own causes: it now stops at the first error under the SDK's wrappers.
+  - The claimed-elsewhere continuation could send a token claim if the message read live again: the gas left is
+    claimed through the gas entry, and a watching token call settles the record.
+  - The card's gas claim watched for 30 minutes and ended on a raw sentence: it keeps its four-minute watch, and a
+    timeout or drop shows today's `standalone-unconfirmed` sentence.
+- **Round 1, Opus (beside it): 1 Medium, 3 Low; all verified and fixed with tests.**
+  - "Claim without fuel" on a private claimed-elsewhere record settled it with its private gas stranded: a private
+    claim ignores the choice, as today's private ladder did.
+  - A deposit move that landed while a call was set up went unnoticed: the move watch also checks at its start.
+  - A watching run could still ask for the unseal signature: it now stops before it.
+  - The pending discard (fixed above). Four stale or narrating comments were rewritten.
+- **Round 2, Codex: APPROVE WITH CHANGES, 2 Medium, 1 Low; all verified and fixed with tests.** It confirmed the
+  round-1 fixes.
+  - A stale call's write that the identity guard refused before the move watch fired stopped the claim: a refused write
+    on a cross-chain record now restarts it after the same delay.
+  - Only an unsent record skipped the unseal on an explicit watch-only run: such a run is no longer interactive.
+  - The gas-timeout test stored no hash: it now keeps the sent hash and hands it to the retry.
+- **Round 3, Codex: APPROVE.** No new findings; it checked the restart's cancellation and cleanup paths.
+- **Gates on the final code, before the rebase.** `audit:tools`, `test:all`, the jsdom e2e and the sandbox integration suite
+  (61 tests) are green. The browser suite at retry 0 passed 44 of 44 in 3224 s. The before run, on PR 1's head, took
+  3581 s and failed activity cell 40: both receipts showed, but one record lacked its claim hash, a cross-tab lost
+  write under today's unlocked claim writer (likely; not traced).
+- **Rebased onto `main` after #69 merged** (#62, #66, #70, #72, #76 and #77 had landed too): the same gates green
+  again, the sandbox integration suite 61 of 61, and the browser suite at retry 0 45 of 45 (#70 added a cell) in 3197 s.
+- **Merged with `main` again** (#81, #85, #86): the exit type #81 removed and the message state this port removed
+  both go; the same gates green, the sandbox integration suite 61 of 61, the browser suite at retry 0 45 of 45 in 3265 s.
+- **The screenshot tour** reached all five states through real flows. Everything else it flagged is today's
+  rendering:
+  - the run template after fee-stop copy;
+  - the error chip;
+  - the lost wording under any error;
+  - two primary buttons on a claimed-elsewhere card.
 
 Arc a5, the implementation (`git diff 54de731..HEAD`):
 

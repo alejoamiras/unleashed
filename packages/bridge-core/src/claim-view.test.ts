@@ -74,6 +74,12 @@ describe("claimView", () => {
 		expect(claimView({ ...legacyFeeJuice(), assetKind: "bridge-token" })).toBeUndefined()
 		expect(claimView({ ...legacyFeeJuice(), schema: 1, fuel: undefined })).toBeUndefined()
 	})
+
+	it("claims a legacy public Fee Juice deposit with the record's own secret over its block's copy", () => {
+		const view = claimView({ ...legacyFeeJuice(), secret: word("5e") }) as DepositRecord
+		expect(view.fuel?.secret).toBe(word("5e"))
+		expect(claimView({ ...legacyFeeJuice(), isPrivate: true, secret: word("5e") })?.fuel?.secret).toBe(FUEL.secret)
+	})
 })
 
 describe("patchRecordDelta", () => {
