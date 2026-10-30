@@ -1,4 +1,4 @@
-import type { Address } from "viem"
+import { type Address, ExecutionRevertedError, HttpRequestError, zeroAddress } from "viem"
 import { describe, expect, it, vi } from "vitest"
 import { resolveToken } from "../src/bridge/index.ts"
 import { parseNetwork } from "../src/network.ts"
@@ -37,5 +37,24 @@ describe("resolveToken", () => {
 			code: "invalid-network",
 			message: expect.stringMatching(/not its clone/),
 		})
+	})
+
+	it("reports a first-time token's refused metadata read as one to retry, and a reverted decimals() as final", async () => {
+		const w = worldOf(testnet())
+		if (!w.m.bridge) throw new Error("the testnet manifest has a bridge")
+		w.reads.set(`${w.m.bridge.l1.factory.toLowerCase()}:registrationOf`, { portal: zeroAddress })
+		const net = await parseNetwork(w.m, readsOf(w))
+		const failing = (error: () => Error) => {
+			const r = readsOf(w)
+			const call = async () => {
+				throw error()
+			}
+			return { ...r, l1: { ...(r.l1 as object), call } as never }
+		}
+		const token = "0x00000000000000000000000000000000000c0de1" as Address
+		const refused = () => new HttpRequestError({ url: "https://rpc.invalid", status: 429, body: {} })
+		const reverted = () => new ExecutionRevertedError()
+		await expect(resolveToken(net, failing(refused), token)).rejects.toMatchObject({ code: "read-failed", retry: "after-wait" })
+		await expect(resolveToken(net, failing(reverted), token)).rejects.toMatchObject({ code: "invalid-request", retry: "never" })
 	})
 })
