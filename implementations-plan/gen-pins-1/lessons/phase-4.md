@@ -58,3 +58,9 @@ comes from dRPC's keyless node, the keyed node's provider. Reworded.
 - `check` printed viem's error text, which quotes the request URL: every `--rpc`/`--node` value is redacted from what
   it prints.
 - Stale wording: the `network.ts` and `trust-roots.ts` headers, and the runbook's allowlist and `verify` description.
+
+### Codex round 2 (resumed)
+
+`conditional approve`: all three round-1 findings closed, the second reviewer's fixes sound, no regression. One material
+finding: the endpoint redaction replaced URLs in argument order, so a URL that prefixes another left the longer one's
+tail (its key) printed. It now replaces longest first, keeping each URL's label; the prefix case is in the test.

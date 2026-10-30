@@ -297,8 +297,11 @@ export async function checkRecord(network: LiveNetwork, opts: CheckOptions = {})
 
 /** viem's errors quote the request URL, and a URL passed here by mistake may carry a key. */
 export function redactEndpoints(args: readonly string[], text: string): string {
-	const urls = args.filter((arg, i) => arg && (args[i - 1] === "--rpc" || args[i - 1] === "--node"))
-	return urls.reduce((t, url, i) => t.split(url).join(`<endpoint ${i + 1}>`), text)
+	const urls = args
+		.filter((arg, i) => arg && (args[i - 1] === "--rpc" || args[i - 1] === "--node"))
+		.map((url, i) => [url, `<endpoint ${i + 1}>`] as const)
+	// Longest first: a URL that prefixes another would otherwise leave the longer one's tail, its key, in the text.
+	return urls.sort(([a], [b]) => b.length - a.length).reduce((t, [url, label]) => t.split(url).join(label), text)
 }
 
 const flagValue = (args: readonly string[], flag: string) => {

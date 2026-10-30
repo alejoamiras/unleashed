@@ -109,5 +109,7 @@ describe("check's printed failures", () => {
 		const args = ["check", "testnet", "--rpc", "https://rpc.example/key-1", "--node", "https://node.example/key-2"]
 		const printed = redactEndpoints(args, "HTTP request failed. URL: https://rpc.example/key-1 then https://node.example/key-2")
 		expect(printed).toBe("HTTP request failed. URL: <endpoint 1> then <endpoint 2>")
+		const prefixed = ["check", "testnet", "--rpc", "https://rpc.example", "--rpc", "https://rpc.example/key-1"]
+		expect(redactEndpoints(prefixed, "URL: https://rpc.example/key-1")).toBe("URL: <endpoint 2>")
 	})
 })
