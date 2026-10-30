@@ -1323,8 +1323,6 @@ interface CallPlan {
 	watchOnly: boolean
 	material?: ClaimMaterial
 	factsOnly?: boolean
-	/** The tokens already landed elsewhere: every failure is the gas claim's. */
-	landed?: boolean
 }
 
 /** The card's gas claim shows its progress on its own button and watches its receipt for `GAS_CLAIM_POLLS` reads. */
@@ -1377,10 +1375,7 @@ async function claimCall(rec: ClaimRecord, gen: number, plan: CallPlan, setup?: 
 	const call: ClaimCall = {
 		target: plan.target,
 		controller: new AbortController(),
-		scene: {
-			...newScene(runtime.value[rec.id]?.claimable === true, localClaimProvenance.has(rec.id)),
-			...(plan.landed ? { landed: "claimed-elsewhere" as const } : {}),
-		},
+		scene: newScene(runtime.value[rec.id]?.claimable === true, localClaimProvenance.has(rec.id)),
 		base: view,
 		factsOnly: plan.factsOnly === true,
 	}
@@ -1579,11 +1574,11 @@ function writeRefused(id: string, e: BridgeError): ClaimRun {
 }
 
 /**
- * A persisted `claimedByOther` is a claim about the chain, and journal data alone never completes a record: a watching
- * claim reads the token's nullifier first. Automatic resumes use only the material at hand; an explicit click on a
- * private record unseals it (one signature). A marker the chain contradicts is dropped and the run stops; one it
- * confirms settles the record once its gas is settled, and a run that may prompt then claims the gas the other
- * submitter left.
+ * A persisted `claimedByOther` is a claim about the chain, and journal data alone never completes a record. A watching
+ * claim reads the token's nullifier first and drops a marker the chain contradicts; it never settles one, since only the
+ * wallet's simulate failing on the token's own message bears a spent reading out. A run that may prompt then makes the
+ * one call that can: the SDK settles the tokens as claimed elsewhere and claims the gas the other submitter left.
+ * Automatic resumes use only the material at hand; an explicit click on a private record unseals it (one signature).
  */
 async function verifyClaimedByOther(rec: SendDepositRecord, gen: number, mode: ClaimMode): Promise<ClaimRun> {
 	const material = rec.isPrivate ? (cachedMaterial(rec) ?? (await unsealForVerification(rec, mode.interactive))) : undefined
@@ -1591,21 +1586,11 @@ async function verifyClaimedByOther(rec: SendDepositRecord, gen: number, mode: C
 	setRuntime(rec.id, { attention: undefined, note: undefined })
 	const watched = await claimCall(rec, gen, { target: "token", watchOnly: true, material })
 	if (markerDropped(rec.id, watched)) return "stop"
-	if (mode.watchOnly || !gasLeftForPrompt(watched)) return claimEnded(rec.id, watched)
+	if (mode.watchOnly || !promptReached(watched)) return claimEnded(rec.id, watched)
 	if ((await claimGuards(rec, rec.id)) === "stop") return "stop"
-	return claimLeftGas(rec.id, gen, material)
-}
-
-/** The gas another submitter's token claim left, claimed through the gas entry, so the click can send no claim but that
- *  one; a watching token call then settles the record. */
-async function claimLeftGas(id: string, gen: number, material?: ClaimMaterial): Promise<ClaimRun> {
-	const rec = engineRecords().find((r) => r.id === id) as ClaimRecord | undefined
-	if (!rec) return "stop"
-	const gas = await claimCall(rec, gen, { target: "gas", watchOnly: false, material, landed: true })
-	if (!("outcome" in gas)) return claimEnded(id, gas)
-	const live = engineRecords().find((r) => r.id === id) as ClaimRecord | undefined
+	const live = engineRecords().find((r) => r.id === rec.id) as ClaimRecord | undefined
 	if (!live) return "stop"
-	return claimEnded(id, await claimCall(live, gen, { target: "token", watchOnly: true, material }))
+	return claimEnded(rec.id, await claimCall(live, gen, { target: "token", watchOnly: false, material }))
 }
 
 /** The chain read the message live and the marker is gone: whatever the watching call met after that, the run ends
@@ -1616,15 +1601,9 @@ function markerDropped(id: string, result: CallResult): boolean {
 	return live !== undefined && live.claimedByOther !== true
 }
 
-/** A watching call that confirmed the marker and stopped at the gas the other submitter left. */
-function gasLeftForPrompt(result: CallResult): boolean {
-	return (
-		"error" in result &&
-		!result.call.stopped &&
-		result.call.scene.landed === "claimed-elsewhere" &&
-		isBridgeError(result.error) &&
-		result.error.code === "needs-prompt"
-	)
+/** A watching call that kept the marker and stopped where only the wallet can go on. */
+function promptReached(result: CallResult): boolean {
+	return "error" in result && !result.call.stopped && isBridgeError(result.error) && result.error.code === "needs-prompt"
 }
 
 /** The explicit click on a marked private record unseals it for the verification whatever its
@@ -1654,8 +1633,9 @@ function priorReceiptRounds(id: string): number {
 
 /**
  * The card's "Claim your gas": the bridged gas a token + gas record's tokens left, claimed under the record lock so it
- * never races the record's own claim of it. A record another submitter's claim left open is then finished by a watching
- * claim. Throws the failure for the card to show; a run already holding the record is left to finish it.
+ * never races the record's own claim of it. A record another submitter's claim left open is then finished by a run that
+ * may prompt, as its marker is only borne out by the wallet's simulate. Throws the failure for the card to show; a run
+ * already holding the record is left to finish it.
  */
 export async function runGasClaim(id: string): Promise<void> {
 	let failure: unknown
@@ -1680,7 +1660,7 @@ export async function runGasClaim(id: string): Promise<void> {
 	)
 	if (ran === "held-elsewhere") throw new Error("Another tab is claiming this deposit — try again in a moment.")
 	if (failure !== undefined) throw new Error(failureText(failure))
-	if (finish) await runDepositClaim(id, { interactive: false, watchOnly: true })
+	if (finish) await runDepositClaim(id, { interactive: false, watchOnly: false })
 }
 
 /** A card gas claim not confirmed within its watch, or dropped, says it may simply be claimed again. */
@@ -1922,8 +1902,8 @@ function markerApplies(rec: ClaimRecord): boolean {
 	return rec.claimedByOther === true && !!rec.leafIndex && !!rec.messageHash && !rec.claimTxHash
 }
 
-/** A marked, unfinished record resumes (prompt-free, any session) to be verified: the completion,
- *  the dropped marker, or — without material at hand — nothing. */
+/** A marked, unfinished record resumes (prompt-free, any session) to be verified: the dropped marker, or nothing. Only
+ *  a run that may prompt completes it. */
 function claimedByOtherResume(rec: ClaimRecord): "skip" | "deposit" {
 	return claimsThroughHub(rec) && !claimRetired(rec) ? "deposit" : "skip"
 }
