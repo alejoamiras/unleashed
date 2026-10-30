@@ -12,8 +12,8 @@ import { Button, Icon, Tag } from "@unleashed/design"
 import { computed, ref, watch } from "vue"
 
 /** Composables */
+import { refuseRepeat, useArmedPress } from "@/composables/useArmedPress"
 import { useBridgeJournal } from "@/composables/useBridgeJournal"
-import { useArmedPress } from "@/composables/useArmedPress"
 import { useBridgeWallet } from "@/composables/useBridgeWallet"
 import { useOpsInFlight } from "@/composables/useOpsInFlight"
 import { useShell } from "@/composables/useShell"
@@ -49,8 +49,7 @@ const exportable = computed(() => {
 	return true
 })
 
-// Discard and Clear each delete the record. They arm apart, so a Discard armed as the record finishes never confirms its
-// Clear.
+// Armed apart: a Discard armed as the record completes never confirms its Clear.
 const { armed: discardArmed, press: pressDiscard } = useArmedPress()
 const { armed: clearArmed, press: pressClear } = useArmedPress()
 
@@ -491,7 +490,8 @@ const warnDelete = computed(() => deletesSecret.value && (stage.value === "done"
 					:variant="discardArmed ? 'destructive' : 'quiet'"
 					class="card-btn"
 					:data-testid="discardArmed ? TESTIDS.journalDiscardConfirm : TESTIDS.journalDiscard"
-					@click="pressDiscard(() => journal.discard(record.id))"
+					@click="pressDiscard(() => journal.discard(record.id), $event)"
+					@keydown="refuseRepeat"
 				>
 					<Icon v-if="discardArmed" name="close" :size="12" />{{ discardArmed ? "Confirm discard" : "Discard" }}
 				</Button>
@@ -511,7 +511,8 @@ const warnDelete = computed(() => deletesSecret.value && (stage.value === "done"
 					:variant="clearArmed ? 'destructive' : 'quiet'"
 					class="card-btn"
 					:data-testid="clearArmed ? TESTIDS.journalClearConfirm : TESTIDS.journalClear"
-					@click="pressClear(() => journal.clearDone(record.id))"
+					@click="pressClear(() => journal.clearDone(record.id), $event)"
+					@keydown="refuseRepeat"
 				>
 					<Icon v-if="clearArmed" name="close" :size="12" />{{ clearArmed ? "Confirm clear" : "Clear" }}
 				</Button>

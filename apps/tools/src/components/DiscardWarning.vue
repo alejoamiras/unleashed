@@ -3,8 +3,6 @@
 import { Icon } from "@unleashed/design"
 import { IS_MAINNET } from "@/lib/network"
 import { TESTIDS } from "@/lib/testids"
-
-/** Shown under an armed button that deletes a private deposit's record, which holds the only copy of its claim secret. */
 </script>
 
 <template>

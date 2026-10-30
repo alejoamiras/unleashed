@@ -5,7 +5,7 @@ import { Button, Icon } from "@unleashed/design"
 import { computed } from "vue"
 
 /** Composables */
-import { useArmedPress } from "@/composables/useArmedPress"
+import { refuseRepeat, useArmedPress } from "@/composables/useArmedPress"
 import { useBridgeJournal } from "@/composables/useBridgeJournal"
 import { useEthHeld } from "@/composables/useEthHeld"
 import { useShell } from "@/composables/useShell"
@@ -23,7 +23,7 @@ import StateNotice from "./send/StateNotice.vue"
 /**
  * A cross-chain card's guide and actions while it is not a plain deposit. Only an ended send can be
  * dismissed: before its outcome is final the funds may still be on their way, and the record holds
- * their claim. Dismiss deletes that record, so it takes two presses, and the backup stays offered to the end.
+ * their claim.
  */
 const props = defineProps<{ record: CrossChainDepositRecord; phase: CrossChainPhase; exportable: boolean }>()
 const emit = defineEmits<{ backup: [] }>()
@@ -31,7 +31,7 @@ const emit = defineEmits<{ backup: [] }>()
 const journal = useBridgeJournal()
 const shell = useShell()
 const { armed: dismissArmed, press: pressDismiss } = useArmedPress()
-const dismiss = () => pressDismiss(() => journal.discard(props.record.id))
+const dismiss = (e?: MouseEvent) => pressDismiss(() => journal.discard(props.record.id), e)
 
 const delivered = computed(() => props.phase.kind === "delivered")
 const ethHeld = useEthHeld(() => (delivered.value ? props.record.route.srcSender : undefined))
@@ -87,6 +87,7 @@ function onContinue(): void {
 				class="card-btn"
 				:data-testid="dismissArmed ? TESTIDS.journalXcDismissConfirm : TESTIDS.journalXcDismiss"
 				@click="dismiss"
+				@keydown="refuseRepeat"
 			>
 				<Icon v-if="dismissArmed" name="close" :size="12" />{{ dismissArmed ? "Confirm dismiss" : "Dismiss" }}
 			</Button>

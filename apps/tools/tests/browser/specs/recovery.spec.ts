@@ -173,12 +173,12 @@ test("cell 24b — a claim another submitter made first: the record completes as
 	expect((await walletCalls(page, run, "plain")).sendTx ?? 0, "nothing was sent for a consumed message").toBe(0)
 	expect((await balanceOf(usdtL2, actor.actor.address, "public")) - before, "credited exactly once").toBe(credited)
 
-	// A lone press only arms Clear, and the arm lapses with the record still stored.
+	// A lone press, even a double-click, only arms Clear, and the arm lapses with the record still stored.
 	const stored = async () => (await depositRecords(page)).some((r) => r.id === done?.id)
-	await card.locator(tid(TESTIDS.journalClear)).click()
+	await card.locator(tid(TESTIDS.journalClear)).dblclick()
 	await expect(card.locator(tid(TESTIDS.journalClearConfirm))).toHaveText("Confirm clear")
 	await expect(card.locator(tid(TESTIDS.journalClear)), "the arm lapses after 6 s").toBeVisible({ timeout: 10_000 })
-	expect(await stored(), "a lone press deletes nothing").toBe(true)
+	expect(await stored(), "a lone gesture deletes nothing").toBe(true)
 	await card.locator(tid(TESTIDS.journalClear)).click()
 	await card.locator(tid(TESTIDS.journalClearConfirm)).click()
 	await expect.poll(stored, { message: "the confirming press deletes the record" }).toBe(false)

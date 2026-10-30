@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { effectScope } from "vue"
-import { ARMED_MS, useArmedPress } from "./useArmedPress"
+import { ARMED_MS, refuseRepeat, useArmedPress } from "./useArmedPress"
 
 describe("useArmedPress", () => {
 	beforeEach(() => vi.useFakeTimers())
@@ -24,5 +24,24 @@ describe("useArmedPress", () => {
 		expect(act).toHaveBeenCalledTimes(1)
 		expect(armed.value).toBe(false)
 		scope.stop()
+	})
+
+	it("a double-click only arms; a held key's repeats are refused, a fresh key press is not", () => {
+		const act = vi.fn()
+		const scope = effectScope()
+		const { armed, press } = scope.run(useArmedPress) as ReturnType<typeof useArmedPress>
+		press(act, new MouseEvent("click", { detail: 1 }))
+		press(act, new MouseEvent("click", { detail: 2 }))
+		expect(act).not.toHaveBeenCalled()
+		expect(armed.value).toBe(true)
+		press(act, new MouseEvent("click", { detail: 1 }))
+		expect(act).toHaveBeenCalledTimes(1)
+		scope.stop()
+
+		const key = (repeat: boolean) => new KeyboardEvent("keydown", { key: "Enter", repeat, cancelable: true })
+		const [held, fresh] = [key(true), key(false)]
+		refuseRepeat(held)
+		refuseRepeat(fresh)
+		expect([held.defaultPrevented, fresh.defaultPrevented]).toEqual([true, false])
 	})
 })

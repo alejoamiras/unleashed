@@ -361,6 +361,19 @@ describe("BridgeJournalCard", () => {
 		expect(clearDone).toHaveBeenCalledWith("0xdep")
 	})
 
+	it("a double-click on Clear only arms it", async () => {
+		const w = mountCard(deposit({ leafIndex: "7", claimedByOther: true, completedAt: 1 }))
+		const click = async (testid: string, detail: number) => {
+			w.get(sel(testid)).element.dispatchEvent(new MouseEvent("click", { detail, bubbles: true }))
+			await flushPromises()
+		}
+		await click(TESTIDS.journalClear, 1)
+		await click(TESTIDS.journalClearConfirm, 2)
+		expect(clearDone).not.toHaveBeenCalled()
+		await click(TESTIDS.journalClearConfirm, 1)
+		expect(clearDone).toHaveBeenCalledWith("0xdep")
+	})
+
 	it("the ⤓ export icon: unfinished cards show it, done cards swap to ✕, provisional withdraws hide it", () => {
 		expect(
 			mountCard(deposit({ leafIndex: "7" }))
