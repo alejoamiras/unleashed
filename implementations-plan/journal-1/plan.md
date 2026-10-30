@@ -288,6 +288,18 @@ test that the rename keeps another tab's `blocked`, and the per-browser suite wa
 verify pass on those fixes: **approve** (one wording fix applied: a concurrent restore may use another backup of the
 same bridge).
 
+**Implementation audit (a1).** Round 1, on the arc diff: Codex **approve with fixes**; Opus (`general-purpose`)
+**approve with fixes**. Both found no path that overwrites a record, shares secrets, loses a write on these flows or
+deadlocks. Applied, each verified against the code and each new or tightened test checked against its regression:
+(1) both: the failure-chain test passed with the caller's `await` removed (an uncontended lock span is one microtask),
+so it now holds the lock across the refusal; (2) Opus, needs unsupported conditions (an id collision), local fix:
+`openRow` set `row.id` before filing, so a refused held id reached the failed send's cleanup, which would discard or
+flag the holder; `row.id` is set after filing, with a test; (3) Opus: the `blocked` rename test wrote through this
+tab's reloading `updateRecord`; it now patches storage only; (4) comments: one redundant line dropped (Codex), the
+rename comment states its invariant, `underJournalLock`'s TSDoc states the non-re-entrant, held-until-settled rule
+(Opus). Opus also noted that cell 56 proves D1 only inside the 60 s TTL (past it the review requotes anyway); recorded
+with the measured runtime in `lessons/phase-1.md`.
+
 ## Out of scope
 
 - The claim's writes and the SDK claim entries (#88), the send copy (send-copy-2), deposit reconcile in the SDK (#89).
