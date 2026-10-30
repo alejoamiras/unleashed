@@ -201,6 +201,11 @@ function gasErrorOf(q: QuotedRoute | null, state: TokenState | undefined, gasSha
 	return ceilings !== null && g.minFuelOutput < ceilings ? PRIVATE_SLICE_SHORT : null
 }
 
+/** A private slice is sized from Aztec's fees: once they land, the ask is quoted again. */
+function pricedFor(a: CrossChainAsk | null, state: TokenState | undefined, gasShare: GasShare): boolean {
+	return !a || !state || a.intent !== "token+gas" || !a.isPrivate || gasShare.ceilingsFor(state) !== null
+}
+
 const REFUSALS: Record<string, CrossChainRefusal> = {
 	[ROUTE_EXPIRED]: "expired",
 	[ROUTE_REFUSED]: "refused",
@@ -278,14 +283,12 @@ export function useCrossChainSend(deps: CrossChainSendDeps): UseCrossChainSendHa
 	)
 
 	const ask = computed(() => askOf(deps, entry.value, dest.value))
-	/** A private slice is sized from Aztec's fees: once they land, the ask is quoted again. */
-	const priced = computed(() => {
-		const a = ask.value
-		const state = dest.value?.state
-		return !a || !state || a.intent !== "token+gas" || !a.isPrivate || deps.gasShare.ceilingsFor(state) !== null
-	})
+	const priced = computed(() => pricedFor(ask.value, dest.value?.state, deps.gasShare))
 	const key = computed(() => (ask.value ? `${keyOf(ask.value)}|${deps.gasShare.txTarget.value}|${priced.value}` : null))
 	const asked = ref<string | null>(null)
+	/** The route last handed to a send: its secrets and LI.FI id fund one deposit, so the amount step never offers it
+	 *  again. The review that froze it, and the strip while it sends, keep it. */
+	let spent: CrossChainRoute | null = null
 
 	/** Quotes the ask on screen afresh; with the delivered token still unread, reads it first. */
 	function requote(): void {
@@ -298,7 +301,7 @@ export function useCrossChainSend(deps: CrossChainSendDeps): UseCrossChainSendHa
 	const stopAsk = watch(
 		[key, () => deps.quoting()],
 		([k, on]) => {
-			if (on && k && k !== asked.value) requote()
+			if (on && k && (k !== asked.value || (spent !== null && route.value === spent))) requote()
 		},
 		{ immediate: true },
 	)
@@ -356,7 +359,10 @@ export function useCrossChainSend(deps: CrossChainSendDeps): UseCrossChainSendHa
 		ready: computed(() => route.value !== null && !gasError.value && !ceiling.value?.blocks && !notice.value),
 		planOf,
 		requote,
-		send: (q, r, token, client) => sendOn(sources(), q, r, token, client),
+		send: (q, r, token, client) => {
+			spent = r
+			return sendOn(sources(), q, r, token, client)
+		},
 		dispose: () => {
 			stopAsk()
 			stopExpiry()

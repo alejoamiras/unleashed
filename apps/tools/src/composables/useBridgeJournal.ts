@@ -34,6 +34,7 @@ import {
 	resealExactEnvelope,
 	revokeSealTrust,
 	sameClaimIdentity,
+	insertRecord,
 	upsertRecord,
 } from "@unleashed/bridge-core"
 import { Fr } from "@aztec-labs/aztec.js/fields"
@@ -485,13 +486,16 @@ export function addRecord(rec: BridgeJournalRecord): void {
 	reload()
 }
 
-/** Write-and-verify: a private deposit's record must be durably stored BEFORE the irreversible
- *  L1 tx - a storage failure here aborts the flow instead of proceeding into stranding. */
-export function addRecordVerified(rec: BridgeJournalRecord): void {
-	upsertRecord(deps.kv, rec)
-	const readBack = loadJournal(deps.kv).find((r) => r.id === rec.id)
-	if (!readBack) throw new Error("Could not persist the bridge record — aborting before the deposit (storage full?).")
+export const RECORD_NOT_PERSISTED = "Could not persist the bridge record — aborting before the deposit (storage full?)."
+
+/** Write-and-verify, insert-only: a deposit's record must be durably stored BEFORE the irreversible
+ *  L1 tx - a storage failure here throws and aborts the flow instead of proceeding into stranding.
+ *  `false`, writing nothing, when a record already holds the id: claim material is never replaced. */
+export function addRecordVerified(rec: BridgeJournalRecord): boolean {
+	if (!insertRecord(deps.kv, rec)) return false
+	if (!loadJournal(deps.kv).some((r) => r.id === rec.id)) throw new Error(RECORD_NOT_PERSISTED)
 	reload()
+	return true
 }
 
 export function updateRecord(id: string, patch: Partial<BridgeJournalRecord>): void {
@@ -518,14 +522,14 @@ export function currentRecord(id: string): BridgeJournalRecord | undefined {
 	return loadAllRecords(deps.kv).find((r) => r.id === id) as BridgeJournalRecord | undefined
 }
 
-/** Journal first for a cross-chain deposit: written under its own key and read back before any
- *  source-chain signature, so a failed write aborts instead of stranding the claim material. */
-export function addCrossChainRecordVerified(rec: CrossChainDepositRecord): void {
-	upsertRecord(deps.kv, rec)
-	if (!loadCrossChainJournal(deps.kv).some((r) => r.id === rec.id)) {
-		throw new Error("Could not persist the bridge record — aborting before the deposit (storage full?).")
-	}
+/** Journal first for a cross-chain deposit: inserted under its own key and read back before any
+ *  source-chain signature, so a failed write aborts instead of stranding the claim material.
+ *  `false`, writing nothing, when a record already holds the id. */
+export function addCrossChainRecordVerified(rec: CrossChainDepositRecord): boolean {
+	if (!insertRecord(deps.kv, rec)) return false
+	if (!loadCrossChainJournal(deps.kv).some((r) => r.id === rec.id)) throw new Error(RECORD_NOT_PERSISTED)
 	reload()
+	return true
 }
 
 /** Merge into one cross-chain record, guarded by `when` over the freshly loaded copy; the patch may be
@@ -1022,7 +1026,9 @@ export function releaseForeground(id: string): void {
 }
 
 /** One guarded journal write under the cross-tab journal lock (a plain deferred call without one):
- *  the body is the synchronous load → guard → write span, so nothing interleaves inside it. */
+ *  the body is the synchronous load → guard → write span, so nothing interleaves inside it. The lock is not
+ *  re-entrant and is held until the body's result settles: `fn` must not return a promise or call `discard` or
+ *  `underJournalLock`, or every tab's journal writes wait for it. */
 export function underJournalLock<T>(fn: () => T): Promise<T> {
 	return deps.locks ? deps.locks.journal(fn) : Promise.resolve().then(fn)
 }

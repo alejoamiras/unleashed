@@ -17,6 +17,7 @@ import type { ClaimOptions } from "@unleashed/sdk/fuel"
 import type { DepositPlan, Registration } from "@unleashed/sdk/internal"
 import { WaitForTransactionReceiptTimeoutError } from "viem"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { watch } from "vue"
 import type { GasLegPlan, ResolvedToken, SendPlan } from "@/lib/send-model"
 
 const RECIPIENT = "0x1018808f2c17794badb361c02c945582b8198b495a7e8d01154f7eeb7d719c0d"
@@ -187,8 +188,10 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import {
+	JOURNAL_KEY,
 	type SendDepositRecord,
 	isProvisionalRecordId,
+	patchRecord,
 	openDepositEnvelope,
 	RecoveryKey,
 	validateAnyBackupRecord,
@@ -196,8 +199,9 @@ import {
 import { recoveryBindingOf } from "@/lib/send-record"
 import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
 import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
+import { type JournalLocks, memoryJournalLocks } from "@/lib/journal-locks"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
-import { __resetJournalForTests, addRecord, connectJournalDeps, runDepositClaim, useBridgeJournal } from "./useBridgeJournal"
+import { __resetJournalForTests, addRecord, connectJournalDeps, isSessionLive, runDepositClaim, useBridgeJournal } from "./useBridgeJournal"
 import { GAS_QUOTE_MOVED } from "./useFuelQuote"
 import { __resetSendDepsForTests, BRIDGE_UNCHECKED, DEPOSITS_PAUSED, previewBlock, useSend, validateTokenBlock } from "./useSend"
 import { useOpsInFlight } from "./useOpsInFlight"
@@ -754,6 +758,82 @@ describe("useSend", () => {
 		expect(useBridgeJournal().runtime.value["0xtokenhash"]?.note).toBe(lost.message)
 	})
 
+	it("a claim hash a stored record already holds refuses the send and leaves that record untouched", async () => {
+		const deposit = fakeDeposit()
+		let held = ""
+		h.depositL1.mockImplementation((net: unknown, r: unknown, wallet: FakeWallet, p: DepositPlan, run: RunOptions) =>
+			deposit(net, r, wallet, p, {
+				...run,
+				persist: async (rec, secrets) => {
+					if (!held) {
+						held = rec.id
+						addRecord(journalled(rec.id, readBack()))
+					}
+					return run.persist(rec, secrets)
+				},
+			}),
+		)
+		expect(await useSend().send(plan({ isPrivate: true }))).toBe("")
+		expect(recordOf(held)).toMatchObject({ id: held, isPrivate: false })
+		expect(useBridgeJournal().runtime.value[held]?.attention).toBeUndefined()
+		expect(h.signTypedData).not.toHaveBeenCalled()
+	})
+
+	it("files the row with its session mark, so a watcher that first lists it reads it as this session's", async () => {
+		const live: boolean[] = []
+		const stop = watch(useBridgeJournal().listedRecords, (rows) => {
+			if (!live.length && rows.length) live.push(isSessionLive(rows[0].id))
+		})
+		await useSend().send(plan())
+		stop()
+		expect(live).toEqual([true])
+	})
+
+	it("journals the SDK's deposit facts behind another tab's write, so neither tab's write is lost", async () => {
+		const shared = memoryJournalLocks()
+		let holder: Promise<unknown> | undefined
+		let behind = 0
+		const locks: JournalLocks = {
+			...shared,
+			journal: (fn) => {
+				if (holder) behind++
+				return shared.journal(fn)
+			},
+		}
+		// After `useSend()`, whose wiring hands the engine the browser's locks (none under node).
+		const send = useSend()
+		connectJournalDeps({ locks })
+		// The other tab's span: load the lane, then write it back with a record of its own once released.
+		let loaded: string | null = null
+		let release = () => {}
+		const hold = () => {
+			holder = locks.journal(() => {
+				loaded = localStorage.getItem(JOURNAL_KEY)
+				return new Promise<void>((r) => {
+					release = r
+				}).then(() => {
+					const lane = JSON.parse(loaded ?? "") as { records: unknown[] }
+					localStorage.setItem(
+						JOURNAL_KEY,
+						JSON.stringify({ ...lane, records: [...lane.records, journalled("0xother", readBack())] }),
+					)
+				})
+			})
+		}
+		h.writeContract.mockImplementation(async (call: { functionName: string }) => {
+			if (call.functionName === "bridgeWithPermit") hold()
+			return "0xl1tx"
+		})
+		const sending = send.send(plan())
+		await vi.waitFor(() => expect(behind).toBe(1))
+		expect(localStorage.getItem(JOURNAL_KEY)).toBe(loaded)
+		release()
+		const id = await sending
+		await holder
+		expect(recordOf(id)?.depositTxHash).toBe("0xl1tx")
+		expect(recordOf("0xother")).toBeDefined()
+	})
+
 	it("a reverted L1 receipt surfaces in today's words and leaves the record in place", async () => {
 		const reverted = new Error("The Ethereum transaction 0xl1tx reverted on-chain.")
 		h.depositL1.mockImplementation(
@@ -999,7 +1079,17 @@ describe("useSend", () => {
 			seen.push(only())
 			return "0xapprove"
 		})
-		h.depositL1.mockImplementation(fakeDeposit({ approve: true, afterApproval: () => seen.push(only()) }))
+		// Another tab blocks the provisional row before the signature names it; this tab has not reloaded.
+		const blockElsewhere = () => patchRecord<SendDepositRecord>(localStorage, only().id, { blocked: "stopped" })
+		h.depositL1.mockImplementation(
+			fakeDeposit({
+				approve: true,
+				afterApproval: () => {
+					seen.push(only())
+					blockElsewhere()
+				},
+			}),
+		)
 		const id = await useSend().send(plan())
 
 		expect(seen.map((r) => r.detail)).toEqual([
@@ -1012,6 +1102,7 @@ describe("useSend", () => {
 		expect(id).toBe("0xtokenhash")
 		expect(recordOf(id)?.approveTxHash).toBe("0xapprove")
 		expect(recordOf(id)?.sender).toBe(L1_ACCOUNT)
+		expect(recordOf(id)?.blocked).toBe("stopped")
 	})
 
 	it("an approval the user rejects leaves no half-started row behind", async () => {

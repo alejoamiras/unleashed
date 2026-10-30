@@ -35,6 +35,7 @@ import {
 	runDepositClaim,
 	runOnLane,
 	setRecordStep,
+	underJournalLock,
 	updateCrossChainRecord,
 } from "./useBridgeJournal"
 import { type CrossChainAsk, type CrossChainRoute, ROUTE_TTL_MS, routeRecordId } from "./useCrossChainRoute"
@@ -249,7 +250,7 @@ async function sealCrossChain(rec: CrossChainDepositRecord, s: CrossChainSend, w
 	})
 	if (!trusted) markSealTrusted(localStorage, NETWORK.l1ChainId, wallet.account, provider)
 	sealKeys.set(rec.id, key)
-	updateCrossChainRecord(rec.id, { sealedEnvelope: blob, sealerL1: wallet.account })
+	await underJournalLock(() => updateCrossChainRecord(rec.id, { sealedEnvelope: blob, sealerL1: wallet.account }))
 	if (!currentCrossChainRecord(rec.id)?.sealedEnvelope) {
 		throw new Error("Could not persist the sealed recovery secret — aborting before the deposit (storage full?).")
 	}
@@ -292,7 +293,7 @@ async function adoptBatchHash(id: string, batch: NonNullable<CrossChainWallet["b
 		const hashes = await batch.receipts(batchId).catch(() => [] as readonly Hex[])
 		const last = hashes.at(-1)
 		if (last) {
-			updateCrossChainRecord(id, (current) => ({ route: { ...current.route, srcTxHash: last } }))
+			await underJournalLock(() => updateCrossChainRecord(id, (current) => ({ route: { ...current.route, srcTxHash: last } })))
 			return
 		}
 		await wait(3_000)
@@ -317,7 +318,7 @@ async function sendOnSource(
 		setRecordStep(id, "sending-source")
 		onRequested()
 		const batchId = await wallet.batch.send([...approvals, deposit])
-		updateCrossChainRecord(id, (current) => ({ route: { ...current.route, srcBatchId: batchId } }))
+		await underJournalLock(() => updateCrossChainRecord(id, (current) => ({ route: { ...current.route, srcBatchId: batchId } })))
 		setRecordStep(id, undefined)
 		await adoptBatchHash(id, wallet.batch, batchId, o)
 		return
@@ -328,7 +329,7 @@ async function sendOnSource(
 	setRecordStep(id, "sending-source")
 	onRequested()
 	const srcTxHash = await wallet.sendTransaction(deposit)
-	updateCrossChainRecord(id, (current) => ({ route: { ...current.route, srcTxHash } }))
+	await underJournalLock(() => updateCrossChainRecord(id, (current) => ({ route: { ...current.route, srcTxHash } })))
 	setRecordStep(id, undefined)
 }
 
@@ -354,7 +355,7 @@ async function approveOnSource(
 			throw e
 		}
 		// The marker clears only once the hash is journaled: a failed write still leaves the record kept.
-		updateCrossChainRecord(id, { approveTxHash: approved })
+		await underJournalLock(() => updateCrossChainRecord(id, { approveTxHash: approved }))
 		approvalsUnanswered.delete(id)
 		const receipt = await reads.source.waitForTransactionReceipt({ hash: approved })
 		if (receipt.status !== "success") throw new Error("The token approval reverted on the source chain, so the deposit was not sent.")
@@ -366,23 +367,25 @@ async function approveOnSource(
 
 /** Nothing bridged, but an approval may stand, journaled or asked for and never answered: such a record ends
  *  `not-sent`, whose card reads the allowance and offers the revoke. */
-function endUnsent(id: string): void {
+async function endUnsent(id: string): Promise<void> {
 	if (!currentCrossChainRecord(id)?.approveTxHash && !approvalsUnanswered.has(id)) {
 		discard(id)
 		return
 	}
 	setRecordStep(id, undefined)
-	updateCrossChainRecord(id, (current) => ({ route: { ...current.route, outcome: "not-sent" }, completedAt: Date.now() }))
+	await underJournalLock(() =>
+		updateCrossChainRecord(id, (current) => ({ route: { ...current.route, outcome: "not-sent" }, completedAt: Date.now() })),
+	)
 }
 
 /** Nothing bridged when the deposit never reached the wallet, or the wallet refused it: the record goes, unless it
  *  journaled an approval. Any other failure keeps it, since the transfer may be on its way, and watches it at once
  *  so discovery decides. */
-function settleFailedSend(id: string, requested: boolean, e: unknown, watcher: CrossChainWatchDeps | undefined): void {
+async function settleFailedSend(id: string, requested: boolean, e: unknown, watcher: CrossChainWatchDeps | undefined): Promise<void> {
 	try {
 		if (!requested || isUserRejection(e)) {
 			sealKeys.delete(id)
-			endUnsent(id)
+			await endUnsent(id)
 			return
 		}
 		flagRecordError(id, humanizeWalletError(e instanceof Error ? e.message : String(e)))
@@ -400,8 +403,8 @@ function settleFailedSend(id: string, requested: boolean, e: unknown, watcher: C
  * transaction; the whole span holds the operation guard, so the app's Aztec account cannot change under it.
  *
  * @throws before any record exists when the route is stale, refused by the decoder, or the wallet is on another
- * chain or account; after the record exists, with the record discarded when nothing can have left the wallet, or
- * ended `not-sent` when an approval was journaled.
+ * chain or account, and `ROUTE_EXPIRED` when a stored record already holds the route's id; after the record exists,
+ * with the record discarded when nothing can have left the wallet, or ended `not-sent` when an approval was journaled.
  */
 export function sendCrossChain(
 	s: CrossChainSend,
@@ -423,11 +426,18 @@ async function journalAndSend(
 	assertVerified(s.route)
 	const heads = { source: await reads.source.getBlockNumber(), ethereum: await reads.ethereum.getBlockNumber() }
 	const rec = crossChainRecordOf(s, heads)
-	addCrossChainRecordVerified(rec)
-	markSessionLive(rec.id)
-	// From here until the wallet returns the send, a step is always set: a record without one reads as a send
-	// the wallet may have taken without answering.
-	setRecordStep(rec.id, "preparing-source")
+	// The marks share the filing's span: its reload lets the wizard's watcher see the row before this flow resumes,
+	// and the wizard adopts only a session-live row. From here until the wallet returns the send, a step is always
+	// set: a record without one reads as a send the wallet may have taken without answering.
+	const filed = await underJournalLock(() => {
+		if (!addCrossChainRecordVerified(rec)) return false
+		markSessionLive(rec.id)
+		setRecordStep(rec.id, "preparing-source")
+		return true
+	})
+	// A held id means this route's claim material already funds a record: refused before the `try`, whose cleanup
+	// would discard that record.
+	if (!filed) throw new Error(ROUTE_EXPIRED)
 	const watcher = o.watch === false ? undefined : (o.watch ?? appWatchDeps())
 	let requested = false
 	try {
@@ -440,7 +450,7 @@ async function journalAndSend(
 		if (watcher) void watchCrossChain(rec.id, watcher)
 		return rec.id
 	} catch (e) {
-		settleFailedSend(rec.id, requested, e, watcher)
+		await settleFailedSend(rec.id, requested, e, watcher)
 		throw e
 	} finally {
 		approvalsUnanswered.delete(rec.id)

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import {
 	type DepositJournalRecord,
+	JOURNAL_KEY,
 	type KeyText,
 	type LegacyBridgeBackupFile,
 	RecoveryKey,
@@ -9,6 +10,7 @@ import {
 	recoveryKeyMessage,
 	sealBridgeBackup,
 	sealDepositEnvelope,
+	upsertRecord,
 } from "@unleashed/bridge-core"
 import type { JournalTokenBlock } from "@unleashed/sdk"
 import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
@@ -208,6 +210,21 @@ describe("useBridgeBackup", () => {
 		const { updatedAt: _orig, ...original } = rec
 		expect(stored).toEqual(original)
 		expect(runtime.value[rec.id]?.busy).toBeUndefined() // idle - no auto-claim.
+	})
+
+	it("a restore whose bridge another tab files during its signature resolves, and the stored copy stands", async () => {
+		const rec = publicDeposit()
+		const file = await sealBridgeBackup(await keyFor(rec, "site"), rec)
+		const kv = memKV()
+		connectJournalDeps({ kv })
+		let filed: string | null = null
+		signMessage.mockImplementation(async ({ message }: { message: string }) => {
+			upsertRecord(kv, { ...rec, claimTxHash: "0xclaimed" })
+			filed = kv.getItem(JOURNAL_KEY)
+			return sigOf(message)
+		})
+		await expect(useBridgeBackup().restoreFile(JSON.stringify(file))).resolves.toMatchObject({ id: rec.id })
+		expect(kv.getItem(JOURNAL_KEY)).toBe(filed)
 	})
 
 	it("restore with the wrong wallet's file refuses with the attribution-honest copy", async () => {

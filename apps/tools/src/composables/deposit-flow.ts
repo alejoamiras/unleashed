@@ -27,7 +27,7 @@ import {
 import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
 import { NETWORK } from "@/lib/network"
 import { appNode } from "@/lib/aztec-node"
-import { cacheSecret, currentRecord, runOnLane, setRecordStep, updateRecord, updateRecordWhen } from "./useBridgeJournal"
+import { cacheSecret, currentRecord, runOnLane, setRecordStep, underJournalLock, updateRecord, updateRecordWhen } from "./useBridgeJournal"
 import { readBalance } from "./useTokenBalance"
 
 // Verbose tracing while the bridge flows are being hardened - ids, stages, tx hashes ONLY.
@@ -150,7 +150,7 @@ export async function sealPrivateRecord(ctx: {
 	if (!trusted) markSealTrusted(localStorage, NETWORK.l1ChainId, from, provider)
 	sealKeys.set(id, key)
 	cacheSecret(id, secretStr, { v: 2, ...envelope })
-	updateRecord(id, { sealedEnvelope: blob, sealerL1: from })
+	await underJournalLock(() => updateRecord(id, { sealedEnvelope: blob, sealerL1: from }))
 	const sealed = readBack()
 	if (!sealed?.sealedEnvelope) {
 		throw new Error("Could not persist the sealed recovery secret — aborting before the deposit (storage full?).")

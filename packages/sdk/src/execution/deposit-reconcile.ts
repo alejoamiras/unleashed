@@ -208,13 +208,16 @@ async function isRecordCall(
 	privateFpc: string,
 ): Promise<boolean> {
 	const tx = await read(() => l1.getTransaction({ hash }))
-	if (!tx || !hexEq(tx.to, router.address) || !router.shape.calldataMatches(rec, tx.input, privateFpc)) return false
+	// The scan's own logs named this hash: a `null` for it or its receipt (a lagging backend, a reorg) is not an answer.
+	if (!tx) throw new ScanIncomplete("a logged transaction was not served")
+	if (!hexEq(tx.to, router.address) || !router.shape.calldataMatches(rec, tx.input, privateFpc)) return false
 	return router.shape.logNamesPayer || rec.sender === undefined || hexEq(tx.from, rec.sender)
 }
 
 async function landed(l1: ReconcileL1Client, hash: Hex, read: BudgetedRead): Promise<boolean> {
 	const receipt = await read(() => l1.getTransactionReceipt({ hash }))
-	if (receipt?.status !== "success") return false
+	if (!receipt) throw new ScanIncomplete("a logged transaction has no receipt")
+	if (receipt.status !== "success") return false
 	await assertCanonical(l1, read, receipt)
 	return true
 }
