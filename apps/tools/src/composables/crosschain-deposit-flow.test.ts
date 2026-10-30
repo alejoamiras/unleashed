@@ -12,7 +12,8 @@ import { watch } from "vue"
 import { stepperPhases } from "@/lib/bridge-steps"
 import { crossChainPhase } from "@/lib/crosschain-activity"
 import { crossChainUnconfirmed } from "@/lib/crosschain-steps"
-import { type JournalLocks, memoryJournalLocks } from "@/lib/journal-locks"
+import { memoryJournalLocks } from "@/lib/journal-locks"
+import { otherTab } from "./test/other-tab"
 import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, signatureOf, USER } from "@/test/crosschain"
 import {
 	ACCOUNT_SWITCHED,
@@ -332,38 +333,15 @@ describe("sendCrossChain", () => {
 		const other = currentCrossChainRecord(routeRecordId(earlier.secrets))
 		__resetJournalForTests()
 		const kv = memoryStorage()
-		const shared = memoryJournalLocks()
-		let holder: Promise<unknown> | undefined
-		let behind = 0
-		const locks: JournalLocks = {
-			...shared,
-			journal: (fn) => {
-				if (holder) behind++
-				return shared.journal(fn)
-			},
-		}
-		connectJournalDeps({ kv, locks })
-		// The other tab's span: load the lane, then write it back with a record of its own once released.
-		let loaded: string | null = null
-		let release = () => {}
-		const hold = () => {
-			holder = locks.journal(() => {
-				loaded = kv.getItem(CROSSCHAIN_JOURNAL_KEY)
-				return new Promise<void>((r) => {
-					release = r
-				}).then(() => {
-					const lane = JSON.parse(loaded ?? "") as { records: unknown[] }
-					kv.setItem(CROSSCHAIN_JOURNAL_KEY, JSON.stringify({ ...lane, records: [...lane.records, other] }))
-				})
-			})
-		}
-		const w = fakeWallet(route, { onSend: () => w.sent.length === 2 && hold() })
+		const tab = otherTab()
+		connectJournalDeps({ kv, locks: tab.locks })
+		const w = fakeWallet(route, { onSend: () => w.sent.length === 2 && tab.hold(kv, CROSSCHAIN_JOURNAL_KEY, other) })
 		const sending = sendCrossChain(sendOf(a, route), w.wallet, fakeReads(0n), { watch: false })
-		await vi.waitFor(() => expect(behind).toBe(1))
-		expect(kv.getItem(CROSSCHAIN_JOURNAL_KEY)).toBe(loaded)
-		release()
+		await vi.waitFor(() => expect(tab.behind).toBe(1))
+		expect(kv.getItem(CROSSCHAIN_JOURNAL_KEY)).toBe(tab.loaded)
+		const landed = tab.release()
 		const id = await sending
-		await holder
+		await landed
 		expect(storedCrossChainRecords().map((r) => r.id)).toEqual([id, other?.id])
 		expect(currentCrossChainRecord(id)?.route.srcTxHash).toBe(hashOf(2))
 	})

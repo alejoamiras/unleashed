@@ -169,12 +169,15 @@ vi.mock("@/composables/useSend", () => ({
 	validateTokenBlock: vi.fn(async () => null),
 }))
 
-import { type SendWithdrawRecord, validateAnyBackupRecord } from "@unleashed/bridge-core"
+import { JOURNAL_KEY, type SendWithdrawRecord, validateAnyBackupRecord } from "@unleashed/bridge-core"
+import { feeJuiceAddress } from "@unleashed/sdk/protocol"
+import { watch } from "vue"
 import { memoryJournalLocks } from "@/lib/journal-locks"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
-import { __resetJournalForTests, connectJournalDeps, runWithdrawConsume, useBridgeJournal } from "./useBridgeJournal"
+import { __resetJournalForTests, connectJournalDeps, isSessionLive, runWithdrawConsume, useBridgeJournal } from "./useBridgeJournal"
 import { __resetOpsInFlightForTests, useOpsInFlight } from "./useOpsInFlight"
 import { __resetHubExitDepsForTests, buildExitSendOpts, useHubExit } from "./useHubExit"
+import { otherTab } from "./test/other-tab"
 
 const HUB_ADDR = h.HUB_ADDR
 const L2_TOKEN = h.L2_TOKEN
@@ -218,6 +221,34 @@ const plan = (over: Partial<ExitPlan> = {}): ExitPlan => ({
 })
 
 const recordOf = (id: string) => useBridgeJournal().records.value.find((r) => r.id === id) as SendWithdrawRecord | undefined
+
+function memLanes() {
+	const store = new Map<string, string>()
+	return {
+		getItem: (k: string) => store.get(k) ?? null,
+		setItem: (k: string, v: string) => void store.set(k, v),
+		removeItem: (k: string) => void store.delete(k),
+	}
+}
+
+/** Another tab's record: a direct Fee Juice deposit, unrelated to the exit. */
+const OTHER_TAB_RECORD = {
+	schema: 1,
+	id: "0xother",
+	direction: "deposit",
+	isPrivate: false,
+	amount: "1",
+	createdAt: 1,
+	updatedAt: 1,
+	assetKind: "fee-juice",
+	recipient: FROM,
+	secret: "0xpublicsecret",
+	secretHashHex: "0xother",
+	leafIndex: "7",
+	chainId: 11155111,
+	portal: h.FJ_PORTAL,
+	bridge: feeJuiceAddress.toString(),
+}
 
 describe("useHubExit", () => {
 	beforeEach(() => {
@@ -362,6 +393,46 @@ describe("useHubExit", () => {
 		expect(h.consumeWithdrawal).not.toHaveBeenCalled()
 		release()
 		await holder
+	})
+
+	it.each([
+		["opening write", "open"],
+		["consume hash", "consume"],
+	] as const)("the exit's %s queues behind another tab's journal write, so neither is lost", async (_label, at) => {
+		const exit = useHubExit()
+		const kv = memLanes()
+		const tab = otherTab()
+		connectJournalDeps({ kv, locks: tab.locks })
+		const hold = () => tab.hold(kv, JOURNAL_KEY, OTHER_TAB_RECORD)
+		if (at === "open") hold()
+		h.consumeWithdrawal.mockImplementation(async (_l1, _node, _receipt, p) => {
+			if (at === "consume") hold()
+			await (p as { onSent?: (hash: string) => unknown }).onSent?.("0xconsume")
+			return { consumeTxHash: "0xconsume" }
+		})
+		const exiting = exit.exit(plan())
+		await vi.waitFor(() => expect(tab.behind).toBe(1))
+		expect(kv.getItem(JOURNAL_KEY)).toBe(tab.loaded)
+		await tab.release()
+		const id = await exiting
+		expect(recordOf("0xother")).toBeDefined()
+		expect(recordOf(id)?.consumeTxHash).toBe("0xconsume")
+	})
+
+	it("the exit's row is this session's on the first tick it is listed, so the wizard takes it over", async () => {
+		const exit = useHubExit()
+		connectJournalDeps({ locks: memoryJournalLocks() })
+		const { records } = useBridgeJournal()
+		const live: boolean[] = []
+		const stop = watch(
+			() => records.value.find((r) => r.direction === "withdraw")?.id,
+			(id) => {
+				if (id && live.length === 0) live.push(isSessionLive(id))
+			},
+		)
+		await exit.exit(plan())
+		stop()
+		expect(live).toEqual([true])
 	})
 
 	it("an L1 withdraw pause refuses by name, before any authwit and with no record written", async () => {

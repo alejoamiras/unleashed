@@ -198,7 +198,7 @@ import {
 } from "@unleashed/bridge-core"
 import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
 import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
-import { type JournalLocks, memoryJournalLocks } from "@/lib/journal-locks"
+import { otherTab } from "./test/other-tab"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
 import { __resetJournalForTests, addRecord, connectJournalDeps, isSessionLive, runDepositClaim, useBridgeJournal } from "./useBridgeJournal"
 import { GAS_QUOTE_MOVED } from "./useFuelQuote"
@@ -789,45 +789,19 @@ describe("useSend", () => {
 	})
 
 	it("journals the SDK's deposit facts behind another tab's write, so neither tab's write is lost", async () => {
-		const shared = memoryJournalLocks()
-		let holder: Promise<unknown> | undefined
-		let behind = 0
-		const locks: JournalLocks = {
-			...shared,
-			journal: (fn) => {
-				if (holder) behind++
-				return shared.journal(fn)
-			},
-		}
+		const tab = otherTab()
 		const send = useSend()
-		connectJournalDeps({ locks })
-		// The other tab's span: load the lane, then write it back with a record of its own once released.
-		let loaded: string | null = null
-		let release = () => {}
-		const hold = () => {
-			holder = locks.journal(() => {
-				loaded = localStorage.getItem(JOURNAL_KEY)
-				return new Promise<void>((r) => {
-					release = r
-				}).then(() => {
-					const lane = JSON.parse(loaded ?? "") as { records: unknown[] }
-					localStorage.setItem(
-						JOURNAL_KEY,
-						JSON.stringify({ ...lane, records: [...lane.records, journalled("0xother", readBack())] }),
-					)
-				})
-			})
-		}
+		connectJournalDeps({ locks: tab.locks })
 		h.writeContract.mockImplementation(async (call: { functionName: string }) => {
-			if (call.functionName === "bridgeWithPermit") hold()
+			if (call.functionName === "bridgeWithPermit") tab.hold(localStorage, JOURNAL_KEY, journalled("0xother", readBack()))
 			return "0xl1tx"
 		})
 		const sending = send.send(plan())
-		await vi.waitFor(() => expect(behind).toBe(1))
-		expect(localStorage.getItem(JOURNAL_KEY)).toBe(loaded)
-		release()
+		await vi.waitFor(() => expect(tab.behind).toBe(1))
+		expect(localStorage.getItem(JOURNAL_KEY)).toBe(tab.loaded)
+		const landed = tab.release()
 		const id = await sending
-		await holder
+		await landed
 		expect(recordOf(id)?.depositTxHash).toBe("0xl1tx")
 		expect(recordOf("0xother")).toBeDefined()
 	})
