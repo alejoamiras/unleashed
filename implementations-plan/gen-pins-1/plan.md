@@ -13,6 +13,25 @@ quality_bar: production (the bridge moves real funds on mainnet)
 hardening: not scheduled
 ---
 
+## Outcome
+
+Delivered by arc a1 in one pull request (Delivers ask36).
+
+- `contracts/bridge/generations/<network>/` holds each live generation's record and its kept artifacts: testnet's
+  four L1 contracts and hub, built at the merge base `b8c2289` and checked on chain on two keyless RPCs and the node;
+  mainnet a placeholder with no contracts.
+- The SDK selects the record by chain (`codeOf`), binds it to the bundled manifest in `parseNetwork`, checks deployed
+  code against its pins and the hub's class against its class id, and loads the hub artifact the generation deployed
+  (`hubArtifact(net)`); a sandbox checks against this release's builds, and any other chain is refused.
+- The app loads the testnet hub artifact on demand, which drops 2.57 MB from the testnet page's load set.
+- The tooling writes and checks records (`generation-record.ts`), carries a live entry through promotion only
+  unchanged, promotes the record before its manifest, and verifies a candidate against its record (`verify-l1`,
+  `live-intent`). CI checks the testnet record and a compatibility gate holds every SDK and app call to the live code.
+- Codex converged in three rounds (round 3: approve); an Opus review ran alongside round 1.
+
+Known limits: #90 (D6, the SDK's off-chain math under an unchanged interface).
+Open items: none.
+
 # gen-pins-1: a committed record of the code each bridge generation runs
 
 ask36: Each deployed bridge generation keeps a committed record of the code it runs: EVM runtime code hashes and Aztec contract class ids, taken from the deployed artifacts. The app and the SDK check a live generation against that record, not against pins rebuilt from the current contract sources. A contract source change on main then leaves the running testnet and mainnet generations working until a new generation is deployed and promoted, and the record stays a reviewed, committed trust root.
@@ -339,13 +358,12 @@ Stop and reassess after 3 failures on one step. Comments state invariants only.
   - Resumed for verification: **`approve`** (no remaining material findings, no regression).
     - its point that the D5 sandbox-seam argument was overstated (`vi.mock` works in the integration suite): that argument is dropped.
   - Rejected: none.
+- **Implementation review** (the branch's diff from the merge base; detail in `lessons/phase-4.md`):
+  - Codex round 1 (`gpt-6.1-sol`, high): `reject`. Adopted: F1 a fresh build reproduces a record's pin only whole (`samePin`), F2 `promote` re-checks the buffered record files' integrity before any live write (`promotableRecord`), F3 the testnet swapper's swap call joins D5, compared without parameter names.
+  - Opus diff review: `conditional approve`, the same three plus: masked spans must be zero-filled in the kept build, the sandbox control holds the L1 pins, `check` redacts the endpoints it was given, stale wording. All adopted.
+  - Codex round 2 (resumed): `conditional approve`. Adopted: redact the longest endpoint first.
+  - Codex round 3 (resumed): **`approve`**, no findings.
 
-## Seeds (not run; the orchestrator drives)
+## Seeds (retired)
 
-```
-/goal Arc a1 of implementations-plan/gen-pins-1/plan.md: every phase ✓ with its validation gate passing in the transcript, the Codex fix loop converged (a resumed pass with no material finding quoted), the PR open with "Delivers ask36", the close-out archive commit shown with git show --stat, bun run test:all and bun run lint exit 0.
-```
-
-```
-/loop 15m Drive implementations-plan/gen-pins-1 from plan.md and lessons/: reality-check git and the PR, take the next pending step, run its fast gates, commit; decide with /codex high (gpt-6.1-sol) instead of waiting; never deploy, promote or sign; after Phase 4 run Post-implementation; stop when the PR is green and report.
-```
+Retired at close-out: arc a1 delivered the plan in one pull request.
