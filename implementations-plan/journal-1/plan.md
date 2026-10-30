@@ -7,10 +7,29 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: plan complete; awaiting the orchestrator's approval
+status: completed (a1 delivered in PR #107)
 base: main 97e100e; builds on PR #88 (sdk-1-a6-claims), which must be on main first
 budget: "recon: 2 Sonnet explorers; audit: Codex gpt-6.1-sol at high plus one Opus Plan critique, then a fresh Codex pass; code-review: off"
 ---
+
+## Outcome
+
+- **Status**: completed (arc a1 delivered in PR #107; merging it completes the plan).
+- **Shipped**: a route handed to a send is marked spent, so the amount step quotes the same ask afresh; both verified
+  adds file insert-only through bridge-core's `insertRecord`, and a held cross-chain id is refused as `ROUTE_EXPIRED`
+  before the send's `try`; every journal write of both send flows, the private seal and the restore's filing run under
+  `underJournalLock`, with the session marks inside the filing span and an awaited failure chain that keeps the
+  wallet's error; a refused held id leaves `row.id` unset, so the cleanup never touches its holder. Browser cell 56.
+  Closes #65 and #80. No string, state or layout added; the re-pricing note stays in `OWNER-ASKS.md`.
+- **Deviations**: cell 56 sends token and gas, as cells 50–52 do: a public token-only ask is flipped to token and gas
+  when the account holds no Aztec gas, and that verdict can land after the review froze.
+- **Lessons**: the watcher-before-resume entry in `lessons.md` now covers a lock span's reload (merged into the
+  existing `ref`-hold line, inside the 8 KiB budget).
+- **Known limits:** #108 (S1: a frozen review confirmed again after another tab's discard reuses its secrets); #109
+  (writes outside the lock: no Web Locks, an older bundle, a frozen tab). Both closed with reopening conditions.
+- **Open items:** #110 (the hub exit, the fee ladder, the engine patches and the startup prune still write unlocked);
+  #111 (the browser harness retries a stood-down cross-chain review under the same-chain review id).
+- The `/goal` and `/loop` seeds at the end of this plan are retired; they are not instructions.
 
 # journal-1: one record and one set of claim secrets per signed send; the send's writes under the journal lock
 
