@@ -116,7 +116,7 @@ reproduces it, then files an issue, or a private draft advisory if it proves exp
 
 **Asks**: none for the plan. If the owner declines ask-1, the close-out files it as a closed `known-limit` issue.
 
-## Phase 1: both fixes and the app on the SDK read (arc a1)
+## Phase 1: both fixes and the app on the SDK read (arc a1) ✓
 
 Warning: start only after PR #88 merges; then merge `origin/main`.
 
@@ -198,6 +198,26 @@ check, defer it unless approved).
   entries, pasted tokens, selection, prefill, source-chain rows) and found no non-lowercase token address.
 
 Size: over the 150-line `light` target because the ledger records three review rounds; nothing is restated.
+
+### Implementation review (arc a1)
+
+**Codex round 1** (gpt-6.1-sol, high, diff `5b1315a..ae83621`+`03780e4`): `findings: 0`. It reproduced 429, transport,
+-32603 (with and without data) and code 3 refusals with batching on and off, and the `{5n, 0n}` controls.
+- Optional, **adopted**: the reconcile comment named only a lagging backend; a reorg also yields `null`. Reworded.
+- Optional, **adopted**: a -32603 refusal case, since viem wraps it in a revert error, a different chain from a
+  transport failure's (`erc20.test.ts`, the refusal table).
+- Noted: `aggregateFailed` loops on a self-referencing `cause` (needs a non-viem client that builds one). Settled by
+  the Opus finding below.
+
+**Opus diff review** (general-purpose, beside round 1): `findings: 1`.
+- O1 Low, demonstrated (`bun -e` reproducer hung under `timeout 5`): a cyclic `cause` from a non-viem client freezes
+  the thread. **Adopted**: the walk stops at depth 8, as `isUserRejection` (`errors.ts:72`) already does; a test pins it.
+- Nits, **adopted**: a fake refusal from "another viem copy" pins the name match; the `rejects %s` cases assert their
+  messages; the bad-checksum test gains a valid mixed-case control; the TSDoc says a token can still cost the list
+  when it makes the aggregate call itself fail.
+- Fixes in `5794361`.
+
+**Codex round 2** (resumed, fix diff `03780e4..5794361`): `findings: 0`. Loop converged in 2 rounds.
 
 ## Seeds (draft; not run by this planner)
 
