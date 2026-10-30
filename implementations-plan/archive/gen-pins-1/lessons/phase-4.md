@@ -64,3 +64,11 @@ comes from dRPC's keyless node, the keyed node's provider. Reworded.
 `conditional approve`: all three round-1 findings closed, the second reviewer's fixes sound, no regression. One material
 finding: the endpoint redaction replaced URLs in argument order, so a URL that prefixes another left the longer one's
 tail (its key) printed. It now replaces longest first, keeping each URL's label; the prefix case is in the test.
+
+## Final gates on HEAD
+
+lint, typecheck:all, audit:tools and lint:actions exit 0. `test:all`: one tools case (`capabilities.test.ts`, the
+send grant against the kept hub, which loads two hub artifacts) timed out at 5 s while two browser suites ran on the
+host; alone it passed in 3 s (28 of 28), with no timeout raised. `test:ci-gating`'s doc-link check failed until the plan
+moved to `archive/`, where the promoted lessons link; after the move and a second `main` merge (#81, #86, #92, no
+conflict) lint, typecheck:all, test:all (sdk 504, bridge-core 562, tools 1717), test:ci-gating and lint:actions exit 0.
