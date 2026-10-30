@@ -515,5 +515,13 @@ describe("findDepositTx — a retired router", () => {
 			})
 			await expect(findDepositTx(record(), reorged.client, opts())).resolves.toBe("incomplete")
 		})
+
+		// A load-balanced RPC can serve the log from one backend and miss its transaction on another.
+		it.each(["getTransaction", "getTransactionReceipt"] as const)("a logged candidate whose %s answers null", async (read) => {
+			const chain = fakeChain([bridgeTx("0xaa", 520n)])
+			await expect(findDepositTx(record(), chain.client, opts())).resolves.toEqual({ txHash: "0xaa" })
+			chain.client[read] = async () => null
+			await expect(findDepositTx(record(), chain.client, opts())).resolves.toBe("incomplete")
+		})
 	})
 })
