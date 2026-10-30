@@ -19,6 +19,7 @@ import type { JournalTokenBlock } from "@unleashed/sdk"
 import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GrantOutcome } from "@/lib/send-model"
+import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
 import { stepperPhases } from "@/lib/bridge-steps"
 import { memoryJournalLocks } from "@/lib/journal-locks"
 import { recordState } from "@/lib/record-policy"
@@ -925,11 +926,18 @@ describe("useBridgeJournal engine", () => {
 		})
 	})
 
-	it("a throwing claim SURFACES on the record (UI call sites void the promise) and clears the step", async () => {
+	it.each([
+		["a raw message", "boom - not a sync revert", "boom - not a sync revert. Your funds are not lost — retry from this card."],
+		[
+			"a sentence of the app's own",
+			FEE_STOP_COPY["fuel-claim-pending"],
+			`${FEE_STOP_COPY["fuel-claim-pending"]} Your funds are not lost — retry from this card.`,
+		],
+	])("a throwing claim SURFACES %s on the record (UI call sites void the promise) with one full stop", async (_, message, note) => {
 		const deps = baseDeps(kv)
 		const claim = vi.fn(async () => ({
 			simulate: async () => {
-				throw new Error("boom - not a sync revert")
+				throw new Error(message)
 			},
 			send: async () => ({ txHash: "0x" }),
 		}))
@@ -938,7 +946,7 @@ describe("useBridgeJournal engine", () => {
 		await runDepositClaim("0xboom") // resolves - the failure lands on the record instead.
 		const rt = useBridgeJournal().runtime.value["0xboom"]
 		expect(rt?.attention).toBe("error")
-		expect(rt?.note).toMatch(/boom.*funds are not lost/i)
+		expect(rt?.note).toBe(note)
 		expect(rt?.step).toBeUndefined()
 		expect(rt?.busy).toBe(false)
 	})
