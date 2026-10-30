@@ -34,6 +34,21 @@ beforeAll(async () => {
 
 type Entry = { persisted: DepositRecord; secrets?: DepositSecrets } | { event: TransferEvent }
 
+/** `target` with `overrides` in place, recording into `touched` the name of every method called on it. */
+function watched<T>(target: T, touched: string[], overrides: Record<string, unknown> = {}): T {
+	return new Proxy(target as object, {
+		get(t, key) {
+			if (typeof key === "string" && key in overrides) return overrides[key]
+			const value = Reflect.get(t, key)
+			if (typeof value !== "function") return value
+			return (...args: unknown[]) => {
+				touched.push(String(key))
+				return value(...args)
+			}
+		},
+	}) as T
+}
+
 /** The facts an event names, as the persisted record must already hold them. */
 function namedFacts(ev: TransferEvent, last: DepositRecord | undefined): [unknown, unknown][] {
 	if (ev.type === "approval" && ev.status === "sent") return [[last?.approveTxHash, ev.txHash]]
@@ -152,27 +167,20 @@ describe("the events of a deposit", () => {
 			code: "invalid-request",
 		})
 		expect([entries.length, log.length]).toEqual([0, 0])
-		// An `l1` client that would resolve an off-chain lookup is refused before any read, persist or wallet step.
+		// An `l1` client that would resolve an off-chain lookup is refused before any read, persist or wallet step. The
+		// wallet carries no account, so `accountOf` would have to call it.
+		const touched: string[] = []
+		const wallet = () => watched(walletOf(log, net.l1ChainId), touched, { account: undefined })
 		for (const ccipRead of [undefined, { request: async () => "0x" }]) {
-			const touched: string[] = []
-			const l1 = new Proxy(r.l1 as object, {
-				get(target, key) {
-					if (key === "ccipRead") return ccipRead
-					const value = Reflect.get(target, key)
-					if (typeof value !== "function") return value
-					return (...args: unknown[]) => {
-						touched.push(String(key))
-						return value(...args)
-					}
-				},
-			})
-			await expect(depositToken(net, { ...r, l1: l1 as never }, walletOf(log, net.l1ChainId), quote, run)).rejects.toMatchObject({
+			const lookups = { ...r, l1: watched(r.l1, touched, { ccipRead }) }
+			await expect(depositToken(net, lookups, wallet(), quote, run)).rejects.toMatchObject({
 				code: "invalid-request",
 				retry: "never",
 			})
 			expect([touched, entries.length, log.length]).toEqual([[], 0, 0])
 		}
-		const record = await depositToken(net, r, walletOf(log, net.l1ChainId), quote, run)
+		const record = await depositToken(net, { ...r, l1: watched(r.l1, touched) }, wallet(), quote, run)
+		expect(touched).toEqual(expect.arrayContaining(["getAddresses", "getChainId", "readContract"]))
 		expect(events().map((e) => e.type)).toEqual(["prepared", "signature-requested", "deposit-sent", "deposit-confirmed"])
 		assertPersistedFirst(entries)
 		// Every persist carries the salts, so a store that keeps only the latest pair never loses them.

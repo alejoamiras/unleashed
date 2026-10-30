@@ -131,8 +131,8 @@ describe("readErc20Metadata", () => {
 })
 
 describe("readErc20Metadata through viem's call", () => {
-	/** A node that answers every metadata read of one healthy token, except the selector `fails` names, through a client
-	 *  built with `ccipRead: false` unless `opts` names another; `calls` collects the selector of every `eth_call`. */
+	/** A node that answers every metadata read of one healthy token, except the selector `fails` names. An explicit
+	 *  `ccipRead: undefined` in `opts` keeps viem's default; an absent one builds the client with `ccipRead: false`. */
 	function node(
 		fails: Record<string, () => Error> = {},
 		opts: { ccipRead?: ClientConfig["ccipRead"]; calls?: string[] } = {},
@@ -197,7 +197,6 @@ describe("readErc20Metadata through viem's call", () => {
 		await expect(readErc20Metadata(node({ [DECIMALS]: revert }), TOKEN)).rejects.toBeInstanceOf(Erc20MetadataError)
 	})
 
-	/** An EIP-3668 `OffchainLookup(sender, urls, callData, callbackFunction, extraData)` revert naming `TOKEN`. */
 	const LOOKUP = encodeErrorResult({
 		abi: [
 			{
