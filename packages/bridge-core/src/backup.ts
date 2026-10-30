@@ -34,8 +34,8 @@ interface BackupHeader {
 	blob: string
 }
 
-/** Format 2, the only one written: sealed under a site key, and names no account, so whichever account
- *  sealed the transfer restores it. */
+/** Format 2, the only one written: sealed under a site key and names no account; the account whose
+ *  signature made that key restores it. */
 export interface BridgeBackupFile extends BackupHeader {
 	v: 2
 }

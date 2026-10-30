@@ -7,10 +7,9 @@ import { EncryptionKey } from "@nulo-sh/wallet-crypto"
  * record, never all of them. Reuses @nulo-sh/wallet-crypto's PBKDF2 + AES-GCM (never roll your
  * own crypto).
  *
- * The sealed blob is a BEARER credential for PRIVATE transfers (the L2 claim chooses the recipient),
- * so the UI must warn before exporting it, and the caller MUST round-trip self-test the seal before
- * the irreversible L1 deposit — some wallets sign non-deterministically, which would otherwise strand
- * the claim.
+ * The sealed blob holds a PRIVATE transfer's claim material, so the UI must warn before exporting it,
+ * and a seal MUST prove the wallet signs repeatably before the irreversible L1 deposit — some wallets
+ * sign non-deterministically, which would otherwise strand the claim.
  */
 
 /**
@@ -95,6 +94,7 @@ export class RecoveryKey {
 		key: EncryptionKey,
 	) {
 		this.#key = key
+		Object.freeze(this) // `readonly` is compile-time only; a relabelled key would seal under a text it was not signed over.
 	}
 
 	/** One signature over the binding's `text`. */

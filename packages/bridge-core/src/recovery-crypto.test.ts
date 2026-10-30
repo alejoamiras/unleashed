@@ -135,8 +135,9 @@ describe("recovery-crypto", () => {
 	it("a key is built only by derive, so its label always matches its text", async () => {
 		const legacy = await RecoveryKey.derive(signer(), BINDING, "legacy")
 		// @ts-expect-error a relabelled object literal is not a RecoveryKey
-		const relabelled: RecoveryKey = { text: "site", seal: legacy.seal, open: legacy.open }
-		expect(relabelled.text).toBe("site")
+		const _literal: RecoveryKey = { text: "site", seal: legacy.seal, open: legacy.open }
+		expect(() => Object.assign(legacy, { text: "site" })).toThrow(TypeError)
+		expect(legacy.text).toBe("legacy")
 	})
 
 	it("normalizes the signature's case — upper/lower-hex signatures derive the same key", async () => {
