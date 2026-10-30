@@ -1,11 +1,18 @@
 // @vitest-environment node
-import { type CrossChainDiscovery, deriveCrossChainDepositStage, openDepositEnvelopeV3 } from "@unleashed/bridge-core"
+import {
+	CROSSCHAIN_JOURNAL_KEY,
+	type CrossChainDiscovery,
+	deriveCrossChainDepositStage,
+	openDepositEnvelopeV3,
+} from "@unleashed/bridge-core"
 import { ERC20_ABI } from "@unleashed/sdk/protocol"
 import { type Address, decodeFunctionData, type Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { watch } from "vue"
 import { stepperPhases } from "@/lib/bridge-steps"
 import { crossChainPhase } from "@/lib/crosschain-activity"
 import { crossChainUnconfirmed } from "@/lib/crosschain-steps"
+import { type JournalLocks, memoryJournalLocks } from "@/lib/journal-locks"
 import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, signatureOf, USER } from "@/test/crosschain"
 import {
 	ACCOUNT_SWITCHED,
@@ -20,7 +27,14 @@ import {
 } from "./crosschain-deposit-flow"
 import type { CrossChainWatchDeps } from "./crosschain-watch"
 import { opsInFlight } from "./useOpsInFlight"
-import { __resetJournalForTests, currentCrossChainRecord, storedCrossChainRecords, useBridgeJournal } from "./useBridgeJournal"
+import {
+	__resetJournalForTests,
+	connectJournalDeps,
+	currentCrossChainRecord,
+	isSessionLive,
+	storedCrossChainRecords,
+	useBridgeJournal,
+} from "./useBridgeJournal"
 import { type CrossChainRoute, ROUTE_TTL_MS, routeRecordId } from "./useCrossChainRoute"
 
 const MAX = (1n << 256n) - 1n
@@ -271,6 +285,133 @@ describe("sendCrossChain", () => {
 		const stored = currentCrossChainRecord(id)
 		expect(stored?.approveTxHash).toBe(hashOf(1))
 		expect(stored && stepperPhases(stored, {})[0]).toMatchObject({ key: "src-approve", state: "done", link: { text: "0x0000…0001" } })
+	})
+
+	it("gives each send of one ask its own record, and refuses a route whose record exists before the wallet sees it", async () => {
+		const a = ask({ isPrivate: true })
+		const routes = [await quotedRoute(a), await quotedRoute(a)]
+		const { wallet } = fakeWallet(routes[0])
+		const ids: string[] = []
+		for (const route of routes) ids.push(await sendCrossChain(sendOf(a, route), wallet, fakeReads(0n), { watch: false }))
+		expect(ids).toEqual(routes.map((r) => routeRecordId(r.secrets)))
+		const [first, second] = ids.map((id) => currentCrossChainRecord(id))
+		expect(new Set(ids).size).toBe(2)
+		expect(first?.route.lifiTxId).not.toBe(second?.route.lifiTxId)
+		expect([first?.route.srcTxHash, second?.route.srcTxHash]).toEqual([hashOf(2), hashOf(4)])
+		expect(useBridgeJournal().listedRecords.value.map((r) => r.id)).toEqual(expect.arrayContaining(ids))
+
+		const quotedAt = Date.now()
+		const again = fakeWallet(routes[0], { batch: true })
+		const reads = fakeReads(0n)
+		const head = vi.spyOn(reads.ethereum, "getBlockNumber")
+		await expect(
+			sendCrossChain(sendOf(a, routes[0], quotedAt), again.wallet, reads, { now: () => quotedAt, watch: false }),
+		).rejects.toThrow(ROUTE_EXPIRED)
+		expect(head).toHaveBeenCalled()
+		expect([again.sent, again.signed]).toEqual([[], []])
+		expect(currentCrossChainRecord(ids[0])).toEqual(first)
+	})
+
+	it("files the record with its session marks, so a watcher that first lists the row reads it as this session's", async () => {
+		const a = ask()
+		const route = await quotedRoute(a)
+		const id = routeRecordId(route.secrets)
+		const live: boolean[] = []
+		const stop = watch(useBridgeJournal().listedRecords, (rows) => {
+			if (!live.length && rows.some((r) => r.id === id)) live.push(isSessionLive(id))
+		})
+		await sendCrossChain(sendOf(a, route), fakeWallet(route).wallet, fakeReads(0n), { watch: false })
+		stop()
+		expect(live).toEqual([true])
+	})
+
+	it("queues the send's journal writes behind another tab's write, so neither tab's write is lost", async () => {
+		const a = ask()
+		const [earlier, route] = [await quotedRoute(a), await quotedRoute(a)]
+		await sendCrossChain(sendOf(a, earlier), fakeWallet(earlier).wallet, fakeReads(0n), { watch: false })
+		const other = currentCrossChainRecord(routeRecordId(earlier.secrets))
+		__resetJournalForTests()
+		const kv = memoryStorage()
+		const shared = memoryJournalLocks()
+		let holder: Promise<unknown> | undefined
+		let behind = 0
+		const locks: JournalLocks = {
+			...shared,
+			journal: (fn) => {
+				if (holder) behind++
+				return shared.journal(fn)
+			},
+		}
+		connectJournalDeps({ kv, locks })
+		// The other tab's span: load the lane, then write it back with a record of its own once released.
+		let loaded: string | null = null
+		let release = () => {}
+		const hold = () => {
+			holder = locks.journal(() => {
+				loaded = kv.getItem(CROSSCHAIN_JOURNAL_KEY)
+				return new Promise<void>((r) => {
+					release = r
+				}).then(() => {
+					const lane = JSON.parse(loaded ?? "") as { records: unknown[] }
+					kv.setItem(CROSSCHAIN_JOURNAL_KEY, JSON.stringify({ ...lane, records: [...lane.records, other] }))
+				})
+			})
+		}
+		const w = fakeWallet(route, { onSend: () => w.sent.length === 2 && hold() })
+		const sending = sendCrossChain(sendOf(a, route), w.wallet, fakeReads(0n), { watch: false })
+		await vi.waitFor(() => expect(behind).toBe(1))
+		expect(kv.getItem(CROSSCHAIN_JOURNAL_KEY)).toBe(loaded)
+		release()
+		const id = await sending
+		await holder
+		expect(storedCrossChainRecords().map((r) => r.id)).toEqual([id, other?.id])
+		expect(currentCrossChainRecord(id)?.route.srcTxHash).toBe(hashOf(2))
+	})
+
+	it("ends a refused deposit with a journaled approval not-sent before the caller sees the refusal, which no bookkeeping failure replaces", async () => {
+		const a = ask()
+		const route = await quotedRoute(a)
+		// Another tab holds the journal from the wallet's refusal on, so the not-sent write waits for it.
+		const locks = memoryJournalLocks()
+		connectJournalDeps({ locks })
+		let release = () => {}
+		const hold = () =>
+			locks.journal(
+				() =>
+					new Promise<void>((r) => {
+						release = r
+					}),
+			)
+		const refused = fakeWallet(route, { rejectDeposit: true, onSend: () => refused.sent.length === 2 && hold() })
+		let settled = false
+		const outcome = sendCrossChain(sendOf(a, route), refused.wallet, fakeReads(0n), { watch: false }).then(
+			() => undefined,
+			(e: unknown) => e,
+		)
+		void outcome.then(() => {
+			settled = true
+		})
+		await new Promise((r) => setTimeout(r, 0))
+		expect(settled).toBe(false)
+		release()
+		expect(String(await outcome)).toMatch(/rejected/)
+		expectRevocable(route)
+
+		__resetJournalForTests()
+		const kv = memoryStorage()
+		let full = false
+		connectJournalDeps({
+			kv: {
+				getItem: (k) => kv.getItem(k),
+				setItem: (k, v) => {
+					if (full) throw new Error("QuotaExceededError")
+					kv.setItem(k, v)
+				},
+				removeItem: (k) => kv.removeItem(k),
+			},
+		})
+		const refusing = fakeWallet(route, { rejectDeposit: true, onSend: () => (full = refusing.sent.length === 2) })
+		await expect(sendCrossChain(sendOf(a, route), refusing.wallet, fakeReads(0n), { watch: false })).rejects.toThrow(/rejected/)
 	})
 
 	it("keeps looking for a send the wallet took without answering, and reads it as in flight once found", async () => {

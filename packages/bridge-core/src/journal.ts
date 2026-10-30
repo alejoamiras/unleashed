@@ -527,6 +527,18 @@ export function upsertRecord(kv: KV, rec: AnyJournalRecord): void {
 	writeLane(kv, lane, records)
 }
 
+/** Insert a record under a free id: one synchronous load → check → write span that writes nothing and answers
+ *  `false` when either key already holds the id, so a record is never replaced by another with its id. A failed
+ *  write throws. Cross-tab exclusion is the caller's (the journal lock): the span alone is no compare-and-set. */
+export function insertRecord(kv: KV, rec: AnyJournalRecord): boolean {
+	if (locate(kv, rec.id)) return false
+	const lane = laneOf(rec)
+	const next = { ...rec, updatedAt: Date.now() }
+	assertStorable(lane, next)
+	writeLane(kv, lane, [...loadLane(kv, lane), next])
+	return true
+}
+
 /** Shallow-merge a patch into one record (re-read first). No-op if the id is gone. `R` is the
  *  caller's statement of the record's shape, Ethereum-origin unless named. */
 export function patchRecord<R extends AnyJournalRecord = BridgeJournalRecord>(
