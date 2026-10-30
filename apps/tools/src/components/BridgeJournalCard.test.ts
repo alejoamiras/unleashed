@@ -480,7 +480,7 @@ describe("BridgeJournalCard — claimed by another submitter", () => {
 		expect(w.find(sel(TESTIDS.journalStage)).text()).toMatch(/Press Claim to verify/)
 	})
 
-	it("a PRIVATE token+gas record with live fuel keeps its sealed gas: CLAIM only verifies, no gas claim, the kept line", () => {
+	it("a PRIVATE token+gas record with live fuel points at CLAIM for its private gas, with no public gas claim", () => {
 		const w = mountCard(
 			deposit({
 				schema: 2,
@@ -491,7 +491,7 @@ describe("BridgeJournalCard — claimed by another submitter", () => {
 				fuel: { ...fuel, bridgeSecretSalt: "0xsalt" },
 			}),
 		)
-		expect(w.find(sel(TESTIDS.journalClaimedByOther)).text()).toMatch(/sealed in this record — keep it/)
+		expect(w.find(sel(TESTIDS.journalClaimedByOther)).text()).toMatch(/private gas is still in this record — press Claim to claim it\./)
 		expect(w.find(sel(TESTIDS.journalClaim)).exists()).toBe(true)
 		expect(w.find(sel(TESTIDS.journalStage)).text()).toMatch(/Press Claim to verify/)
 		expect(w.find(sel(TESTIDS.journalClaimGas)).exists()).toBe(false)

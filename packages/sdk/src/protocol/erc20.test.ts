@@ -1,4 +1,17 @@
-import { type Address, encodeAbiParameters, type Hex, padHex, type PublicClient } from "viem"
+import {
+	type Address,
+	createPublicClient,
+	custom,
+	decodeFunctionData,
+	encodeAbiParameters,
+	encodeFunctionResult,
+	type Hex,
+	HttpRequestError,
+	multicall3Abi,
+	padHex,
+	type PublicClient,
+} from "viem"
+import { sepolia } from "viem/chains"
 import { describe, expect, it, vi } from "vitest"
 import { type Erc20CallResult, type Erc20Client, Erc20MetadataError, readErc20Balances, readErc20Metadata } from "./erc20.ts"
 
@@ -133,5 +146,82 @@ describe("readErc20Balances", () => {
 		const client = fakeClient([])
 		expect(await readErc20Balances(client, OWNER, [])).toEqual(new Map())
 		expect(client.multicall).not.toHaveBeenCalled()
+	})
+
+	// A refusal raised by another viem copy than the SDK's: only its name can identify it.
+	const refusedElsewhere = new Error("aggregate refused", { cause: Object.assign(new Error("429"), { name: "CallExecutionError" }) })
+
+	it.each([
+		["a success that is not a bigint", [ok("7")], "gave no balance"],
+		["a missing entry", [], "gave no balance"],
+		["a refusal from another viem copy", [{ status: "failure", error: refusedElsewhere }], "aggregate refused"],
+	] as const)("rejects %s", async (_label, results, message) => {
+		await expect(readErc20Balances(fakeClient([...results]), OWNER, [TOKEN])).rejects.toThrow(message)
+	})
+
+	it("reads a failure whose cause chain loops as the token's own", async () => {
+		const looping = new Error("looping")
+		looping.cause = looping
+		await expect(readErc20Balances(fakeClient([{ status: "failure", error: looping }]), OWNER, [TOKEN])).resolves.toEqual(
+			new Map([[TOKEN, 0n]]),
+		)
+	})
+
+	it("rejects a token address viem would refuse to encode, before any call", async () => {
+		const client = fakeClient([ok(1n)])
+		const badChecksum = TOKEN.replace("A579", "a579") as Address
+		await expect(readErc20Balances(client, OWNER, [badChecksum])).rejects.toThrow(badChecksum)
+		expect(client.multicall).not.toHaveBeenCalled()
+		await expect(readErc20Balances(client, OWNER, [TOKEN])).resolves.toEqual(new Map([[TOKEN, 1n]]))
+	})
+})
+
+describe("readErc20Balances through viem's multicall", () => {
+	const a = "0x1111111111111111111111111111111111111111" as Address
+	const b = "0x2222222222222222222222222222222222222222" as Address
+
+	/** A node that answers every `aggregate3` with 5 for the first token and a revert for the rest, or refuses it. */
+	function node(batch: boolean, refusal?: Error): PublicClient {
+		return createPublicClient({
+			chain: sepolia,
+			batch: batch ? { multicall: true } : undefined,
+			transport: custom(
+				{
+					request: async ({ method, params }) => {
+						if (method !== "eth_call") throw new Error(`unexpected ${method}`)
+						if (refusal) throw refusal
+						const { args } = decodeFunctionData({ abi: multicall3Abi, data: (params as [{ data: Hex }])[0].data })
+						return encodeFunctionResult({
+							abi: multicall3Abi,
+							functionName: "aggregate3",
+							result: (args[0] as readonly unknown[]).map((_, i) => ({
+								success: i === 0,
+								returnData: i === 0 ? word(5) : "0x",
+							})),
+						})
+					},
+				},
+				{ retryCount: 0 },
+			),
+		}) as PublicClient
+	}
+
+	const http429 = () => new HttpRequestError({ url: "https://rpc.invalid", status: 429, body: {} })
+	// viem wraps a JSON-RPC internal error in a revert error: a different chain from a transport failure's.
+	const internalError = () => Object.assign(new Error("internal error"), { code: -32603 })
+
+	it.each([
+		["an HTTP 429", false, http429, "HTTP request failed"],
+		["an HTTP 429", true, http429, "HTTP request failed"],
+		["a JSON-RPC internal error", false, internalError, "internal error"],
+		["a JSON-RPC internal error", true, internalError, "internal error"],
+	] as const)("rejects an aggregate refused with %s, never zeros (client batching: %s)", async (_label, batch, refusal, message) => {
+		await expect(readErc20Balances(node(batch, refusal()), OWNER, [a, b])).rejects.toThrow(message)
+		await expect(readErc20Balances(node(batch), OWNER, [a, b])).resolves.toEqual(
+			new Map([
+				[a, 5n],
+				[b, 0n],
+			]),
+		)
 	})
 })
