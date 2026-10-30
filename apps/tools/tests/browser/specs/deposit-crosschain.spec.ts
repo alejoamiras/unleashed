@@ -358,7 +358,7 @@ test("cell 56 — the same ask sent twice, the first run in the background: each
 	const src = await fundSource(relayer, l1, 2n * SEND)
 	await relayer.setMode({ kind: "never" })
 	await relayer.syncSourceClock()
-	const plan = planOf(src, "token", false)
+	const plan = planOf(src, "token+gas", false)
 
 	await sendFromSource(page, actor, plan)
 	await crossChainRecordWhen(page, (r) => Boolean(r.route.srcTxHash), "the first send is on the source chain")
