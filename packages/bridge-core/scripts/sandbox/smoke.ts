@@ -78,7 +78,7 @@ export function exitGasNotes(samples: Samples): string[] {
 	if (samples.exitGas.length === 0) return ["ℹ private exit gas: no PrivateFPC-paid exit landed — PRIVATE_HUB_EXIT_GAS not measured"]
 	return samples.exitGas.map(
 		(x) =>
-			`ℹ private exit (${x.label}: ${x.notes} credit note(s) spent, ${x.nullifiers} nullifiers) via PrivateFPC.pay_fee: ` +
+			`ℹ private exit (${x.label}: ${x.notes} credit note(s) spent, ${x.nullifiers} nullifiers besides a self-handshake's) via PrivateFPC.pay_fee: ` +
 			`simulated billed l2Gas=${x.simulated.l2Gas} daGas=${x.simulated.daGas}; ` +
 			`landed fee=${x.fee} FJ-wei = that gas at the block's feePerL2Gas=${x.feePerL2Gas} feePerDaGas=${x.feePerDaGas}; ` +
 			`credit charged ${x.charged} = the ceiling under declared limits l2Gas=${x.limits.l2Gas} daGas=${x.limits.daGas} ` +

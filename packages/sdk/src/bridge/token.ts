@@ -4,7 +4,7 @@ import { BridgeError, refusal } from "../errors.ts"
 import { type Registration, readRegistration } from "../execution/factory-registry.ts"
 import { hubBindingAt } from "../execution/hub-l2.ts"
 import { assertNetwork, hubArtifactOf, type Network, type Reads, type TokenRoute } from "../network.ts"
-import { readErc20Metadata } from "../protocol/erc20.ts"
+import { Erc20MetadataError, readErc20Metadata } from "../protocol/erc20.ts"
 import { deriveHubTokenInstance } from "../protocol/hub-token.ts"
 import { predictPortal } from "../protocol/portal-address.ts"
 import { deepFreeze } from "../protocol/freeze.ts"
@@ -48,7 +48,8 @@ async function wordsOf(r: Reads, erc20: Address, registration: Registration | un
 	try {
 		meta = await readErc20Metadata(r.l1 as never, erc20)
 	} catch (e) {
-		throw refusal("invalid-request", `${erc20} does not answer as an ERC-20`, "never", e)
+		if (e instanceof Erc20MetadataError) throw refusal("invalid-request", `${erc20} does not answer as an ERC-20`, "never", e)
+		throw readFailed("the token's metadata", e)
 	}
 	// The raw returndata is the sanitizer's only valid input: a decoded string that lost a byte derives an address the
 	// hub never mints to.

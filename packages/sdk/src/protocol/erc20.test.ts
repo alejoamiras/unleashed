@@ -5,6 +5,7 @@ import {
 	decodeFunctionData,
 	encodeAbiParameters,
 	encodeFunctionResult,
+	ExecutionRevertedError,
 	type Hex,
 	HttpRequestError,
 	multicall3Abi,
@@ -23,21 +24,20 @@ const fail = (): Erc20CallResult => ({ status: "failure", error: new Error("exec
 const abiString = (s: string): Hex => encodeAbiParameters([{ type: "string" }], [s])
 const word = (n: number | bigint): Hex => encodeAbiParameters([{ type: "uint256" }], [BigInt(n)])
 
-/** `PortalFactory.METADATA_GAS`, spelled independently of the reader so a loosened cap reds here. */
-const METADATA_GAS = 100_000n
+/** `PortalFactory.METADATA_GAS` on top of the call's intrinsic 21,000 + 4 × 16, spelled independently of the reader so
+ *  a loosened cap, or a token starved below the factory's budget, reds here. */
+const METADATA_GAS = 100_000n + 21_064n
 
 type FakeClient = Erc20Client & { multicall: ReturnType<typeof vi.fn>; gasCaps: bigint[] }
 
 function fakeClient(results: Erc20CallResult[], returndata: Record<string, Hex> = {}): FakeClient {
-	// The caps are recorded rather than asserted in place: the reader swallows every raw-call throw,
-	// so an assertion here would be caught and reported as a token with no metadata.
 	const gasCaps: bigint[] = []
 	return {
 		multicall: vi.fn(async () => results),
 		call: vi.fn(async ({ data, gas }: { data: Hex; gas: bigint }) => {
 			gasCaps.push(gas)
 			const value = returndata[data.slice(0, 10)]
-			if (value === undefined) throw new Error("execution reverted")
+			if (value === undefined) throw new ExecutionRevertedError()
 			return { data: value }
 		}),
 		gasCaps,
@@ -124,6 +124,67 @@ describe("readErc20Metadata", () => {
 	it("refuses decimals outside uint8", async () => {
 		const client = fakeClient([], { [DECIMALS]: word(256) })
 		await expect(readErc20Metadata(client, TOKEN)).rejects.toBeInstanceOf(Erc20MetadataError)
+	})
+})
+
+describe("readErc20Metadata through viem's call", () => {
+	/** A node that answers every metadata read of one healthy token, except the selector `fails` names. */
+	function node(fails: Record<string, () => Error> = {}): PublicClient {
+		const answers: Record<string, Hex> = { [NAME]: abiString("Token"), [SYMBOL]: abiString("TKN"), [DECIMALS]: word(18) }
+		return createPublicClient({
+			chain: sepolia,
+			transport: custom(
+				{
+					request: async ({ method, params }) => {
+						if (method !== "eth_call") throw new Error(`unexpected ${method}`)
+						const selector = (params as [{ data: Hex }])[0].data.slice(0, 10)
+						const fail = fails[selector]
+						if (fail) throw fail()
+						return answers[selector]
+					},
+				},
+				{ retryCount: 0 },
+			),
+		}) as PublicClient
+	}
+
+	const rpcError = (code: number, message: string) => Object.assign(new Error(message), { code, data: "0x" })
+	const http429 = () => new HttpRequestError({ url: "https://rpc.invalid", status: 429, body: {} })
+
+	// A -32603 is also how anvil reports an EVM halt: a shape no reader can tell from a refusal, so it fails closed.
+	it.each([
+		["an HTTP 429 on name()", NAME, http429, "HTTP request failed"],
+		["a JSON-RPC internal error on symbol()", SYMBOL, () => rpcError(-32603, "internal error"), "internal error"],
+		["a provider's own error code on name()", NAME, () => rpcError(30, "request timeout on the free tier"), "free tier"],
+		["geth's -32000 for a pruned block on symbol()", SYMBOL, () => rpcError(-32000, "header not found"), "header not found"],
+		["an HTTP 429 on decimals()", DECIMALS, http429, "HTTP request failed"],
+	] as const)("rejects %s with the client's error, never as missing metadata", async (_label, selector, refusal, message) => {
+		const err = await readErc20Metadata(node({ [selector]: refusal }), TOKEN).catch((e) => e)
+		expect(err).not.toBeInstanceOf(Erc20MetadataError)
+		expect(err.message).toContain(message)
+		await expect(readErc20Metadata(node(), TOKEN)).resolves.toMatchObject({ name: "Token", symbol: "TKN", decimals: 18 })
+	})
+
+	it.each([
+		["code 3", () => rpcError(3, "execution reverted")],
+		["geth's bare -32000", () => rpcError(-32000, "execution reverted")],
+		[
+			"a wallet's -32603 around the node's code 3",
+			() =>
+				Object.assign(new Error("Internal JSON-RPC error."), {
+					code: -32603,
+					data: { code: 3, message: "execution reverted", data: "0x" },
+				}),
+		],
+	] as const)("reads a symbol() the node reports reverted (%s) as no symbol", async (_label, revert) => {
+		await expect(readErc20Metadata(node({ [SYMBOL]: revert }), TOKEN)).resolves.toEqual({
+			name: "Token",
+			symbol: "",
+			decimals: 18,
+			nameRaw: new TextEncoder().encode("Token"),
+			symbolRaw: new Uint8Array(0),
+		})
+		await expect(readErc20Metadata(node({ [DECIMALS]: revert }), TOKEN)).rejects.toBeInstanceOf(Erc20MetadataError)
 	})
 })
 

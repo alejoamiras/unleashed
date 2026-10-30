@@ -3,8 +3,8 @@
 // redirect.
 
 use crate::test::utils::{
-    ERC20_B, fund_private, NAME_B, PORTAL_A, PORTAL_B, register, register_a, register_b,
-    send_mint_to_private_message, setup, SYMBOL_B,
+    ERC20_B, fund_private, handshake_announcements, NAME_B, PORTAL_A, PORTAL_B, register, register_a,
+    register_b, send_mint_to_private_message, setup, SYMBOL_B,
 };
 use crate::TokenBridgeHub;
 use aztec::protocol::{address::AztecAddress, traits::FromField};
@@ -116,4 +116,19 @@ unconstrained fn claim_private_by_relayer_credits_the_recipient() {
     h.env.call_private(relayer, TokenBridgeHub::at(h.hub).claim_private(a, user, 5, SALT, leaf));
     assert(h.env.execute_utility(Token::at(a).balance_of_private(user)) == 5);
     assert(h.env.execute_utility(Token::at(a).balance_of_private(relayer)) == 0);
+    // A relayed claim keeps the Token's constrained delivery, which opens a handshake with the
+    // recipient; this is also the control that `handshake_announcements` sees one.
+    assert_eq(handshake_announcements(h.env, user), 1);
+}
+
+#[test]
+unconstrained fn claim_private_by_recipient_opens_no_handshake() {
+    let mut h = setup();
+    let user = h.env.create_contract_account();
+    let a = register_a(h);
+    fund_private(h, a, PORTAL_A, user, 900, SALT);
+    assert_eq(handshake_announcements(h.env, user), 0);
+    fund_private(h, a, PORTAL_A, user, 100, SALT + 1);
+    assert_eq(handshake_announcements(h.env, user), 0);
+    assert(h.env.execute_utility(Token::at(a).balance_of_private(user)) == 1000);
 }

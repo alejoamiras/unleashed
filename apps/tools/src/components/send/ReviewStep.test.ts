@@ -126,7 +126,7 @@ describe("ReviewStep", () => {
 		const priv = review()
 		const row = priv.find(sel(TESTIDS.sendReviewVisibility))
 		expect(row.attributes("data-visibility")).toBe("private")
-		expect(row.text()).toContain("Private — only you can see it")
+		expect(row.text()).toContain("Private — your account stays hidden")
 		expect(row.find("dd svg").exists()).toBe(true)
 		expect(priv.find(sel(TESTIDS.sendReviewArrives)).text()).not.toMatch(/private|public/)
 		priv.unmount()

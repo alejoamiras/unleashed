@@ -207,7 +207,7 @@ const ceilingBox = computed(() => {
 	}
 })
 
-/** What arrives privately, for the veil line: a deposit's token part, once its split is known. A gas-only
+/** What arrives privately, which the veil line shows others: a deposit's token part, once its split is known. A gas-only
  *  send arrives as public gas, so it has none; a cross-chain one arrives less the rail's fee. */
 const veiled = computed(() => {
 	if (isExit.value || !props.isPrivate || props.intent === "gas") return null
@@ -379,13 +379,13 @@ function onUseAll(): void {
 				>
 					<span class="knob" />
 				</button>
-				<span :id="PRIVACY_LABEL_ID" class="privacy-label">{{ isPrivate ? "Private — only you can see it" : "Public — visible on Aztec" }}</span>
+				<span :id="PRIVACY_LABEL_ID" class="privacy-label">{{ isPrivate ? "Private — your account stays hidden" : "Public — visible on Aztec" }}</span>
 			</div>
 			<p v-if="veiled" class="veil-line" :data-testid="TESTIDS.sendPrivacyVeil">
-				<span>Others on Aztec see</span>
-				<span class="veil-host"><span class="ul-veil veil" role="img" aria-label="hidden amount" /></span>
+				<span>Others see <strong class="veiled">{{ veiled }}</strong> go to</span>
+				<span class="veil-host"><span class="ul-veil veil" role="img" aria-label="hidden account" /></span>
 				<!-- One unit, so a wrapped line never ends on the separator. -->
-				<span class="seen"><span class="dot" aria-hidden="true">·</span><span>you see <strong class="veiled">{{ veiled }}</strong></span></span>
+				<span class="seen"><span class="dot" aria-hidden="true">·</span><span>you see your account</span></span>
 			</p>
 		</div>
 
