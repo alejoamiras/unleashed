@@ -7,10 +7,26 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: approved by the final Codex pass; awaiting the orchestrator
+status: completed (a1 delivered in PR #122)
 base: main 1b3b202
 budget: "recon: 1 Sonnet explorer; audit: Codex gpt-6.1-sol at high, then a fresh Codex pass; code-review: off"
 ---
+
+## Outcome
+
+- **Status**: completed (arc a1 delivered in PR #122; merging it completes the plan). Closes #110.
+- **Shipped**: the hub exit's opening write (with its session mark and step) and its consume hash, the engine's
+  `blocked`, `completedAt` and consume-hash patches, and the startup prune run under `underJournalLock`, each span
+  reading the stored copy; the SDK's workspace-only `consumeWithdrawal` awaits `onSent`; the engine's default deps
+  carry the browser's lock adapter; the prune hides its rows through `discarding` until its locked removal, and a
+  failed prune keeps them hidden; bridge-core exports `isPrunable`. One shared lost-write helper carries the new
+  tests and #107's two. No string, state, layout or stored shape changed; no e2e cell added.
+- **Dropped**: the fee-ladder `merge` stays unwrapped: no app path reaches it, and its one live path is already
+  locked. Locking the startup quarantine was rejected (ledger R1).
+- **Known limits:** #123 (the startup quarantine's unlocked rewrite); #109 gains the frozen-holder path for the
+  awaited consume hash (its comment was drafted for the orchestrator: this session may not comment on issues).
+- **Open items:** none.
+- The `/goal` and `/loop` seeds at the end of this plan are retired; they are not instructions.
 
 # journal-2: the remaining journal writers under the cross-tab lock
 
