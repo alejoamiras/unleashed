@@ -100,6 +100,10 @@ const EMPTY = new Uint8Array(0)
  *  chain applies also bounds what a hostile token can make an RPC transport into this process. */
 const METADATA_GAS = 100_000n
 
+/** What an `eth_call` spends before the token runs: 21,000 plus 16 for each of the selector's four bytes, none of them
+ *  zero in any of the three selectors. Without it the token runs on 21,064 gas less than the factory gives it. */
+const CALL_INTRINSIC_GAS = 21_064n
+
 /** Reads one 32-byte big-endian word as a JS length/offset; `undefined` when it can't be one. */
 function wordAt(bytes: Uint8Array, at: number): number | undefined {
 	if (at < 0 || at + 32 > bytes.length) return undefined
@@ -135,29 +139,40 @@ export function metadataReturndataBytes(returndata: Hex): Uint8Array {
 	return bytes.slice(64, 64 + length)
 }
 
-/** Whether `error`'s cause chain holds an error named `name`. Matched by name, since a second viem copy defeats
- *  `instanceof`; the depth bound stops a cyclic `cause` (viem's chains run two to four deep). */
-function chainHolds(error: unknown, name: string): boolean {
+type ErrorLink = { name?: unknown; cause?: unknown; data?: unknown }
+
+/** Whether any link of `error`'s cause chain passes `test`. Errors are matched by name, since a second viem copy
+ *  defeats `instanceof`; the depth bound stops a cyclic `cause` (viem's chains run two to four deep). */
+function chainHas(error: unknown, test: (link: ErrorLink) => boolean): boolean {
 	for (let at: unknown = error, depth = 0; at && typeof at === "object" && depth < 8; depth++) {
-		const o = at as { name?: unknown; cause?: unknown }
-		if (o.name === name) return true
-		at = o.cause
+		if (test(at as ErrorLink)) return true
+		at = (at as ErrorLink).cause
 	}
 	return false
+}
+
+/** The node's report that the call reverted: viem's `ExecutionRevertedError`, or the node's own error (code 3, or geth's
+ *  bare "execution reverted") where an EIP-1193 wallet nests it in the `data` of a -32603, as MetaMask's fetch
+ *  middleware does with every node error. */
+function revertReported(link: ErrorLink): boolean {
+	if (link.name === "ExecutionRevertedError") return true
+	const node = link.data as { code?: unknown; message?: unknown } | null | undefined
+	if (typeof node !== "object" || node === null) return false
+	return node.code === 3 || (typeof node.message === "string" && /execution reverted/i.test(node.message))
 }
 
 /** The single door every metadata read goes through: the gas cap is the only thing bounding what an
  *  RPC will transport in, so a read that bypasses it is unbounded however the reply is decoded.
  *
- *  `undefined` only when the node reports a revert (viem's `ExecutionRevertedError`, from code 3 or "execution
- *  reverted"), which the factory also reads as no metadata. viem wraps every failure of a raw call, revert included,
- *  in `CallExecutionError`, and a refused request shares its shape with an EVM halt (anvil reports both as -32603), so
- *  everything else rejects: read as empty, a refusal would derive a name word the chain never commits. */
+ *  `undefined` only when the node reports a revert: the token's own failure, which the factory's call reads as no
+ *  metadata too. viem wraps every failed raw call, revert included, in `CallExecutionError`, and a refused request
+ *  shares its shape with an EVM halt (anvil reports both as -32603), so every other failure rejects: read as empty, a
+ *  refusal would derive a name word the chain never commits. */
 async function rawCall(client: Erc20Client, token: Address, selector: Hex): Promise<Hex | undefined> {
 	try {
-		return (await client.call({ to: token, data: selector, gas: METADATA_GAS })).data
+		return (await client.call({ to: token, data: selector, gas: METADATA_GAS + CALL_INTRINSIC_GAS })).data
 	} catch (e) {
-		if (chainHolds(e, "ExecutionRevertedError")) return undefined
+		if (chainHas(e, revertReported)) return undefined
 		throw e
 	}
 }
@@ -228,7 +243,7 @@ export async function readErc20Balances(client: Erc20Client, owner: Address, tok
 		if (result?.status === "failure") {
 			// The aggregate's own failure, which viem reports on every entry: only its `call` makes a `CallExecutionError`,
 			// never a token that reverts or answers garbage inside a call that ran.
-			if (chainHolds(result.error, "CallExecutionError")) throw result.error
+			if (chainHas(result.error, (link) => link.name === "CallExecutionError")) throw result.error
 			balances.set(address, 0n)
 		} else if (typeof result?.result === "bigint") balances.set(address, result.result)
 		else throw new Error(`the balance read gave no balance for ${address}`)

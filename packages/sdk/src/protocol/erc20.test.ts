@@ -24,8 +24,9 @@ const fail = (): Erc20CallResult => ({ status: "failure", error: new Error("exec
 const abiString = (s: string): Hex => encodeAbiParameters([{ type: "string" }], [s])
 const word = (n: number | bigint): Hex => encodeAbiParameters([{ type: "uint256" }], [BigInt(n)])
 
-/** `PortalFactory.METADATA_GAS`, spelled independently of the reader so a loosened cap reds here. */
-const METADATA_GAS = 100_000n
+/** `PortalFactory.METADATA_GAS` on top of the call's intrinsic 21,000 + 4 × 16, spelled independently of the reader so
+ *  a loosened cap, or a token starved below the factory's budget, reds here. */
+const METADATA_GAS = 100_000n + 21_064n
 
 type FakeClient = Erc20Client & { multicall: ReturnType<typeof vi.fn>; gasCaps: bigint[] }
 
@@ -154,16 +155,27 @@ describe("readErc20Metadata through viem's call", () => {
 	it.each([
 		["an HTTP 429 on name()", NAME, http429, "HTTP request failed"],
 		["a JSON-RPC internal error on symbol()", SYMBOL, () => rpcError(-32603, "internal error"), "internal error"],
+		["a provider's own error code on name()", NAME, () => rpcError(30, "request timeout on the free tier"), "free tier"],
+		["geth's -32000 for a pruned block on symbol()", SYMBOL, () => rpcError(-32000, "header not found"), "header not found"],
 		["an HTTP 429 on decimals()", DECIMALS, http429, "HTTP request failed"],
 	] as const)("rejects %s with the client's error, never as missing metadata", async (_label, selector, refusal, message) => {
 		const err = await readErc20Metadata(node({ [selector]: refusal }), TOKEN).catch((e) => e)
 		expect(err).not.toBeInstanceOf(Erc20MetadataError)
 		expect(err.message).toContain(message)
+		await expect(readErc20Metadata(node(), TOKEN)).resolves.toMatchObject({ name: "Token", symbol: "TKN", decimals: 18 })
 	})
 
 	it.each([
 		["code 3", () => rpcError(3, "execution reverted")],
 		["geth's bare -32000", () => rpcError(-32000, "execution reverted")],
+		[
+			"a wallet's -32603 around the node's code 3",
+			() =>
+				Object.assign(new Error("Internal JSON-RPC error."), {
+					code: -32603,
+					data: { code: 3, message: "execution reverted", data: "0x" },
+				}),
+		],
 	] as const)("reads a symbol() the node reports reverted (%s) as no symbol", async (_label, revert) => {
 		await expect(readErc20Metadata(node({ [SYMBOL]: revert }), TOKEN)).resolves.toEqual({
 			name: "Token",
