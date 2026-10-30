@@ -23,7 +23,7 @@ async function claimGas(leg: ClaimLeg): Promise<ClaimOutcome> {
 	const fuel = leg.record.fuel
 	if (fuel?.consumed || fuel?.standaloneClaimed) return settle(leg, "claim", fuel.claimTxHash)
 	await ensureDepositFacts(leg)
-	const landing = await claimFuelBlock(leg, { gated: true })
+	const landing = await claimFuelBlock(leg, { gate: "arrival" })
 	return settle(leg, landing.via, landing.txHash)
 }
 
@@ -44,7 +44,8 @@ async function claimGasLeg(leg: ClaimLeg): Promise<ClaimOutcome> {
  * Claims the Fee Juice of a gas-only deposit made by `depositFuel`, or the bridged gas of a token + gas deposit whose
  * tokens are claimed (`completedAt`) or were claimed by another submitter (`claimedByOther`), for the account the
  * deposit names. Persists through `run.persist` before every event that names a new fact; a private claim needs
- * `run.secrets.fuelSalt`. Throws `BridgeError`: `fee-stop` (with its `stop`) when the claim cannot pay for itself now,
+ * `run.secrets.fuelSalt`. A Fee Juice message the node reads spent settles only once the claim's own simulate fails on
+ * that message too, so a `watchOnly` call never settles on it. Throws `BridgeError`: `fee-stop` (with its `stop`) when the claim cannot pay for itself now,
  * `claim-not-visible` when an earlier send may still land, `invalid-request` for a token + gas record whose tokens are
  * not claimed yet.
  */

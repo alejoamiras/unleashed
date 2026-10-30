@@ -120,6 +120,8 @@ function scriptedCall(entry: EntryName, view: DepositRecord, run: ClaimOptions):
 			})
 		},
 		async settle(via = "claim", extra = {}) {
+			// The SDK never settles a spent reading in a watching call: a script that does would pass on a path it removed.
+			if (via === "claimed-elsewhere" && run.watchOnly) throw new Error("a watching call settled a claim elsewhere")
 			call.emit({ type: "claim-landed", via, txHash: extra.txHash })
 			await call.persist({ completedAt: Date.now(), ...(via === "claimed-elsewhere" ? { claimedByOther: true } : {}) })
 			call.emit({ type: "settled", via, txHash: extra.txHash })

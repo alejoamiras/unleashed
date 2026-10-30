@@ -269,7 +269,19 @@ pub contract TokenBridgeHub {
             portal,
             message_leaf_index,
         );
-        self.call(Token::at(token).mint_to_private(recipient, amount));
+        // A recipient submitting its own claim gets a partial note, whose message its own wallet
+        // delivers unconstrained under a tag derived from its own keys, so the claim opens no
+        // handshake. Any other submitter gets the Token's constrained delivery, which it cannot
+        // withhold. A claim that is its transaction's first call has no caller (`maybe_`) and takes
+        // the latter.
+        if self.context.maybe_msg_sender() == Option::some(recipient) {
+            let hub = self.context.this_address();
+            // Complete only this commitment: anyone can create one that names the hub as completer.
+            let commitment = self.call(Token::at(token).initialize_transfer_commitment(recipient, hub));
+            self.enqueue(Token::at(token).mint_to_commitment(commitment, amount));
+        } else {
+            self.call(Token::at(token).mint_to_private(recipient, amount));
+        }
     }
 
     // ── Exits ──────────────────────────────────────────────────────────────────────────────

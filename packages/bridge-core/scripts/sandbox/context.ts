@@ -42,6 +42,7 @@ import { claimTokensUntilSynced, registerHub, registerHubToken, registerPrivateF
 import { planFuelLeg, sendGenerationOf } from "../script-send"
 import { deadline, FEE_CEILING, PERMIT2, rndNonce } from "./constants"
 import type { SandboxClients } from "./handle"
+import { handshakeAnnouncementsIn } from "./handshake"
 import { mintFeeAsset } from "./l1"
 import { l2CtxFor } from "./l2"
 import { hubArtifactFor } from "../generation-paths"
@@ -89,7 +90,7 @@ export interface ExitGasSample {
 	label: string
 	/** Credit notes `pay_fee` spent, per the inventory. */
 	notes: number
-	/** Nullifiers the landed transaction emitted: each spent note is one, so two samples differ by their note difference. */
+	/** Nullifiers the landed transaction emitted, less a self-handshake's: each spent note is one, so two samples differ by their note difference. */
 	nullifiers: number
 	simulated: { l2Gas: number; daGas: number }
 	fee: bigint
@@ -487,7 +488,9 @@ export async function sampleExitGas(
 	}
 	if (paid.charged !== paid.ceiling)
 		throw new Error(`${label}: the FPC charged ${paid.charged}, not the ceiling ${paid.ceiling} it commits to`)
-	const nullifiers = receipt.txEffect.nullifiers.length
+	// The actor's first constrained note to itself, an exit's change, opens its handshake with itself:
+	// the registry's one nullifier, not a spent note.
+	const nullifiers = receipt.txEffect.nullifiers.length - (await handshakeAnnouncementsIn(s.l2.node, s.l2.from, txHash))
 	const prev = s.samples.exitGas.at(-1)
 	if (prev && nullifiers - prev.nullifiers !== notes - prev.notes) {
 		throw new Error(

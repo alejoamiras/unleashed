@@ -33,7 +33,7 @@ re-pin of the live hub.
 
 ## Tests
 
-- **TXE**: `scripts/run-txe-tests.sh` runs the 65 named tests in `token_bridge_hub/txe-manifest.txt`
+- **TXE**: `scripts/run-txe-tests.sh` runs the 66 named tests in `token_bridge_hub/txe-manifest.txt`
   against a TXE server whose dependencies are the committed mini-project `txe-server/` (frozen
   lockfile — never an ad-hoc `bun add`). `token_bridge_hub/txe-ts-map.md` maps every cross-boundary
   property to its L1 / TS counterpart. The TXE cannot run the protocol registry publish

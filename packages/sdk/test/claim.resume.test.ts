@@ -39,6 +39,7 @@ vi.mock("../src/execution/send-flow.ts", async (importOriginal) => ({
 }))
 
 const CLAIM_HASH = `0x${"0c".repeat(32)}`
+const SPENT_FUEL = `No non-nullified L1 to L2 message found for message hash 0x${"04".repeat(32)}`
 let account: AztecAddress
 beforeAll(async () => {
 	account = await AztecAddress.random()
@@ -254,15 +255,27 @@ describe("claimFuel", () => {
 		expect([out.txHash, calls.send]).toEqual([CLAIM_HASH, 1])
 	})
 
-	it("an attempt latched without a hash: refuses while it may land, settles once its nullifier is on chain", async () => {
+	it("an attempt latched without a hash settles only when the simulate fails on its message: refuses while it may land", async () => {
 		const latched = { claimAttempt: true, claimAttemptAt: Date.now() }
 		const live = await setup()
 		const calls = interaction()
 		const e = await failure(claimFuel(live.net, live.r, live.aztec, gasRecord(live.net, {}, latched), recorder().run))
 		expect([e.code, e.submission, e.retry, calls.send]).toEqual(["claim-not-visible", "submitted", "after-wait", 0])
+
 		const spent = await setup({ nullified: true })
+		const unborne = recorder()
+		const refused = await failure(claimFuel(spent.net, spent.r, spent.aztec, gasRecord(spent.net, {}, latched), unborne.run))
+		expect([refused.code, calls.simulate, calls.send, unborne.last()?.completedAt]).toEqual(["claim-not-visible", 1, 0, undefined])
+
+		const watched = recorder()
+		const held = await failure(
+			claimFuel(spent.net, spent.r, spent.aztec, gasRecord(spent.net, {}, latched), { ...watched.run, watchOnly: true }),
+		)
+		expect([held.code, calls.simulate, watched.last()]).toEqual(["needs-prompt", 1, undefined])
+
+		const agreed = interaction({ simulate: async () => Promise.reject(new Error(SPENT_FUEL)) })
 		const out = await claimFuel(spent.net, spent.r, spent.aztec, gasRecord(spent.net, {}, latched), recorder().run)
-		expect([out.via, calls.send]).toEqual(["claim", 0])
+		expect([out.via, out.record.fuel?.consumed, out.record.claimedByOther, agreed.send]).toEqual(["claim", true, undefined, 0])
 	})
 
 	it("a record that lost its deposit hash and leaves finds them on Ethereum before it claims", async () => {
@@ -309,7 +322,7 @@ describe("claimFuel", () => {
 		const { net, r, aztec } = await setup({ nullified: true })
 		const calls = interaction({
 			simulate: async () => {
-				throw new Error("No non-nullified L1 to L2 message found for message hash")
+				throw new Error(SPENT_FUEL)
 			},
 		})
 		const rec = recorder()

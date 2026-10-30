@@ -602,8 +602,14 @@ async function findExecution(c: Ctx, client: DiscoveryChainReads, range: Range, 
 }
 
 /** Across only: unfilled (a requested slow fill included) at the finalized block, whose timestamp is past
- *  the deadline — after which every fill, slow fills included, reverts. */
-async function expiredOnSource(c: Ctx, client: DiscoveryChainReads, t: SourceTransport, finalized: EthereumFacts["finalized"]) {
+ *  `deadline` — after which every fill, slow fills included, reverts. */
+async function expiredOnSource(
+	c: Ctx,
+	client: DiscoveryChainReads,
+	t: SourceTransport,
+	finalized: EthereumFacts["finalized"],
+	deadline: number | undefined,
+) {
 	if (t.kind !== "across") return false
 	const pool = (c.ctx.rail as AcrossRailContext).destinationSpokePool
 	const status = await c.read(() =>
@@ -617,7 +623,7 @@ async function expiredOnSource(c: Ctx, client: DiscoveryChainReads, t: SourceTra
 	)
 	if (status === FILL_STATUS.filled) throw new ScanIncomplete("filled by the finalized block, yet no fill was found")
 	if (status !== FILL_STATUS.unfilled && status !== FILL_STATUS.requestedSlowFill) throw new ScanIncomplete("unknown fill status")
-	return finalized.timestamp > BigInt(t.relay.fillDeadline)
+	return deadline !== undefined && finalized.timestamp > BigInt(deadline)
 }
 
 /** Anyone can deposit to a public secret hash for another recipient or privacy mode, which this record
@@ -637,21 +643,33 @@ async function claimableDeposits(c: Ctx, deposits: RouterDeposit[]): Promise<Rou
 }
 
 /**
+ * The deadline an Across send's window closes at: the later of the source log's and the record's. The record's is the
+ * one its signed calldata carries, so a log naming an earlier one can neither close the window nor expire the send
+ * before it; the log's still wins over an earlier one a restored record may carry. Undefined for a Stargate send.
+ */
+function acrossDeadline(rec: CrossChainDepositRecord, transport: SourceTransport | undefined): number | undefined {
+	const logged = transport?.kind === "across" ? transport.relay.fillDeadline : undefined
+	const recorded = rec.route.fillDeadline
+	if (logged === undefined || recorded === undefined) return logged ?? recorded
+	return Math.max(logged, recorded)
+}
+
+/**
  * Every Across fill, a slow fill's included, lands at or before its fill deadline, so the window closes at the first
- * block past it: the authenticated relay's deadline, or the record's while the source is unknown. That bounds the
- * extras too: a `Deposited` for the secret hash after it cannot be this send's. A Stargate window runs to the head.
+ * block past `acrossDeadline`. That bounds the extras too: a `Deposited` for the secret hash after it cannot be this
+ * send's. A Stargate window runs to the head.
  */
 async function readEthereum(c: Ctx, client: DiscoveryChainReads, source: SourceFacts): Promise<EthereumFacts> {
 	const scan = await openChainScan(client, c.rec.chainId, c.read, epochOf(client))
 	const head = await c.read(() => client.getBlock({ blockTag: "finalized" }))
 	const finalized = { number: head.number, timestamp: head.timestamp }
 	const transport = source.kind === "sent" ? source.transport : undefined
-	const deadline = transport?.kind === "across" ? transport.relay.fillDeadline : c.rec.route.fillDeadline
+	const deadline = acrossDeadline(c.rec, transport)
 	const until = deadline === undefined ? undefined : BigInt(deadline)
 	const range = await windowOf(c, client, c.rec.route.scanFromBlock, scan.latest, until)
 	const deposits = await routerDeposits(c, client, range)
 	const execution = transport ? await findExecution(c, client, range, transport) : undefined
-	const expired = transport && !execution ? await expiredOnSource(c, client, transport, finalized) : false
+	const expired = transport && !execution ? await expiredOnSource(c, client, transport, finalized, deadline) : false
 	await scan.close()
 	return { finalized, claimable: await claimableDeposits(c, deposits), execution, expired }
 }
@@ -692,7 +710,10 @@ function decide(rec: CrossChainDepositRecord, source: SourceFacts, eth: Ethereum
 	}
 	const onEthereum = (blockNumber: bigint): ChainBlock => ({ chainId: rec.chainId, blockNumber })
 	const finalized = onEthereum(eth.finalized.number)
+	// A deposit this record can claim is on Ethereum: no source reading ends the record beside it.
+	const contradicted = facts.extraDeposits.length > 0
 	if (source.kind === "reverted") {
+		if (contradicted) return { verdict: "incomplete", reason: "a claimable deposit contradicts the reverted source" }
 		const { srcTxHash: txHash, decidedAt, finalized: srcFinalized } = source
 		return { ...facts, verdict: "not-sent", observation: { outcome: "not-sent", txHash, decidedAt, finalized: srcFinalized } }
 	}
@@ -709,6 +730,7 @@ function decide(rec: CrossChainDepositRecord, source: SourceFacts, eth: Ethereum
 	if (x?.kind === "completed")
 		return { ...facts, verdict: "deposited", deposit: x.deposit, decidedAt: onEthereum(x.blockNumber), finalized }
 	if (eth.expired) {
+		if (contradicted) return { verdict: "incomplete", reason: "a claimable deposit contradicts the expiry" }
 		return { ...facts, verdict: "expired-on-source", observation: { outcome: "expired-on-source", decidedAt: finalized, finalized } }
 	}
 	return { ...facts, verdict: "pending" }
@@ -731,7 +753,7 @@ function assertContext(rec: CrossChainDepositRecord, ctx: CrossChainDiscoveryCon
  *
  * Verdicts: `pending` (nothing decided yet; a send with no known hash stays here), `incomplete` (an RPC
  * failure, an exhausted budget, a chain switch, a reorg during the run, or chain data contradicting the
- * record: retry, never terminal), `not-sent` (the source receipt reverted; final only once its block is
+ * record, a claimable deposit beside a reverted source or an expiry included: retry, never terminal), `not-sent` (the source receipt reverted; final only once its block is
  * finalized on the source chain), `deposited` (our execution completed into the router), `delivered-to-wallet`
  * (LI.FI recovered the delivery to the user), `expired-on-source` (Across only: unfilled and past its
  * deadline at the same finalized Ethereum block). Outcome verdicts carry the observation `outcomePatch`

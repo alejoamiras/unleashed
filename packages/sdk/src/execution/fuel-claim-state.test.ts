@@ -92,6 +92,11 @@ describe("decideFuelClaim truth table", () => {
 		expect(decideFuelClaim({ ...base, attempt: true, consumed: true }).action).toBe("own-gas")
 	})
 
+	it("a message spent with no attempt of ours is never embedded; a user override still wins", () => {
+		expect(decideFuelClaim({ ...base, consumed: true }).action).toBe("own-gas")
+		expect(decideFuelClaim({ ...base, consumed: true, fuelReceived: 1n, currentMinFee: 100n }).action).toBe("own-gas")
+	})
+
 	it("a conclusive dropped receipt OVERRIDES a stale consumed flag (dropped consumed nothing)", () => {
 		expect(decideFuelClaim({ ...base, attempt: true, txHashKnown: true, receiptStatus: "dropped", consumed: true }).action).toBe("fjwc")
 	})
@@ -153,6 +158,9 @@ describe("decidePrivateFuelClaim (Option A — never public/Sponsored)", () => {
 	})
 	it("attempt, no hash, consumed ⇒ consumed", () => {
 		expect(decidePrivateFuelClaim({ ...privBase, attempt: true, txHashKnown: false, consumed: true }).action).toBe("consumed")
+	})
+	it("no attempt, consumed ⇒ consumed (never re-mint a message another claim spent)", () => {
+		expect(decidePrivateFuelClaim({ ...privBase, consumed: true }).action).toBe("consumed")
 	})
 	it("INVARIANT: no evidence EVER yields a public/Sponsored action", () => {
 		const cases: PrivateFuelClaimEvidence[] = [
