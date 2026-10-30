@@ -13,3 +13,6 @@
 - 2026-10-30: gate on 9aae2a5: journal.test pass (34); five app suites pass (197); lint pass; typecheck:all pass after typing the test holders `Promise<unknown>`; test:all pass; audit:tools pass. e2e running.
 - 2026-10-30: Codex round 1 (gpt-6.1-sol, high) and the Opus review started on the arc diff.
 - 2026-10-30: review round 1: Codex approve with fixes (2); Opus approve with fixes (held-id cleanup, `blocked` test, two comments); all applied, each new or tightened test mutation-checked.
+- 2026-10-30: Codex round 2 (resume): approve; converged in 2 rounds. Merged origin/main 118dba8 (#95). Final head 98a5e3b: journal.test (34), five app suites (199), lint, typecheck:all pass.
+- 2026-10-30: e2e run 1: sandbox died booting (no `contracts/bridge/evm/lib` in this worktree); pinned libs installed. Run 2: every cell failed to launch Chromium (`PLAYWRIGHT_BROWSERS_PATH`); unset. Run 3 (pre-fix build): 15 passed, cell 56 failed: its public token-only ask flipped to token+gas after the review froze (no Aztec gas held), standing the review down; cell 56 now sends token+gas like cells 50–52.
+- 2026-10-30: final head 0c8d7ae: test:all pass (63 s); audit:tools pass (67 s); e2e:tools on deposit-crosschain, deposit-token, activity at retry 0: 16 passed (29.2 min chromium; cell 56 1.1 min).

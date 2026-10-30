@@ -209,7 +209,7 @@ rekey serialize, and either order leaves the named record).
 
 **Asks**: none open. D1's re-pricing of a repeated ask is noted in `OWNER-ASKS.md` under the brief's budget line.
 
-## Phase 1 (arc a1): single-use offers, insert-only filing, the send writes under the lock
+## ✓ Phase 1 (arc a1): single-use offers, insert-only filing, the send writes under the lock
 
 Precondition: PR #88 is on `main`. Do not start on a tree without it: its locked writers are half of #80's fix.
 
