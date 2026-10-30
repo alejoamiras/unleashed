@@ -120,9 +120,10 @@ async function settledPress(page: Page): Promise<Pressed> {
  * amount step — exactly what a user would answer by reviewing again, so the helper does the same,
  * a bounded number of times. A read still in flight from the last confirm can stand the re-opened
  * review down before its button is even pressed, so the wait for that button is also a wait for
- * the notice. A confirm the review refuses fails at once, with the review's own reason.
+ * the notice. A confirm the review refuses fails at once, with the review's own reason. `review` is
+ * the step a stand-down re-opens: a send that starts on another chain has its own.
  */
-export async function confirmReview(page: Page): Promise<void> {
+export async function confirmReview(page: Page, review: string = TESTIDS.sendStepReview): Promise<void> {
 	const stale = page.locator(tid(TESTIDS.sendReviewStale))
 	for (let attempt = 0; attempt < 4; attempt++) {
 		await expect(
@@ -136,7 +137,7 @@ export async function confirmReview(page: Page): Promise<void> {
 			if ((await settledPress(page)) === "left") return
 		}
 		console.log(`[send] review stood down: ${(await stale.textContent())?.trim()}`)
-		await goToReview(page)
+		await goToReview(page, review)
 	}
 	throw new Error("the review was stood down four times in a row")
 }

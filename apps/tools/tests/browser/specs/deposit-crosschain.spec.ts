@@ -280,7 +280,7 @@ test("cell 53 — deposits paused at the confirm: refused on the review before a
 	}
 	// Unpaused, the same review sends.
 	await liveTerms(page)
-	await confirmReview(page)
+	await confirmReview(page, TESTIDS.sendXcReview)
 	const sent = await bridging(page)
 	await writeL1(sandbox.clients.l1, factory, SET_PAUSED_ABI, "setPaused", [true, false])
 	try {
@@ -366,7 +366,7 @@ test("cell 56 — the same ask sent twice, the first run in the background: each
 	await expect(page.locator(tid(TESTIDS.sendStepToken)), "the wizard starts over").toBeVisible()
 	// The wallet is still on the source chain, so the review goes straight to Confirm.
 	await reviewCrossChain(page, plan)
-	await confirmReview(page)
+	await confirmReview(page, TESTIDS.sendXcReview)
 
 	await expect
 		.poll(async () => (await crossChainRecords(page)).filter((r) => r.route.srcTxHash).length, {
