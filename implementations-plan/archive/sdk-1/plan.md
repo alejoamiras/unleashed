@@ -1102,6 +1102,8 @@ Arc a6, PR 2 (`git diff bc5e585..HEAD`):
   write under today's unlocked claim writer (likely; not traced).
 - **Rebased onto `main` after #69 merged** (#62, #66, #70, #72, #76 and #77 had landed too): the same gates green
   again, the sandbox integration suite 61 of 61, and the browser suite at retry 0 45 of 45 (#70 added a cell) in 3197 s.
+- **Merged with `main` again** (#81, #85, #86): the exit type #81 removed and the message state this port removed
+  both go; the same gates green, the sandbox integration suite 61 of 61, the browser suite at retry 0 45 of 45 in 3265 s.
 - **The screenshot tour** reached all five states through real flows. Everything else it flagged is today's
   rendering:
   - the run template after fee-stop copy;
