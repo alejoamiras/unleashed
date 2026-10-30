@@ -1806,9 +1806,9 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 	const PRIOR = "0x0018000000000000000000000000000000000000000000000000007072696f72"
 	const stored = (id: string) => loadJournal(kv).find((r) => r.id === id) as SendWithdrawRecord | undefined
 	type Deps = ReturnType<typeof baseDeps>
-	const armed = <T>(arm: () => void, value: T) =>
+	const armed = <T>(arm: () => Promise<void>, value: T) =>
 		vi.fn(async () => {
-			arm()
+			await arm()
 			return value
 		})
 
@@ -1817,7 +1817,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 		{
 			write: "a lane's block check",
 			seed: mkWithdraw("0xexit"),
-			wire: (d: Deps, arm: () => void) => {
+			wire: (d: Deps, arm: () => Promise<void>) => {
 				d.validateTokenBlock = armed(arm, REASON)
 			},
 			run: () => runWithdrawConsume("0xexit"),
@@ -1826,7 +1826,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 		{
 			write: "the attestation's block",
 			seed: mkSend("0xsend"),
-			wire: (d: Deps, arm: () => void) => {
+			wire: (d: Deps, arm: () => Promise<void>) => {
 				d.validateTokenBlock = armed(arm, REASON)
 			},
 			run: () => attestSendTokenBlocks(),
@@ -1836,7 +1836,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 		{
 			write: "the consume hash",
 			seed: mkWithdraw("0xfresh"),
-			wire: (d: Deps, arm: () => void) => {
+			wire: (d: Deps, arm: () => Promise<void>) => {
 				d.consumeSend = armed(arm, { consumeTxHash: HASH })
 			},
 			run: () => runWithdrawConsume("0xfresh"),
@@ -1845,7 +1845,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 		{
 			write: "the completion",
 			seed: mkWithdraw("0xfresh"),
-			wire: (d: Deps, arm: () => void) => {
+			wire: (d: Deps, arm: () => Promise<void>) => {
 				d.waitConsumeReceipt = armed(arm, true)
 			},
 			run: () => runWithdrawConsume("0xfresh"),
@@ -1854,7 +1854,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 		{
 			write: "a failed receipt's clear",
 			seed: mkWithdraw("0xfresh"),
-			wire: (d: Deps, arm: () => void) => {
+			wire: (d: Deps, arm: () => Promise<void>) => {
 				d.waitConsumeReceipt = armed(arm, false)
 			},
 			run: () => runWithdrawConsume("0xfresh"),
@@ -1863,7 +1863,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 		{
 			write: "a prior hash's clear",
 			seed: mkWithdraw("0xexit", { consumeTxHash: PRIOR }),
-			wire: (d: Deps, arm: () => void) => {
+			wire: (d: Deps, arm: () => Promise<void>) => {
 				d.waitConsumeReceipt = armed(arm, false)
 			},
 			run: () => runWithdrawConsume("0xexit"),

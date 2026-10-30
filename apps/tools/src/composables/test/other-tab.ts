@@ -4,7 +4,8 @@ type Lanes = Pick<Storage, "getItem" | "setItem">
 
 /**
  * Another tab's whole-lane write under the journal lock, for lost-write tests. `hold` loads `key` inside the lock and
- * keeps it until `release`, then writes the loaded lane back with `extra` appended. Connect `locks` to the engine:
+ * keeps it until `release`, then writes the loaded lane back with `extra` appended; it resolves once the lane is
+ * loaded, so a write the caller makes next is one the other tab cannot have seen. Connect `locks` to the engine:
  * `behind` counts the journal requests made once a hold is up.
  */
 export function otherTab() {
@@ -22,9 +23,14 @@ export function otherTab() {
 	}
 	return {
 		locks,
-		hold(kv: Lanes, key: string, extra: unknown): void {
+		hold(kv: Lanes, key: string, extra: unknown): Promise<void> {
+			let held = () => {}
+			const holding = new Promise<void>((r) => {
+				held = r
+			})
 			holder = locks.journal(() => {
 				loaded = kv.getItem(key)
+				held()
 				return new Promise<void>((r) => {
 					open = r
 				}).then(() => {
@@ -32,6 +38,7 @@ export function otherTab() {
 					kv.setItem(key, JSON.stringify({ ...lane, records: [...lane.records, extra] }))
 				})
 			})
+			return holding
 		},
 		get behind() {
 			return behind

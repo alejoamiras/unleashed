@@ -404,9 +404,9 @@ describe("useHubExit", () => {
 		const tab = otherTab()
 		connectJournalDeps({ kv, locks: tab.locks })
 		const hold = () => tab.hold(kv, JOURNAL_KEY, OTHER_TAB_RECORD)
-		if (at === "open") hold()
+		if (at === "open") await hold()
 		h.consumeWithdrawal.mockImplementation(async (_l1, _node, _receipt, p) => {
-			if (at === "consume") hold()
+			if (at === "consume") await hold()
 			await (p as { onSent?: (hash: string) => unknown }).onSent?.("0xconsume")
 			return { consumeTxHash: "0xconsume" }
 		})
