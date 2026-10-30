@@ -224,6 +224,8 @@ vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	hubBindingAt: async (_node: unknown, _hub: string, erc20: string) => h.state.hubTokens.get(erc20.toLowerCase()),
 	hubExitsPaused: async () => h.state.exitsPaused,
 	readRegistration: async (_pub: unknown, _factory: string, erc20: string) => h.state.registrations.get(erc20.toLowerCase()),
+	// The rollup-derived fee bound reads Ethereum; here it sits above the fake node's fees, so every quote passes.
+	feeBoundOf: async () => ({ feePerDaGas: 10n, feePerL2Gas: 60n }),
 }))
 
 // The claims run on the SDK's entries, played below against the faked hub.
