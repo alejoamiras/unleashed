@@ -444,8 +444,7 @@ export function quarantineInvalid(kv: KV): number {
 /**
  * True when nothing in the record is still needed: an Ethereum-origin record once the SDK's
  * `claimRetired` says so; a cross-chain record only once it was deposited and claimed with no outcome and no
- * extra deposit. An outcome record keeps its secret until the user dismisses it, so a read RPC lying
- * about an outcome can mislabel a record but never delete it.
+ * extra deposit. An outcome record is never pruned or evicted: only the user's Dismiss removes it.
  */
 export function isRetirable(rec: AnyJournalRecord): boolean {
 	if (!claimRetired(rec)) return false
@@ -716,8 +715,9 @@ export function removeRecord(kv: KV, id: string): void {
 	}
 }
 
-/** Drop retirable records completed more than `olderThanMs` ago (the 7-day prune; only verified
- *  completions ever carry `completedAt`, so this never destroys an unverified blob). */
+/** Drop retirable records completed more than `olderThanMs` ago (the 7-day prune). A completion is as sound as what
+ *  settled it: a claim transaction the node reported landed, or the wallet's simulate and the node agreeing that the
+ *  message is spent. */
 export function pruneCompleted(kv: KV, olderThanMs: number, now = Date.now()): void {
 	for (const lane of LANES) {
 		const records = loadLane(kv, lane)
