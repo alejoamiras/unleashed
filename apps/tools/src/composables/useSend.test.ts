@@ -191,6 +191,7 @@ import {
 	JOURNAL_KEY,
 	type SendDepositRecord,
 	isProvisionalRecordId,
+	patchRecord,
 	openDepositEnvelope,
 	recoveryKeyFromSignature,
 	validateAnyBackupRecord,
@@ -199,15 +200,7 @@ import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predic
 import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { type JournalLocks, memoryJournalLocks } from "@/lib/journal-locks"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
-import {
-	__resetJournalForTests,
-	addRecord,
-	connectJournalDeps,
-	isSessionLive,
-	runDepositClaim,
-	updateRecord,
-	useBridgeJournal,
-} from "./useBridgeJournal"
+import { __resetJournalForTests, addRecord, connectJournalDeps, isSessionLive, runDepositClaim, useBridgeJournal } from "./useBridgeJournal"
 import { GAS_QUOTE_MOVED } from "./useFuelQuote"
 import { __resetSendDepsForTests, BRIDGE_UNCHECKED, DEPOSITS_PAUSED, previewBlock, useSend, validateTokenBlock } from "./useSend"
 import { useOpsInFlight } from "./useOpsInFlight"
@@ -764,6 +757,27 @@ describe("useSend", () => {
 		expect(useBridgeJournal().runtime.value["0xtokenhash"]?.note).toBe(lost.message)
 	})
 
+	it("a claim hash a stored record already holds refuses the send and leaves that record untouched", async () => {
+		const deposit = fakeDeposit()
+		let held = ""
+		h.depositL1.mockImplementation((net: unknown, r: unknown, wallet: FakeWallet, p: DepositPlan, run: RunOptions) =>
+			deposit(net, r, wallet, p, {
+				...run,
+				persist: async (rec, secrets) => {
+					if (!held) {
+						held = rec.id
+						addRecord(journalled(rec.id, readBack()))
+					}
+					return run.persist(rec, secrets)
+				},
+			}),
+		)
+		expect(await useSend().send(plan({ isPrivate: true }))).toBe("")
+		expect(recordOf(held)).toMatchObject({ id: held, isPrivate: false })
+		expect(useBridgeJournal().runtime.value[held]?.attention).toBeUndefined()
+		expect(h.signTypedData).not.toHaveBeenCalled()
+	})
+
 	it("files the row with its session mark, so a watcher that first lists it reads it as this session's", async () => {
 		const live: boolean[] = []
 		const stop = watch(useBridgeJournal().listedRecords, (rows) => {
@@ -1064,8 +1078,8 @@ describe("useSend", () => {
 			seen.push(only())
 			return "0xapprove"
 		})
-		// Another tab blocks the provisional row before the signature names it.
-		const blockElsewhere = () => updateRecord(only().id, { blocked: "stopped" })
+		// Another tab blocks the provisional row before the signature names it; this tab has not reloaded.
+		const blockElsewhere = () => patchRecord<SendDepositRecord>(localStorage, only().id, { blocked: "stopped" })
 		h.depositL1.mockImplementation(
 			fakeDeposit({
 				approve: true,

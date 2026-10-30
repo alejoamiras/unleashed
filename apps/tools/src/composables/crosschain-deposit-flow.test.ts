@@ -371,9 +371,30 @@ describe("sendCrossChain", () => {
 	it("ends a refused deposit with a journaled approval not-sent before the caller sees the refusal, which no bookkeeping failure replaces", async () => {
 		const a = ask()
 		const route = await quotedRoute(a)
-		await expect(
-			sendCrossChain(sendOf(a, route), fakeWallet(route, { rejectDeposit: true }).wallet, fakeReads(0n), { watch: false }),
-		).rejects.toThrow(/rejected/)
+		// Another tab holds the journal from the wallet's refusal on, so the not-sent write waits for it.
+		const locks = memoryJournalLocks()
+		connectJournalDeps({ locks })
+		let release = () => {}
+		const hold = () =>
+			locks.journal(
+				() =>
+					new Promise<void>((r) => {
+						release = r
+					}),
+			)
+		const refused = fakeWallet(route, { rejectDeposit: true, onSend: () => refused.sent.length === 2 && hold() })
+		let settled = false
+		const outcome = sendCrossChain(sendOf(a, route), refused.wallet, fakeReads(0n), { watch: false }).then(
+			() => undefined,
+			(e: unknown) => e,
+		)
+		void outcome.then(() => {
+			settled = true
+		})
+		await new Promise((r) => setTimeout(r, 0))
+		expect(settled).toBe(false)
+		release()
+		expect(String(await outcome)).toMatch(/rejected/)
 		expectRevocable(route)
 
 		__resetJournalForTests()

@@ -486,7 +486,6 @@ export function addRecord(rec: BridgeJournalRecord): void {
 	reload()
 }
 
-/** Why a deposit stops before anything is signed: its record could not be stored and read back. */
 export const RECORD_NOT_PERSISTED = "Could not persist the bridge record — aborting before the deposit (storage full?)."
 
 /** Write-and-verify, insert-only: a deposit's record must be durably stored BEFORE the irreversible
@@ -1023,7 +1022,9 @@ export function releaseForeground(id: string): void {
 }
 
 /** One guarded journal write under the cross-tab journal lock (a plain deferred call without one):
- *  the body is the synchronous load → guard → write span, so nothing interleaves inside it. */
+ *  the body is the synchronous load → guard → write span, so nothing interleaves inside it. The lock is not
+ *  re-entrant and is held until the body's result settles: `fn` must not return a promise or call `discard` or
+ *  `underJournalLock`, or every tab's journal writes wait for it. */
 export function underJournalLock<T>(fn: () => T): Promise<T> {
 	return deps.locks ? deps.locks.journal(fn) : Promise.resolve().then(fn)
 }

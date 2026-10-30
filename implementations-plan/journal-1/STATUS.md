@@ -10,3 +10,6 @@
 - 2026-10-30: plan committed; stopped at the approval gate for the orchestrator.
 - 2026-10-30: a1 started; merged origin/main b69462a (#88); writer list re-verified on main: matches plan D3 (useSend lines +3).
 - 2026-10-30: a1 code and tests written (unit suites, cell 56); new unit tests mutation-checked against their regressions.
+- 2026-10-30: gate on 9aae2a5: journal.test pass (34); five app suites pass (197); lint pass; typecheck:all pass after typing the test holders `Promise<unknown>`; test:all pass; audit:tools pass. e2e running.
+- 2026-10-30: Codex round 1 (gpt-6.1-sol, high) and the Opus review started on the arc diff.
+- 2026-10-30: review round 1: Codex approve with fixes (2); Opus approve with fixes (held-id cleanup, `blocked` test, two comments); all applied, each new or tightened test mutation-checked.

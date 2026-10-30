@@ -574,9 +574,8 @@ function factsOf(row: SendDepositRecord | undefined, r: DepositRecord): Partial<
 
 async function openRow(row: SendRow, record: DepositRecord, secrets: DepositSecrets | undefined): Promise<void> {
 	const { plan, actors } = row.ctx
-	row.id = plan.isPrivate ? record.id : makeProvisionalDepositId()
+	const id = plan.isPrivate ? record.id : makeProvisionalDepositId()
 	const fuel = plan.isPrivate ? privateFuelOf(record, secrets, actors.recipient) : {}
-	const id = row.id
 	const rec = buildSendRecord({ id, plan, recipient: actors.recipient, sender: actors.from, ...fuel })
 	// The marks share the filing's span: its reload lets the wizard's watcher see the row before this send resumes,
 	// and the wizard adopts only a session-live row. The permission the wallet granted happened before the record
@@ -587,11 +586,13 @@ async function openRow(row: SendRow, record: DepositRecord, secrets: DepositSecr
 		if (row.ctx.granted) markGrantOutcome(id)
 		return true
 	})
-	// The id is the SDK's fresh claim hash or a fresh provisional id, so a held one is another record's: never replaced.
+	// The id is the SDK's fresh claim hash or a fresh provisional id, so a held one is another record's: never
+	// replaced, and with `row.id` unset the failed send's cleanup never discards or flags it.
 	if (!filed) throw new Error(RECORD_NOT_PERSISTED)
+	row.id = id
 	// EVERY private send seals, gas-only included: without an envelope its claim material exists only in this tab's
 	// memory, so a reload strands it and a recovery file cannot be exported.
-	if (plan.isPrivate) await sealSend(row.id, plan, secrets ?? {}, actors, () => row.ctx.journal.records.value as ClaimRecord[])
+	if (plan.isPrivate) await sealSend(id, plan, secrets ?? {}, actors, () => row.ctx.journal.records.value as ClaimRecord[])
 }
 
 /** A private gas leg's claim material, derived as the PrivateFPC derives it from `msg_sender`, so the row carries the
@@ -623,9 +624,9 @@ async function nameAtSignature(row: SendRow): Promise<void> {
 			fuelSecretHex: rec.fuel?.secret,
 			fuelSecretHashHex: rec.fuel?.secretHashHex,
 		})
-		// Only the identity and the claim material are new: what the stored provisional row already holds belongs to
-		// this same send and must survive the rename. A row another tab discarded meanwhile is filed all the same: the
-		// signature is about to commit to this claim material.
+		// Before its signature a provisional row gains only the approval's hash and a block, read from the stored copy:
+		// a field written there that this list does not carry is lost in the rename. A row another tab discarded
+		// meanwhile is filed all the same: the signature is about to commit to this claim material.
 		await underJournalLock(() => {
 			const opened = currentRecord(known) as SendDepositRecord | undefined
 			const renamed: SendDepositRecord = { ...named, createdAt: opened?.createdAt ?? named.createdAt }
