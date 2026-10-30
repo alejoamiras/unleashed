@@ -83,8 +83,12 @@ const LI_QUEST_SOURCE = "https://li.quest"
  */
 const TESTNET_NODE_SOURCE = "https://aztec-testnet.drpc.org"
 
-/** PublicNode answered consistent supersets over 1k–50k-block `Transfer` scans; the gateways that truncated were refused. */
-const SEPOLIA_READ_RPCS = ["https://ethereum-sepolia-rpc.publicnode.com"] as const
+/**
+ * PublicNode answered consistent supersets over 1k–50k-block `Transfer` scans; the gateways that truncated were refused.
+ * It refuses logs older than about 10,000 blocks (4444) and answers their receipts `null`, so older reads go on to
+ * ethPandaOps, which keeps full history and matched PublicNode on every compared range.
+ */
+const SEPOLIA_READ_RPCS = ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.sepolia.ethpandaops.io"] as const
 /** bridge-core's `SOURCE_CHAINS[84532].rpcUrls`, spelled out to stay Node-safe; the test pins the two equal. */
 const BASE_SEPOLIA_READ_RPCS = ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"] as const
 /** The CSP sources for a target's read RPCs and Across API: each origin once. */

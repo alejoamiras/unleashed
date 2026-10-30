@@ -19,15 +19,18 @@ describe("source chains", () => {
 			l1ChainId: 11_155_111,
 			rpcUrls: ["https://base-sepolia-rpc.publicnode.com", "https://sepolia.base.org"],
 			maxLogBlocks: { "https://base-sepolia-rpc.publicnode.com": 50_000, "https://sepolia.base.org": 200 },
+			logRetentionBlocks: { "https://base-sepolia-rpc.publicnode.com": 3_000_000 },
 			rail: "acrossV4",
 			tokens: [baseSepoliaUsdc],
 		})
 		for (const [key, chain] of Object.entries(SOURCE_CHAINS)) {
 			expect(chain.chainId).toBe(Number(key))
 			expect(sourceChain(chain.l1ChainId)).toBeUndefined()
-			for (const [url, cap] of Object.entries(chain.maxLogBlocks ?? {})) {
-				expect(chain.rpcUrls).toContain(url)
-				expect(Number.isSafeInteger(cap) && cap > 0).toBe(true)
+			for (const perUrl of [chain.maxLogBlocks, chain.logRetentionBlocks]) {
+				for (const [url, blocks] of Object.entries(perUrl ?? {})) {
+					expect(chain.rpcUrls).toContain(url)
+					expect(Number.isSafeInteger(blocks) && blocks > 0).toBe(true)
+				}
 			}
 		}
 	})
