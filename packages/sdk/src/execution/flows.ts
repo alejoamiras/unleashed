@@ -35,7 +35,8 @@ export interface WithdrawConsumeParams {
 	/** Seconds to wait for the burn's epoch to prove (aztec.js default 600 — raise for slow networks like the live testnet). */
 	provenTimeoutSec?: number
 	/** The consume hash the moment it exists — a caller with a journal records it here so a crash mid-wait still knows
-	 *  which transaction to finish. Awaited before the receipt wait; a throw fails the consume. */
+	 *  which transaction to finish. Awaited before the receipt wait; a throw rejects the call although the transaction
+	 *  is already sent. */
 	onSent?: (txHash: Hex) => void | Promise<void>
 }
 

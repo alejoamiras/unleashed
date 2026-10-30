@@ -264,7 +264,7 @@ function engineRecords(): BridgeJournalRecord[] {
 
 // Module state, deliberately non-reactive: secrets and locks never enter Vue reactivity.
 const sessionLive = new Set<string>()
-/** Discarded or pruned here, its storage removal waiting for the journal lock. */
+/** Discarded or pruned here, its storage removal waiting for the journal lock (for the session, if the prune failed). */
 const discarding = new Set<string>()
 const inFlight = new Set<string>()
 const secretCache = new Map<string, { secretHex: string; envelope: DepositEnvelopeV2 }>()
@@ -443,7 +443,7 @@ export function initJournal(): void {
 }
 
 /** The prune rewrites whole lanes, so it waits for the journal lock; the rows it drops read as gone from the start, as
- *  a discarded row does. A failed prune keeps them hidden, as they were before it: the next load prunes them. */
+ *  a discarded row does. A failed prune leaves them hidden and stored; the next load prunes them. */
 function pruneUnderLock(): void {
 	const now = deps.now()
 	const expired = loadAllRecords(deps.kv)

@@ -493,7 +493,8 @@ interface ExitDeps {
 }
 
 /** The row every exit leg narrates into, opened at the last moment before the first chain write. Its marks share the
- *  write's span: the span's reload shows the row to the wizard's watchers before this flow resumes. */
+ *  write's span: the span's reload shows the row to the wizard's watchers before this flow resumes, and the wizard
+ *  adopts only a session-live row. */
 function openExitRecord(base: SendWithdrawRecord, isPrivate: boolean): Promise<void> {
 	return underJournalLock(() => {
 		addRecord(base)
