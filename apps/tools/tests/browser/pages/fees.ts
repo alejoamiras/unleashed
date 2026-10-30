@@ -2,11 +2,11 @@
  * What the FPC will KEEP for a transaction the connected wallet submits: the app's limits times the
  * max fees per gas the wallet chooses. The test wallet is a stock `EmbeddedWallet`, and so is the
  * harness's scripting wallet — same class, same node, same policy — so the figure is read the way
- * the app reads it: a no-op simulated under the limits, the applied settings read back.
+ * the app reads it: a sender-less public read simulated under the limits, the applied settings read back.
  */
+import { NO_FROM } from "@aztec-labs/aztec.js/account"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { SetPublicAuthwitContractInteraction } from "@aztec-labs/aztec.js/authorization"
-import { Fr } from "@aztec-labs/aztec.js/fields"
+import { FeeJuiceContract } from "@aztec-labs/aztec.js/protocol"
 import type { Page } from "@playwright/test"
 import { ownGasTxs, PRIVATE_FUEL_CLAIM_GAS, PRIVATE_HUB_EXIT_GAS, privateFpcFeeLimit } from "@unleashed/sdk/protocol"
 import type { RunEnv } from "../env"
@@ -25,17 +25,17 @@ async function networkMax(actor: ActorHandle): Promise<Limits> {
 const clamp = (gas: Limits, max: Limits): Limits => ({ daGas: Math.min(gas.daGas, max.daGas), l2Gas: Math.min(gas.l2Gas, max.l2Gas) })
 
 /**
- * The max fees per gas a stock wallet applies to this actor's transactions right now. No cap is
- * proposed here, on purpose: the app proposes one, but the wallet-sdk transport strips it before a
- * stock wallet reads its options, so the question the wallet ends up answering is this one.
+ * The max fees per gas a stock wallet applies to a transaction right now. No cap is proposed here,
+ * on purpose: the app proposes one, but the wallet-sdk transport strips it before a stock wallet
+ * reads its options, so the question the wallet ends up answering is this one.
  */
 export async function walletMaxFees(actor: ActorHandle, gas: Limits): Promise<MaxFees> {
 	const wallet = actor.s.l2.wallet as unknown as { simulateTx: (payload: unknown, opts: unknown) => Promise<unknown> }
-	const from = AztecAddress.fromStringUnsafe(actor.address)
-	const noop = await SetPublicAuthwitContractInteraction.create(wallet as never, from, Fr.random(), false)
-	const payload = await noop.request()
+	const payload = await FeeJuiceContract.withWallet(wallet as never)
+		.methods.balance_of_public(AztecAddress.ZERO)
+		.request()
 	const result = (await wallet.simulateTx(payload, {
-		from,
+		from: NO_FROM,
 		fee: { gasSettings: { gasLimits: clamp(gas, await networkMax(actor)), teardownGasLimits: { daGas: 0, l2Gas: 0 } } },
 		skipTxValidation: true,
 		skipFeeEnforcement: true,

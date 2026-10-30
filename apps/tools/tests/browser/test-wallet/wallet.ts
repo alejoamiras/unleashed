@@ -37,9 +37,17 @@ export interface SubmittedTx {
 	l2Gas: number
 }
 
+/** A simulation a dApp asked for: its sender (an address, or `NO_FROM`) and the contracts its calls target. */
+export interface SimulatedTx {
+	from: string
+	to: string[]
+}
+
 export class TestWallet extends EmbeddedWallet {
 	/** Every transaction handed to the node since this wallet booted, in order. */
 	readonly submitted: SubmittedTx[] = []
+	/** Every `simulateTx` a dApp asked for since this wallet booted, in order. */
+	readonly simulated: SimulatedTx[] = []
 	profile: TestWalletProfile = "plain"
 	private claimSelector = FunctionSelector.empty()
 	private readonly registeredTokens = new Set<string>()
@@ -163,6 +171,7 @@ export class TestWallet extends EmbeddedWallet {
 	}
 
 	override simulateTx(payload: ExecutionPayload, opts: SimulateOptions) {
+		this.simulated.push({ from: opts.from.toString(), to: payload.calls.map((c) => c.to.toString()) })
 		return super.simulateTx(this.routed(payload, opts.from), opts)
 	}
 }

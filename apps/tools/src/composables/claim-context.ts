@@ -6,13 +6,10 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
-import type { Network, Reads } from "@unleashed/sdk"
-import type { PublicClient } from "viem"
+import type { Network } from "@unleashed/sdk"
 import { bridgeNetwork } from "@/contracts/bridge-generation"
-import { appNode } from "@/lib/aztec-node"
-import { NETWORK } from "@/lib/network"
+import { appReads } from "./app-reads"
 import { type ClaimContext, runOnLane } from "./useBridgeJournal"
-import { readClientFor } from "./useEthereumReader"
 import { retryOnUnregistered } from "./useWalletConnection"
 
 type Session = Parameters<typeof retryOnUnregistered>[0]
@@ -57,7 +54,7 @@ export async function claimContextOf(
 	recipient: string,
 	watchOnly: boolean,
 ): Promise<ClaimContext> {
-	const reads: Reads = { l1: (readClientFor(NETWORK.l1ChainId) ?? l1.publicClient) as PublicClient, aztecNode: appNode() }
+	const reads = appReads(l1)
 	const network = () => bridgeNetwork(reads)
 	const wallet = session.wallet.value
 	if (!wallet && !watchOnly) throw new Error(NO_WALLET)

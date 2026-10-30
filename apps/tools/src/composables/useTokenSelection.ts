@@ -7,6 +7,7 @@
  * reads, and only the last one may land — a superseded result must never overwrite the selection or
  * its balances, however late it arrives.
  */
+import { NO_FROM } from "@aztec-labs/aztec.js/account"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { type Erc20Metadata, predictPortal, readErc20Metadata, toWord } from "@unleashed/sdk/protocol"
@@ -135,11 +136,14 @@ function toBigInt(value: unknown): bigint {
 	return 0n
 }
 
+/** The public view is simulated from `NO_FROM`, naming no sender or fee payer; the private one is a utility the
+ *  wallet runs over the account's own notes, so it keeps the account as its scope. */
 async function simulateBalance(contract: ContractBase, fn: "balance_of_public" | "balance_of_private", account: string): Promise<bigint> {
 	const method = contract.methods[fn]
 	if (typeof method !== "function") throw new Error(`the L2 token exposes no ${fn}`)
-	const from = AztecAddress.fromStringUnsafe(account)
-	const raw = (await method(from).simulate({ from } as never)) as { result?: unknown }
+	const owner = AztecAddress.fromStringUnsafe(account)
+	const from = fn === "balance_of_public" ? NO_FROM : owner
+	const raw = (await method(owner).simulate({ from } as never)) as { result?: unknown }
 	return toBigInt(raw?.result ?? raw)
 }
 

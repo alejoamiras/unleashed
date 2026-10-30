@@ -1,10 +1,11 @@
+import { NO_FROM } from "@aztec-labs/aztec.js/account"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 /*
  * Two read paths share this test file, mocked separately:
  *
  *  - balance_of_public is an `#[external("public")] #[view]` function.
- *    Read via `interaction.simulate({from})`. Mocked here by giving
+ *    Read via `interaction.simulate({ from: NO_FROM })`. Mocked here by giving
  *    each method object both `.request()` and `.simulate()`.
  *
  *  - balance_of_private is an `#[external("utility")]` function. Read
@@ -90,14 +91,14 @@ describe("useTokenBalance", () => {
 		handle.dispose()
 	})
 
-	it("public path invokes .simulate() with { from } (passed even though SDK ignores it)", async () => {
+	it("the public view is simulated from NO_FROM: no sender names the account", async () => {
 		publicSimulateImpl.mockResolvedValueOnce({ result: 5n })
 		const w = makeWallet()
 		// biome-ignore lint/suspicious/noExplicitAny: test stub
 		const handle = useTokenBalance(w as any, TOKEN, ACCOUNT)
 		await vi.waitFor(() => expect(publicSimulateImpl).toHaveBeenCalled())
 		const arg = publicSimulateImpl.mock.calls[0][0] as { from: unknown }
-		expect(arg).toEqual({ from: ACCOUNT })
+		expect(arg).toEqual({ from: NO_FROM })
 		handle.dispose()
 	})
 
