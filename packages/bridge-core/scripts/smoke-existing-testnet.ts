@@ -174,7 +174,7 @@ async function bridgeOnce(lane: Lane, isPrivate: boolean): Promise<void> {
 
 /** After the first claim the hub must name exactly the L2 token the manifest recorded. */
 async function assertHubBinding(lane: Lane): Promise<void> {
-	const bound = await hubTokenFor(lane.hub, lane.token.erc20, lane.from.toString())
+	const bound = await hubTokenFor(lane.hub, lane.token.erc20)
 	if (bound?.toLowerCase() !== lane.token.l2Token.toLowerCase()) {
 		throw new Error(`hub token_for(${lane.token.erc20}) is ${bound ?? "unregistered"} but the manifest records ${lane.token.l2Token}`)
 	}

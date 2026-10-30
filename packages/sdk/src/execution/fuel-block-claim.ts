@@ -9,6 +9,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { BridgeError, isAborted, isUserRejection } from "../errors.ts"
 import { isWellFormedTxHash } from "./claim-receipt.ts"
 import { asBridgeError, assertMayPrompt, awaitClaimable, type ClaimLeg, type ClaimOutcome, persistClaim, watchClaim } from "./claim-run.ts"
+import { feeBoundOf } from "./fee-bound.ts"
 import { FeeStopError } from "./fee-stop.ts"
 import { buildFuelClaimInteraction, type FuelClaimInteraction } from "./fuel-claim.ts"
 import { isPrivateFuelInsufficiency, PRIVATE_ATTEMPT_STALE_MS } from "./fuel-claim-state.ts"
@@ -107,7 +108,7 @@ async function buildClaim(leg: ClaimLeg): Promise<FuelClaimInteraction> {
 	const { net, r, aztec, record } = leg
 	let maxFeesPerGas: { feePerDaGas: bigint; feePerL2Gas: bigint }
 	try {
-		maxFeesPerGas = await walletMaxFees(r.aztecNode, aztec.wallet, aztec.account, PRIVATE_HUB_CLAIM_GAS)
+		maxFeesPerGas = await walletMaxFees(r.aztecNode, aztec.wallet, PRIVATE_HUB_CLAIM_GAS, () => feeBoundOf(net, r))
 	} catch (e) {
 		throw asBridgeError(Object.assign(new FeeStopError("unpriced-by-wallet"), { cause: e }))
 	}

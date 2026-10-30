@@ -22,12 +22,12 @@ import {
 	signedMinFuelOutput,
 } from "@unleashed/sdk/protocol"
 import { type TokenState, clampGas, walletMaxFees } from "@unleashed/sdk/internal"
-import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { ref, type Ref } from "vue"
 import { FUEL } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"
 import { NETWORK } from "@/lib/network"
 import { MAX_TX_TARGET, NO_GAS_ROUTE } from "@/lib/send-model"
+import { appFeeBound } from "./app-reads"
 
 /** Enough for a first session on L2 without over-diverting the deposit. */
 const DEFAULT_TX_TARGET = 20
@@ -130,7 +130,7 @@ export function useGasShare(deps: GasShareDeps = {}): UseGasShareHandle {
 	function readMaxFees(): Promise<MaxFees> {
 		const aztec = deps.aztec?.()
 		const account = deps.account?.()
-		if (aztec && account) return walletMaxFees(appNode(), aztec, AztecAddress.fromStringUnsafe(account), PRIVATE_HUB_CLAIM_GAS)
+		if (aztec && account) return walletMaxFees(appNode(), aztec, PRIVATE_HUB_CLAIM_GAS, appFeeBound())
 		return predictedWorstMinFees(createAztecNodeClient(NETWORK.nodeUrl))
 	}
 

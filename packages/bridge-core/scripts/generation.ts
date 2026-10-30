@@ -326,7 +326,7 @@ async function assertGeneration(l1: L1Ctx, l2: L2Ctx, record: GenerationRecord):
 		"factory.L2_HUB",
 	)
 	const hub = await registerHub(l2.wallet, record.l2.hub, tokenBridgeHubArtifact)
-	if ((await hubTokenFor(hub, "0x0000000000000000000000000000000000000000", l2.from.toString())) !== undefined) {
+	if ((await hubTokenFor(hub, "0x0000000000000000000000000000000000000000")) !== undefined) {
 		throw new Error("hub token_for(0x0) answered a non-zero token — the hub is not the freshly-constructed one")
 	}
 	console.log("  ✓ factory.L2_HUB, hub.token_for")
@@ -432,7 +432,7 @@ function registerArgs(erc20: Address, reg: Registration) {
 }
 
 async function registerOnHub(l2: L2Ctx, hub: ContractBase, erc20: Address, reg: Registration): Promise<string | undefined> {
-	if (await hubTokenFor(hub, erc20, l2.from.toString())) return undefined
+	if (await hubTokenFor(hub, erc20)) return undefined
 	await waitForL1ToL2Message(l2.node, reg.registerKey, { forceBlock: l2.forceBlock })
 	const sent = (await hub.methods.register_token(...registerArgs(erc20, reg)).send(l2.sendOpts as never)) as unknown as {
 		receipt: { txHash: unknown }

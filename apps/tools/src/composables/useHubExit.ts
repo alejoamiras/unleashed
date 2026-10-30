@@ -69,6 +69,7 @@ import {
 import { useBridgeWallet } from "./useBridgeWallet"
 import { contractsReadinessRefusal, retryOnUnregistered } from "./useWalletConnection"
 import { useL1Wallet } from "./useL1Wallet"
+import { appFeeBound } from "./app-reads"
 import { withOperation } from "./useOpsInFlight"
 import { readBalance } from "./useTokenBalance"
 import { useTokenGrant } from "./useTokenGrant"
@@ -100,7 +101,7 @@ export function buildExitSendOpts(from: AztecAddress) {
 export async function privateExitFee(aztec: unknown, from: AztecAddress, approvedCeiling?: bigint) {
 	const [credit, maxFees] = await Promise.all([
 		readFeeJuiceOrNull("private FJ", () => readPrivateFeeJuiceBalance(aztec, from)),
-		walletMaxFees(appNode(), aztec, from, PRIVATE_HUB_EXIT_GAS).catch(() => null),
+		walletMaxFees(appNode(), aztec, PRIVATE_HUB_EXIT_GAS, appFeeBound()).catch(() => null),
 	])
 	if (maxFees === null) throw new ExitNeedsPrivateGasError("unverifiable")
 	const limits = clampGas(appNode(), PRIVATE_HUB_EXIT_GAS)
@@ -420,7 +421,7 @@ async function submitExit(ctx: ExitCtx, auth: ExitAuth): Promise<{ txHash: unkno
 /** The hub's LIVE binding, not the wizard's copy of it: a token the hub never registered holds
  *  nothing of this ERC-20 to burn, and one bound to another L2 token would burn the wrong asset. */
 async function assertHubBinding(ctx: ExitCtx): Promise<void> {
-	const bound = await hubTokenFor(await hubOf(ctx), ctx.plan.token.address, ctx.from)
+	const bound = await hubTokenFor(await hubOf(ctx), ctx.plan.token.address)
 	if (!bound) throw new ExitTokenNotRegisteredError()
 	if (bound.toLowerCase() !== ctx.plan.token.l2Token.toLowerCase()) {
 		throw new Error("The bridge binds this Ethereum token to a different Aztec token than this screen shows — nothing was sent.")

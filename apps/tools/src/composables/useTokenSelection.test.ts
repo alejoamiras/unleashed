@@ -8,6 +8,8 @@
  * mocked from the sandbox fixture — a real v2 manifest whose USDC/USDT are registered and whose
  * PXO is portal-only.
  */
+import { NO_FROM } from "@aztec-labs/aztec.js/account"
+import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { ERC20_ABI } from "@unleashed/sdk/protocol"
 import type { Registration } from "@unleashed/sdk/internal"
@@ -140,14 +142,18 @@ function makeBindingReader(bindings: Map<string, string>) {
 	return { readBinding }
 }
 
-function makeTokenContract(pub: bigint | Error, priv: bigint | Error) {
-	const method = (v: bigint | Error) => () => ({
-		simulate: async () => {
+/** `simulatedFrom` collects the sender each balance read was simulated from. */
+function makeTokenContract(pub: bigint | Error, priv: bigint | Error, simulatedFrom: Record<string, unknown> = {}) {
+	const method = (name: string, v: bigint | Error) => () => ({
+		simulate: async (o?: { from?: unknown }) => {
+			simulatedFrom[name] = o?.from
 			if (v instanceof Error) throw v
 			return { result: v }
 		},
 	})
-	return { methods: { balance_of_public: method(pub), balance_of_private: method(priv) } } as unknown as ContractBase
+	return {
+		methods: { balance_of_public: method("balance_of_public", pub), balance_of_private: method("balance_of_private", priv) },
+	} as unknown as ContractBase
 }
 
 interface Deferred {
@@ -344,9 +350,13 @@ describe("useTokenSelection", () => {
 
 	it("reads L2 balances only for a registered token, and only for an exit", async () => {
 		const pub = makePub({ registrations })
-		const { selection } = harness(pub)
+		const simulatedFrom: Record<string, unknown> = {}
+		const { selection } = harness(pub, { tokenContract: () => makeTokenContract(11n, 22n, simulatedFrom) })
 		await selection.select(selectable(USDC), "l2-to-l1")
 		expect(selection.balances.value).toMatchObject({ l2Public: 11n, l2Private: 22n })
+		// The public view names no sender; the private utility runs over the account's own notes.
+		expect(simulatedFrom.balance_of_public).toBe(NO_FROM)
+		expect(String(simulatedFrom.balance_of_private)).toBe(AztecAddress.fromStringUnsafe(L2_ACCOUNT).toString())
 		await selection.select(selectable(USDC), "l1-to-l2")
 		expect(selection.balances.value.l2Public).toBeUndefined()
 		await selection.select(selectable(PXO), "l2-to-l1")

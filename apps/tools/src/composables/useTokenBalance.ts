@@ -1,3 +1,4 @@
+import { NO_FROM } from "@aztec-labs/aztec.js/account"
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract } from "@aztec-labs/aztec.js/contracts"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
@@ -20,7 +21,7 @@ export interface UseTokenBalanceHandle {
  * Per-token balance reader. Polls balance_of_public + balance_of_private
  * every 15s. The two paths diverge by Aztec function kind:
  *   - `balance_of_public` is `#[external("public")] #[view]` → read via
- *     `interaction.simulate({from})`. The SDK returns a SimulationResult
+ *     `interaction.simulate({ from: NO_FROM })`. The SDK returns a SimulationResult
  *     `{ result, ... }`, so we extract `.result` and coerce to bigint.
  *   - `balance_of_private` is `#[external("utility")]` → read via
  *     `wallet.executeUtility(call, opts)`. The SDK returns a
@@ -124,13 +125,13 @@ export async function readBalance(
 	// Token contract attributes (aztec-standards):
 	//   balance_of_public:  #[external("public")] #[view]   ← on-chain public view
 	//   balance_of_private: #[external("utility")]           ← off-chain utility
-	// Public views are read via `interaction.simulate({from})` and return a
-	// `SimulationResult { result, … }` - we extract `.result` not the wrapper
+	// Public views are simulated from `NO_FROM`, so no sender or fee payer names the account, and
+	// return a `SimulationResult { result, … }` - we extract `.result` not the wrapper
 	// (passing the wrapper to a coercer that expects bigint silently returns 0n).
 	if (fn === "balance_of_public") {
 		const interaction = method(account)
 		// biome-ignore lint/suspicious/noExplicitAny: SDK SimulationResult.result is typed `any` upstream
-		const raw = (await (interaction as any).simulate({ from: account })) as SimulationResultShape
+		const raw = (await (interaction as any).simulate({ from: NO_FROM })) as SimulationResultShape
 		return toBigInt(raw?.result)
 	}
 	const exec = (await method(account).request()) as ExecutionPayloadShape

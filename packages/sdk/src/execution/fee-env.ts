@@ -46,6 +46,8 @@ export interface FeeLadderEnv {
 	readPublicFeeJuice: (aztec: unknown, account: AztecAddress) => Promise<bigint>
 	/** The account's private Fee Juice credit at the PrivateFPC. A throw reads as unread, never as zero. */
 	readPrivateFeeJuice: (aztec: unknown, account: AztecAddress) => Promise<bigint>
+	/** The highest max fees per gas a wallet's quote may carry (`feeBoundOf`); a throw leaves the fee unpriced. */
+	feeBound: () => Promise<MaxFees>
 	/** Receives ids, decisions and transaction hashes only, never a secret or a salt. */
 	log: (...args: unknown[]) => void
 }
@@ -80,17 +82,16 @@ export function patchFuel(
 	return written
 }
 
-/** The max fees the connected wallet will submit under, or null when it cannot say (logged): every
- *  ceiling is `limits × this`, kept in full by the FPC, so a figure the wallet did not give is not
- *  one to fund an irreversible step on. */
+/** The max fees the connected wallet will submit under, or null when it cannot say or says more than
+ *  `env.feeBound` allows (logged): every ceiling is `limits × this`, kept in full by the FPC, so a
+ *  figure the wallet did not give, or one above the bound, is not one to fund an irreversible step on. */
 export async function walletFeesOrNull(
-	env: Pick<FeeLadderEnv, "node" | "log">,
+	env: Pick<FeeLadderEnv, "node" | "log" | "feeBound">,
 	aztec: unknown,
-	account: AztecAddress,
 	gas: GasLimits,
 ): Promise<MaxFees | null> {
 	try {
-		return await walletMaxFees(env.node, aztec, account, gas)
+		return await walletMaxFees(env.node, aztec, gas, env.feeBound)
 	} catch (e) {
 		env.log("wallet fee quote failed (fail-closed → null):", e instanceof Error ? e.message : String(e))
 		return null

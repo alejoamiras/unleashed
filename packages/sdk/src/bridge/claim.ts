@@ -337,7 +337,7 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	// it does not still refuses a second send while an earlier claim may land.
 	const spentReading = await readsSpent(leg, p)
 	if (!spentReading) await settleHashlessClaim(leg)
-	const bound = (await hubTokenFor(hub, token.erc20, p.from)) !== undefined
+	const bound = (await hubTokenFor(hub, token.erc20)) !== undefined
 	await resumeRegistration(leg, bound)
 	await settleHashlessAttempt(leg, spentReading)
 	assertMayPrompt(leg, "the claim")

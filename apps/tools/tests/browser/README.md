@@ -70,8 +70,8 @@ The wallet accepts only tools' app id and the sandbox's chain, is framed only by
   PrivateFPC sets aside `gasLimits · maxFeesPerGas` of ITS transaction, and the wallet decides the
   max fee (the aztec.js 6.0.0 option schema names the cap `maxFeePerGas`; wallets read
   `maxFeesPerGas`; a stock wallet prices it itself, 1.5× the prediction). The app therefore reads the
-  figure from the wallet (`src/lib/wallet-fee-budget.ts`: a no-op simulated under the app's limits,
-  the applied settings read back), and so does the suite: `pages/fees.ts` runs the same probe
+  figure from the wallet (`packages/sdk/src/execution/wallet-fee-budget.ts`: a sender-less public read
+  simulated under the app's limits, the applied settings read back), and so does the suite: `pages/fees.ts` runs the same probe
   through the harness's scripting wallet — the same `EmbeddedWallet` class on the same node — so a
   cell asserts the exact deduction the FPC made, never a multiple of tools' prediction.
 - **Blocks come on demand.** The local network builds a block only when a transaction arrives; a

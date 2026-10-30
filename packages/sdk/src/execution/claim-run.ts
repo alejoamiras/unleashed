@@ -27,6 +27,7 @@ import { classifyClaimReceipt } from "./claim-receipt.ts"
 import { findDepositTx } from "./deposit-reconcile.ts"
 import { readDepositLeaves } from "./deposit-recovery.ts"
 import { type FeeStop, FeeStopError } from "./fee-stop.ts"
+import { feeBoundOf } from "./fee-bound.ts"
 import type { FeeLadderEnv } from "./fee-env.ts"
 import { readPrivateFeeJuice, readPublicFeeJuice } from "./fee-juice-balance.ts"
 import { awaitL1Receipt } from "./l1-receipt.ts"
@@ -201,6 +202,7 @@ export function ladderEnvOf(leg: ClaimLeg): FeeLadderEnv {
 		minFloorFj: BigInt(leg.net.manifest.feeJuice.minFj),
 		readPublicFeeJuice,
 		readPrivateFeeJuice: (wallet, account) => readPrivateFeeJuice(leg.net.privateFpc, wallet, account),
+		feeBound: () => feeBoundOf(leg.net, leg.r),
 		log: () => undefined,
 	}
 }

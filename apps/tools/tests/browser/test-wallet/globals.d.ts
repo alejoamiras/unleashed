@@ -11,6 +11,9 @@ export interface TestWalletControl {
 	/** Every transaction handed to the node since the wallet booted: its hash, the fee limit the FPC
 	 *  keeps for it (a decimal string) and the gas limits it was submitted under. */
 	submitted: () => Promise<{ hash: string; feeLimit: string; daGas: number; l2Gas: number }[]>
+	/** Every simulation the dApp asked for since the wallet booted: its sender (an address, or `NO_FROM`)
+	 *  and the contracts its calls target. */
+	simulated: () => Promise<{ from: string; to: string[] }[]>
 	/** Fault injection: the next `method` call whose serialized arguments contain `pattern` (any
 	 *  call when omitted) rejects with `message` instead of running — one shot. */
 	failNext: (method: string, pattern?: string, message?: string) => void

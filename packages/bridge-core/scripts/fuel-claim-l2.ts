@@ -117,7 +117,7 @@ export async function settleFueledClaim(c: FueledClaim): Promise<FueledClaimResu
 	for (let i = 0; i < 300; i++) {
 		try {
 			// Whether this claim registers the token is a live fact, re-read per attempt like the app does.
-			const registers = c.fuel.via === "private-fpc" && (await hubTokenFor(c.hub, c.token.erc20, c.from.toString())) === undefined
+			const registers = c.fuel.via === "private-fpc" && (await hubTokenFor(c.hub, c.token.erc20)) === undefined
 			const built = await fueledClaimFee(c, registers)
 			const sendOpts = {
 				from: c.from,

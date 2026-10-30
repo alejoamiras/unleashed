@@ -15,7 +15,7 @@ import { getAddress } from "viem"
 import { trimAddress } from "../../../src/lib/format"
 import { TESTIDS } from "../../../src/lib/testids"
 import { expect, test } from "../fixtures/test"
-import { connectAztec, tid } from "../pages/connect"
+import { connectAztec, tid, walletFrame } from "../pages/connect"
 import { keptFor } from "../pages/fees"
 import { depositCalldata, depositRecords, fuelConservation } from "../pages/journal"
 import { confirmReview, connectL1, openSend, reviewDeposit, setVisibility, startDeposit, waitForReceipt } from "../pages/send"
@@ -181,7 +181,19 @@ test("cell 15b — selfpay, private, public FJ held: the private fence leaves it
 	const kept = await keptFor(page, run, "selfpay", actor, [
 		{ hash: (await depositRecords(page)).at(-1)?.claimTxHash, gas: ownGasTxs({ isPrivate: true, registers: false }).claim },
 	])
-	expect(await privateCreditOf(actor.s, await privateFpc(actor.s))).toBe(received - kept)
+	const fpc = await privateFpc(actor.s)
+	expect(await privateCreditOf(actor.s, fpc)).toBe(received - kept)
+
+	// Through the real transport, the only simulations sent as the account are the claim's own, paid by the PrivateFPC.
+	const simulated = await walletFrame(page, run, "selfpay").evaluate(() => window.__unleashedTestWallet!.simulated())
+	const asAccount = simulated.filter((s) => s.from !== "NO_FROM")
+	expect(simulated.length - asAccount.length, "the fee quote and the hub's binding are read without a sender").toBeGreaterThan(0)
+	expect(asAccount.length, "the claim is simulated as the account").toBeGreaterThan(0)
+	const fpcAddress = fpc.address.toString()
+	expect(
+		asAccount.filter((s) => !s.to.includes(fpcAddress)),
+		"no other simulation names the account as its sender",
+	).toEqual([])
 })
 
 test("cell 16 — plain, private, first-time token: registration, then the credit-paid claim", async ({ page, sandbox, actor, l1, run }) => {

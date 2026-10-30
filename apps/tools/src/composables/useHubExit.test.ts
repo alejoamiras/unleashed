@@ -23,6 +23,8 @@ const h = vi.hoisted(() => ({
 	privateBalance: 5_000_000_000n,
 	/** The credit at the PrivateFPC when it must differ from the token balance the same stub serves. */
 	fpcCredit: undefined as bigint | undefined,
+	/** The highest max fees per gas the exit's fee quote may carry. */
+	feeBound: { feePerDaGas: 0n, feePerL2Gas: 60n },
 	hubBinding: { value: undefined as string | undefined },
 	assertL1Chain: vi.fn(async (_l1: unknown) => {}),
 	isGranted: vi.fn((_l2Token: string) => true),
@@ -98,7 +100,7 @@ vi.mock("@aztec-labs/aztec.js/node", () => ({
 		getTxReceipt: async () => ({ blockNumber: 42 }),
 		getBlockNumber: async () => 40,
 		// Predicted worst fees, so a private exit's ceiling is priced without a network.
-		getCurrentMinFees: async () => ({ feePerDaGas: 10n, feePerL2Gas: 20n }),
+		getCurrentMinFees: async () => ({ feePerDaGas: 0n, feePerL2Gas: 20n }),
 	}),
 }))
 vi.mock("@aztec-labs/stdlib/messaging", () => ({ computeL2ToL1MembershipWitness: async () => undefined }))
@@ -146,6 +148,8 @@ vi.mock("./deposit-flow", () => ({
 		}
 	},
 }))
+
+vi.mock("./app-reads", () => ({ appFeeBound: () => async () => h.feeBound }))
 
 vi.mock("@/composables/useL1Wallet", () => ({
 	useL1Wallet: () => ({
@@ -231,6 +235,7 @@ describe("useHubExit", () => {
 		h.publicBalance = 5_000_000_000n
 		h.privateBalance = 5_000_000_000n
 		h.fpcCredit = undefined
+		h.feeBound = { feePerDaGas: 0n, feePerL2Gas: 60n }
 		h.hubBinding.value = L2_TOKEN
 		h.exitsPaused.mockImplementation(async () => false)
 		h.assertL1Chain.mockImplementation(async () => {})
@@ -525,9 +530,8 @@ describe("useHubExit", () => {
 		expect("fee" in buildExitSendOpts(undefined as never)).toBe(false)
 	})
 
-	// The PrivateFPC's `getFeeLimit` over the exit's limits at the mocked fees:
-	// 50_000·10 + 1_900_000·20 = 38_500_000.
-	const EXIT_CEILING = 38_500_000n
+	// The PrivateFPC's `getFeeLimit` over the exit's limits at the mocked fees: 1_900_000·20 = 38_000_000.
+	const EXIT_CEILING = 38_000_000n
 
 	it("a private exit names the PrivateFPC as payer, from the credit the account holds, at the committed ceiling", async () => {
 		h.fpcCredit = EXIT_CEILING
@@ -539,9 +543,9 @@ describe("useHubExit", () => {
 		expect(opts.fee?.gasSettings).toEqual({
 			gasLimits: { daGas: 50_000, l2Gas: 1_900_000 },
 			teardownGasLimits: { daGas: 0, l2Gas: 0 },
-			maxFeesPerGas: { feePerDaGas: 10n, feePerL2Gas: 20n },
+			maxFeesPerGas: { feePerDaGas: 0n, feePerL2Gas: 20n },
 			// The wallet-sdk option schema's own spelling of the cap rides along for wallets that read it.
-			maxFeePerGas: { feePerDaGas: 10n, feePerL2Gas: 20n },
+			maxFeePerGas: { feePerDaGas: 0n, feePerL2Gas: 20n },
 		})
 		// The simulate that proves the witness carries the same payer: it must not dry-run under a public one.
 		const sim = h.preflightHubExit.mock.calls[0][3] as { fee?: unknown }
@@ -556,6 +560,18 @@ describe("useHubExit", () => {
 		expect(h.createAuthWit).not.toHaveBeenCalled()
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 		expect(await exit.exit(plan({ isPrivate: true }), EXIT_CEILING)).toBe(EXIT_TX)
+	})
+
+	it("a private exit priced above the fee bound is refused before any authwit, opens no record", async () => {
+		h.fpcCredit = 10n * EXIT_CEILING
+		h.feeBound = { feePerDaGas: 0n, feePerL2Gas: 19n }
+		const exit = useHubExit()
+		expect(await exit.exit(plan({ isPrivate: true }))).toBe("")
+		expect(exit.error.value).toMatch(/Couldn't check your private gas/)
+		expect(h.createAuthWit).not.toHaveBeenCalled()
+		expect(useBridgeJournal().records.value).toHaveLength(0)
+		h.feeBound = { feePerDaGas: 0n, feePerL2Gas: 20n }
+		expect(await exit.exit(plan({ isPrivate: true }))).toBe(EXIT_TX)
 	})
 
 	it("a private exit short of private gas is refused before any authwit, opens no record, and says why", async () => {
