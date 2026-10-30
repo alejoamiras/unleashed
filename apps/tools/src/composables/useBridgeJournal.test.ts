@@ -8,6 +8,7 @@ import {
 	type SendWithdrawRecord,
 	type WithdrawJournalRecord,
 	isSealTrusted,
+	loadJournal,
 	markSealTrusted,
 	removeRecord,
 	RecoveryKey,
@@ -22,7 +23,8 @@ import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GrantOutcome } from "@/lib/send-model"
 import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
-import { memoryJournalLocks } from "@/lib/journal-locks"
+import { JOURNAL_LOCK, memoryJournalLocks } from "@/lib/journal-locks"
+import { watch } from "vue"
 import type { ExitSearch } from "./exit-attach"
 
 vi.mock("@/contracts/bridge-generation", () => ({ FUEL_PORTAL: "0xfd05ee8687d4ca828ba3d26ef04b80dd1348e5bd" }))
@@ -32,6 +34,7 @@ import {
 	activeFlowId,
 	addRecord,
 	addRecordVerified,
+	attestSendTokenBlocks,
 	cacheSecret,
 	claimForeground,
 	connectJournalDeps,
@@ -64,6 +67,7 @@ import {
 	pollsForever,
 	sendsClaim,
 } from "./test/fake-claim-sdk"
+import { otherTab } from "./test/other-tab"
 
 function memKV(): KV {
 	const store = new Map<string, string>()
@@ -1815,5 +1819,184 @@ describe("useBridgeJournal - the session log", () => {
 		expect(JSON.stringify(texts("0xsentinel"))).not.toMatch(/sentinel/i)
 		setRecordStep("0xsentinel", "sending", "retrying")
 		expect(texts("0xsentinel").filter((t) => t === "claiming on Aztec")).toHaveLength(2)
+	})
+})
+
+describe("useBridgeJournal - the engine's own writes under the journal lock", () => {
+	let kv: KV
+	beforeEach(() => {
+		__resetJournalForTests()
+		kv = memKV()
+	})
+
+	const DAY = 24 * 60 * 60 * 1000
+	const REASON = "This bridge's token details changed on Ethereum."
+	const HASH = "0x0015000000000000000000000000000000000000000000636f6e73756d657478"
+	const PRIOR = "0x0018000000000000000000000000000000000000000000000000007072696f72"
+	const stored = (id: string) => loadJournal(kv).find((r) => r.id === id) as SendWithdrawRecord | undefined
+	type Deps = ReturnType<typeof baseDeps>
+	const armed = <T>(arm: () => Promise<void>, value: T) =>
+		vi.fn(async () => {
+			await arm()
+			return value
+		})
+
+	// Each case arms the other tab's hold from the dep the engine calls just before the write under test.
+	it.each([
+		{
+			write: "a lane's block check",
+			seed: mkWithdraw("0xexit"),
+			wire: (d: Deps, arm: () => Promise<void>) => {
+				d.validateTokenBlock = armed(arm, REASON)
+			},
+			run: () => runWithdrawConsume("0xexit"),
+			check: () => expect(stored("0xexit")?.blocked).toBe(REASON),
+		},
+		{
+			write: "the attestation's block",
+			seed: mkSend("0xsend"),
+			wire: (d: Deps, arm: () => Promise<void>) => {
+				d.validateTokenBlock = armed(arm, REASON)
+			},
+			run: () => attestSendTokenBlocks(),
+			// The other tab's record holds the same token: the selection reads the stored copy, not this tab's view.
+			check: () => expect([stored("0xsend")?.blocked, stored("0xother")?.blocked]).toEqual([REASON, REASON]),
+		},
+		{
+			write: "the consume hash",
+			seed: mkWithdraw("0xfresh"),
+			wire: (d: Deps, arm: () => Promise<void>) => {
+				d.consumeSend = armed(arm, { consumeTxHash: HASH })
+			},
+			run: () => runWithdrawConsume("0xfresh"),
+			check: () => expect(stored("0xfresh")?.consumeTxHash).toBe(HASH),
+		},
+		{
+			write: "the completion",
+			seed: mkWithdraw("0xfresh"),
+			wire: (d: Deps, arm: () => Promise<void>) => {
+				d.waitConsumeReceipt = armed(arm, true)
+			},
+			run: () => runWithdrawConsume("0xfresh"),
+			check: () => expect(stored("0xfresh")?.completedAt).toBe(999),
+		},
+		{
+			write: "a failed receipt's clear",
+			seed: mkWithdraw("0xfresh"),
+			wire: (d: Deps, arm: () => Promise<void>) => {
+				d.waitConsumeReceipt = armed(arm, false)
+			},
+			run: () => runWithdrawConsume("0xfresh"),
+			check: () => expect([stored("0xfresh")?.exitTxHash, stored("0xfresh")?.consumeTxHash]).toEqual(["0xfresh", undefined]),
+		},
+		{
+			write: "a prior hash's clear",
+			seed: mkWithdraw("0xexit", { consumeTxHash: PRIOR }),
+			wire: (d: Deps, arm: () => Promise<void>) => {
+				d.waitConsumeReceipt = armed(arm, false)
+			},
+			run: () => runWithdrawConsume("0xexit"),
+			check: () => expect([stored("0xexit")?.exitTxHash, stored("0xexit")?.consumeTxHash]).toEqual(["0xexit", undefined]),
+		},
+	])("$write queues behind another tab's journal write, so neither is lost", async ({ seed, wire, run, check }) => {
+		const tab = otherTab()
+		const deps = baseDeps(kv)
+		wire(deps, () => tab.hold(kv, JOURNAL_KEY, mkSend("0xother")))
+		connectJournalDeps({ ...deps, locks: tab.locks })
+		addRecord(seed)
+		useBridgeJournal()
+		const running = run()
+		await vi.waitFor(() => expect(tab.behind).toBe(1))
+		expect(kv.getItem(JOURNAL_KEY)).toBe(tab.loaded)
+		await tab.release()
+		await running
+		expect(stored("0xother")).toBeDefined()
+		check()
+	})
+
+	it.each([
+		{ remote: 5, completedAt: 5, raised: false },
+		{ remote: undefined, completedAt: 999, raised: true },
+	])("a completion another tab stored ($remote) is kept, and only this tab's own raises one", async ({ remote, completedAt, raised }) => {
+		const deps = baseDeps(kv)
+		deps.waitConsumeReceipt = vi.fn(async () => {
+			// Another tab finished the exit; no storage event has reached this tab.
+			if (remote !== undefined) upsertRecord(kv, { ...(stored("0xfresh") as SendWithdrawRecord), completedAt: remote })
+			return true
+		})
+		connectJournalDeps(deps)
+		addRecord(mkWithdraw("0xfresh"))
+		await runWithdrawConsume("0xfresh")
+		expect(stored("0xfresh")?.completedAt).toBe(completedAt)
+		expect(useBridgeJournal().lastCompleted.value?.id === "0xfresh").toBe(raised)
+	})
+
+	it("a completion keeps its takeover in the toast when a watcher releases the takeover on completedAt", async () => {
+		connectJournalDeps(baseDeps(kv))
+		addRecord(mkWithdraw("0xfresh"))
+		claimForeground("0xfresh")
+		const { records, lastCompleted } = useBridgeJournal()
+		const stop = watch(
+			() => records.value.find((r) => r.id === "0xfresh")?.completedAt,
+			(at) => at && releaseForeground("0xfresh"),
+		)
+		await runWithdrawConsume("0xfresh")
+		stop()
+		expect(activeFlowId.value).toBeNull()
+		expect(lastCompleted.value?.foreground).toBe(true)
+	})
+
+	it("the startup prune waits for another tab's journal write, and its expired row never shows", async () => {
+		const tab = otherTab()
+		connectJournalDeps({ ...baseDeps(kv), now: () => 8 * DAY, locks: tab.locks })
+		upsertRecord(kv, mkDeposit("0xold", { completedAt: 1, claimTxHash: CLAIM_TX }))
+		upsertRecord(kv, mkDeposit("0xlive"))
+		tab.hold(kv, JOURNAL_KEY, mkSend("0xother"))
+		const { records } = useBridgeJournal()
+		expect(records.value.map((r) => r.id)).toEqual(["0xlive"])
+		await vi.waitFor(() => expect(tab.behind).toBe(1))
+		expect(kv.getItem(JOURNAL_KEY)).toBe(tab.loaded)
+		await tab.release()
+		await vi.waitFor(() => expect(loadJournal(kv).map((r) => r.id)).toEqual(["0xlive", "0xother"]))
+		expect(records.value.map((r) => r.id)).toEqual(["0xlive", "0xother"])
+	})
+
+	it("a prune whose write fails keeps its expired row hidden and both rows stored", async () => {
+		upsertRecord(kv, mkDeposit("0xold", { completedAt: 1, claimTxHash: CLAIM_TX }))
+		upsertRecord(kv, mkDeposit("0xlive"))
+		const before = kv.getItem(JOURNAL_KEY)
+		const setItem = vi.fn(() => {
+			throw new Error("QuotaExceededError")
+		})
+		connectJournalDeps({ ...baseDeps({ ...kv, setItem }), now: () => 8 * DAY })
+		const { records } = useBridgeJournal()
+		await vi.waitFor(() => expect(setItem).toHaveBeenCalled())
+		await new Promise((r) => setTimeout(r, 0))
+		expect(records.value.map((r) => r.id)).toEqual(["0xlive"])
+		expect(kv.getItem(JOURNAL_KEY)).toBe(before)
+	})
+
+	it("the startup prune takes the browser's journal lock before any composable connects one", async () => {
+		let grant = () => {}
+		const request = vi.fn(
+			(_name: string, granted: (lock: unknown) => unknown) =>
+				new Promise((resolve) => {
+					grant = () => resolve(granted({}))
+				}),
+		)
+		vi.stubGlobal("navigator", { locks: { request } })
+		try {
+			__resetJournalForTests()
+			upsertRecord(kv, mkDeposit("0xold", { completedAt: 1, claimTxHash: CLAIM_TX }))
+			connectJournalDeps({ kv, now: () => 8 * DAY })
+			useBridgeJournal()
+			expect(request).toHaveBeenCalledWith(JOURNAL_LOCK, expect.any(Function))
+			expect(stored("0xold")).toBeDefined()
+			grant()
+			await vi.waitFor(() => expect(stored("0xold")).toBeUndefined())
+		} finally {
+			vi.unstubAllGlobals()
+			__resetJournalForTests()
+		}
 	})
 })

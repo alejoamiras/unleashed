@@ -48,7 +48,6 @@ import { NETWORK } from "@/lib/network"
 import { type GrantOutcome, NO_GAS_ROUTE, type SendPlan } from "@/lib/send-model"
 import { normalizeError } from "@/lib/errors"
 import { humanizeWalletError, sendFailureCopy } from "@/lib/wallet-errors"
-import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
 import { appWatchDeps } from "./crosschain-deposit-flow"
 import { resumeCrossChainWatches } from "./crosschain-watch"
@@ -155,7 +154,6 @@ export function ensureSendJournalDeps(): void {
 		claimContext: ({ recipient, watchOnly }) => claimContextOf(bridgeWallet, l1, recipient, watchOnly),
 		withoutGas: fuelOverrideActive,
 		retainPinnedTokens: (needed) => retainPinnedHubTokens(needed),
-		locks: webJournalLocks(),
 	})
 	// Reads only: a transfer still crossing from another chain is watched without any wallet.
 	resumeCrossChainWatches(appWatchDeps())

@@ -1,0 +1,31 @@
+# journal-2 phase 1: arc a1
+
+## Implementation
+
+- Merged `origin/main` (#113, #114) first; no conflict with this arc's sites.
+- `isPrunable` in bridge-core; the engine's default deps carry `webJournalLocks()`; the two wiring lines are gone.
+- The prune hides its rows through `discarding` and skips the lock request when nothing is expired, so a test
+  without expired rows sees no startup request.
+- Each new test was checked against its regression by reverting the code it covers (scratch script, restored with
+  `git checkout`): every lock wrap, the stale `blocked` selection, the stale completion guard, the completion
+  bookkeeping after the await, the exit marks after the await, a synchronous prune, a failed prune that unhides, the
+  missing default adapter and the SDK's un-awaited `onSent`. Every one failed its test.
+- The first `onSent` revert passed: the other tab's hold was requested, but its span had not loaded the lane when
+  the unlocked write ran, so the hold read the write. `hold` now resolves once the lane is loaded and every arm
+  awaits it. Lesson: a lost-write test must let the other tab's load happen before the write under test.
+
+## Review
+
+- Codex round 1 (gpt-6.1-sol, high), session `01a18e29-49c8-71d3-bf97-6763ae6941ae`: approve, no findings. Opus
+  (`general-purpose`): approve with comment-only fixes, all applied; it traced the frozen-holder path for the awaited
+  consume hash (needs #109's conditions). Round 2 (resume): approve with fixes, one: amend #109's text. This session's
+  permission mode refused `gh issue comment` as an external write, so the comment is left as a draft.
+
+## Gates
+
+- Forge libraries installed at the pinned commits with `--no-git`; the upstream agent-instruction files removed. The
+  `.env` cleanup pattern was not run: this lane may not search for `.env` files.
+- `e2e:tools -- specs/exits.spec.ts specs/activity.spec.ts specs/deposit-token.spec.ts`, retries 0,
+  `PLAYWRIGHT_BROWSERS_PATH` unset: 16 passed, 26.3 min on chromium. No cell added.
+- The review's comment-only commits came after the run; the tools build at the run's commit and at the final head
+  hash the same (every `dist/*.js`), so the run covers the shipped bundle.

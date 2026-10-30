@@ -729,11 +729,16 @@ export function removeRecord(kv: KV, id: string): void {
 	}
 }
 
+/** Whether `pruneCompleted(kv, olderThanMs, now)` drops `rec`. */
+export function isPrunable(rec: AnyJournalRecord, olderThanMs: number, now: number): boolean {
+	return isRetirable(rec) && now - (rec.completedAt ?? now) >= olderThanMs
+}
+
 /** Drop retirable records completed more than `olderThanMs` ago (the 7-day prune). */
 export function pruneCompleted(kv: KV, olderThanMs: number, now = Date.now()): void {
 	for (const lane of LANES) {
 		const records = loadLane(kv, lane)
-		const next = records.filter((r) => !isRetirable(r) || now - (r.completedAt ?? now) < olderThanMs)
+		const next = records.filter((r) => !isPrunable(r, olderThanMs, now))
 		if (next.length !== records.length) writeLane(kv, lane, next)
 	}
 }
