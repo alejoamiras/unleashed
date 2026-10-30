@@ -10,6 +10,7 @@ import type { L1Ctx } from "@unleashed/sdk/internal"
 import { toWord } from "@unleashed/sdk/protocol"
 import { openDeployJournal } from "./deploy-manifest"
 import type { PreCreateTokenOptions } from "./generation"
+import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
 import { deriveHubInstance } from "./script-l2"
 
 vi.mock("@aztec-labs/aztec.js/deployment", () => ({
@@ -328,7 +329,7 @@ describe("deployGeneration — crash-resume at every journalled step", () => {
 		const cleanJournal = openDeployJournal(join(dir, "hub-clean.jsonl"))
 		answerReads(cleanJournal, clean)
 		const reference = await deployGeneration(clean.l1, clean.l2, inputs, cleanJournal)
-		const instance = await deriveHubInstance(reference.l2.hub)
+		const instance = await deriveHubInstance(reference.l2.hub, tokenBridgeHubArtifact)
 
 		// The crash happened after the hub's deploy landed: the chain carries it, the journal does not.
 		const resumed = (landedHub: ContractInstanceWithAddress, label: string) => {
@@ -361,7 +362,7 @@ describe("preCreateToken", () => {
 	afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 	const portal = "0x5555555555555555555555555555555555555555"
-	async function preCreated(journalName: string, opts?: PreCreateTokenOptions) {
+	async function preCreated(journalName: string, opts: Partial<PreCreateTokenOptions> = {}) {
 		const deployRun = fakeChain(5n)
 		const journal = openDeployJournal(join(dir, journalName))
 		answerReads(journal, deployRun)
@@ -377,7 +378,14 @@ describe("preCreateToken", () => {
 			registerKey: `0x${"1".repeat(64)}`,
 		})
 		const erc20 = "0x6666666666666666666666666666666666666666"
-		return { gen, preCreateRun, token: await preCreateToken(preCreateRun.l1, preCreateRun.l2, gen, erc20, journal, opts) }
+		return {
+			gen,
+			preCreateRun,
+			token: await preCreateToken(preCreateRun.l1, preCreateRun.l2, gen, erc20, journal, {
+				hubArtifact: tokenBridgeHubArtifact,
+				...opts,
+			}),
+		}
 	}
 
 	it("teaches its own run's fresh wallet the hub before reading `token_for` on it", async () => {
@@ -408,7 +416,9 @@ describe("preCreateToken", () => {
 		;(run.l1.wallet as unknown as Record<string, unknown>).writeContract = writeContract
 
 		const erc20 = "0x6666666666666666666666666666666666666666"
-		await expect(preCreateToken(run.l1, run.l2, gen, erc20, journal)).rejects.toThrow(/createPortal\(0x6{40}\) REVERTED/)
+		await expect(preCreateToken(run.l1, run.l2, gen, erc20, journal, { hubArtifact: tokenBridgeHubArtifact })).rejects.toThrow(
+			/createPortal\(0x6{40}\) REVERTED/,
+		)
 		expect(writeContract).toHaveBeenCalledWith(expect.objectContaining({ functionName: "createPortal", gas: 375_000n }))
 		expect(journal.has("token-precreated", erc20)).toBe(false)
 	})

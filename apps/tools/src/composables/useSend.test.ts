@@ -13,6 +13,7 @@ import {
 	type TransferEvent,
 	type TransferEventBody,
 } from "@unleashed/sdk"
+import type { ClaimOptions } from "@unleashed/sdk/fuel"
 import type { DepositPlan, Registration } from "@unleashed/sdk/internal"
 import { WaitForTransactionReceiptTimeoutError } from "viem"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -56,10 +57,9 @@ const h = vi.hoisted(() => ({
 	sealPrivateRecord: vi.fn(async (_ctx: Record<string, unknown>) => {}),
 	/** Opt-in per case: run the REAL seal (and its real envelope) after the spy records the call. */
 	realSeal: { on: false },
-	resolveHubClaimSendOpts: vi.fn(async () => ({ kind: "opts", opts: {} }) as Record<string, unknown>),
-	/** What the hub answers for the token's binding; undefined = it does not know the token yet. */
-	hubToken: { value: undefined as string | undefined },
-	sendStandaloneFjClaim: vi.fn(async (_aztec: unknown, _to: unknown, _fuel: unknown, _id: string) => {}),
+	/** The SDK's claim entries: by default each settles the record it is handed. */
+	claimToken: vi.fn(),
+	claimFuel: vi.fn(),
 	depositL1: vi.fn(),
 	assertDepositsOpen: vi.fn(async (_net: unknown, _reads: unknown, _intent: string) => {}),
 	bridgeNetwork: vi.fn(),
@@ -90,6 +90,7 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		FUEL_ASSET: manifest.feeJuice.asset,
 		FUEL_MIN_FJ: BigInt(manifest.feeJuice.minFj),
 		rebuildHubTokenInstance: async () => ({ address: { toString: () => h.rebuiltL2Token.value } }),
+		hubArtifact: async () => ({ name: "TokenBridgeHub" }),
 		bridgeNetwork: (reads: unknown) => h.bridgeNetwork(reads),
 	}
 })
@@ -160,10 +161,6 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 	const actual = await orig<typeof import("@/composables/deposit-flow")>()
 	return {
 		...actual,
-		buildFeeJuiceClaimDep: async () => ({ simulate: async () => ({}), send: async () => ({ txHash: "0xfjclaim" }) }),
-		recoverDepositLeg: async () => "recovered" as const,
-		resolveHubClaimSendOpts: h.resolveHubClaimSendOpts,
-		sendStandaloneFjClaim: h.sendStandaloneFjClaim,
 		sealPrivateRecord: async (ctx: Parameters<typeof actual.sealPrivateRecord>[0]) => {
 			await h.sealPrivateRecord(ctx as unknown as Record<string, unknown>)
 			if (h.realSeal.on) await actual.sealPrivateRecord(ctx)
@@ -175,18 +172,21 @@ vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
 	depositL1: h.depositL1,
 	assertDepositsOpen: h.assertDepositsOpen,
-	claimViaHub: async () => ({ path: "claim", claimTxHash: "0xhubclaim" }),
-	probeHubClaim: async () => ({}),
-	hubAt: () => ({ methods: {} }),
-	hubTokenFor: async () => h.hubToken.value,
 	readRegistration: h.readRegistration,
+}))
+vi.mock("@unleashed/sdk/bridge", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/bridge")>()),
+	claimToken: h.claimToken,
+}))
+vi.mock("@unleashed/sdk/fuel", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed/sdk/fuel")>()),
+	claimFuel: h.claimFuel,
 }))
 
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import {
-	type DepositJournalRecord,
 	type SendDepositRecord,
 	isProvisionalRecordId,
 	openDepositEnvelope,
@@ -430,17 +430,12 @@ const journalled = (id: string, block: ReturnType<typeof readBack>): SendDeposit
 /** One macrotask: every pending microtask (the attestation's chain of awaits) has drained by then. */
 const flushMicrotasks = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
-/** The engine deps a gas-only send needs to reach its Fee Juice claim: the chain answers that are
- *  ready, plus the claim leg itself. */
-const fuelClaimDeps = (claim: unknown) =>
-	({
-		kv: localStorage,
-		waitMs: async () => {},
-		messageReadiness: async () => ({ checkpoint: 1, anchor: 1 }),
-		claimReceiptStatus: async () => "success",
-		recoverDepositLeg: async () => "recovered",
-		claim,
-	}) as never
+/** A claim entry that lands and settles the record it is handed, as the SDK's do. */
+const settles = async (_net: unknown, _r: unknown, _aztec: unknown, view: DepositRecord, run: ClaimOptions) => {
+	const record = { ...view, claimTxHash: `0x${"c".repeat(64)}`, completedAt: Date.now() }
+	await run.persist(record, run.secrets)
+	return { record, via: "claim" as const }
+}
 
 describe("useSend", () => {
 	beforeEach(() => {
@@ -459,7 +454,6 @@ describe("useSend", () => {
 		h.address.value = L1_ACCOUNT
 		h.chainId.value = 31337
 		h.realSeal.on = false
-		h.hubToken.value = undefined
 		// clearAllMocks keeps implementations, so the cases that install a live registration have to
 		// hand the default back or their factory answer leaks into every later send.
 		h.readRegistration.mockImplementation(async () => undefined)
@@ -467,7 +461,8 @@ describe("useSend", () => {
 		h.ensureGranted.mockImplementation(async () => "granted")
 		h.isGranted.mockImplementation(() => true)
 		h.signMessage.mockImplementation(async () => SEAL_SIG)
-		h.resolveHubClaimSendOpts.mockImplementation(async () => ({ kind: "opts", opts: {} }))
+		h.claimToken.mockImplementation(settles)
+		h.claimFuel.mockImplementation(settles)
 		h.depositL1.mockImplementation(fakeDeposit())
 		h.bridgeNetwork.mockImplementation(async () => ({}))
 		h.assertDepositsOpen.mockImplementation(async () => {})
@@ -689,7 +684,6 @@ describe("useSend", () => {
 
 	it("a gas-only send carries no token block and is keyed by its Fee Juice message", async () => {
 		const send = useSend()
-		connectJournalDeps(fuelClaimDeps(async () => ({ simulate: async () => ({}), send: async () => ({ txHash: "0xfjclaim" }) })))
 		const id = await send.send(plan({ intent: "gas", gas: { ...gasLeg, fuelAmount: 100_000_000n } }))
 		expect(id).toBe("0xfuelhash")
 		const rec = recordOf(id)
@@ -700,27 +694,20 @@ describe("useSend", () => {
 	})
 
 	it("a PUBLIC gas-only send claims with the fuel secret it journaled - no top-level copy needed", async () => {
-		const claimed: { secretHex?: string } = {}
 		const send = useSend()
-		connectJournalDeps(
-			fuelClaimDeps(async (_rec: SendDepositRecord, secretHex: string) => {
-				claimed.secretHex = secretHex
-				return { simulate: async () => ({}), send: async () => ({ txHash: "0xfjclaim" }) }
-			}),
-		)
 		const id = await send.send(plan({ intent: "gas", gas: { ...gasLeg, fuelAmount: 100_000_000n } }))
 
 		const rec = recordOf(id) as SendDepositRecord
 		expect(rec.secret).toBeUndefined()
 		// The claim ran on the block's own secret; nothing was left waiting on a missing record secret.
-		expect(claimed.secretHex).toBe(rec.fuel?.secret)
-		expect(claimed.secretHex).toBe("0xfuelsecret")
+		const view = h.claimFuel.mock.calls[0]?.[3] as DepositRecord
+		expect(view.fuel?.secret).toBe("0xfuelsecret")
 		expect(useBridgeJournal().runtime.value[id]?.attention).toBeUndefined()
+		expect(rec.completedAt).toBeDefined()
 	})
 
 	it("every record the send writers produce is a record the backup validator accepts", async () => {
 		const send = useSend()
-		connectJournalDeps(fuelClaimDeps(async () => ({ simulate: async () => ({}), send: async () => ({ txHash: "0xfjclaim" }) })))
 		const ids = [
 			await send.send(plan()),
 			await send.send(plan({ isPrivate: true })),
@@ -1122,44 +1109,6 @@ describe("useSend", () => {
 		expect(h.depositL1).not.toHaveBeenCalled()
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
-
-	it("the claim asks the hub whether the token is bound, for a public record as much as a private one", async () => {
-		h.readRegistration.mockImplementation(async () => frozenRegistration)
-		h.rebuiltL2Token.value = token.l2Token
-		connectJournalDeps({
-			kv: localStorage,
-			waitMs: async () => {},
-			messageReadiness: async () => ({ checkpoint: 1, anchor: 1 }),
-			claimReceiptStatus: async () => "success",
-		})
-		const registersOf = (call: number) =>
-			(h.resolveHubClaimSendOpts.mock.calls as unknown as Array<[{ registers?: boolean }]>)[call]?.[0]?.registers
-		await useSend().send(plan({ intent: "token", isPrivate: false }))
-		expect(registersOf(0)).toBe(true)
-		h.hubToken.value = token.l2Token
-		await useSend().send(plan({ intent: "token", isPrivate: false }))
-		expect(registersOf(1)).toBe(false)
-	})
-
-	it("a hub claim paid from the wallet's own gas that leaves the bridged gas behind fires the standalone Fee Juice claim", async () => {
-		h.readRegistration.mockImplementation(async () => frozenRegistration)
-		h.rebuiltL2Token.value = token.l2Token
-		h.resolveHubClaimSendOpts.mockImplementation(async () => ({
-			kind: "opts",
-			opts: {},
-			standalone: { amount: "1", secret: PUBLIC_SECRET, secretHashHex: "0xfuelhash", minOutput: "1", leafIndex: "8", received: "5" },
-		}))
-		const send = useSend()
-		connectJournalDeps({
-			kv: localStorage,
-			waitMs: async () => {},
-			messageReadiness: async () => ({ checkpoint: 1, anchor: 1 }),
-			claimReceiptStatus: async () => "success",
-		})
-		const id = await send.send(plan({ intent: "token+gas", gas: gasLeg }))
-		expect(h.sendStandaloneFjClaim).toHaveBeenCalledTimes(1)
-		expect(h.sendStandaloneFjClaim.mock.calls[0][3]).toBe(id)
-	})
 })
 
 /** The registration the factory froze for this fixture's token — what `validateTokenBlock` compares
@@ -1187,28 +1136,32 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 		connectedAztec: () => RECIPIENT,
 		validateTokenBlock: async () => null,
 		ensureTokenGrant: async () => "granted" as const,
-		messageReadiness: async () => ({ checkpoint: 1, anchor: 1 }),
-		claimReceiptStatus: async () => "success" as const,
-		recoverDepositLeg: async () => "recovered" as const,
 	}
 
 	/** A claim that refuses: the send must finish with the record still unclaimed, so the reopened
 	 *  journal below has something left to unseal. */
-	const refusingClaim = async () => ({
-		simulate: async () => {
-			throw new Error("not claiming in this phase")
-		},
-		send: async () => ({ txHash: "0xnever" }),
-	})
+	const refusing = async () => {
+		throw new BridgeError("fee-stop", "not claiming in this phase", "submitted", "after-wait", { stop: "fuel-short" })
+	}
+
+	/** The salts the reopened claim handed the SDK: only the unsealed envelope can have supplied them. */
+	const secretsOf = (entry: typeof h.claimToken) => {
+		const run = entry.mock.calls.at(-1)?.[4] as ClaimOptions | undefined
+		return { claimSalt: run?.secrets?.claimSalt?.toString(), fuelSalt: run?.secrets?.fuelSalt?.toString() }
+	}
 
 	beforeEach(() => {
 		h.realSeal.on = true
 		h.readRegistration.mockImplementation(async () => frozenRegistration)
 		h.rebuiltL2Token.value = token.l2Token
+		h.bridgeNetwork.mockImplementation(async () => ({}))
+		h.depositL1.mockImplementation(fakeDeposit())
+		h.claimToken.mockImplementation(settles)
+		h.claimFuel.mockImplementation(settles)
 	})
 
 	/** Drop every in-memory trace of the send and re-enter the engine over the stored record alone. */
-	async function reopenAndClaim(id: string, over: Record<string, unknown>): Promise<void> {
+	async function reopenAndClaim(id: string): Promise<void> {
 		__resetJournalForTests()
 		__resetSendDepsForTests()
 		connectJournalDeps({
@@ -1219,7 +1172,8 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 				hub: (HUB as { toString(): string }).toString(),
 				feeJuicePortal: FUEL_PORTAL,
 			}),
-			...over,
+			claimEntries: { token: h.claimToken, fuel: h.claimFuel },
+			claimContext: async () => ({ reads: {}, aztec: {}, network: async () => ({}) }),
 		} as never)
 		useBridgeJournal()
 		await runDepositClaim(id, { interactive: true })
@@ -1227,7 +1181,8 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 
 	it("a private GAS-ONLY send journals its whole fuel block and seals the salt the claim needs", async () => {
 		const send = useSend()
-		connectJournalDeps({ ...engineFakes, claim: refusingClaim } as never)
+		h.claimFuel.mockImplementationOnce(refusing)
+		connectJournalDeps(engineFakes as never)
 		const id = await send.send(plan({ isPrivate: true, intent: "gas", gas: { ...gasLeg, fuelAmount: 100_000_000n } }))
 
 		const rec = recordOf(id) as SendDepositRecord
@@ -1243,19 +1198,14 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 		expect(envelope.salt).toBe(salt)
 		expect(envelope.secret).toBe(salt)
 
-		let opened: { secretHex: string; salt?: string } | null = null
-		await reopenAndClaim(id, {
-			claim: async (_rec: DepositJournalRecord, secretHex: string, env?: { salt?: string }) => {
-				opened = { secretHex, salt: env?.salt }
-				return { simulate: async () => ({}), send: async () => ({ txHash: "0xfjclaim" }) }
-			},
-		})
-		expect(opened).toEqual({ secretHex: salt, salt })
+		await reopenAndClaim(id)
+		expect(secretsOf(h.claimFuel)).toEqual({ claimSalt: undefined, fuelSalt: salt })
 	})
 
 	it("a private TOKEN+GAS send journals the fuel block AND seals both salts", async () => {
 		const send = useSend()
-		connectJournalDeps({ ...engineFakes, claimSend: refusingClaim } as never)
+		h.claimToken.mockImplementationOnce(refusing)
+		connectJournalDeps(engineFakes as never)
 		const id = await send.send(plan({ isPrivate: true, intent: "token+gas", gas: gasLeg }))
 
 		const rec = recordOf(id) as SendDepositRecord
@@ -1270,14 +1220,8 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 		expect(envelope.salt).toBe(salt)
 		expect(envelope.secret).not.toBe(salt)
 
-		let claimedWith = ""
-		await reopenAndClaim(id, {
-			claimSend: async (_rec: SendDepositRecord, claimValueHex: string) => {
-				claimedWith = claimValueHex
-				return { simulate: async () => ({}), send: async () => ({ txHash: "0xhubclaim" }) }
-			},
-		})
-		expect(claimedWith).toBe(envelope.secret)
+		await reopenAndClaim(id)
+		expect(secretsOf(h.claimToken)).toEqual({ claimSalt: envelope.secret, fuelSalt: salt })
 	})
 })
 

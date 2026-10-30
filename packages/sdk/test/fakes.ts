@@ -1,10 +1,11 @@
 /**
  * A chain and an Aztec node that answer exactly what a manifest says, for the public API's unit tests: every read
- * `parseNetwork` and a deposit make, a wallet that records the order of its prompts, and synthetic code pins (the
- * unit job has no forge build) that the fakes' runtimes satisfy.
+ * `parseNetwork` and a deposit make, a wallet that records the order of its prompts, and synthetic code pins that the
+ * fakes' runtimes satisfy.
  */
 import { concat, type Hex, hexToBytes, toHex } from "viem"
-import type { CodePin, PinnedContract } from "../src/protocol/code-hash.ts"
+import { type CodePin, type PinnedContract, pinOfBuild } from "../src/protocol/code-hash.ts"
+import type * as GenerationRecordModule from "../src/protocol/generation-record.ts"
 import { DEPOSIT_WITNESS_TYPE_STRING } from "../src/protocol/l1.ts"
 import { lifiBook } from "../src/protocol/lifi-addresses.ts"
 import { CANONICAL_PERMIT2, MAINNET_L1 } from "../src/protocol/l1-pins.ts"
@@ -22,8 +23,18 @@ export function runtime(seed: number, ipfsByte = 0x22): Uint8Array {
 }
 
 /** Pins of the synthetic runtimes; a deployment differing only in its metadata still matches. */
-export function syntheticPins(pinOfBuild: (built: Uint8Array) => CodePin): Record<PinnedContract, CodePin> {
+export function syntheticPins(): Record<PinnedContract, CodePin> {
 	return Object.fromEntries(PINNED.map((c, i) => [c, pinOfBuild(runtime(i + 1))])) as Record<PinnedContract, CodePin>
+}
+
+/**
+ * The generation selector with the fakes' pins and no record, for `vi.mock`: the fakes' runtimes are no generation's,
+ * and a case's own manifest is bound by none. The hub artifact stays the testnet generation's.
+ */
+export function withSyntheticCode(real: typeof GenerationRecordModule): typeof GenerationRecordModule {
+	const pins = syntheticPins()
+	const { hubArtifact } = real.codeOf(parseManifestV2(TESTNET_MANIFEST))
+	return { ...real, codeOf: () => ({ pins, hubArtifact }) }
 }
 
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}` as const

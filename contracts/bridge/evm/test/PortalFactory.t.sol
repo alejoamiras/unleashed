@@ -261,6 +261,43 @@ contract PortalFactoryTest is Test {
         vm.stopPrank();
     }
 
+    /// The credit alone would pass: only the sender's balance shows the extra it paid.
+    function test_clone_rejectsSenderSurcharge() public {
+        SenderSurchargeERC20 sur = new SenderSurchargeERC20(100);
+        TokenPortalImpl portal = TokenPortalImpl(factory.createPortal(address(sur)));
+        sur.mint(alice, 1_010);
+        vm.startPrank(alice);
+        sur.approve(address(portal), 1_000);
+        vm.expectRevert(TokenPortalImpl.InexactTransfer.selector);
+        portal.depositToAztecPublic(bytes32(uint256(1)), 1_000, bytes32(0));
+        vm.expectRevert(TokenPortalImpl.InexactTransfer.selector);
+        portal.depositToAztecPrivate(1_000, bytes32(0));
+        vm.stopPrank();
+    }
+
+    /// The bound is on the reserve as it stands, so a withdrawal frees room again.
+    function test_clone_boundsReserveByL2Max() public {
+        uint256 room = 1_000;
+        TokenPortalImpl portal = _fundedPortal(room + 500);
+        usdc.mint(address(portal), type(uint128).max - room);
+
+        vm.startPrank(alice);
+        vm.expectRevert(TokenPortalImpl.AmountExceedsL2Max.selector);
+        portal.depositToAztecPublic(bytes32(uint256(1)), room + 1, bytes32(0));
+        portal.depositToAztecPrivate(room, bytes32(0));
+        assertEq(usdc.balanceOf(address(portal)), type(uint128).max, "accepted up to the bound");
+        vm.expectRevert(TokenPortalImpl.AmountExceedsL2Max.selector);
+        portal.depositToAztecPublic(bytes32(uint256(1)), 1, bytes32(0));
+        vm.stopPrank();
+
+        bytes32[] memory path;
+        portal.withdraw(alice, 500, false, Epoch.wrap(3), 9, 5, path);
+        uint256 sent = inbox.sent();
+        vm.prank(alice);
+        portal.depositToAztecPublic(bytes32(uint256(1)), 500, bytes32(0));
+        assertEq(inbox.sent(), sent + 1);
+    }
+
     function test_clone_pauseBitsGateDepositsAndWithdrawals() public {
         TokenPortalImpl portal = _fundedPortal(10);
         vm.prank(guardian);
@@ -298,12 +335,7 @@ contract PortalFactoryTest is Test {
     function test_clone_withdraw_rejectsOverDebit() public {
         SenderSurchargeERC20 sur = new SenderSurchargeERC20(100);
         TokenPortalImpl portal = TokenPortalImpl(factory.createPortal(address(sur)));
-        sur.mint(alice, 1_010);
-        vm.startPrank(alice);
-        sur.approve(address(portal), 1_000);
-        portal.depositToAztecPublic(bytes32(uint256(1)), 1_000, bytes32(0));
-        vm.stopPrank();
-        assertEq(sur.balanceOf(address(portal)), 1_000, "the deposit itself is exact");
+        sur.mint(address(portal), 1_000); // a mint carries no surcharge
 
         bytes32[] memory path;
         vm.expectRevert(TokenPortalImpl.InexactTransfer.selector);

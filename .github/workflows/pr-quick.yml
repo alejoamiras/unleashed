@@ -45,8 +45,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
           # Positive-only, no `!` negations (dorny's `some`-quantifier footgun). The built target
-          # whole; its workspace libraries by src + manifest; the hub artifact the SDK bundles
-          # from contracts/. `sdk-pack`: the SDK whole and every file its tarball stages from
+          # whole; its workspace libraries by src + manifest; the hub artifacts and generation
+          # records the SDK bundles from contracts/. `sdk-pack`: the SDK whole and every file its tarball stages from
           # outside it. Pinned by scripts/ci-cd/behavior-gating.test.ts.
           filters: |
             tools:
@@ -60,6 +60,7 @@ jobs:
               - 'packages/sdk/src/**'
               - 'packages/sdk/package.json'
               - 'contracts/bridge/aztec/token_bridge_hub/target/**'
+              - 'contracts/bridge/generations/**'
               - '.github/workflows/_build-tools.yml'
             landing:
               - 'apps/landing/**'
@@ -71,6 +72,7 @@ jobs:
             sdk-pack:
               - 'packages/sdk/**'
               - 'contracts/bridge/aztec/token_bridge_hub/target/**'
+              - 'contracts/bridge/generations/**'
               - 'apps/tools/public/testnet-bridge.json'
               - 'apps/tools/public/mainnet-bridge.json'
               - 'LICENSE'

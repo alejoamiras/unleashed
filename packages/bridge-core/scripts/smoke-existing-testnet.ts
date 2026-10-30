@@ -39,6 +39,7 @@ import {
 	stopwatch,
 } from "./script-bootstrap"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
+import { hubArtifactFor } from "./generation-paths"
 
 const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"
 const PRIVATE_KEY = process.env.PRIVATE_KEY as `0x${string}` | undefined
@@ -213,7 +214,7 @@ async function main(): Promise<void> {
 		},
 	})
 
-	const hub = await registerHub(ewallet, BRIDGE.l2.hub)
+	const hub = await registerHub(ewallet, BRIDGE.l2.hub, hubArtifactFor(MANIFEST))
 	console.log(`registered hub ${hub.address.toString()} (${mins()})`)
 	const generation = sendGenerationOf(MANIFEST, BRIDGE)
 	const lanes: Lane[] = []

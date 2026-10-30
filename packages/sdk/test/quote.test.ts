@@ -10,11 +10,9 @@ import { depositFuel, probeFuel, quoteFuel } from "../src/fuel/index.ts"
 import { parseNetwork } from "../src/network.ts"
 import { mainnetFuelRoute, readsOf, type Step, testnet, walletOf, worldOf } from "./fakes.ts"
 
-vi.mock("../src/protocol/code-hash.ts", async (importOriginal) => {
-	const real = await importOriginal<typeof import("../src/protocol/code-hash.ts")>()
-	const { syntheticPins } = await import("./fakes.ts")
-	return { ...real, CODE_PINS: syntheticPins(real.pinOfBuild) }
-})
+vi.mock("../src/protocol/generation-record.ts", async (importOriginal) =>
+	(await import("./fakes.ts")).withSyntheticCode(await importOriginal()),
+)
 /** A synthetic manifest stands in for the bundle on the chains a case sets; every other chain keeps the real one. */
 const bundles = vi.hoisted(() => new Map<number, unknown>())
 vi.mock("../src/networks.ts", async (importOriginal) => {

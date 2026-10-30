@@ -149,7 +149,7 @@ contract FeeOnTransferERC20 is ERC20 {
 }
 
 /// Charges the SENDER `surchargeBps` on top of every transfer: the recipient nets the full value,
-/// so the deposit-side check passes and only the sender's own debit shows it.
+/// so a recipient-credit check alone passes and only the sender's own debit shows it.
 contract SenderSurchargeERC20 is ERC20 {
     uint256 public immutable surchargeBps;
 
@@ -166,6 +166,33 @@ contract SenderSurchargeERC20 is ERC20 {
             super._update(from, address(0xdead), (value * surchargeBps) / 10_000);
         }
         super._update(from, to, value);
+    }
+}
+
+/// Additive transfer skews for the symbolic proofs: the sender pays `value + senderExtra`, the recipient nets
+/// `value - recipientShort`, and the difference goes to 0xdead.
+contract SkewedERC20 is ERC20 {
+    uint256 public senderExtra;
+    uint256 public recipientShort;
+
+    constructor() ERC20("Skewed", "SKW") {}
+
+    function setSkew(uint256 senderExtra_, uint256 recipientShort_) external {
+        senderExtra = senderExtra_;
+        recipientShort = recipientShort_;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && to != address(0)) {
+            super._update(from, address(0xdead), senderExtra + recipientShort);
+            super._update(from, to, value - recipientShort);
+        } else {
+            super._update(from, to, value);
+        }
     }
 }
 

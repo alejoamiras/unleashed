@@ -21,7 +21,7 @@ vi.mock("@/contracts/deployments", () => ({
 // it. A bridge-less generation is enough for everything this suite asserts.
 vi.mock("@/contracts/bridge-generation", () => ({
 	HUB: undefined,
-	HUB_ARTIFACT: { name: "TokenBridgeHub" },
+	hubArtifact: async () => ({ name: "TokenBridgeHub" }),
 	HUB_TOKEN_ARTIFACT: { name: "Token" },
 	MANIFEST_TOKENS: [],
 	TOKEN_CLASS_ID: undefined,

@@ -327,3 +327,29 @@ describe("fuel claim scope (canonical FeeJuice)", () => {
 		])
 	})
 })
+
+// The live generation keeps running its deployed hub after the sources move: every hub call the wizard's grant names
+// must be one that hub answers, with the parameters, return type, kind and staticness this build calls it with.
+describe("the send grant against the live testnet generation's hub", () => {
+	it("names only functions the kept hub artifact has, shaped as this build's", async () => {
+		const { codeOf, parseManifestV2 } = await import("@unleashed/sdk/protocol")
+		const { TESTNET_MANIFEST } = await import("@unleashed/sdk/networks")
+		const { tokenBridgeHubArtifact } = await import("@unleashed/sdk/artifacts")
+		const testnet = parseManifestV2(TESTNET_MANIFEST)
+		const hub = AztecAddress.fromStringUnsafe(testnet.bridge?.l2.hub.address ?? "")
+		const kept = await codeOf(testnet).hubArtifact()
+		const shape = (artifact: typeof kept, name: string) => {
+			const f = [...artifact.functions, ...artifact.nonDispatchPublicFunctions].find((fn) => fn.name === name)
+			return (
+				f &&
+				JSON.stringify({ functionType: f.functionType, isStatic: f.isStatic, parameters: f.parameters, returnTypes: f.returnTypes })
+			)
+		}
+		const granted = buildSendManifest({ hub, tokens: [] })
+			.capabilities.flatMap((c) => (c.type === "transaction" ? c.scope : c.type === "simulation" ? c.transactions.scope : []))
+			.filter((s) => s.contract.toString() === hub.toString())
+			.map((s) => s.function)
+		expect(new Set(granted).size).toBeGreaterThan(8)
+		expect([...new Set(granted)].filter((fn) => !shape(kept, fn) || shape(kept, fn) !== shape(tokenBridgeHubArtifact, fn))).toEqual([])
+	})
+})
