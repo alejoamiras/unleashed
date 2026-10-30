@@ -135,13 +135,30 @@ export function metadataReturndataBytes(returndata: Hex): Uint8Array {
 	return bytes.slice(64, 64 + length)
 }
 
+/** Whether `error`'s cause chain holds an error named `name`. Matched by name, since a second viem copy defeats
+ *  `instanceof`; the depth bound stops a cyclic `cause` (viem's chains run two to four deep). */
+function chainHolds(error: unknown, name: string): boolean {
+	for (let at: unknown = error, depth = 0; at && typeof at === "object" && depth < 8; depth++) {
+		const o = at as { name?: unknown; cause?: unknown }
+		if (o.name === name) return true
+		at = o.cause
+	}
+	return false
+}
+
 /** The single door every metadata read goes through: the gas cap is the only thing bounding what an
- *  RPC will transport in, so a read that bypasses it is unbounded however the reply is decoded. */
+ *  RPC will transport in, so a read that bypasses it is unbounded however the reply is decoded.
+ *
+ *  `undefined` only when the node reports a revert (viem's `ExecutionRevertedError`, from code 3 or "execution
+ *  reverted"), which the factory also reads as no metadata. viem wraps every failure of a raw call, revert included,
+ *  in `CallExecutionError`, and a refused request shares its shape with an EVM halt (anvil reports both as -32603), so
+ *  everything else rejects: read as empty, a refusal would derive a name word the chain never commits. */
 async function rawCall(client: Erc20Client, token: Address, selector: Hex): Promise<Hex | undefined> {
 	try {
 		return (await client.call({ to: token, data: selector, gas: METADATA_GAS })).data
-	} catch {
-		return undefined
+	} catch (e) {
+		if (chainHolds(e, "ExecutionRevertedError")) return undefined
+		throw e
 	}
 }
 
@@ -171,7 +188,11 @@ function displayString(raw: Uint8Array): string {
 	return raw.length > DISPLAY_BYTES ? `${text}…` : text
 }
 
-/** Metadata read: three gas-capped raw calls in parallel, and nothing else. */
+/**
+ * Metadata read: three gas-capped raw calls in parallel, and nothing else. A `name()` or `symbol()` the node reports
+ * as reverted reads as empty and a reverted `decimals()` throws `Erc20MetadataError`, as the factory reads them. Any
+ * other failed call rejects with the client's error: the read may never have run, so its metadata is unknown.
+ */
 export async function readErc20Metadata(client: Erc20Client, token: Address): Promise<Erc20Metadata> {
 	const [nameRaw, symbolRaw, decimals] = await Promise.all([
 		rawMetadata(client, token, NAME_SELECTOR),
@@ -179,18 +200,6 @@ export async function readErc20Metadata(client: Erc20Client, token: Address): Pr
 		rawDecimals(client, token),
 	])
 	return { name: displayString(nameRaw), symbol: displayString(symbolRaw), decimals, nameRaw, symbolRaw }
-}
-
-/** Whether a failed entry is the aggregate's own failure, which viem reports on every entry: only its `call` makes a
- *  `CallExecutionError`, never a token that reverts or answers garbage inside a call that ran. Matched by name, since
- *  a second viem copy defeats `instanceof`; the depth bound stops a cyclic `cause` (viem's sits at depth 1 or 2). */
-function aggregateFailed(error: unknown): boolean {
-	for (let at: unknown = error, depth = 0; at && typeof at === "object" && depth < 8; depth++) {
-		const o = at as { name?: unknown; cause?: unknown }
-		if (o.name === "CallExecutionError") return true
-		at = o.cause
-	}
-	return false
 }
 
 /**
@@ -217,7 +226,9 @@ export async function readErc20Balances(client: Erc20Client, owner: Address, tok
 	tokens.forEach((address, i) => {
 		const result = results[i]
 		if (result?.status === "failure") {
-			if (aggregateFailed(result.error)) throw result.error
+			// The aggregate's own failure, which viem reports on every entry: only its `call` makes a `CallExecutionError`,
+			// never a token that reverts or answers garbage inside a call that ran.
+			if (chainHolds(result.error, "CallExecutionError")) throw result.error
 			balances.set(address, 0n)
 		} else if (typeof result?.result === "bigint") balances.set(address, result.result)
 		else throw new Error(`the balance read gave no balance for ${address}`)
