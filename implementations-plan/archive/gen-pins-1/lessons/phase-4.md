@@ -72,3 +72,11 @@ send grant against the kept hub, which loads two hub artifacts) timed out at 5 s
 host; alone it passed in 3 s (28 of 28), with no timeout raised. `test:ci-gating`'s doc-link check failed until the plan
 moved to `archive/`, where the promoted lessons link; after the move and a second `main` merge (#81, #86, #92, no
 conflict) lint, typecheck:all, test:all (sdk 504, bridge-core 562, tools 1717), test:ci-gating and lint:actions exit 0.
+
+## CI, first run
+
+`Build Tools` failed in its jsdom smoke (`apps/tools` `test:e2e`, not part of `audit:tools`): `tools-smoke` case 2 stayed
+at `setting-up`. Its fixture spread the real `bridge-generation`, whose `hubArtifact()` now imports the kept artifact
+on first use and loads it through the aztec.js the smoke guts, the same wedge the fixture already avoids for the
+PrivateFPC. The fixture stubs `hubArtifact` beside the hub instance it stubs; `test:e2e` 30 of 30, both target builds
+and `verify:build-target` pass locally.
