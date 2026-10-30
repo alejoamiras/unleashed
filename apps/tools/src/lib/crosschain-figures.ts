@@ -122,19 +122,15 @@ export function feeLineLabels(srcChainId: number, rail: Rail): { relay: string; 
 	}
 }
 
-/** How the countdowns name what they count down: Across's quote is refreshed, fixed terms are rebuilt. */
-export function quoteWord(f: Pick<CrossChainFigures, "fixed">): { valid: string; renewed: string } {
-	return f.fixed ? { valid: "Terms", renewed: "rebuilt" } : { valid: "Quote", renewed: "refreshed" }
+/** The words around a countdown's clock: Across's quote is refreshed before you sign; fixed terms only expire. */
+export function quoteBand(f: Pick<CrossChainFigures, "fixed">): { lead: string; tail: string } {
+	return f.fixed ? { lead: "Valid for", tail: "" } : { lead: "Quote valid for", tail: " · refreshed before you sign" }
 }
 
-/** Testnet sends ride fixed terms, never a quote, so their retries say "terms"; mainnet keeps the boards' quote words. */
+/** Mainnet's retries get a new quote, as the boards say; a testnet send rides fixed terms, so it just tries again. */
 export const RETRY_WORDS = IS_MAINNET
-	? {
-			getNew: "Get a new quote",
-			tryAgain: "Try again with a new quote; routes change from minute to minute.",
-			signAgain: "Get a new quote and sign again.",
-		}
-	: { getNew: "Get new terms", tryAgain: "Try again with new terms.", signAgain: "Get new terms and sign again." }
+	? { getNew: "Get a new quote", signAgain: "Get a new quote and sign again." }
+	: { getNew: "Try again", signAgain: "Sign again." }
 
 /** "0:42": a quote's remaining life, never negative. */
 export function countdownText(ms: number): string {

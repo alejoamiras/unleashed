@@ -1,7 +1,21 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { ask, NOW_S, OUT, quotedRoute } from "@/test/crosschain"
-import { type CrossChainFigures, countdownText, feeCeilingOf, feeShareText, figuresOf, waitText } from "./crosschain-figures"
+import { type CrossChainFigures, countdownText, feeCeilingOf, feeShareText, figuresOf, RETRY_WORDS, waitText } from "./crosschain-figures"
+
+describe("RETRY_WORDS", () => {
+	it("a testnet retry just tries or signs again; mainnet's keep the boards' quote words", async () => {
+		expect(RETRY_WORDS).toEqual({ getNew: "Try again", signAgain: "Sign again." })
+		vi.resetModules()
+		vi.doMock("@/lib/network", async (original) => ({ ...(await original<typeof import("@/lib/network")>()), IS_MAINNET: true }))
+		try {
+			const { RETRY_WORDS: mainnet } = await import("./crosschain-figures")
+			expect(mainnet).toEqual({ getNew: "Get a new quote", signAgain: "Get a new quote and sign again." })
+		} finally {
+			vi.doUnmock("@/lib/network")
+		}
+	})
+})
 
 describe("figuresOf", () => {
 	it("reads the delivery, the relay fee, the slice and what arrives off a verified route", async () => {
