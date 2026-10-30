@@ -321,8 +321,8 @@ function chain(o: ChainOptions): DiscoveryChainReads & { fillReads: unknown[] } 
 const sourceTx = (r: Receipts): Tx => ({ hash: SRC_TX, block: SRC_BLOCK, logs: r.source.logs })
 const baseTx = (): Tx => ({ hash: SRC_TX, block: BigInt(COMPOSE.base.block), logs: COMPOSE.sourceLogs, from: MAINNET.user })
 const fillTx = (logs: RawLog[], over: Partial<Tx> = {}): Tx => ({ hash: FILL_TX, block: ETH_BLOCK, logs, ...over })
-/** The send's source receipt, its SpokePool `FundsDeposited` rewritten with `change`, as a source RPC may answer it. */
-const forgedSource = (change: Record<string, unknown>): Tx => ({
+/** The send's source receipt with its SpokePool `FundsDeposited` fields replaced by `change`. */
+const rewrittenSource = (change: Record<string, unknown>): Tx => ({
 	...sourceTx(ROUTED),
 	logs: ROUTED.source.logs.map((l) => {
 		if (!eq(l.address, RAIL.source.spokePool)) return l
@@ -757,7 +757,7 @@ describe("discoverCrossChain", () => {
 
 	it("a source log cannot expire a send before the record's deadline", async () => {
 		const deadline = BigInt(RAIL.inputs.fillDeadline)
-		const early = forgedSource({ fillDeadline: RAIL.inputs.fillDeadline - 600 })
+		const early = rewrittenSource({ fillDeadline: RAIL.inputs.fillDeadline - 600 })
 		const between = await discover(record(), reads([early], [], { timestamp: () => deadline - 1n }))
 		expect(verdictOf(between)).toBe("pending")
 		const past = await discover(record(), reads([early], [], { timestamp: () => deadline + 1n }))
@@ -766,8 +766,8 @@ describe("discoverCrossChain", () => {
 
 	it("an expiry beside a claimable deposit at or above the floor decides nothing", async () => {
 		const deadline = BigInt(RAIL.inputs.fillDeadline)
-		// Another deposit id gives a relay hash nobody fills, while the send's real fill and deposit sit on Ethereum.
-		const unfilled = forgedSource({ depositId: 999_999n })
+		// Another deposit id names a relay no fill matches; Ethereum holds the send's own fill and deposit.
+		const unfilled = rewrittenSource({ depositId: 999_999n })
 		// The fill's block is stamped 12 s before the deadline, the finalized head 12 s after it.
 		const past = { finalized: ETH_BLOCK + 2n, timestamp: (n: bigint) => deadline - 12n + 12n * (n - ETH_BLOCK) }
 		const d = await discover(record(), reads([unfilled], [fillTx(ROUTED.destination.logs)], past))
