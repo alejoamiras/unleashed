@@ -88,7 +88,7 @@ import {
 	tokenRemainder,
 } from "@/lib/send-model"
 
-/** The rail's own etas, summed and rounded UP — the review must never undersell how long this takes. */
+/** The deposit steps' own etas summed (deposit under 1 min, crossing ~1 min, confirm 1–2 min); the claim's signature is the user's time. */
 const DEPOSIT_TAKES = "usually 2–4 min end to end"
 const EXIT_TAKES = "tens of minutes — Aztec proves exits in epoch batches"
 const ONE_TO_ONE = { probeIn: 1n, probeOut: 1n }

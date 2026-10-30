@@ -126,6 +126,11 @@ describe("CrossChainReview", () => {
 		expect(w.find(sel(TESTIDS.sendXcRefund)).text()).toBe("Refund0x51Cd…0f44 on Base Sepolia, after 2 hours undelivered")
 		expect(w.find(sel(TESTIDS.sendReviewDetails)).text()).toContain("QuoteRefreshes every 60\u00a0s")
 		w.unmount()
+		const expired = review({ state: { kind: "expired" } })
+		expect(expired.find(sel(TESTIDS.sendXcNotice)).text()).toBe(
+			"This quote expired.Fees and amounts may have moved since it was made.Refresh quote",
+		)
+		expired.unmount()
 	})
 
 	it("adds the gas leg, its venue and the private seal to what the user signs", async () => {
@@ -148,6 +153,10 @@ describe("CrossChainReview", () => {
 		await expired.find(sel(TESTIDS.sendXcRefresh)).trigger("click")
 		expect(expired.emitted("act")).toHaveLength(1)
 		expired.unmount()
+
+		const switched = review({ state: { kind: "account", priced: "0x51Cd…0f44" } })
+		expect(switched.find(sel(TESTIDS.sendXcRetry)).text()).toBe("Try again")
+		switched.unmount()
 
 		const elsewhere = review({ walletChainId: 11155111 })
 		expect(elsewhere.find(sel(TESTIDS.sendReviewConfirm)).exists()).toBe(false)

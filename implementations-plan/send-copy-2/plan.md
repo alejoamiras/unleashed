@@ -187,6 +187,10 @@ shows no `zz-*` spec and no `network.ts` change.
   after merging a1.
 - D8 page 10 signs §1–§3 as drafted (R1 as B1) and keeps §5 as it is; ask42's estimate is signed in chat. a2
   builds those strings and nothing else; a string that differs from its draft goes back, never ships.
+- D9 ask42 changes `DEPOSIT_TAKES` on both networks. Codex and Opus each flagged mainnet as a scope question. Kept:
+  the signed words name no network, the ask comes from gas-floor-1's own owner ask, which offered the one shared
+  constant, and its reason (the crossing in about a minute) holds on mainnet too. A testnet-only branch would be a
+  visible choice nobody signed. The PR states it, for the orchestrator to veto.
 - D7 a send still running in the background can write its error after a newer review opened. The wizard's own
   write (`runCrossChain`'s `xcRefusal`/`xcError`) is guarded with the existing snapshot. `runSend`'s tail write needs no
   guard: it writes `"declined"` only when no grant exists, which is before any record, so before any background. The
@@ -215,6 +219,11 @@ shows no `zz-*` spec and no `network.ts` change.
   commit: **no material findings**. Converged in 2 rounds. After the loop, P10-01 B was folded into the arc
   (b9dc86d). Round 3, the last allowed, verified it and the merge of origin/main: **no material findings**.
   Detail: `lessons/phase-1.md`.
+- a2 Codex fix loop (gpt-6.1-sol, high), round 1: one medium, ask42 reaching mainnet (D9: kept, stated in the PR),
+  and two lows, both taken (the `DEPOSIT_TAKES` comment no longer claims rounding up; tests now cover W1 on the
+  review, the wizard's band, and mainnet's retry words and expired box). Codex confirmed every signed string as
+  drafted and mainnet's text unchanged. Opus beside round 1: the same scope question, plus three lows, all taken
+  (a split `.note` rule merged, the stale "Rebuild" comment in `deposit-crosschain.spec.ts`, and the band test gap).
 - a1 deviations: the shots use the sandbox build's own chain labels (no display-only `network.ts` edit), since the
   a1 surfaces are the sentence and its absence; cell 53's before time was measured by running main's cell 53 against
   this build on the same sandbox.

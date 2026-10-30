@@ -2115,6 +2115,12 @@ describe("SendWizard", () => {
 		},
 	)
 
+	it("the cross-chain review's band counts its quote down in the quote's own words", async () => {
+		const w = await wizard()
+		await atCrossChainReview(w)
+		expect(w.get(`[data-testid="${TESTIDS.sendXcQuoteBand}"]`).text()).toMatch(/^Quote valid for \d:\d\d · refreshed before you sign$/)
+	})
+
 	it("a cross-chain send that fails says why on its own review, never on a newer one opened after backgrounding it", async () => {
 		xcSend.mockResolvedValueOnce({ error: "Rejected in your wallet." })
 		const w = await wizard()

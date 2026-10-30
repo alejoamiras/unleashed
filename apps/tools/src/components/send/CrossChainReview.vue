@@ -280,16 +280,13 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 
 .note {
 	--ul-notch: var(--ul-notch-2);
+	--ul-fill: var(--ul-raised);
 	display: flex;
 	align-items: flex-start;
 	gap: 12px;
 	margin: 0;
 	padding: 12px 14px;
 	font: 400 14px/1.45 var(--ul-font-body);
-}
-
-.note {
-	--ul-fill: var(--ul-raised);
 	color: var(--ul-ink-2);
 	text-wrap: pretty;
 }

@@ -1,6 +1,6 @@
 # send-copy-2: owner asks
 
-Every entry is testnet only: mainnet copy stays as it is. Until an entry is signed, today's text ships. Values in
+Every entry in §0–§5 is testnet only: mainnet copy stays as it is. §6 is one shared string, on both networks. Until an entry is signed, today's text ships. Values in
 braces are the code's variables; the mocks fill them with a 5.00 USDC send from Base Sepolia (fee 25.0 %, cap 8.00
 USDC, fill window 2 hours). Each mock shows before and after in the light theme. The mocks live in this folder's
 gitignored `design/` (`review.png`, `progress.png`, `card.png`, `activity.png`).
@@ -102,7 +102,8 @@ Picking the token again is what asks.
 **Surface.** The Ethereum send's review, the Takes row: "usually 3–8 min end to end".
 
 **Signed in chat** (ask42): "usually 2–4 min" in place of "usually 3–8 min", since the crossing into Aztec now takes
-about a minute. The row reads "usually 2–4 min end to end"; the rest of the review stays. Built in a2.
+about a minute. The row reads "usually 2–4 min end to end"; the rest of the review stays. Built in a2. The string is
+one constant both networks show, as gas-floor-1's ask presented it, and the minute-long crossing holds on both.
 
 ## Not proposed
 
