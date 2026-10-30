@@ -1,7 +1,7 @@
 /**
  * Recovery (cells 24a–c, 25): a claim interrupted by a reload completes from the journal; a claim
- * the node dropped is offered again; a claim another submitter made first is found consumed; a
- * declined grant signs nothing.
+ * the node dropped is offered again; a claim another submitter made first is found consumed, and its
+ * record clears only on a confirmed second press; a declined grant signs nothing.
  */
 import { balanceOf, freshToken, mint, mintPrivateGasNote, privateFpc, fuelSwapperOf, setFuelRate } from "@unleashed/bridge-core/sandbox"
 import { TESTIDS } from "../../../src/lib/testids"
@@ -114,7 +114,7 @@ test("cell 24c — a claim the node dropped is offered again after three dropped
 	expect((await balanceOf(usdtL2, actor.actor.address, "public")) - before).toBeGreaterThan(0n)
 })
 
-test("cell 24b — a claim another submitter made first: the record completes as claimed-by-another on the message's own nullifier, sends nothing, and the token was credited once", async ({
+test("cell 24b — a claim another submitter made first: the record completes as claimed-by-another on the message's own nullifier, sends nothing, and the token was credited once; Clear deletes it only on a second press inside the arm", async ({
 	page,
 	run,
 	sandbox,
@@ -172,6 +172,16 @@ test("cell 24b — a claim another submitter made first: the record completes as
 	expect(done?.claimTxHash).toBeUndefined()
 	expect((await walletCalls(page, run, "plain")).sendTx ?? 0, "nothing was sent for a consumed message").toBe(0)
 	expect((await balanceOf(usdtL2, actor.actor.address, "public")) - before, "credited exactly once").toBe(credited)
+
+	// A lone press only arms Clear, and the arm lapses with the record still stored.
+	const stored = async () => (await depositRecords(page)).some((r) => r.id === done?.id)
+	await card.locator(tid(TESTIDS.journalClear)).click()
+	await expect(card.locator(tid(TESTIDS.journalClearConfirm))).toHaveText("Confirm clear")
+	await expect(card.locator(tid(TESTIDS.journalClear)), "the arm lapses after 6 s").toBeVisible({ timeout: 10_000 })
+	expect(await stored(), "a lone press deletes nothing").toBe(true)
+	await card.locator(tid(TESTIDS.journalClear)).click()
+	await card.locator(tid(TESTIDS.journalClearConfirm)).click()
+	await expect.poll(stored, { message: "the confirming press deletes the record" }).toBe(false)
 })
 
 test("cell 25 — a declined token grant ends on the review with the refusal; nothing is signed on Ethereum", async ({
