@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import {
 	type DepositEnvelopeV2,
 	type DepositJournalRecord,
@@ -10,11 +11,13 @@ import {
 	loadJournal,
 	markSealTrusted,
 	removeRecord,
-	recoveryKeyFromSignature,
+	RecoveryKey,
+	recoveryKeyMessage,
 	rekeyRecord,
 	sealDepositEnvelope,
 	upsertRecord,
 } from "@unleashed/bridge-core"
+import { recoveryBindingOf } from "@/lib/send-record"
 import type { JournalTokenBlock } from "@unleashed/sdk"
 import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -167,7 +170,7 @@ async function sealEnvelopeFor(
 	rec: DepositJournalRecord | SendDepositRecord,
 	over: Partial<{ recipient: string; amount: string; sealerL1: string }> = {},
 ) {
-	const key = await recoveryKeyFromSignature(SIG)
+	const key = await RecoveryKey.derive(async () => SIG, recoveryBindingOf(rec, rec.secretHashHex), "site")
 	return sealDepositEnvelope(key, {
 		secret: "0xprivatesecret",
 		recipient: over.recipient ?? rec.recipient,
@@ -691,6 +694,25 @@ describe("useBridgeJournal engine", () => {
 		addRecord(rec2)
 		await runDepositClaim("0xresume")
 		expect(deps2.signL1).toHaveBeenCalledTimes(1)
+	})
+
+	it.each(["legacy", "site"] as const)("a rediscovered claim sealed under the %s text signs exactly that text, once", async (text) => {
+		const sign = async (m: string) => `0x${createHash("sha256").update(m).digest("hex")}`
+		const signL1 = vi.fn(sign)
+		connectJournalDeps({ ...baseDeps(kv), claim: smartClaimFake(), signL1 })
+		const rec = mkDeposit(`0x${text}`, { isPrivate: true, secret: undefined, sealerL1: SEALER })
+		const binding = recoveryBindingOf(rec, rec.secretHashHex)
+		rec.sealedEnvelope = await sealDepositEnvelope(await RecoveryKey.derive(sign, binding, text), {
+			secret: "0xprivatesecret",
+			recipient: rec.recipient,
+			amount: rec.amount,
+			sealerL1: SEALER,
+			leafIndex: rec.leafIndex,
+		})
+		addRecord(rec)
+		await runDepositClaim(rec.id)
+		expect(signL1.mock.calls).toEqual([[recoveryKeyMessage(binding, text)]])
+		expect(useBridgeJournal().records.value.find((r) => r.id === rec.id)?.completedAt).toBe(999)
 	})
 
 	it("⑩ rediscovered consumeTxHash waits on the receipt - consume() never re-prompts", async () => {

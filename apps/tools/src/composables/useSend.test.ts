@@ -191,9 +191,10 @@ import {
 	type SendDepositRecord,
 	isProvisionalRecordId,
 	openDepositEnvelope,
-	recoveryKeyFromSignature,
+	RecoveryKey,
 	validateAnyBackupRecord,
 } from "@unleashed/bridge-core"
+import { recoveryBindingOf } from "@/lib/send-record"
 import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
 import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
@@ -1240,7 +1241,10 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 		expect(rec.sealedEnvelope).toBeTypeOf("string")
 
 		// The envelope carries the salt, so a restore on another device can claim the gas privately.
-		const envelope = await openDepositEnvelope(await recoveryKeyFromSignature(SEAL_SIG), rec.sealedEnvelope as string)
+		const envelope = await openDepositEnvelope(
+			await RecoveryKey.derive(async () => SEAL_SIG, recoveryBindingOf(rec, rec.id), "site"),
+			rec.sealedEnvelope as string,
+		)
 		expect(envelope.salt).toBe(salt)
 		expect(envelope.secret).toBe(salt)
 
@@ -1266,7 +1270,10 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 		expect(rec.fuel?.leafIndex).toBe("8")
 		expect(rec.secret).toBeUndefined()
 
-		const envelope = await openDepositEnvelope(await recoveryKeyFromSignature(SEAL_SIG), rec.sealedEnvelope as string)
+		const envelope = await openDepositEnvelope(
+			await RecoveryKey.derive(async () => SEAL_SIG, recoveryBindingOf(rec, rec.id), "site"),
+			rec.sealedEnvelope as string,
+		)
 		// The token credential and the gas salt are DIFFERENT secrets, and the envelope holds both.
 		expect(envelope.salt).toBe(salt)
 		expect(envelope.secret).not.toBe(salt)

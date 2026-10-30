@@ -1,19 +1,22 @@
 import {
+	type AnyBridgeBackupFile,
 	type AnyJournalRecord,
 	type BridgeBackupFile,
+	RecoveryKey,
+	type SiteKey,
+	backupKeyText,
 	isCrossChainRecord,
 	isSealTrusted,
 	markSealTrusted,
 	openAnyBridgeBackup,
 	parseBackupFile,
-	recoveryKeyFromSignature,
-	recoveryKeyMessage,
 	sealBridgeBackup,
 } from "@unleashed/bridge-core"
 import { feeJuiceAddress } from "@unleashed/sdk/protocol"
 import { NETWORK } from "@/lib/network"
 import { FUEL_PORTAL } from "@/contracts/bridge-generation"
 import { sendView } from "@/lib/crosschain-activity"
+import { recoveryBindingOf } from "@/lib/send-record"
 import { appWatchDeps, crossChainSealKey } from "./crosschain-deposit-flow"
 import { needsWatch, watchCrossChain } from "./crosschain-watch"
 import {
@@ -52,7 +55,8 @@ function triggerDownload(file: BridgeBackupFile, name: string): void {
  * (the signature IS the key material): same-session sealed deposits reuse the retained in-memory
  * key (zero signatures); otherwise export is trust-aware like the private seal - an untrusted
  * wallet proves signature determinism ONCE (two signatures, then cached), a trusted one signs
- * once. A non-deterministic signer must fail HERE, never produce an unrestorable file.
+ * once. A non-deterministic signer must fail HERE, never produce an unrestorable file. Export always
+ * seals under a site key; restore derives the text the file's format names, so older files still open.
  */
 const exportsInFlight = new Set<string>()
 
@@ -96,29 +100,31 @@ export function useBridgeBackup() {
 		}
 	}
 
-	async function deriveKey(rec: Pick<AnyJournalRecord, "id" | "chainId" | "portal" | "bridge">, mode: "export" | "restore") {
-		const retained = getRetainedSealKey(rec.id) ?? crossChainSealKey(rec.id)
+	const retainedKey = (id: string): SiteKey | undefined => getRetainedSealKey(id) ?? crossChainSealKey(id)
+
+	async function exportKey(rec: AnyJournalRecord): Promise<SiteKey> {
+		const retained = retainedKey(rec.id)
 		if (retained) return retained
 		const { sign, from } = signer()
-		const message = recoveryKeyMessage({
-			chainId: rec.chainId,
-			portal: rec.portal,
-			bridge: rec.bridge,
-			secretHashHex: rec.id,
-		})
+		const binding = recoveryBindingOf(rec, rec.id)
 		const provider = providerFingerprint()
-		const trusted = isSealTrusted(localStorage, rec.chainId, from, provider)
-		const sig = await sign(message)
-		if (mode === "export" && !trusted) {
-			// Determinism self-test (one-time per wallet): an export sealed under a key the wallet
-			// cannot re-derive would be unrestorable - fail now, before a file exists.
-			const sig2 = await sign(message)
-			if (sig.trim().toLowerCase() !== sig2.trim().toLowerCase()) {
-				throw new Error("This wallet signs non-deterministically — a recovery file made with it could never be reopened. Aborting.")
-			}
-			markSealTrusted(localStorage, rec.chainId, from, provider)
+		if (isSealTrusted(localStorage, rec.chainId, from, provider)) return RecoveryKey.derive(sign, binding, "site")
+		// Determinism self-test (one-time per wallet): an export sealed under a key the wallet
+		// cannot re-derive would be unrestorable - fail now, before a file exists.
+		const { key, repeatable } = await RecoveryKey.deriveTwice(sign, binding, "site")
+		if (!repeatable) {
+			throw new Error("This wallet signs non-deterministically — a recovery file made with it could never be reopened. Aborting.")
 		}
-		return recoveryKeyFromSignature(sig)
+		markSealTrusted(localStorage, rec.chainId, from, provider)
+		return key
+	}
+
+	/** A retained key is reused only when it was signed over the text this file's key was. */
+	async function restoreKey(file: AnyBridgeBackupFile): Promise<RecoveryKey> {
+		const text = backupKeyText(file)
+		const retained = retainedKey(file.id)
+		if (retained?.text === text) return retained
+		return RecoveryKey.derive(signer().sign, recoveryBindingOf(file, file.id), text)
 	}
 
 	/** Seal + download ONE bridge. Refusals (provisional, unsealed-private) come from the module. */
@@ -126,10 +132,8 @@ export function useBridgeBackup() {
 		if (exportsInFlight.has(rec.id)) return // a double-click must not queue a second prompt.
 		exportsInFlight.add(rec.id)
 		try {
-			const from = l1.address.value
-			if (!from) throw new Error("Connect your Ethereum wallet first.")
-			const key = await deriveKey(rec, "export")
-			const file = await sealBridgeBackup(key, rec, from)
+			if (!l1.address.value) throw new Error("Connect your Ethereum wallet first.")
+			const file = await sealBridgeBackup(await exportKey(rec), rec)
 			triggerDownload(file, backupFileName(rec))
 			log("exported", { id: rec.id, direction: rec.direction })
 		} finally {
@@ -163,7 +167,7 @@ export function useBridgeBackup() {
 		if (journal.listedRecords.value.some((r) => r.id === file.id)) {
 			throw new Error("This bridge is already tracked here — nothing to restore.")
 		}
-		const record = await openAnyBridgeBackup(await deriveKey(file, "restore"), file)
+		const record = await openAnyBridgeBackup(await restoreKey(file), file)
 		if (journal.listedRecords.value.some((r) => r.id === record.id)) {
 			throw new Error("This bridge is already tracked here — nothing to restore.")
 		}

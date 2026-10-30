@@ -12,7 +12,7 @@ import {
 	type DiscoveryReads,
 	discoverCrossChain,
 	discoveryPatch,
-	type EncryptionKey,
+	type RecoveryKey,
 	envelopeV3MatchesRecord,
 	openDepositEnvelopeV3,
 	resealExactEnvelope,
@@ -48,7 +48,7 @@ export interface CrossChainWatchDeps {
 	/** Undefined where this build reads no such chain. */
 	reads(rec: CrossChainDepositRecord): DiscoveryReads | undefined
 	discover?: typeof discoverCrossChain
-	sealKey?(id: string): EncryptionKey | undefined
+	sealKey?(id: string): RecoveryKey | undefined
 	/** Starts the claim of a record this session sent. */
 	claim(id: string): void
 	now(): number
@@ -71,7 +71,7 @@ const depositKey = (r: CrossChainDepositRecord): string =>
 /** With the key still in memory, the claim's secret is cached for the deposit as found (no signature), and a
  *  final deposit inside the sealed window is re-sealed exact; otherwise the claim's unseal does both after one
  *  signature. */
-async function useSealKey(rec: CrossChainDepositRecord, key: EncryptionKey | undefined): Promise<void> {
+async function useSealKey(rec: CrossChainDepositRecord, key: RecoveryKey | undefined): Promise<void> {
 	if (!key || !rec.sealedEnvelope || rec.leafIndex === undefined) return
 	const v3 = await openDepositEnvelopeV3(key, rec.sealedEnvelope).catch(() => null)
 	if (!v3) return

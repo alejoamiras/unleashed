@@ -1,10 +1,23 @@
-import { type DepositJournalRecord, recoveryKeyFromSignature, recoveryKeyMessage, sealBridgeBackup } from "@unleashed/bridge-core"
+import { createHash } from "node:crypto"
+import {
+	type DepositJournalRecord,
+	type KeyText,
+	type LegacyBridgeBackupFile,
+	RecoveryKey,
+	keyTextOf,
+	openDepositEnvelope,
+	recoveryKeyMessage,
+	sealBridgeBackup,
+	sealDepositEnvelope,
+} from "@unleashed/bridge-core"
 import type { JournalTokenBlock } from "@unleashed/sdk"
 import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
 
-const signMessage = vi.fn(async ({ message }: { message: string }) => `0xsig-for:${message.length}`)
+/** A deterministic wallet: its signature hashes the exact text, so each text (and each wallet) has its own key. */
+const sigOf = (message: string, wallet = "connected") => `0x${createHash("sha256").update(`${wallet}:${message}`).digest("hex")}`
+const signMessage = vi.fn(async ({ message }: { message: string }) => sigOf(message))
 const retainedKey = vi.fn((_id: string) => undefined as unknown)
 
 vi.mock("@/contracts/bridge-generation", () => ({ FUEL_PORTAL: "0xfd05ee8687d4ca828ba3d26ef04b80dd1348e5bd" }))
@@ -27,6 +40,8 @@ vi.mock("./crosschain-watch", () => ({
 import { __resetJournalForTests, addRecord, connectJournalDeps, useBridgeJournal } from "./useBridgeJournal"
 import { xcRecord } from "@/test/crosschain-record"
 import { useBridgeBackup } from "./useBridgeBackup"
+import { NETWORK } from "@/lib/network"
+import { recoveryBindingOf } from "@/lib/send-record"
 
 // A direct Fee Juice bridge: the one pre-generation shape whose recovery file still restores here.
 const DEPLOY = { chainId: 11155111, portal: "0xfd05ee8687d4ca828ba3d26ef04b80dd1348e5bd", bridge: feeJuiceAddress.toString() }
@@ -50,6 +65,30 @@ function publicDeposit(over: Partial<DepositJournalRecord> = {}): DepositJournal
 	}
 }
 
+const keyFor = <T extends KeyText>(rec: DepositJournalRecord, text: T, wallet = "connected") =>
+	RecoveryKey.derive(async (m) => sigOf(m, wallet), recoveryBindingOf(rec, rec.id), text)
+const textFor = (rec: DepositJournalRecord, text: KeyText) => recoveryKeyMessage(recoveryBindingOf(rec, rec.id), text)
+const signedTexts = () => signMessage.mock.calls.map(([{ message }]) => message)
+
+/** What the format-1 exporter wrote: the exporting account in the header, the blob under a legacy key. */
+async function legacyFileFor(rec: DepositJournalRecord): Promise<LegacyBridgeBackupFile> {
+	const { chainId, portal, bridge, direction, id } = rec
+	const blob = await (await keyFor(rec, "legacy")).seal(JSON.stringify({ bk: 1, record: rec }))
+	return { format: "unleashed-bridge-backup", v: 1, chainId, portal, bridge, direction, id, sealerL1: "0xme", blob }
+}
+
+/** Runs the export and returns the downloaded file's text. */
+async function exported(rec: DepositJournalRecord): Promise<string> {
+	let file: Blob | undefined
+	URL.createObjectURL = vi.fn((blob: Blob) => {
+		file = blob
+		return "blob:fake"
+	})
+	vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+	await useBridgeBackup().exportBridge(rec)
+	return (file as Blob).text()
+}
+
 function memKV() {
 	const store = new Map<string, string>()
 	return {
@@ -65,7 +104,7 @@ describe("useBridgeBackup", () => {
 		__resetJournalForTests()
 		connectJournalDeps({ kv: memKV(), now: () => 999 })
 		signMessage.mockReset() // implementations persist past mockClear - reset + re-prime.
-		signMessage.mockImplementation(async ({ message }: { message: string }) => `0xsig-for:${message.length}`)
+		signMessage.mockImplementation(async ({ message }: { message: string }) => sigOf(message))
 		retainedKey.mockReturnValue(undefined)
 		localStorage.clear()
 		// jsdom lacks createObjectURL; the download path needs both stubs.
@@ -80,7 +119,9 @@ describe("useBridgeBackup", () => {
 		})
 		const backup = useBridgeBackup()
 		await backup.exportBridge(publicDeposit())
-		expect(signMessage).toHaveBeenCalledTimes(2)
+		expect(signedTexts()).toEqual([textFor(publicDeposit(), "site"), textFor(publicDeposit(), "site")])
+		expect(signedTexts()[0]).toContain("\nSite: https://testnet.app.unleashed.systems\n")
+		expect(NETWORK.appOrigin).toBe("https://testnet.app.unleashed.systems")
 		expect(clicks).toEqual(["unleashed-bridge-deposit-0xbk.json"])
 
 		signMessage.mockClear()
@@ -96,36 +137,71 @@ describe("useBridgeBackup", () => {
 		expect(clicks).not.toHaveBeenCalled()
 	})
 
-	it("a same-session retained key exports with ZERO signatures", async () => {
-		const key = await recoveryKeyFromSignature("0xretained-sig")
-		retainedKey.mockReturnValue(key)
-		vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
-		await useBridgeBackup().exportBridge(publicDeposit())
+	it("a same-session retained key exports with ZERO signatures, and the file restores under the site text", async () => {
+		const rec = publicDeposit()
+		retainedKey.mockReturnValue(await keyFor(rec, "site"))
+		const file = await exported(rec)
 		expect(signMessage).not.toHaveBeenCalled()
+		retainedKey.mockReturnValue(undefined)
+		expect((await useBridgeBackup().restoreFile(file)).id).toBe(rec.id)
+		expect(signedTexts()).toEqual([textFor(rec, "site")])
+	})
+
+	it("a format-1 file restores under the legacy text with one signature; a retained site key is not used", async () => {
+		const rec = publicDeposit()
+		retainedKey.mockReturnValue(await keyFor(rec, "site"))
+		expect((await useBridgeBackup().restoreFile(JSON.stringify(await legacyFileFor(rec)))).id).toBe(rec.id)
+		expect(signedTexts()).toEqual([textFor(rec, "legacy")])
+	})
+
+	it("a file exported by another account than the record's sealer restores for that account; format 1 refused it", async () => {
+		const sealer = "0x5ea1e5000000000000000000000000000000005e"
+		const rec = publicDeposit({ isPrivate: true, secret: undefined, sealerL1: sealer })
+		const envelope = { secret: "0xclaimsalt", recipient: rec.recipient, amount: rec.amount, sealerL1: sealer }
+		rec.sealedEnvelope = await sealDepositEnvelope(await keyFor(rec, "site", "sealer"), envelope)
+		const file = await exported(rec)
+		expect(JSON.parse(file)).not.toHaveProperty("sealerL1")
+		expect((await useBridgeBackup().restoreFile(file)).id).toBe(rec.id)
+
+		__resetJournalForTests()
+		connectJournalDeps({ kv: memKV(), now: () => 999 })
+		await expect(useBridgeBackup().restoreFile(JSON.stringify(await legacyFileFor(rec)))).rejects.toThrow(
+			/label doesn.t match its sealed contents/,
+		)
+	})
+
+	it("a record sealed under the legacy text exports into a new file whose envelope still opens under the legacy text", async () => {
+		const rec = publicDeposit({ isPrivate: true, secret: undefined, sealerL1: "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d" })
+		const envelope = { secret: "0xclaimsalt", recipient: rec.recipient, amount: rec.amount, sealerL1: rec.sealerL1 as string }
+		rec.sealedEnvelope = await sealDepositEnvelope(await keyFor(rec, "legacy"), envelope)
+		const file = await exported(rec)
+		expect([JSON.parse(file).v, keyTextOf(JSON.parse(file).blob)]).toEqual([2, "site"])
+		signMessage.mockClear()
+		const restored = (await useBridgeBackup().restoreFile(file)) as DepositJournalRecord
+		expect(signedTexts()).toEqual([textFor(rec, "site")])
+		expect(keyTextOf(restored.sealedEnvelope as string)).toBe("legacy")
+		expect((await openDepositEnvelope(await keyFor(rec, "legacy"), restored.sealedEnvelope as string)).secret).toBe("0xclaimsalt")
 	})
 
 	it("restore ladder: foreign deployment and duplicates refuse before any signature", async () => {
 		const backup = useBridgeBackup()
-		const key = await recoveryKeyFromSignature("0xany")
-		const foreign = await sealBridgeBackup(key, publicDeposit({ chainId: 1 }), "0xme")
+		const key = await keyFor(publicDeposit(), "site")
+		const foreign = await sealBridgeBackup(key, publicDeposit({ chainId: 1 }))
 		await expect(backup.restoreFile(JSON.stringify(foreign))).rejects.toThrow(/different bridge deployment/)
 
 		addRecord(publicDeposit())
-		const dup = await sealBridgeBackup(key, publicDeposit(), "0xme")
+		const dup = await sealBridgeBackup(key, publicDeposit())
 		await expect(backup.restoreFile(JSON.stringify(dup))).rejects.toThrow(/already tracked/)
 		expect(signMessage).not.toHaveBeenCalled()
 	})
 
 	it("restore happy path: one signature, record lands in the journal as a normal idle card", async () => {
 		const rec = publicDeposit()
-		// Seal with the key the mocked signer will actually derive for this record's message.
-		const message = recoveryKeyMessage({ chainId: rec.chainId, portal: rec.portal, bridge: rec.bridge, secretHashHex: rec.id })
-		const key = await recoveryKeyFromSignature(`0xsig-for:${message.length}`)
-		const file = await sealBridgeBackup(key, rec, "0xme")
+		const file = await sealBridgeBackup(await keyFor(rec, "site"), rec)
 
 		const restored = await useBridgeBackup().restoreFile(JSON.stringify(file))
 		expect(restored.id).toBe(rec.id)
-		expect(signMessage).toHaveBeenCalledTimes(1)
+		expect(signedTexts()).toEqual([textFor(rec, "site")])
 		const { records, runtime } = useBridgeJournal()
 		// The journal re-stamps updatedAt on write - everything else round-trips exactly.
 		const { updatedAt: _stamped, ...stored } = records.value.find((r) => r.id === rec.id) as DepositJournalRecord
@@ -136,7 +212,7 @@ describe("useBridgeBackup", () => {
 
 	it("restore with the wrong wallet's file refuses with the attribution-honest copy", async () => {
 		const rec = publicDeposit()
-		const file = await sealBridgeBackup(await recoveryKeyFromSignature("0xsomeone-else"), rec, "0xother")
+		const file = await sealBridgeBackup(await keyFor(rec, "site", "someone-else"), rec)
 		await expect(useBridgeBackup().restoreFile(JSON.stringify(file))).rejects.toThrow(/wasn't sealed by the connected|corrupted/)
 		expect(useBridgeJournal().records.value).toHaveLength(0)
 	})
@@ -179,10 +255,7 @@ describe("useBridgeBackup", () => {
 				validateTokenBlock,
 			})
 
-		async function fileFor(rec: DepositJournalRecord) {
-			const message = recoveryKeyMessage({ chainId: rec.chainId, portal: rec.portal, bridge: rec.bridge, secretHashHex: rec.id })
-			return sealBridgeBackup(await recoveryKeyFromSignature(`0xsig-for:${message.length}`), rec, "0xme")
-		}
+		const fileFor = async (rec: DepositJournalRecord) => sealBridgeBackup(await keyFor(rec, "site"), rec)
 
 		it("a file naming this generation's hub restores once its block still matches the factory", async () => {
 			wireSend(async () => null)

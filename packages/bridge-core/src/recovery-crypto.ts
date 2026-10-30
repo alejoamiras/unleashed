@@ -1,7 +1,5 @@
 import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 
-export type { EncryptionKey } from "@nulo-sh/wallet-crypto"
-
 /**
  * Recovery-secret encryption for the no-server private bridge. The key is derived from a deterministic
  * L1 signature over a PER-RECORD message (recoveryKeyMessage) — binding chain + portal + bridge + the
@@ -15,21 +13,57 @@ export type { EncryptionKey } from "@nulo-sh/wallet-crypto"
  * the claim.
  */
 
-/** Binds a sealed record to its chain, bridge contracts, and secret hash (per-record key derivation). */
+/**
+ * Which text a key was signed over. `site` names the app's canonical origin and seals every new blob;
+ * `legacy` is the text before it, kept only to open what was sealed under it.
+ */
+export type KeyText = "legacy" | "site"
+
+/** Binds a sealed record to the app's origin, its chain, bridge contracts, and secret hash (per-record key derivation). */
 export interface RecoveryBinding {
+	/** The build's canonical origin. Key material: changing it strands every key signed over the old value. */
+	site: string
 	chainId: number
 	portal: string
 	bridge: string
 	secretHashHex: string
 }
 
-/** The per-record, domain-separated message the user signs to derive THIS record's recovery key. */
-export function recoveryKeyMessage(b: RecoveryBinding): string {
+/**
+ * The per-record message the user signs to derive THIS record's recovery key. Its bytes are key material,
+ * so neither text may change. The site text stays printable ASCII and never takes EIP-4361's sign-in form.
+ */
+export function recoveryKeyMessage(b: RecoveryBinding, text: KeyText): string {
+	if (text === "legacy") {
+		return [
+			"Unleashed Bridge recovery key v1 — sign to locally encrypt ONE in-flight private claim secret.",
+			"This is not a transaction and costs nothing.",
+			`chain=${b.chainId} portal=${b.portal.toLowerCase()} bridge=${b.bridge.toLowerCase()} record=${b.secretHashHex.toLowerCase()}`,
+		].join("\n")
+	}
 	return [
-		"Unleashed Bridge recovery key v1 — sign to locally encrypt ONE in-flight private claim secret.",
-		"This is not a transaction and costs nothing.",
-		`chain=${b.chainId} portal=${b.portal.toLowerCase()} bridge=${b.bridge.toLowerCase()} record=${b.secretHashHex.toLowerCase()}`,
+		"Unleashed: unlock one transfer's recovery data",
+		"",
+		`Sign this only on ${b.site}. The signature locks and unlocks the recovery data of one bridge transfer.`,
+		"",
+		`Site: ${b.site}`,
+		`Chain: ${b.chainId}`,
+		`Transfer: ${b.secretHashHex.toLowerCase()}`,
+		`Portal: ${b.portal.toLowerCase()}`,
+		`Bridge: ${b.bridge.toLowerCase()}`,
+		"",
+		"Signing is free. It is not a transaction and moves no funds.",
 	].join("\n")
+}
+
+/** Prefixes every blob a site key seals; `:` is outside the base64 alphabet, so no legacy blob carries it. */
+const SITE_TAG = "site:"
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/
+
+/** The text whose key opens `blob`, read before any signature is asked for; null for a marker this build does not know. */
+export function keyTextOf(blob: string): KeyText | null {
+	if (blob.startsWith(SITE_TAG)) return "site"
+	return BASE64.test(blob) ? "legacy" : null
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -45,54 +79,65 @@ function fromBase64(b64: string): Uint8Array<ArrayBuffer> {
 	return out
 }
 
-/** Derive a record's recovery key from the user's signature over recoveryKeyMessage(...). Normalizes
- *  the signature encoding (trimmed lowercase) so trivial encoding differences don't change the key. */
-export function recoveryKeyFromSignature(signatureHex: string): Promise<EncryptionKey> {
-	return EncryptionKey.fromPassword(signatureHex.trim().toLowerCase())
-}
-
-/** Encrypt a claim/exit secret into the opaque base64 blob held in recovery records. */
-export async function sealSecret(key: EncryptionKey, secretHex: string): Promise<string> {
-	const enc = new TextEncoder().encode(secretHex)
-	const bytes = new Uint8Array(enc.length)
-	bytes.set(enc)
-	return toBase64(await key.encrypt(bytes))
-}
-
-/** Decrypt a blob produced by `sealSecret` back into the secret. */
-export async function openSecret(key: EncryptionKey, blob: string): Promise<string> {
-	return new TextDecoder().decode(await key.decrypt(fromBase64(blob)))
-}
+/** Trivial encoding differences (case, whitespace) must not change the key. */
+const normalizeSignature = (signatureHex: string): string => signatureHex.trim().toLowerCase()
 
 /**
- * Seal a record's secret end-to-end: derive THIS record's key from the per-record signature, seal,
- * then SELF-TEST the round trip (re-sign + open). A wallet that signs non-deterministically fails the
- * self-test and throws HERE — before the irreversible L1 deposit — rather than stranding the claim.
+ * A record's recovery key, labelled with the text it was signed over. Nominal (private constructor and
+ * field): only `derive` builds one, so a label can never disagree with its key, and a blob it seals is
+ * tagged with that label.
  */
-export async function sealRecordSecret(
-	sign: (message: string) => Promise<string>,
-	binding: RecoveryBinding,
-	secretHex: string,
-): Promise<string> {
-	const message = recoveryKeyMessage(binding)
-	const blob = await sealSecret(await recoveryKeyFromSignature(await sign(message)), secretHex)
-	const reopened = await openSecret(await recoveryKeyFromSignature(await sign(message)), blob).catch(() => null)
-	if (reopened !== secretHex) {
-		throw new Error(
-			"Recovery self-test failed: this wallet signs non-deterministically, so a private claim could not be recovered. Aborting before the deposit.",
-		)
+export class RecoveryKey {
+	readonly #key: EncryptionKey
+
+	private constructor(
+		readonly text: KeyText,
+		key: EncryptionKey,
+	) {
+		this.#key = key
 	}
-	return blob
+
+	/** One signature over the binding's `text`. */
+	static async derive<T extends KeyText>(
+		sign: (message: string) => Promise<string>,
+		binding: RecoveryBinding,
+		text: T,
+	): Promise<RecoveryKey & { readonly text: T }> {
+		const signature = await sign(recoveryKeyMessage(binding, text))
+		return new RecoveryKey(text, await EncryptionKey.fromPassword(normalizeSignature(signature))) as RecoveryKey & { readonly text: T }
+	}
+
+	/** Two signatures over the same text; `repeatable` is false when they differ, i.e. the wallet could never
+	 *  re-derive this key and anything sealed under it would be unrecoverable. */
+	static async deriveTwice<T extends KeyText>(
+		sign: (message: string) => Promise<string>,
+		binding: RecoveryBinding,
+		text: T,
+	): Promise<{ key: RecoveryKey & { readonly text: T }; repeatable: boolean }> {
+		const message = recoveryKeyMessage(binding, text)
+		const first = normalizeSignature(await sign(message))
+		const repeatable = normalizeSignature(await sign(message)) === first
+		return { key: new RecoveryKey(text, await EncryptionKey.fromPassword(first)) as RecoveryKey & { readonly text: T }, repeatable }
+	}
+
+	async seal(plaintext: string): Promise<string> {
+		const enc = new TextEncoder().encode(plaintext)
+		const bytes = new Uint8Array(enc.length)
+		bytes.set(enc)
+		const blob = toBase64(await this.#key.encrypt(bytes))
+		return this.text === "site" ? SITE_TAG + blob : blob
+	}
+
+	/** Throws on a blob tagged for the other text, before decrypting, and on any GCM failure. */
+	async open(blob: string): Promise<string> {
+		if (keyTextOf(blob) !== this.text) throw new Error("This blob was not sealed under this key's text.")
+		const body = this.text === "site" ? blob.slice(SITE_TAG.length) : blob
+		return new TextDecoder().decode(await this.#key.decrypt(fromBase64(body)))
+	}
 }
 
-/** Re-derive THIS record's key from the per-record signature and open its sealed blob. */
-export async function openRecordSecret(
-	sign: (message: string) => Promise<string>,
-	binding: RecoveryBinding,
-	blob: string,
-): Promise<string> {
-	return openSecret(await recoveryKeyFromSignature(await sign(recoveryKeyMessage(binding))), blob)
-}
+/** A key every new blob, file and retained in-memory key is sealed under. */
+export type SiteKey = RecoveryKey & { readonly text: "site" }
 
 /**
  * The v2 deposit envelope: the private claim credential AND its authoritative metadata, sealed
@@ -123,14 +168,14 @@ export function normalizeAmount(amount: string | bigint): string {
 	return BigInt(amount).toString()
 }
 
-export async function sealDepositEnvelope(key: EncryptionKey, env: Omit<DepositEnvelopeV2, "v">): Promise<string> {
+export async function sealDepositEnvelope(key: RecoveryKey, env: Omit<DepositEnvelopeV2, "v">): Promise<string> {
 	const payload: DepositEnvelopeV2 = { ...env, v: 2, amount: normalizeAmount(env.amount) }
-	return sealSecret(key, JSON.stringify(payload))
+	return key.seal(JSON.stringify(payload))
 }
 
 /** Decrypt + validate a v2 envelope. Throws on GCM failure AND on any non-v2 plaintext shape. */
-export async function openDepositEnvelope(key: EncryptionKey, blob: string): Promise<DepositEnvelopeV2> {
-	const plaintext = await openSecret(key, blob)
+export async function openDepositEnvelope(key: RecoveryKey, blob: string): Promise<DepositEnvelopeV2> {
+	const plaintext = await key.open(blob)
 	let parsed: unknown
 	try {
 		parsed = JSON.parse(plaintext)
@@ -173,41 +218,25 @@ export function sealDepositRecord(opts: {
 	binding: RecoveryBinding
 	envelope: Omit<DepositEnvelopeV2, "v">
 	trusted: boolean
-}): Promise<{ blob: string; key: EncryptionKey }> {
-	return sealWithSelfTest(opts, opts.envelope.secret, (key) => sealDepositEnvelope(key, opts.envelope), openDepositEnvelope)
+}): Promise<{ blob: string; key: SiteKey }> {
+	return sealWithSelfTest(opts, (key) => sealDepositEnvelope(key, opts.envelope))
 }
 
-/** The seal half both envelope versions share: one signature when trusted, else the sign-twice
- *  self-test, which must reopen `secret` from the blob. */
+/** The seal half both envelope versions share: a site key from one signature when trusted, else from the
+ *  sign-twice self-test, which refuses a wallet whose two signatures differ. */
 async function sealWithSelfTest(
 	opts: { sign: (message: string) => Promise<string>; binding: RecoveryBinding; trusted: boolean },
-	secret: string,
-	seal: (key: EncryptionKey) => Promise<string>,
-	open: (key: EncryptionKey, blob: string) => Promise<{ secret: string }>,
-): Promise<{ blob: string; key: EncryptionKey }> {
-	const message = recoveryKeyMessage(opts.binding)
-	const key = await recoveryKeyFromSignature(await opts.sign(message))
-	const blob = await seal(key)
-	if (!opts.trusted) {
-		const retestKey = await recoveryKeyFromSignature(await opts.sign(message))
-		const reopened = await open(retestKey, blob).catch(() => null)
-		if (!reopened || reopened.secret !== secret) {
-			throw new Error(
-				"Recovery self-test failed: this wallet signs non-deterministically, so a private claim could not be recovered. Aborting before the deposit.",
-			)
-		}
+	seal: (key: SiteKey) => Promise<string>,
+): Promise<{ blob: string; key: SiteKey }> {
+	const { key, repeatable } = opts.trusted
+		? { key: await RecoveryKey.derive(opts.sign, opts.binding, "site"), repeatable: true }
+		: await RecoveryKey.deriveTwice(opts.sign, opts.binding, "site")
+	if (!repeatable) {
+		throw new Error(
+			"Recovery self-test failed: this wallet signs non-deterministically, so a private claim could not be recovered. Aborting before the deposit.",
+		)
 	}
-	return { blob, key }
-}
-
-/** Re-derive the per-record key (one signature) and open the v2 envelope. */
-export async function openDepositRecord(
-	sign: (message: string) => Promise<string>,
-	binding: RecoveryBinding,
-	blob: string,
-): Promise<{ envelope: DepositEnvelopeV2; key: EncryptionKey }> {
-	const key = await recoveryKeyFromSignature(await sign(recoveryKeyMessage(binding)))
-	return { envelope: await openDepositEnvelope(key, blob), key }
+	return { blob: await seal(key), key }
 }
 
 /**
@@ -261,7 +290,7 @@ export function crossChainAmountWindow(rec: {
 	return window
 }
 
-export async function sealDepositEnvelopeV3(key: EncryptionKey, env: Omit<DepositEnvelopeV3, "v">): Promise<string> {
+export async function sealDepositEnvelopeV3(key: RecoveryKey, env: Omit<DepositEnvelopeV3, "v">): Promise<string> {
 	const payload: DepositEnvelopeV3 = {
 		...env,
 		v: 3,
@@ -269,12 +298,12 @@ export async function sealDepositEnvelopeV3(key: EncryptionKey, env: Omit<Deposi
 		maxAmount: normalizeAmount(env.maxAmount),
 	}
 	assertWindow(payload.minAmount, payload.maxAmount)
-	return sealSecret(key, JSON.stringify(payload))
+	return key.seal(JSON.stringify(payload))
 }
 
 /** Decrypt + validate a v3 envelope. Throws on GCM failure AND on any non-v3 plaintext shape. */
-export async function openDepositEnvelopeV3(key: EncryptionKey, blob: string): Promise<DepositEnvelopeV3> {
-	const plaintext = await openSecret(key, blob)
+export async function openDepositEnvelopeV3(key: RecoveryKey, blob: string): Promise<DepositEnvelopeV3> {
+	const plaintext = await key.open(blob)
 	let parsed: unknown
 	try {
 		parsed = JSON.parse(plaintext)
@@ -311,7 +340,7 @@ export function envelopeV3MatchesRecord(env: DepositEnvelopeV3, record: { recipi
  * another recipient.
  */
 export async function resealExactEnvelope(
-	key: EncryptionKey,
+	key: RecoveryKey,
 	env: DepositEnvelopeV3,
 	deposited: { recipient: string; amount: string; leafIndex?: string },
 ): Promise<string> {
@@ -334,6 +363,6 @@ export function sealCrossChainDepositRecord(opts: {
 	binding: RecoveryBinding
 	envelope: Omit<DepositEnvelopeV3, "v">
 	trusted: boolean
-}): Promise<{ blob: string; key: EncryptionKey }> {
-	return sealWithSelfTest(opts, opts.envelope.secret, (key) => sealDepositEnvelopeV3(key, opts.envelope), openDepositEnvelopeV3)
+}): Promise<{ blob: string; key: SiteKey }> {
+	return sealWithSelfTest(opts, (key) => sealDepositEnvelopeV3(key, opts.envelope))
 }

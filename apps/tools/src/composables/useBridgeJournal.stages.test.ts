@@ -8,8 +8,6 @@ import {
 	patchRecord as kvPatchRecord,
 	type SendDepositRecord,
 	type SendWithdrawRecord,
-	recoveryKeyFromSignature,
-	sealDepositEnvelope,
 } from "@unleashed/bridge-core"
 import type { JournalTokenBlock } from "@unleashed/sdk"
 import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
@@ -136,17 +134,6 @@ function baseDeps(kv: KV) {
 		verifyConsumeIdentitySend: vi.fn(async () => true),
 		consumeSend: vi.fn(async () => ({ consumeTxHash: "0x0015000000000000000000000000000000000000000000636f6e73756d657478" })),
 	}
-}
-
-async function _sealEnvelopeFor(rec: DepositJournalRecord, over: Partial<{ recipient: string; amount: string; sealerL1: string }> = {}) {
-	const key = await recoveryKeyFromSignature(SIG)
-	return sealDepositEnvelope(key, {
-		secret: "0xprivatesecret",
-		recipient: over.recipient ?? rec.recipient,
-		amount: over.amount ?? rec.amount,
-		sealerL1: over.sealerL1 ?? SEALER,
-		leafIndex: rec.leafIndex,
-	})
 }
 
 import { SYNC_TARGET_MARGIN_BLOCKS } from "@/lib/bridge-steps"

@@ -12,11 +12,12 @@
  */
 
 import { createHash } from "node:crypto"
-import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
+	type LegacyBridgeBackupFile,
 	openAnyBridgeBackup,
 	openBridgeBackup,
+	parseBackupFile,
 	sealBridgeBackup,
 	validateAnyBackupRecord,
 	validateBackupRecord,
@@ -35,7 +36,7 @@ import {
 	patchRecord,
 	upsertRecord,
 } from "./journal"
-import { openDepositEnvelope, openSecret, sealDepositEnvelope } from "./recovery-crypto"
+import { RecoveryKey, openDepositEnvelope, sealDepositEnvelope } from "./recovery-crypto"
 import { crossChainRecord, stargateRecord, addr as A, word as H } from "./test/crosschain-record"
 
 const REJECT = /not a valid bridge record/
@@ -244,7 +245,17 @@ describe("validateCrossChainRecord — schema 4", () => {
 const NOW = 1_760_000_000_000
 const SEALER = A("5e")
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex")
-const key = await EncryptionKey.fromPassword("0xsig-deterministic")
+const BINDING = {
+	site: "https://testnet.app.unleashed.systems",
+	chainId: 11155111,
+	portal: A("a1"),
+	bridge: H("ab"),
+	secretHashHex: H("04"),
+}
+/** The pre-existing blobs below were sealed by `EncryptionKey.fromPassword("0xsig-deterministic")`, which is what a
+ *  legacy key over this signature derives. */
+const legacyKey = await RecoveryKey.derive(async () => "0xsig-deterministic", BINDING, "legacy")
+const key = await RecoveryKey.derive(async () => "0xsig-deterministic", BINDING, "site")
 
 function memKV(): KV {
 	const m = new Map<string, string>()
@@ -389,14 +400,27 @@ const LEGACY_RECORDS = [
 
 const V2_INPUT = { secret: H("07"), recipient: H("10"), amount: "0099000000", sealerL1: SEALER, leafIndex: "9", salt: H("5a") }
 const V2_PLAINTEXT = `{"secret":"${H("07")}","recipient":"${H("10")}","amount":"99000000","sealerL1":"${SEALER}","leafIndex":"9","salt":"${H("5a")}","v":2}`
-/** Sealed by the pre-schema-4 code under `key`. */
+/** Sealed by the pre-schema-4 code under `legacyKey`. */
 const V2_BLOB =
 	"AFFdHYXn/frYjUNxxb4W2TJ+gUqF18QxnR0ncO6r67GOQua/BhHe0yqwut+Th1hlIi1YE0kqL0eT2v6wX/BE+XlLK7CZ2/FMvd0ytfORUAtyByOZ/gi5XOPZX2X19YRjUmU30vUuXndk0Sj6H/RMAmXl0jr6b+08YtoCMhGbl0qbXB2Mrtv6e9S62KJmKJ9AdJrZRLdIOwJSyPnqxMGxNwcZZ3ioORaY1JXFn4Y6J6KShpTcR3XrrrbiLQemgZQxZB/+hhEWp3fjDXhS2UErjO7QCRAvXQ0CVsbzYyR54KUdALA8Q4l3ksTncjnfl/o5nXQtLrlYO9RvSf3RJr1Yk0XJuI0BlXQpBvVfRsLwJtnCiNqm7aqzio0kjDfddHBFRlvTqZNuxnqhuPsncT0SihDm3a+rrOSMc4+v3xr9ImmEG7CqPoeAnJg5tWYXLTZ9UQuwxqsElAkACqvU18lpsEMfgMDWxwMHU+7W"
 
 /** The file with its random-IV blob blanked, and the sealed plaintext, as digests. */
+/** Written by the format-1 exporter (header with the exporting account, blob sealed under `legacyKey`). */
+const FORMAT1_FILE: LegacyBridgeBackupFile = {
+	format: "unleashed-bridge-backup",
+	v: 1,
+	chainId: 11155111,
+	portal: A("a1"),
+	bridge: H("ab"),
+	direction: "deposit",
+	id: H("04"),
+	sealerL1: SEALER,
+	blob: "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",
+}
+
 async function backupDigests(record: Parameters<typeof sealBridgeBackup>[1]) {
-	const file = await sealBridgeBackup(key, record, SEALER)
-	return { file, header: sha256(JSON.stringify({ ...file, blob: "" })), payload: sha256(await openSecret(key, file.blob)) }
+	const file = await sealBridgeBackup(key, record)
+	return { file, header: sha256(JSON.stringify({ ...file, blob: "" })), payload: sha256(await key.open(file.blob)) }
 }
 
 describe("byte pins", () => {
@@ -415,14 +439,24 @@ describe("byte pins", () => {
 	})
 
 	it("an existing v2 envelope opens to the same plaintext, and a fresh seal writes that plaintext", async () => {
-		expect(await openSecret(key, V2_BLOB)).toBe(V2_PLAINTEXT)
-		expect(await openDepositEnvelope(key, V2_BLOB)).toEqual({ ...JSON.parse(V2_PLAINTEXT) })
-		expect(await openSecret(key, await sealDepositEnvelope(key, V2_INPUT))).toBe(V2_PLAINTEXT)
+		expect(await legacyKey.open(V2_BLOB)).toBe(V2_PLAINTEXT)
+		expect(await openDepositEnvelope(legacyKey, V2_BLOB)).toEqual({ ...JSON.parse(V2_PLAINTEXT) })
+		expect(await key.open(await sealDepositEnvelope(key, V2_INPUT))).toBe(V2_PLAINTEXT)
 	})
 
-	it("an existing recovery file keeps its header and sealed payload bytes", async () => {
+	it("a format-1 recovery file still parses and opens to its record under the legacy key", async () => {
+		// The header digest the format-1 exporter pinned: this fixture is byte for byte what it wrote.
+		expect(sha256(JSON.stringify({ ...FORMAT1_FILE, blob: "" }))).toBe(
+			"7773e5242251da504430eb2b3d52f7b8ac8a56c32ed4e344a41b11120e072dad",
+		)
+		const file = parseBackupFile(JSON.stringify(FORMAT1_FILE))
+		expect(await openBridgeBackup(legacyKey, file)).toEqual(LEGACY_RECORDS[3])
+		await expect(openBridgeBackup(key, file)).rejects.toThrow(/wasn't sealed by the connected Ethereum account/)
+	})
+
+	it("a new recovery file keeps the sealed payload bytes; only its header changed", async () => {
 		const { file, header, payload } = await backupDigests(LEGACY_RECORDS[3])
-		expect(header).toBe("7773e5242251da504430eb2b3d52f7b8ac8a56c32ed4e344a41b11120e072dad")
+		expect(header).toBe("826f79da8c81ef88b6ef2dd643103caf57339d9f6c3631f2f0e31194926de767")
 		expect(payload).toBe("d5b91fd58d983efb23f9df7200f3ef9b98d82166394098d22927f1337063154f")
 		expect(await openBridgeBackup(key, file)).toEqual(LEGACY_RECORDS[3])
 	})
@@ -437,7 +471,7 @@ describe("byte pins", () => {
 		expect(kv.getItem(JOURNAL_KEY)).toBeNull()
 		const { file, header, payload } = await backupDigests(sg)
 		expect([header, payload]).toEqual([
-			"6c837d2c461c7a7d321b3f2b44e65c9d38f29a69473241cf3138a763bcd905b5",
+			"09cdef6e85bfc55bb7de9064eac818be77ef2677fb3e51cdd244d456a72f1216",
 			"349d794e9960e1ffa2ef39f16ba2b2ce1dcfa2b2c88db6b69c57242557d6f780",
 		])
 		expect(await openAnyBridgeBackup(key, file)).toEqual(sg)

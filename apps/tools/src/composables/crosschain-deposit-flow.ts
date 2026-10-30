@@ -9,7 +9,7 @@
 import {
 	type CrossChainDepositRecord,
 	crossChainAmountWindow,
-	type EncryptionKey,
+	type SiteKey,
 	isSealTrusted,
 	markSealTrusted,
 	sealCrossChainDepositRecord,
@@ -97,11 +97,11 @@ export interface CrossChainSendOptions {
 
 /** Seal keys of this session's private sends: a deposit found while the key is still here is re-sealed exact
  *  without another signature. */
-const sealKeys = new Map<string, EncryptionKey>()
+const sealKeys = new Map<string, SiteKey>()
 /** Records whose approval the wallet was asked for and never answered: it may have broadcast it all the same. */
 const approvalsUnanswered = new Set<string>()
 
-export function crossChainSealKey(id: string): EncryptionKey | undefined {
+export function crossChainSealKey(id: string): SiteKey | undefined {
 	return sealKeys.get(id)
 }
 

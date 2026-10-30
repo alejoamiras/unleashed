@@ -12,7 +12,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { TxHash } from "@aztec-labs/aztec.js/tx"
-import { type EncryptionKey, type SendDepositRecord, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
+import { type SendDepositRecord, type SiteKey, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
 import {
 	type DepositRecord,
 	type DepositSecrets,
@@ -112,10 +112,10 @@ const log = (...args: unknown[]) => console.log("[bridge:send]", ...args)
 const NODE_URL = NETWORK.nodeUrl
 
 // The finalized-envelope re-seal key, held in memory only for records this session sealed.
-const sealKeys = new Map<string, EncryptionKey>()
+const sealKeys = new Map<string, SiteKey>()
 
 /** Same-session retained seal key - lets a backup export of a record sealed here skip the signature. */
-export function getRetainedSealKey(id: string): EncryptionKey | undefined {
+export function getRetainedSealKey(id: string): SiteKey | undefined {
 	return sealKeys.get(id)
 }
 

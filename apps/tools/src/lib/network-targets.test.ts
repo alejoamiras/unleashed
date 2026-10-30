@@ -55,6 +55,11 @@ describe("cspConnectSrc", () => {
 	})
 })
 
+/** Recovery keys are signed over a text naming `https://<host>`: a changed host opens nothing sealed under the old one. */
+it("each shipped target keeps its host", () => {
+	expect([TESTNET_TARGET.host, MAINNET_TARGET.host]).toEqual(["testnet.app.unleashed.systems", "app.unleashed.systems"])
+})
+
 describe("local target", () => {
 	const cfg = {
 		nodeUrl: "http://127.0.0.1:18080",

@@ -10,7 +10,8 @@ import { Contract } from "@aztec-labs/aztec.js/contracts"
 import {
 	type BridgeJournalRecord,
 	type DepositJournalRecord,
-	type EncryptionKey,
+	type RecoveryBinding,
+	type SiteKey,
 	type SendDepositRecord,
 	isSealTrusted,
 	markSealTrusted,
@@ -228,10 +229,10 @@ export async function sealPrivateRecord(ctx: {
 	tokenAmountStr: string
 	from: string
 	wallet: DepositL1Ctx["wallet"]
-	sealKeys: Map<string, EncryptionKey>
+	sealKeys: Map<string, SiteKey>
 	readBack: () => DepositJournalRecord | undefined
 	/** The recovery-key domain: a send binds to ITS token's clone and the hub, so the key is per-token. */
-	binding: { chainId: number; portal: string; bridge: string }
+	binding: Omit<RecoveryBinding, "secretHashHex">
 }): Promise<void> {
 	const { id, secretStr, recipient, tokenAmountStr, from, wallet, sealKeys, readBack, binding } = ctx
 	const provider = providerFingerprint()

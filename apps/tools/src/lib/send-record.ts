@@ -8,7 +8,7 @@ import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
 import type { JournalTokenBlock } from "@unleashed/sdk"
 import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/sdk/protocol"
-import type { SendDepositRecord } from "@unleashed/bridge-core"
+import type { RecoveryBinding, SendDepositRecord } from "@unleashed/bridge-core"
 import { FUEL_PORTAL, HUB } from "@/contracts/bridge-generation"
 import { NETWORK } from "@/lib/network"
 import type { GasLegPlan, SendPlan } from "@/lib/send-model"
@@ -92,7 +92,17 @@ export function buildSendRecord(i: RecordInputs): SendDepositRecord {
  *  because that is what the unseal re-derives the key from. A gas-only send is bound to the Fee
  *  Juice portal, everything else to ITS token's clone and the hub. */
 export const sealBindingOf = (plan: SendPlan) => ({
+	site: NETWORK.appOrigin,
 	chainId: NETWORK.l1ChainId,
 	portal: plan.intent === "gas" ? FUEL_PORTAL : plan.token.portal,
 	bridge: plan.intent === "gas" ? feeJuiceAddress.toString() : (HUB as AztecAddress).toString(),
+})
+
+/** The key domain a record's recovery material is re-derived from: the binding it carries, under this build's origin. */
+export const recoveryBindingOf = (rec: { chainId: number; portal: string; bridge: string }, secretHashHex: string): RecoveryBinding => ({
+	site: NETWORK.appOrigin,
+	chainId: rec.chainId,
+	portal: rec.portal,
+	bridge: rec.bridge,
+	secretHashHex,
 })

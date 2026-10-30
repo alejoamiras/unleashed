@@ -1,62 +1,66 @@
+import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import {
+	type RecoveryBinding,
+	RecoveryKey,
 	crossChainAmountWindow,
 	envelopeMatchesRecord,
 	envelopeV3MatchesRecord,
+	keyTextOf,
 	normalizeAmount,
 	openDepositEnvelope,
 	openDepositEnvelopeV3,
-	openDepositRecord,
-	openRecordSecret,
-	openSecret,
-	recoveryKeyFromSignature,
 	recoveryKeyMessage,
 	resealExactEnvelope,
 	sealCrossChainDepositRecord,
 	sealDepositEnvelope,
 	sealDepositEnvelopeV3,
 	sealDepositRecord,
-	sealRecordSecret,
-	sealSecret,
 } from "./recovery-crypto"
 
-const SIG_A = `0x${"a".repeat(130)}`
-const SIG_B = `0x${"b".repeat(130)}`
 const SECRET = "0x1234deadbeefcafe"
+const SITE = "https://testnet.app.unleashed.systems"
+
+/** A deterministic wallet: its signature is a hash of the exact text, so two texts never share a key. */
+const signer =
+	(wallet = "a", calls: string[] = []) =>
+	async (message: string) => {
+		calls.push(message)
+		return `0x${createHash("sha256").update(`${wallet}:${message}`).digest("hex")}`
+	}
+
+const BINDING: RecoveryBinding = { site: SITE, chainId: 11155111, portal: "0xPortal", bridge: "0xBridge", secretHashHex: "0xabc" }
+const siteKey = (wallet = "a") => RecoveryKey.derive(signer(wallet), BINDING, "site")
 
 describe("recovery-crypto", () => {
 	it("round-trips a secret (ciphertext, not plaintext)", async () => {
-		const key = await recoveryKeyFromSignature(SIG_A)
-		const blob = await sealSecret(key, SECRET)
+		const key = await siteKey()
+		const blob = await key.seal(SECRET)
 		expect(blob).not.toContain(SECRET)
-		expect(await openSecret(key, blob)).toBe(SECRET)
+		expect(await key.open(blob)).toBe(SECRET)
 	})
 
 	it("same signature derives a key that decrypts another instance's blob (re-derivable)", async () => {
-		const k1 = await recoveryKeyFromSignature(SIG_A)
-		const k2 = await recoveryKeyFromSignature(SIG_A)
-		const blob = await sealSecret(k1, SECRET)
-		expect(await openSecret(k2, blob)).toBe(SECRET)
+		const blob = await (await siteKey()).seal(SECRET)
+		expect(await (await siteKey()).open(blob)).toBe(SECRET)
 	})
 
 	it("a different signature cannot decrypt the blob", async () => {
-		const k1 = await recoveryKeyFromSignature(SIG_A)
-		const k2 = await recoveryKeyFromSignature(SIG_B)
-		const blob = await sealSecret(k1, SECRET)
-		await expect(openSecret(k2, blob)).rejects.toThrow()
+		const blob = await (await siteKey("a")).seal(SECRET)
+		await expect((await siteKey("b")).open(blob)).rejects.toThrow()
 	})
 
 	it("encrypting twice yields different blobs (random IV) but both decrypt", async () => {
-		const key = await recoveryKeyFromSignature(SIG_A)
-		const b1 = await sealSecret(key, SECRET)
-		const b2 = await sealSecret(key, SECRET)
+		const key = await siteKey()
+		const b1 = await key.seal(SECRET)
+		const b2 = await key.seal(SECRET)
 		expect(b1).not.toBe(b2)
-		expect(await openSecret(key, b1)).toBe(SECRET)
-		expect(await openSecret(key, b2)).toBe(SECRET)
+		expect(await key.open(b1)).toBe(SECRET)
+		expect(await key.open(b2)).toBe(SECRET)
 	})
 
 	it("envelope round-trips an optional private-fuel salt; a non-string salt is rejected", async () => {
-		const key = await recoveryKeyFromSignature(SIG_A)
+		const key = await siteKey()
 		const blob = await sealDepositEnvelope(key, {
 			secret: SECRET,
 			recipient: "0xrecipient",
@@ -70,51 +74,83 @@ describe("recovery-crypto", () => {
 		const noSalt = await sealDepositEnvelope(key, { secret: SECRET, recipient: "0xr", amount: "1", sealerL1: "0xs" })
 		expect((await openDepositEnvelope(key, noSalt)).salt).toBeUndefined()
 		// A blob whose salt is a non-string is refused.
-		const bad = await sealSecret(key, JSON.stringify({ v: 2, secret: SECRET, recipient: "0xr", amount: "1", sealerL1: "0xs", salt: 7 }))
+		const bad = await key.seal(JSON.stringify({ v: 2, secret: SECRET, recipient: "0xr", amount: "1", sealerL1: "0xs", salt: 7 }))
 		await expect(openDepositEnvelope(key, bad)).rejects.toThrow(/not a v2 envelope/)
 	})
 
 	it("recoveryKeyMessage is per-record — a different secretHash yields a different message", () => {
-		const base = { chainId: 11155111, portal: "0xPortal", bridge: "0xBridge" }
-		const mA = recoveryKeyMessage({ ...base, secretHashHex: "0xAAAA" })
-		const mB = recoveryKeyMessage({ ...base, secretHashHex: "0xBBBB" })
+		const mA = recoveryKeyMessage({ ...BINDING, secretHashHex: "0xAAAA" }, "site")
+		const mB = recoveryKeyMessage({ ...BINDING, secretHashHex: "0xBBBB" }, "site")
 		expect(mA).not.toBe(mB)
-		expect(mA).toContain("chain=11155111")
-		expect(mA).toContain("record=0xaaaa") // lowercased
+		expect(mA).toContain("Transfer: 0xaaaa") // lowercased
 	})
 
-	it("pins the signed message byte for byte: the recovery key is derived from its signature", () => {
-		expect(recoveryKeyMessage({ chainId: 11155111, portal: "0xPortal", bridge: "0xBridge", secretHashHex: "0xAAAA" })).toBe(
+	it("pins the site text byte for byte: the recovery key is derived from its signature", () => {
+		expect(recoveryKeyMessage({ ...BINDING, secretHashHex: "0xAAAA" }, "site")).toBe(
+			"Unleashed: unlock one transfer's recovery data\n" +
+				"\n" +
+				"Sign this only on https://testnet.app.unleashed.systems. The signature locks and unlocks the recovery data of one bridge transfer.\n" +
+				"\n" +
+				"Site: https://testnet.app.unleashed.systems\n" +
+				"Chain: 11155111\n" +
+				"Transfer: 0xaaaa\n" +
+				"Portal: 0xportal\n" +
+				"Bridge: 0xbridge\n" +
+				"\n" +
+				"Signing is free. It is not a transaction and moves no funds.",
+		)
+	})
+
+	it("pins the legacy text byte for byte, whatever the site: material sealed under it still opens", () => {
+		expect(recoveryKeyMessage({ ...BINDING, secretHashHex: "0xAAAA" }, "legacy")).toBe(
 			"Unleashed Bridge recovery key v1 — sign to locally encrypt ONE in-flight private claim secret.\n" +
 				"This is not a transaction and costs nothing.\n" +
 				"chain=11155111 portal=0xportal bridge=0xbridge record=0xaaaa",
 		)
+		expect(recoveryKeyMessage({ ...BINDING, site: "https://app.unleashed.systems" }, "legacy")).toBe(
+			recoveryKeyMessage(BINDING, "legacy"),
+		)
 	})
 
-	it("recoveryKeyFromSignature normalizes case — upper/lower-hex sig derive the same key", async () => {
-		const kLower = await recoveryKeyFromSignature(`0x${"a".repeat(130)}`)
-		const kUpper = await recoveryKeyFromSignature(`0x${"A".repeat(130)}`)
-		const blob = await sealSecret(kLower, SECRET)
-		expect(await openSecret(kUpper, blob)).toBe(SECRET)
+	it("a key derived for another origin opens nothing this origin sealed", async () => {
+		const blob = await (await siteKey()).seal(SECRET)
+		const elsewhere = await RecoveryKey.derive(signer(), { ...BINDING, site: "https://unleashed-restore.example" }, "site")
+		await expect(elsewhere.open(blob)).rejects.toThrow()
+		expect(await (await RecoveryKey.derive(signer(), BINDING, "site")).open(blob)).toBe(SECRET)
 	})
 
-	const BINDING = { chainId: 11155111, portal: "0xPortal", bridge: "0xBridge", secretHashHex: "0xabc" }
-
-	it("sealRecordSecret round-trips with a deterministic signer", async () => {
-		const sign = async () => `0x${"a".repeat(130)}`
-		const blob = await sealRecordSecret(sign, BINDING, SECRET)
-		expect(blob).not.toContain(SECRET)
-		expect(await openRecordSecret(sign, BINDING, blob)).toBe(SECRET)
+	it("a blob opens only under the text its tag names", async () => {
+		const site = await siteKey()
+		const legacy = await RecoveryKey.derive(signer(), BINDING, "legacy")
+		const siteBlob = await site.seal(SECRET)
+		const legacyBlob = await legacy.seal(SECRET)
+		expect([siteBlob.startsWith("site:"), keyTextOf(siteBlob), keyTextOf(legacyBlob)]).toEqual([true, "site", "legacy"])
+		expect(await site.open(siteBlob)).toBe(SECRET)
+		expect(await legacy.open(legacyBlob)).toBe(SECRET)
+		await expect(legacy.open(siteBlob)).rejects.toThrow(/not sealed under this key's text/)
+		await expect(site.open(legacyBlob)).rejects.toThrow(/not sealed under this key's text/)
+		expect(keyTextOf(`next:${legacyBlob}`)).toBeNull()
 	})
 
-	it("sealRecordSecret aborts on a non-deterministic signer (recovery self-test)", async () => {
+	it("a key is built only by derive, so its label always matches its text", async () => {
+		const legacy = await RecoveryKey.derive(signer(), BINDING, "legacy")
+		// @ts-expect-error a relabelled object literal is not a RecoveryKey
+		const relabelled: RecoveryKey = { text: "site", seal: legacy.seal, open: legacy.open }
+		expect(relabelled.text).toBe("site")
+	})
+
+	it("normalizes the signature's case — upper/lower-hex signatures derive the same key", async () => {
+		const blob = await (await RecoveryKey.derive(async () => `0x${"a".repeat(130)}`, BINDING, "site")).seal(SECRET)
+		expect(await (await RecoveryKey.derive(async () => `0x${"A".repeat(130)}`, BINDING, "site")).open(blob)).toBe(SECRET)
+	})
+
+	it("deriveTwice reports a wallet whose two signatures differ", async () => {
 		let n = 0
-		const sign = async () => `0x${String(n++).padEnd(130, "0")}`
-		await expect(sealRecordSecret(sign, BINDING, SECRET)).rejects.toThrow(/self-test/i)
+		const flaky = async () => `0x${String(n++).padEnd(130, "0")}`
+		expect((await RecoveryKey.deriveTwice(flaky, BINDING, "site")).repeatable).toBe(false)
+		expect((await RecoveryKey.deriveTwice(signer(), BINDING, "site")).repeatable).toBe(true)
 	})
 })
-
-const BINDING = { chainId: 11155111, portal: "0xPortal", bridge: "0xBridge", secretHashHex: "0xabc" }
 
 const ENVELOPE = {
 	secret: "0x1234deadbeefcafe",
@@ -125,7 +161,7 @@ const ENVELOPE = {
 
 describe("v2 deposit envelope", () => {
 	it("round-trips with all fields, normalizing the amount", async () => {
-		const key = await recoveryKeyFromSignature(`0x${"a".repeat(130)}`)
+		const key = await siteKey()
 		const blob = await sealDepositEnvelope(key, { ...ENVELOPE, amount: "0100000000" as never, leafIndex: "42" })
 		expect(blob).not.toContain(ENVELOPE.secret)
 		const env = await openDepositEnvelope(key, blob)
@@ -133,7 +169,7 @@ describe("v2 deposit envelope", () => {
 	})
 
 	it("tampered ciphertext throws (GCM auth)", async () => {
-		const key = await recoveryKeyFromSignature(`0x${"a".repeat(130)}`)
+		const key = await siteKey()
 		const blob = await sealDepositEnvelope(key, ENVELOPE)
 		const i = Math.floor(blob.length / 2)
 		const flipped = blob.slice(0, i) + (blob[i] === "A" ? "B" : "A") + blob.slice(i + 1)
@@ -141,14 +177,14 @@ describe("v2 deposit envelope", () => {
 	})
 
 	it("REJECTS a bare-secret blob — no fallback (the downgrade-attack pin)", async () => {
-		const key = await recoveryKeyFromSignature(`0x${"a".repeat(130)}`)
-		const bareBlob = await sealSecret(key, "0x1234deadbeefcafe")
+		const key = await siteKey()
+		const bareBlob = await key.seal("0x1234deadbeefcafe")
 		await expect(openDepositEnvelope(key, bareBlob)).rejects.toThrow(/not a v2 envelope/i)
 	})
 
 	it("REJECTS valid JSON that isn't a v2 envelope shape", async () => {
-		const key = await recoveryKeyFromSignature(`0x${"a".repeat(130)}`)
-		const blob = await sealSecret(key, JSON.stringify({ v: 1, secret: "0x1" }))
+		const key = await siteKey()
+		const blob = await key.seal(JSON.stringify({ v: 1, secret: "0x1" }))
 		await expect(openDepositEnvelope(key, blob)).rejects.toThrow(/not a v2 envelope/i)
 	})
 
@@ -168,22 +204,18 @@ describe("v2 deposit envelope", () => {
 })
 
 describe("sealDepositRecord (trust-aware signature economics)", () => {
-	const detSign = (calls: { n: number }) => async () => {
-		calls.n++
-		return `0x${"a".repeat(130)}`
-	}
-
-	it("trusted ⇒ exactly ONE signature, no self-test; blob opens with the returned key", async () => {
-		const calls = { n: 0 }
-		const { blob, key } = await sealDepositRecord({ sign: detSign(calls), binding: BINDING, envelope: ENVELOPE, trusted: true })
-		expect(calls.n).toBe(1)
+	it("trusted ⇒ exactly ONE signature over the site text, no self-test; the blob is tagged and opens with the returned key", async () => {
+		const calls: string[] = []
+		const { blob, key } = await sealDepositRecord({ sign: signer("a", calls), binding: BINDING, envelope: ENVELOPE, trusted: true })
+		expect(calls).toEqual([recoveryKeyMessage(BINDING, "site")])
+		expect(keyTextOf(blob)).toBe("site")
 		expect((await openDepositEnvelope(key, blob)).secret).toBe(ENVELOPE.secret)
 	})
 
 	it("untrusted ⇒ exactly TWO signatures (self-test)", async () => {
-		const calls = { n: 0 }
-		await sealDepositRecord({ sign: detSign(calls), binding: BINDING, envelope: ENVELOPE, trusted: false })
-		expect(calls.n).toBe(2)
+		const calls: string[] = []
+		await sealDepositRecord({ sign: signer("a", calls), binding: BINDING, envelope: ENVELOPE, trusted: false })
+		expect(calls).toHaveLength(2)
 	})
 
 	it("untrusted + non-deterministic signer ⇒ aborts before any irreversible tx", async () => {
@@ -193,21 +225,11 @@ describe("sealDepositRecord (trust-aware signature economics)", () => {
 	})
 
 	it("the retained key re-seals a finalized envelope (leafIndex) with ZERO further signatures", async () => {
-		const calls = { n: 0 }
-		const { key } = await sealDepositRecord({ sign: detSign(calls), binding: BINDING, envelope: ENVELOPE, trusted: true })
+		const calls: string[] = []
+		const { key } = await sealDepositRecord({ sign: signer("a", calls), binding: BINDING, envelope: ENVELOPE, trusted: true })
 		const finalized = await sealDepositEnvelope(key, { ...ENVELOPE, leafIndex: "108239872" })
-		expect(calls.n).toBe(1)
+		expect(calls).toHaveLength(1)
 		expect((await openDepositEnvelope(key, finalized)).leafIndex).toBe("108239872")
-	})
-
-	it("openDepositRecord re-derives the key with one signature and returns envelope + key", async () => {
-		const calls = { n: 0 }
-		const sign = detSign(calls)
-		const { blob } = await sealDepositRecord({ sign, binding: BINDING, envelope: ENVELOPE, trusted: true })
-		const { envelope, key } = await openDepositRecord(sign, BINDING, blob)
-		expect(calls.n).toBe(2)
-		expect(envelope.recipient).toBe(ENVELOPE.recipient)
-		expect((await openDepositEnvelope(key, blob)).secret).toBe(ENVELOPE.secret)
 	})
 })
 
@@ -219,7 +241,7 @@ describe("recovery-crypto — recipient-committed backup durability", () => {
 		// For a recipient-committed PRIVATE token deposit the sealed `secret` field IS the claim_salt
 		// (claim_private re-derives the consumption secret from it + the recipient), so it MUST survive
 		// the sealed backup — losing it strands the deposit.
-		const key = await recoveryKeyFromSignature(SIG_A)
+		const key = await siteKey()
 		const claimSalt = "0x07abc0ffee1234"
 		const blob = await sealDepositEnvelope(key, { secret: claimSalt, recipient: RECIP, amount: "100", sealerL1: SEALER })
 		expect(blob).not.toContain(claimSalt)
@@ -227,7 +249,7 @@ describe("recovery-crypto — recipient-committed backup durability", () => {
 	})
 
 	it("direct-fuel private seals BOTH salts; swap-fueled seals only the token secret (documented asymmetry)", async () => {
-		const key = await recoveryKeyFromSignature(SIG_A)
+		const key = await siteKey()
 		// Direct private FUEL (useFuel): the fuel bridge-secret salt is the sole recovery input → sealed.
 		const withSalt = await openDepositEnvelope(
 			key,
@@ -261,7 +283,7 @@ describe("v3 cross-chain envelope", () => {
 		})
 		expect(() => crossChainAmountWindow({ ...FUELED, fuel: { amount: "100000001" } })).toThrow(/exceeds/)
 		expect(() => crossChainAmountWindow({ ...FUELED, fuel: undefined })).toThrow(/fuel slice/)
-		const key = await recoveryKeyFromSignature(SIG_A)
+		const key = await siteKey()
 		const blob = await sealDepositEnvelopeV3(key, { secret: SECRET, recipient: RECIP, sealerL1: "0xs", ...window })
 		const env = await openDepositEnvelopeV3(key, blob)
 		// 90: the swap consumed the whole slice; 101.5: it consumed almost none and the rest joined the token leg.
@@ -273,30 +295,41 @@ describe("v3 cross-chain envelope", () => {
 	})
 
 	it("neither version opens as the other", async () => {
-		const key = await recoveryKeyFromSignature(SIG_A)
+		const key = await siteKey()
 		const v3 = await sealDepositEnvelopeV3(key, { secret: SECRET, recipient: RECIP, minAmount: "1", maxAmount: "2", sealerL1: "0xs" })
 		const v2 = await sealDepositEnvelope(key, { secret: SECRET, recipient: RECIP, amount: "1", sealerL1: "0xs" })
 		await expect(openDepositEnvelope(key, v3)).rejects.toThrow(/not a v2 envelope/)
 		await expect(openDepositEnvelopeV3(key, v2)).rejects.toThrow(/not a v3 envelope/)
 		const inverted = { v: 3, secret: SECRET, recipient: RECIP, minAmount: "2", maxAmount: "1", sealerL1: "0xs" }
-		await expect(openDepositEnvelopeV3(key, await sealSecret(key, JSON.stringify(inverted)))).rejects.toThrow(/not a v3 envelope/)
+		await expect(openDepositEnvelopeV3(key, await key.seal(JSON.stringify(inverted)))).rejects.toThrow(/not a v3 envelope/)
 	})
 
 	it("re-seals a matched v3 as an exact v2 under the in-memory key; an unmatched deposit seals nothing", async () => {
-		let signatures = 0
-		const sign = async () => {
-			signatures++
-			return SIG_A
-		}
+		const calls: string[] = []
 		const envelope = { secret: SECRET, recipient: RECIP, sealerL1: "0xs", salt: "0x5a17", ...crossChainAmountWindow(FUELED) }
-		const { blob, key } = await sealCrossChainDepositRecord({ sign, binding: BINDING, envelope, trusted: false })
-		expect(signatures).toBe(2)
+		const { blob, key } = await sealCrossChainDepositRecord({ sign: signer("a", calls), binding: BINDING, envelope, trusted: false })
+		expect(calls).toHaveLength(2)
 		const v3 = await openDepositEnvelopeV3(key, blob)
 		const exact = await resealExactEnvelope(key, v3, { recipient: RECIP, amount: "101090000", leafIndex: "8" })
-		expect(signatures).toBe(2)
+		expect(calls).toHaveLength(2)
+		expect(keyTextOf(exact)).toBe("site")
 		const v2 = await openDepositEnvelope(key, exact)
 		expect(v2).toEqual({ v: 2, secret: SECRET, recipient: RECIP, amount: "101090000", sealerL1: "0xs", leafIndex: "8", salt: "0x5a17" })
 		expect(envelopeMatchesRecord(v2, { recipient: RECIP, amount: "101090000", leafIndex: "8" })).toBe(true)
 		await expect(resealExactEnvelope(key, v3, { recipient: RECIP, amount: "101500001" })).rejects.toThrow(/does not match/)
+	})
+
+	it("an exact reseal keeps the text of the key that opened the v3", async () => {
+		const legacy = await RecoveryKey.derive(signer(), BINDING, "legacy")
+		const blob = await sealDepositEnvelopeV3(legacy, {
+			secret: SECRET,
+			recipient: RECIP,
+			minAmount: "1",
+			maxAmount: "2",
+			sealerL1: "0xs",
+		})
+		const exact = await resealExactEnvelope(legacy, await openDepositEnvelopeV3(legacy, blob), { recipient: RECIP, amount: "2" })
+		expect([keyTextOf(blob), keyTextOf(exact)]).toEqual(["legacy", "legacy"])
+		expect((await openDepositEnvelope(await RecoveryKey.derive(signer(), BINDING, "legacy"), exact)).amount).toBe("2")
 	})
 })
