@@ -121,8 +121,6 @@ unconstrained fn claim_private_by_relayer_credits_the_recipient() {
     assert_eq(handshake_announcements(h.env, user), 1);
 }
 
-// The recipient's own claim mints through a partial note, so neither a first nor a later claim
-// opens a handshake with it.
 #[test]
 unconstrained fn claim_private_by_recipient_opens_no_handshake() {
     let mut h = setup();

@@ -247,8 +247,7 @@ pub unconstrained fn fund_private(
     );
 }
 
-/// Counts the handshake registry's private logs under the tag computable from `account`'s address
-/// alone, which the registry emits when a sender opens a non-interactive handshake with `account`.
+/// Counts the handshake registry's announcements of a non-interactive handshake with `account`.
 /// The PXE serves only the executing contract's logs, so the query runs as the registry.
 pub unconstrained fn handshake_announcements(env: TestEnvironment, account: AztecAddress) -> u32 {
     env.utility_context_at(STANDARD_HANDSHAKE_REGISTRY_ADDRESS, |_ctx| {
