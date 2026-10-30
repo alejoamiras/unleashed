@@ -153,8 +153,9 @@ function push32Operands(code: Uint8Array, end: number): Set<number> {
 	return operands
 }
 
-/** Throws unless `pin` masks `code` the way solc lays a runtime out: each immutable a PUSH32 operand, the trailer the
- *  build's CBOR metadata. A wider mask would let deployed code differ from the kept build where it is not masked. */
+/** Throws unless `pin` masks only what solc leaves open in `code`: each immutable a zero-filled PUSH32 operand (solc's
+ *  placeholder), the trailer the build's CBOR metadata. A wider mask would let deployed code differ from the kept build
+ *  where the build fixed it, a constant included. */
 export function assertSolcShaped(pin: CodePin, code: Uint8Array): void {
 	if (pin.length !== code.length) throw new Error(`the pin is ${pin.length} bytes, the build ${code.length}`)
 	const trailer = metadataTrailerSize(code)
@@ -163,6 +164,8 @@ export function assertSolcShaped(pin: CodePin, code: Uint8Array): void {
 	const operands = push32Operands(code, pin.trailerStart)
 	const loose = pin.immutables.flat().filter((s: ImmutableSpan) => s.length !== IMMUTABLE_BYTES || !operands.has(s.start))
 	if (loose.length > 0) throw new Error(`immutable span(s) at ${loose.map((s) => s.start).join(", ")} are not PUSH32 operands`)
+	const fixed = pin.immutables.flat().filter((s) => code.subarray(s.start, s.start + s.length).some((b) => b !== 0))
+	if (fixed.length > 0) throw new Error(`immutable span(s) at ${fixed.map((s) => s.start).join(", ")} are not zero in the build`)
 }
 
 interface KeptForgeArtifact {

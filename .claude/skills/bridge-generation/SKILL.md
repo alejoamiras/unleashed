@@ -139,14 +139,14 @@ snapshots the commit, pins the signer against the plan-pinned address (`PLAN_PIN
 records artifact digests and caps, and corroborates the node's identity claims against L1 via
 `cast`. Then `live-intent.ts verify <intent> [--candidate <path>]` **before every broadcast group
 and at promotion**: it re-probes identity (a rollupVersion that moves mid-arc is a hard stop), re-checks
-the signer, the artifact digests, the candidate's sha256 (the first verify records it; any later
+the signer, the artifact digests, the candidate's and its record's sha256 (the first verify records them; any later
 change means never promote) and the working-tree allowlist (`OPERATIONAL_ALLOWLIST` in
-`live-intent.ts`: the candidate and live manifests, the conductor's `deploy-journal/`, and the named
+`live-intent.ts`: the candidate and live manifests and record directories, the conductor's `deploy-journal/`, and the named
 `lessons/` directories — a new arc adds its lessons directory there first). With `--candidate` it also
 strict-validates the candidate through the full `verify-l1` verifier (code at every address, the
 factory ↔ router ↔ hub cross-bindings, each token's portal derivation, frozen registration and live
-metadata, runtime code hashes against the forge build with immutables and the metadata trailer
-masked) and reads the hub's initialization hash off the node to prove it was initialized with the candidate's
+metadata, runtime code against the candidate record's pins with immutables and the metadata trailer
+masked, and each entry the arc deployed against a fresh build) and reads the hub's initialization hash off the node to prove it was initialized with the candidate's
 `[token_class_id, l1_factory, guardian]`. The caps are recorded and reconciled against the signer's
 balance at `verify` (`maxTotalEthSpend` is the balance delta; incoming ETH can mask a spend, so keep
 your own tally per broadcast group), not enforced per transaction. Committing does not make a dirty

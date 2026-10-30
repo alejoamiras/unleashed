@@ -59,6 +59,17 @@ describe("the committed generation records", () => {
 		expect(() => assertSolcShaped(genuine, code)).not.toThrow()
 		const shifted = pinOfBuild(code, { "1": [{ start: (genuine.immutables[0]?.[0]?.start ?? 0) + 1, length: 32 }] })
 		expect(() => assertSolcShaped(shifted, code)).toThrow(/not PUSH32 operands/)
+		// A PUSH32 of a constant the build fixed, such as a slice of the witness type string.
+		const operands: number[] = []
+		for (let pc = 0; pc < genuine.trailerStart; ) {
+			const op = code[pc] ?? 0
+			if (op === 0x7f) operands.push(pc + 1)
+			pc += op >= 0x60 && op <= 0x7f ? op - 0x5e : 1
+		}
+		const constant = operands.find((at) => code.subarray(at, at + 32).some((b) => b !== 0)) ?? 0
+		expect(constant).toBeGreaterThan(0)
+		const overConstant = pinOfBuild(code, { ...kept.deployedBytecode.immutableReferences, "0": [{ start: constant, length: 32 }] })
+		expect(() => assertSolcShaped(overConstant, code)).toThrow(/not zero in the build/)
 		const wide = { ...genuine, immutables: [[{ start: 0, length: 4096 }]] }
 		expect(() =>
 			parseGenerationRecord({

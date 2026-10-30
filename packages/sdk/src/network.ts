@@ -1,7 +1,7 @@
 /**
  * A network the SDK will move funds on: a strictly parsed manifest whose every derivable address is re-derived, whose
- * Aztec line this release runs, and whose deployed contracts are this release's builds bound to the rollup the Aztec
- * node runs. Nothing else is a `Network`: every call that signs takes one and refuses an object not built here.
+ * Aztec line this release runs, and whose deployed contracts run the code its generation's committed record pins (this
+ * release's builds on a sandbox), bound to the rollup the Aztec node runs. Nothing else is a `Network`: every call that signs takes one and refuses an object not built here.
  */
 import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
 import type { AztecNode } from "@aztec-labs/aztec.js/node"

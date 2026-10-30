@@ -91,6 +91,8 @@ describe("a promoted generation after a contract source edit", () => {
 		const { w } = await keptWorld()
 		const sandbox = worldOf({ ...structuredClone(w.m), l1ChainId: 31337 })
 		sandbox.code = w.code
+		// The hub refuses first below, so the L1 half of the selection is held here.
+		expect(codeOf(sandbox.m).pins).toBe(CODE_PINS)
 		await expect(parseNetwork(sandbox.m, readsOf(sandbox))).rejects.toMatchObject({
 			code: "invalid-network",
 			message: expect.stringMatching(/not the instantiation of its own record/),

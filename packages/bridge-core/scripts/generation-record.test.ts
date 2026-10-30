@@ -5,7 +5,7 @@ import { TESTNET_MANIFEST } from "@unleashed/sdk/networks"
 import { KEPT_HUB_ARTIFACT, keptEvmArtifact, parseManifestV2 } from "@unleashed/sdk/protocol"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { GENERATION_PATHS, workingTreeRecord } from "./generation-paths"
-import { buildOf, composeRecord, writeRecord } from "./generation-record"
+import { buildOf, composeRecord, redactEndpoints, writeRecord } from "./generation-record"
 import { git } from "./run"
 
 const scratch = mkdtempSync(join(tmpdir(), "generation-record-"))
@@ -101,5 +101,13 @@ describe("writeRecord --first", () => {
 		mkdirSync(join(root, GENERATION_PATHS.testnet.liveRecord), { recursive: true })
 		writeFileSync(join(root, GENERATION_PATHS.testnet.liveRecord, "record.json"), "{}")
 		await expect(writeRecord("testnet", { first: true, root })).rejects.toThrow(/already holds a record/)
+	})
+})
+
+describe("check's printed failures", () => {
+	it("never name an endpoint passed on the command line", () => {
+		const args = ["check", "testnet", "--rpc", "https://rpc.example/key-1", "--node", "https://node.example/key-2"]
+		const printed = redactEndpoints(args, "HTTP request failed. URL: https://rpc.example/key-1 then https://node.example/key-2")
+		expect(printed).toBe("HTTP request failed. URL: <endpoint 1> then <endpoint 2>")
 	})
 })

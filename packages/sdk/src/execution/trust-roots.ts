@@ -1,6 +1,6 @@
 /**
- * The on-chain half of a network's trust roots: the deployed router, factory or gate, implementation and swapper are
- * this release's builds, and every pointer they froze resolves through the manifest's registry to its canonical
+ * The on-chain half of a network's trust roots: the deployed router, factory or gate, implementation and swapper run
+ * the code their generation's record pins (this release's builds on a sandbox), and every pointer they froze resolves through the manifest's registry to its canonical
  * rollup. A genuine factory built on a hostile registry would freeze a foreign Outbox that releases every clone's
  * reserve, so the registry itself is anchored by the caller (to the Aztec node's, or the mainnet pin).
  */

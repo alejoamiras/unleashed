@@ -295,6 +295,12 @@ export async function checkRecord(network: LiveNetwork, opts: CheckOptions = {})
 	return failures
 }
 
+/** viem's errors quote the request URL, and a URL passed here by mistake may carry a key. */
+export function redactEndpoints(args: readonly string[], text: string): string {
+	const urls = args.filter((arg, i) => arg && (args[i - 1] === "--rpc" || args[i - 1] === "--node"))
+	return urls.reduce((t, url, i) => t.split(url).join(`<endpoint ${i + 1}>`), text)
+}
+
 const flagValue = (args: readonly string[], flag: string) => {
 	const i = args.indexOf(flag)
 	return i === -1 ? undefined : args[i + 1]
@@ -319,7 +325,7 @@ async function main(args: readonly string[]): Promise<number> {
 		node: flagValue(rest, "--node"),
 		buildOut: flagValue(rest, "--build-out"),
 	})
-	for (const f of failures) console.error(`✗ ${f}`)
+	for (const f of failures) console.error(redactEndpoints(args, `✗ ${f}`))
 	return failures.length === 0 ? 0 : 1
 }
 
@@ -327,7 +333,7 @@ if (import.meta.main)
 	main(process.argv.slice(2)).then(
 		(code) => process.exit(code),
 		(e) => {
-			console.error(`✗ ${e instanceof Error ? e.message : String(e)}`)
+			console.error(redactEndpoints(process.argv.slice(2), `✗ ${e instanceof Error ? e.message : String(e)}`))
 			process.exit(1)
 		},
 	)
