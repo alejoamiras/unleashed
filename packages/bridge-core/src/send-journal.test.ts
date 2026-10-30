@@ -1,6 +1,6 @@
-import { EncryptionKey } from "@nulo-sh/wallet-crypto"
 import { describe, expect, it } from "vitest"
 import { openBridgeBackup, sealBridgeBackup, validateAnyBackupRecord } from "./backup"
+import { RecoveryKey } from "./recovery-crypto"
 import {
 	assetKindOf,
 	deriveSendDepositStage,
@@ -13,11 +13,14 @@ import {
 } from "./journal"
 import type { JournalTokenBlock } from "@unleashed/sdk"
 
-const SEALER = "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d"
 const HUB = `0x${"ab".repeat(32)}`
 const PORTAL_A = "0x00000000000000000000000000000000000000a1"
 const PORTAL_B = "0x00000000000000000000000000000000000000b1"
-const key = await EncryptionKey.fromPassword("0xsig-deterministic")
+const key = await RecoveryKey.derive(
+	async () => "0xsig-deterministic",
+	{ site: "https://testnet.app.unleashed.systems", chainId: 11155111, portal: "0xportal", bridge: "0xbridge", secretHashHex: "0xdep" },
+	"site",
+)
 
 const tokenA: JournalTokenBlock = {
 	erc20: "0x00000000000000000000000000000000000e2c20",
@@ -76,7 +79,7 @@ describe("schema-3 send records", () => {
 
 	it("round-trips through a sealed backup with the token block intact", async () => {
 		const rec = sendDeposit({ registerTxHash: "0xreg" })
-		const file = await sealBridgeBackup(key, rec, SEALER)
+		const file = await sealBridgeBackup(key, rec)
 		const back = (await openBridgeBackup(key, file)) as SendDepositRecord
 		expect(back.schema).toBe(3)
 		expect(back.intent).toBe("token")
@@ -99,7 +102,7 @@ describe("schema-3 send records", () => {
 			intent: "token",
 			token: tokenA,
 		}
-		expect((await openBridgeBackup(key, await sealBridgeBackup(key, wd, SEALER))).schema).toBe(3)
+		expect((await openBridgeBackup(key, await sealBridgeBackup(key, wd))).schema).toBe(3)
 	})
 
 	it("fails closed on a missing, malformed, or cross-token block", () => {

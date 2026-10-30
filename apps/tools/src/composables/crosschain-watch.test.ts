@@ -3,12 +3,15 @@ import {
 	type CrossChainDiscovery,
 	type CrossChainOutcome,
 	deriveCrossChainDepositStage,
+	keyTextOf,
 	openDepositEnvelope,
-	recoveryKeyFromSignature,
-	recoveryKeyMessage,
+	openDepositEnvelopeV3,
+	RecoveryKey,
+	sealDepositEnvelopeV3,
 } from "@unleashed/bridge-core"
 import { BridgeError, type DepositRecord } from "@unleashed/sdk"
 import type { ClaimOptions } from "@unleashed/sdk/fuel"
+import { recoveryBindingOf } from "@/lib/send-record"
 import { predictPortal } from "@unleashed/sdk/protocol"
 import type { Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -265,15 +268,30 @@ describe("the cross-chain watcher", () => {
 		const sealedV3 = currentCrossChainRecord(id)?.sealedEnvelope as string
 		const rec = () => currentCrossChainRecord(id) as unknown as ClaimRecord
 		// The key the claim derives from one signature, as after a reload that lost the in-memory one.
-		const binding = { chainId: rec().chainId, portal: rec().portal, bridge: rec().bridge, secretHashHex: id }
-		const key = await recoveryKeyFromSignature(signatureOf(recoveryKeyMessage(binding)))
+		const key = await RecoveryKey.derive(async (m) => signatureOf(m), recoveryBindingOf(rec(), id), "site")
 		updateCrossChainRecord(id, { amount: OUT.toString(), leafIndex: "7" })
 		expect(await openClaimEnvelope(key, rec(), sealedV3)).toMatchObject({ amount: OUT.toString(), leafIndex: "7" })
 		expect(rec().sealedEnvelope, "a deposit not yet final keeps its window").toBe(sealedV3)
 		updateCrossChainRecord(id, (current) => ({ route: { ...current.route, depositFinal: true } }))
 		await openClaimEnvelope(key, rec(), sealedV3)
+		expect(keyTextOf(rec().sealedEnvelope as string)).toBe("site")
 		expect((await openDepositEnvelope(key, rec().sealedEnvelope as string)).leafIndex).toBe("7")
 		updateCrossChainRecord(id, { amount: (OUT + 1n).toString() })
 		expect(await openClaimEnvelope(key, rec(), sealedV3)).toBeNull()
+	})
+
+	it("a window sealed under the legacy text keeps it: the session's site key writes nothing, the claim's unseal re-seals it legacy", async () => {
+		const id = await sent({ isPrivate: true })
+		const rec = () => currentCrossChainRecord(id) as unknown as ClaimRecord
+		const site = crossChainSealKey(id)
+		if (!site) throw new Error("the record must be sealed")
+		const legacy = await RecoveryKey.derive(async (m) => signatureOf(m), recoveryBindingOf(rec(), id), "legacy")
+		const untagged = await sealDepositEnvelopeV3(legacy, await openDepositEnvelopeV3(site, rec().sealedEnvelope as string))
+		updateCrossChainRecord(id, { sealedEnvelope: untagged })
+		await watchCrossChain(id, watchDeps([deposited(OUT.toString())]).deps)
+		expect(rec()).toMatchObject({ leafIndex: "7", route: { depositFinal: true }, sealedEnvelope: untagged })
+		await openClaimEnvelope(legacy, rec(), untagged)
+		expect(keyTextOf(rec().sealedEnvelope as string)).toBe("legacy")
+		expect((await openDepositEnvelope(legacy, rec().sealedEnvelope as string)).leafIndex).toBe("7")
 	})
 })

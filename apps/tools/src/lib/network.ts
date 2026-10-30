@@ -27,6 +27,9 @@ export interface NetworkConfig {
 	nodeUrl: string
 	/** L1 block-explorer base (Etherscan-style), no trailing slash. */
 	l1ExplorerBaseUrl: string
+	/** The build's canonical origin, its custom domain on every host it runs at. Recovery keys are signed over a
+	 *  text naming it, so changing it strands every key made under the old value. */
+	appOrigin: string
 }
 
 const target = resolveToolsTarget()
@@ -53,6 +56,8 @@ export const NETWORK: NetworkConfig = {
 	// Prod always uses the committed per-target node.
 	nodeUrl: import.meta.env.DEV ? (import.meta.env.VITE_AZTEC_NODE_URL ?? target.nodeUrl) : target.nodeUrl,
 	l1ExplorerBaseUrl: target.l1ExplorerBaseUrl,
+	// The local target is served over loopback HTTP on a per-run port, which the origin leaves out.
+	appOrigin: target.key === "local" ? `http://${target.host}` : `https://${target.host}`,
 }
 
 /** The active target key. */
