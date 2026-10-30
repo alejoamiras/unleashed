@@ -115,6 +115,7 @@ You can take PR screenshots with a throwaway spec, `specs/zz-*.spec.ts`. It driv
 - A theme switch runs a 90ms colour transition: wait about 350ms after switching before a capture, or labels are caught mid-fade.
 - The sandbox runs a send's first phases in about a second, so a pending phase's estimate is gone before a capture: arm `l1.holdNext("transaction")` before confirming to hold the send there.
 - The parked panel can also take a real click aimed near that corner (the rail's tabs after an account switch, the tab bar at 390). Dispatch the click on the element itself there.
+- Before and after shots of a copy change can share one sandbox. Boot and shoot the old tree with `UNLEASHED_E2E_KEEP=1`; after the change, rerun with `UNLEASHED_E2E_ATTACH=<state dir> UNLEASHED_E2E_REBUILD=1`. An attach without the rebuild still serves the old build.
 - A tour cannot reach a retried state through an injected `failNext` or `holdNext` wallet failure: bridge-core's uncertain-outcome guard waits for the pending attempt's receipt, so Retry never lands. Reach the state another way, such as a held L1 transaction.
 
 ## CI

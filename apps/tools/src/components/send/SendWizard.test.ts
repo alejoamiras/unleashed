@@ -843,6 +843,7 @@ describe("SendWizard", () => {
 		amountStep().vm.$emit("next")
 		await flushPromises()
 		const review = w.findComponent({ name: "ReviewStep" })
+		expect(review.props("estimate").takes).toBe("usually 2–4 min end to end")
 		expect(review.props("estimate").networkFee).toBe("up to ≈ 0.01 FJ")
 		expect(review.props("estimate").networkFeeNote).toContain(
 			"from the Fee Juice you already hold — paid by your account as its own fee",
@@ -2113,6 +2114,12 @@ describe("SendWizard", () => {
 			expect(w.findComponent({ name: "CrossChainReview" }).props("error")).toBeNull()
 		},
 	)
+
+	it("the cross-chain review's band counts its quote down in the quote's own words", async () => {
+		const w = await wizard()
+		await atCrossChainReview(w)
+		expect(w.get(`[data-testid="${TESTIDS.sendXcQuoteBand}"]`).text()).toMatch(/^Quote valid for \d:\d\d · refreshed before you sign$/)
+	})
 
 	it("a cross-chain send that fails says why on its own review, never on a newer one opened after backgrounding it", async () => {
 		xcSend.mockResolvedValueOnce({ error: "Rejected in your wallet." })

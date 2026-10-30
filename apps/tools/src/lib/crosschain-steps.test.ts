@@ -153,13 +153,17 @@ describe("stepperPhases - a cross-chain send", () => {
 		expect(crossChainStalled(bridging())).toBe(false)
 	})
 
-	it("a send on fixed terms waits for our testnet relayer until the deadline, and is never late", () => {
+	it("a send on fixed terms waits for our testnet relayer until the deadline, is never late, and names no window", () => {
 		const fixed = bridging({ terms: "fixed", etaSeconds: 7_200 })
 		expect(bridgingLate(fixed, XC_CREATED + 24 * 3_600_000)).toBe(false)
 		expect(byKey(fixed).bridge).toMatchObject({
 			state: "active",
-			detail: "Across holds your USDC until our testnet relayer fills it on Ethereum · Sepolia. Nothing for you to do.",
-			eta: "usually a few minutes, up to 2 hours",
+			detail: "Moving your USDC to Ethereum · Sepolia. Nothing for you to do.",
+			eta: "usually a few minutes",
+		})
+		expect(byKey(xcRecord({}, { srcTxHash: undefined, terms: "fixed", etaSeconds: 7_200 })).bridge).toMatchObject({
+			state: "pending",
+			estimate: "a few min",
 		})
 	})
 

@@ -1,0 +1,6 @@
+{
+	"schema": 1,
+	"network": "mainnet",
+	"l1ChainId": 1,
+	"evm": {}
+}

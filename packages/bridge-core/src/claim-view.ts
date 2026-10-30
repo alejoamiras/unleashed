@@ -4,7 +4,8 @@ import type { AnyJournalRecord } from "./journal"
 /**
  * A stored record as the SDK's claims read it: a schema-3 deposit as stored, a schema-4 one without its `route`, a
  * legacy schema-2 Fee Juice deposit as a gas-only send. Undefined for a record no SDK claim takes (a withdraw, a
- * schema-1 record, a schema-2 token deposit). Nested blocks are shared with `rec`, never copied.
+ * schema-1 record, a schema-2 token deposit). Nested blocks are shared with `rec`, except a legacy public Fee Juice
+ * record's gas block, which takes the record's claim secret.
  */
 export function claimView(rec: AnyJournalRecord): DepositRecord | undefined {
 	if (rec.direction !== "deposit") return undefined
@@ -15,7 +16,9 @@ export function claimView(rec: AnyJournalRecord): DepositRecord | undefined {
 	}
 	if (rec.schema === 2 && rec.assetKind === "fee-juice" && rec.fuel) {
 		const { assetKind: _assetKind, ...rest } = rec
-		return { ...rest, schema: 3, intent: "gas" }
+		// Its claim secret is the record's own; the gas-only claim reads the block, whose copy it outranks.
+		const fuel = !rec.isPrivate && rec.secret !== undefined ? { ...rec.fuel, secret: rec.secret } : rec.fuel
+		return { ...rest, fuel, schema: 3, intent: "gas" }
 	}
 	return undefined
 }

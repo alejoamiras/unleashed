@@ -17,6 +17,7 @@ import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract, type ContractBase, type ContractInstanceWithAddress } from "@aztec-labs/aztec.js/contracts"
+import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { publishContractClass } from "@aztec-labs/aztec.js/deployment"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
@@ -324,7 +325,7 @@ async function assertGeneration(l1: L1Ctx, l2: L2Ctx, record: GenerationRecord):
 		record.l2.hub.address,
 		"factory.L2_HUB",
 	)
-	const hub = await registerHub(l2.wallet, record.l2.hub)
+	const hub = await registerHub(l2.wallet, record.l2.hub, tokenBridgeHubArtifact)
 	if ((await hubTokenFor(hub, "0x0000000000000000000000000000000000000000", l2.from.toString())) !== undefined) {
 		throw new Error("hub token_for(0x0) answered a non-zero token — the hub is not the freshly-constructed one")
 	}
@@ -395,6 +396,8 @@ export async function waitForL1ToL2Message(node: AztecNode, messageHash: string,
 }
 
 export interface PreCreateTokenOptions {
+	/** The artifact the generation's hub was deployed from. */
+	hubArtifact: ContractArtifact
 	/** Consume the factory's register message now; `false` leaves it for the first claim. */
 	register?: boolean
 	source?: ManifestToken["source"]
@@ -476,13 +479,13 @@ export async function preCreateToken(
 	gen: GenerationRecord,
 	erc20: Address,
 	journal: DeployJournal,
-	opts: PreCreateTokenOptions = {},
+	opts: PreCreateTokenOptions,
 ): Promise<ManifestToken> {
 	const { reg, txHash } = await ensurePortal(l1, gen.l1.factory, erc20)
 	const token = await manifestTokenOf(gen, erc20, reg, opts)
 	// A per-run wallet store has never seen the hub, even one this run's `deploy` adopted rather than
 	// deployed, and the PXE cannot simulate `token_for` on an instance it does not hold.
-	const hub = await registerHub(l2.wallet, gen.l2.hub)
+	const hub = await registerHub(l2.wallet, gen.l2.hub, opts.hubArtifact)
 	// `register_token` enqueues the derived Token's constructor, so the wallet must hold that
 	// instance before it can even BUILD the transaction — the oracle resolves the callee locally.
 	await registerHubToken(l2.wallet, AztecAddress.fromStringUnsafe(gen.l2.hub.address), token, gen.l2.tokenClassId)

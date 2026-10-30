@@ -43,7 +43,9 @@ Every call that signs takes a `Network` and refuses one `parseNetwork` did not b
 - on a chain this release bundles a network for, is not that network (compared field by field, before any read), or
   sits on any other chain but a local sandbox's;
 - disagrees with the Aztec node on its chain, rollup, registry or Fee Juice contracts;
-- points at deployed contracts that are not this release's builds bound to the registry's canonical rollup.
+- points at deployed contracts that are not the code its generation's committed record pins
+  (`contracts/bridge/generations/<network>/`, bundled with this release; a local sandbox is checked against this
+  release's own builds instead), bound to the registry's canonical rollup.
 
 `@unleashed/sdk/networks` bundles the reviewed `TESTNET_MANIFEST` and `MAINNET_MANIFEST`, frozen, and
 `bundledManifest(l1ChainId)` names the one for a chain. They are the only manifests `parseNetwork` accepts on their
@@ -138,8 +140,8 @@ A token plus gas whose claim left its gas unspent reports one more `claim-reques
 - **`gasLeft`** on the outcome is set only when the tokens landed and no retry could claim the gas; it says why.
 - **A record missing its gas leg's leaf, message hash or amount** reads the deposit's receipt before claiming.
 - **The wallet's grant.** `capabilitiesFor(net, { fuel: true, tokens })` returns the exact-address capability entries
-  the claims call, to merge into the request your app sends its Aztec wallet. `hubArtifact()` serves a wallet that
-  must register the hub.
+  the claims call, to merge into the request your app sends its Aztec wallet. `hubArtifact(net)` returns the artifact
+  `net`'s hub was deployed from, for a wallet that must register the hub.
 
 ## Errors
 
@@ -164,8 +166,10 @@ by hand) or `incomplete`. A claim reports `claim-dropped` and `claim-reverted` w
 ## Supported tokens
 
 - **Token bridge**: any ERC-20, listed in `net.bridge.tokens` or not, through `resolveToken`. A first-time token's
-  portal is created by its deposit and its L2 token by its first claim. Fee-on-transfer tokens and amounts above
-  `uint128` are refused on chain; rebasing tokens are unsupported and not detected.
+  portal is created by its deposit and its L2 token by its first claim. A clone built from this release's sources
+  refuses on chain a deposit whose sender debit or clone credit is not exactly its amount, an amount above `uint128`,
+  and a deposit that would take the clone's balance past `uint128`; a live generation's clones run the code its record
+  pins. Rebasing tokens are unsupported and not detected.
 - **Gas**: the fee asset at par, or a token the network's venue prices: a pinned swapper on testnet; LI.FI's
   allow-listed venues are taken on a local sandbox's chains only (`LIFI_FUEL_CHAIN_IDS`). `probeFuel` gives the rate;
   a token no venue prices is refused before signing (`no-fuel-route`).
@@ -219,17 +223,17 @@ The app (`apps/tools`) and `@unleashed/bridge-core` import the package from the 
 |---|---|---|
 | `@unleashed/sdk` | `parseNetwork` and its trust roots, `Network`, transfer records and events, `BridgeError`, `capabilitiesFor`. | yes |
 | `@unleashed/sdk/fuel` | `probeFuel`, `quoteFuel`, `depositFuel`, `claimFuel`: gas only. Never loads the hub artifact. | yes |
-| `@unleashed/sdk/bridge` | `resolveToken`, `quoteBridge`, `depositToken`, `claimToken`, `hubArtifact()`: a token, or a token plus gas. Loads the hub artifact. | yes |
+| `@unleashed/sdk/bridge` | `resolveToken`, `quoteBridge`, `depositToken`, `claimToken`, `hubArtifact(net)`: a token, or a token plus gas. Uses the hub artifact `parseNetwork` loaded for the network's generation. | yes |
 | `@unleashed/sdk/protocol` | The pure layer: ABIs, derivations, the manifest, gas math, the LI.FI client and book, fee methods, code pins. | yes |
 | `@unleashed/sdk/networks` | The bundled testnet and mainnet manifests. | yes |
-| `@unleashed/sdk/artifacts` | The hub's Noir artifact, loaded eagerly. | workspace only |
+| `@unleashed/sdk/artifacts` | This release's hub artifact, built from the current sources (what a sandbox runs), loaded eagerly. | workspace only |
 | `@unleashed/sdk/private-fpc-artifact` | The PrivateFPC artifact, for a dynamic `import()` only. | workspace only |
 | `@unleashed/sdk/l1` | The viem-only slice of `./protocol` (the router ABI, the LI.FI ABIs, book and gas constants): esbuild resolves every member of a barrel, so a Worker bundles this one instead. | workspace only |
 | `@unleashed/sdk/internal` | The orchestration (`execution/`): the L1 send, receipt leaves, arrival gates, claims, recovery. | workspace only |
 
 Source imports use `.ts` specifiers, so every consumer's tsconfig sets `allowImportingTsExtensions`. `src/` imports no
-`node:` built-in and declares every package it imports (`imports.test.ts`), and `.` and `./fuel` never reach the hub
-artifact statically (the same test).
+`node:` built-in and declares every package it imports (`imports.test.ts`), and no entry reaches a hub artifact
+statically (the same test): `parseNetwork` imports the one its network's generation deployed.
 
 ### File map
 
@@ -248,7 +252,8 @@ artifact statically (the same test).
 | `gas-share.ts` | The integer gas-share math (`fjPerTx` × target [+ `fjRegister`], the signed floor, the 50 % cap). |
 | `fee-juice.ts` / `fuel.ts` / `private-fuel.ts` / `private-fpc-artifact.ts` | Fee-juice payment methods, the direct `FeeJuicePortal` lane, the Wonderland PrivateFPC (pinned address + salt policy; artifact via dynamic import only). |
 | `random-field.ts` | `randomField`: 64 WebCrypto bytes reduced mod r, the source of every fresh field the SDK draws (salts, claim secrets, authwit nonces); the Permit2 nonce stays an unreduced uint256. Exported through `./internal`. |
-| `wallet-chain-id.ts` / `artifacts.ts` | `walletChainIdOf` (`(l1 ^ rollupVersion) >>> 0`); the hub artifact (its own entry, `@unleashed/sdk/artifacts`). |
+| `wallet-chain-id.ts` / `artifacts.ts` | `walletChainIdOf` (`(l1 ^ rollupVersion) >>> 0`); this release's hub artifact (its own entry, `@unleashed/sdk/artifacts`). |
+| `generation-record.ts` / `hub-artifact-testnet.ts` / `abi-shape.ts` | The committed record of the code each live generation runs: its schema, its binding to a manifest's addresses, its integrity against the kept artifacts, and `codeOf`, which picks by chain the pins and hub artifact `parseNetwork` checks against (the record on a live chain, this release's builds on a sandbox, a refusal on any other); the testnet generation's kept hub artifact, reached by dynamic `import()` only; the ABI shape comparison behind the compatibility test (`generation-compat.test.ts`). |
 
 #### `src/execution/` and the root
 
@@ -280,4 +285,4 @@ artifact statically (the same test).
 - **A private first claim's two transactions pay from the same bridged Fee Juice, and nothing is ever sponsored** (`hub-l2.ts` seams `registerFee` / `registeredClaimFee`): the registration spends the fuel message (`PrivateFPC.mint_and_pay_fee`, sized with `PRIVATE_HUB_REGISTER_GAS`), which leaves `amount − max_gas_cost` as the claimer's private credit at the FPC, and the claim that follows pays from that credit (`pay_fee`, sized with `PRIVATE_HUB_CLAIM_GAS`). The FPC keeps each transaction's committed ceiling, not its charge, so a first-time private bridge must carry both ceilings. The claim is sent only once its own simulation passes in the claimer's wallet: the registration's binding lands on the node first, and `claim_private` reads it at the wallet's synced block, which lags (`registrationWait`, 5 s polls, 3-minute deadline; `onRegistered` hands the caller the registration's hash as soon as it exists).
 - **The Permit2 witness is cross-pinned.** `l1.ts`'s `DepositWitness` member list + `DEPOSIT_WITNESS_TYPE` must stay byte-identical to `DepositRouter.hashWitness`. `l1.test.ts` pins the hashes; the evm fork test proves a post-signature tamper reverts.
 - **Gas-share math is integer-only with two exact ceilings** (`gas-share.ts`): the slice sized from `fjPerTx` and the floor signed from it never lose a base unit to a folded division — a property test pins it.
-- **Token behaviours are bounded on chain, not trusted off chain.** The clone refuses fee-on-transfer (exact-in), `amount > uint128.max`, and protects the reserve on withdraw with an exact portal-debit; a token no fuel venue prices is refused before signing (`fuel-quote.ts`); rebasing tokens are unsupported and surfaced as a caution, never detected.
+- **Token behaviours are bounded on chain, not trusted off chain.** A clone built from this release's sources refuses a deposit whose sender debit or clone credit is not exactly the amount (exact-in), `amount > uint128.max` and a reserve past `uint128.max`, and protects the reserve on withdraw with an exact portal-debit (a live generation runs the code its record pins); a token no fuel venue prices is refused before signing (`fuel-quote.ts`); rebasing tokens are unsupported and surfaced as a caution, never detected.

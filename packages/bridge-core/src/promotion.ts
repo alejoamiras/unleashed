@@ -3,16 +3,18 @@
  * and the interlock that stops a promotion from quietly moving the network or the generation.
  * Extracted so the fund-adjacent checks are unit-testable without live RPC plumbing.
  */
+import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { type ManifestV2, parseManifestV2Strict } from "@unleashed/sdk/protocol"
 
 /**
- * Strict-parses a candidate — both halves, so every token's L2 address is the hub's derivation —
+ * Strict-parses a candidate — both halves, the hub derived from `hubArtifact`, the one its generation
+ * deployed, so every token's L2 address is the hub's derivation —
  * and adds what the app needs at boot but the schema allows in general: a real bridge
  * (`bridge: null` is a legal placeholder manifest, never a promotable one) carrying at least one
  * token, so the wizard never boots onto an empty token list.
  */
-export async function assertFaucetCandidateShape(raw: unknown): Promise<ManifestV2> {
-	const m = await parseManifestV2Strict(raw)
+export async function assertFaucetCandidateShape(raw: unknown, hubArtifact: ContractArtifact): Promise<ManifestV2> {
+	const m = await parseManifestV2Strict(raw, hubArtifact)
 	if (!m.bridge) {
 		throw new Error(`candidate for ${m.network} carries no bridge (placeholder network) — there is nothing to promote; STOP`)
 	}

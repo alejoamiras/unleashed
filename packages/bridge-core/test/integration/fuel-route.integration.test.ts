@@ -9,6 +9,7 @@ import { join } from "node:path"
 import type { Address } from "viem"
 import { afterAll, describe, expect, it } from "vitest"
 import { type L1Ctx, fuelRouteOf } from "@unleashed/sdk/internal"
+import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
 import { parseManifestV2Strict } from "@unleashed/sdk/protocol"
 import { readCandidate, readDeployJournal } from "../../scripts/deploy-manifest"
 import { deployFuelRoute, type FuelRouteOptions, type FuelRouteResult } from "../../scripts/fuel-route"
@@ -88,7 +89,7 @@ describe.skipIf(!INTEGRATION)("fuel-only route, rehearsed on the sandbox", () =>
 	it("the candidate names the route, parses strictly and passes verify:l1 --strict, but not while the gate is paused", async () => {
 		const candidate = readCandidate(options.candidatePath)
 		if (!candidate?.fuelRoute) throw new Error("the conductor wrote no fuel route")
-		await parseManifestV2Strict(candidate)
+		await parseManifestV2Strict(candidate, tokenBridgeHubArtifact)
 		expect(candidate.bridge).toBeNull()
 		expect(candidate.fuelRoute).toMatchObject({
 			depositRouter: first.depositRouter.address,

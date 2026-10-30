@@ -9,8 +9,9 @@
  * never produce only if the check is skipped, and a stale carried address is the failure this
  * schema exists to make impossible.
  */
+import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js/contracts"
+import { type ContractInstanceWithAddress, getContractInstanceFromInstantiationParams } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { PublicKeys } from "@aztec-labs/aztec.js/keys"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
@@ -303,16 +304,11 @@ export function parseManifestV2(raw: unknown): ManifestV2 {
 	return result.data
 }
 
-/**
- * The asynchronous half: every token's `l2Token` must be the address the hub derives from the
- * manifest's words (the app registers that instance with the PXE; a wrong one is never minted to).
- */
-/** The hub instance the manifest record derives to — every token derivation hangs off this address. The hub
- *  artifact is megabytes, so only a token route loads it. */
-export async function deriveManifestHub(b: NonNullable<ManifestV2["bridge"]>) {
+/** The hub instance the manifest record derives to from `hubArtifact`, the artifact its generation deployed: every
+ *  token derivation hangs off this address. */
+export async function deriveManifestHub(b: NonNullable<ManifestV2["bridge"]>, hubArtifact: ContractArtifact) {
 	const [tokenClassId, factory, guardian] = b.l2.hub.constructorArgs as [string, string, string]
-	const { tokenBridgeHubArtifact } = await import("./artifacts.ts")
-	return getContractInstanceFromInstantiationParams(tokenBridgeHubArtifact, {
+	return getContractInstanceFromInstantiationParams(hubArtifact, {
 		constructorArgs: [Fr.fromHexString(tokenClassId), EthAddress.fromString(factory), AztecAddress.fromStringUnsafe(guardian)],
 		constructorArtifact: b.l2.hub.constructorArtifact,
 		salt: Fr.fromHexString(b.l2.hub.salt),
@@ -321,9 +317,17 @@ export async function deriveManifestHub(b: NonNullable<ManifestV2["bridge"]>) {
 	})
 }
 
-export async function assertManifestTokensDerive(m: ManifestV2): Promise<void> {
-	if (!m.bridge) return
-	const derivedHub = await deriveManifestHub(m.bridge)
+/**
+ * The asynchronous half: the hub must be the instantiation of its record from `hubArtifact`, and every token's
+ * `l2Token` the address that hub derives from the manifest's words (the app registers that instance with the PXE; a
+ * wrong one is never minted to). Returns the derived hub, or undefined for a manifest with no bridge.
+ */
+export async function assertManifestTokensDerive(
+	m: ManifestV2,
+	hubArtifact: ContractArtifact,
+): Promise<ContractInstanceWithAddress | undefined> {
+	if (!m.bridge) return undefined
+	const derivedHub = await deriveManifestHub(m.bridge, hubArtifact)
 	if (derivedHub.address.toString().toLowerCase() !== m.bridge.l2.hub.address.toLowerCase()) {
 		throw new Error(
 			`bridge manifest v2: hub ${m.bridge.l2.hub.address} is not the instantiation of its own record (${derivedHub.address.toString()})`,
@@ -343,12 +347,13 @@ export async function assertManifestTokensDerive(m: ManifestV2): Promise<void> {
 			)
 		}
 	}
+	return derivedHub
 }
 
-/** Both halves. */
-export async function parseManifestV2Strict(raw: unknown): Promise<ManifestV2> {
+/** Both halves, the hub derived from `hubArtifact`. */
+export async function parseManifestV2Strict(raw: unknown, hubArtifact: ContractArtifact): Promise<ManifestV2> {
 	const m = parseManifestV2(raw)
-	await assertManifestTokensDerive(m)
+	await assertManifestTokensDerive(m, hubArtifact)
 	return m
 }
 

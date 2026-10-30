@@ -55,7 +55,7 @@ const h = vi.hoisted(() => ({
 		gasHeldPublic: { value: 0n as bigint | null },
 		gasHeldSelfPay: { value: false },
 		listGate: null as null | Promise<void>,
-		receiptGate: null as null | Promise<void>,
+		promptGate: null as null | Promise<void>,
 		order: [] as string[],
 	},
 	fn: {
@@ -63,12 +63,12 @@ const h = vi.hoisted(() => ({
 		depositL1: vi.fn(),
 		assertDepositsOpen: vi.fn(),
 		bridgeNetwork: vi.fn(),
-		claimViaHub: vi.fn(),
+		claimToken: vi.fn(),
+		claimFuel: vi.fn(),
 		exitViaHub: vi.fn(),
 		preflightHubExit: vi.fn(),
 		retryCapabilities: vi.fn(),
 		readContract: vi.fn(),
-		buildFeeJuiceClaimDep: vi.fn(),
 	},
 }))
 
@@ -101,7 +101,7 @@ vi.mock("@/contracts/bridge-generation", async () => {
 		MANIFEST_TOKENS: bridge.tokens,
 		FUEL: fuel,
 		LEGACY_ROUTERS: internal.legacyRoutersOf(bridge),
-		HUB_ARTIFACT: {},
+		hubArtifact: async () => ({}),
 		HUB_TOKEN_ARTIFACT: {},
 		rebuildHubInstance: async () => ({ address: { toString: () => bridge.l2.hub.address } }),
 		rebuildHubTokenInstance: async (erc20: string) => ({ address: { toString: () => derived(erc20) } }),
@@ -210,7 +210,6 @@ vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
 	depositL1: h.fn.depositL1,
 	assertDepositsOpen: h.fn.assertDepositsOpen,
-	claimViaHub: h.fn.claimViaHub,
 	exitViaHub: h.fn.exitViaHub,
 	preflightHubExit: h.fn.preflightHubExit,
 	// The SDK's claim probe calls its own `hubTokenFor`, past the mock below, so the hub answers it from the same state.
@@ -227,19 +226,23 @@ vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 	readRegistration: async (_pub: unknown, _factory: string, erc20: string) => h.state.registrations.get(erc20.toLowerCase()),
 }))
 
+// The claims run on the SDK's entries, played below against the faked hub.
+vi.mock("@unleashed/sdk/bridge", async (orig) => ({
+	...(await orig<typeof import("@unleashed/sdk/bridge")>()),
+	claimToken: h.fn.claimToken,
+}))
+vi.mock("@unleashed/sdk/fuel", async (orig) => ({ ...(await orig<typeof import("@unleashed/sdk/fuel")>()), claimFuel: h.fn.claimFuel }))
+
 // Only the boundaries that need a live wallet or the recovery crypto; the rest of the module (the
-// stop-interaction shape, the fingerprint) stays real.
+// journal store, the fingerprint) stays real.
 vi.mock("@/composables/deposit-flow", async (orig) => {
 	const actual = await orig<typeof import("@/composables/deposit-flow")>()
 	const { cacheSecret } = await import("@/composables/useBridgeJournal")
 	return {
 		...actual,
-		resolveHubClaimSendOpts: async () => ({ kind: "opts", opts: {} }),
 		// The private exit's fee reads the credit at the PrivateFPC (a 2.2 MB artifact import in the
 		// real reader, which outlasts the harness's zero-delay settle); the wizard's held-gas stub answers.
 		readPrivateFeeJuiceBalance: async () => h.state.gasHeld.value ?? 0n,
-		recoverDepositLeg: async () => "recovered",
-		buildFeeJuiceClaimDep: h.fn.buildFeeJuiceClaimDep,
 		// The real seal caches the salt so the in-session claim needs no signature; keep that, drop
 		// the crypto (the envelope itself is never read on the send lane).
 		sealPrivateRecord: async (ctx: { id: string; secretStr: string }) => {
@@ -252,7 +255,8 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { SendDepositRecord } from "@unleashed/bridge-core"
-import { BridgeError, type DepositRecord, type DepositSecrets, type RunOptions } from "@unleashed/sdk"
+import { BridgeError, type DepositRecord, type DepositSecrets, type RunOptions, type TransferEventBody } from "@unleashed/sdk"
+import type { ClaimOptions, ClaimOutcome } from "@unleashed/sdk/fuel"
 import type { DepositPlan } from "@unleashed/sdk/internal"
 import { deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
 import { type Hex, keccak256, stringToHex } from "viem"
@@ -373,11 +377,49 @@ h.wire.l1 = {
 
 // ── the faked chain answers ──────────────────────────────────────────────────────────────────────
 
-/** Mirrors the real hub: an unbound ERC-20 registers inside (or alongside) its first claim. */
-function claimOutcome(erc20: string) {
-	if (h.state.hubTokens.has(erc20.toLowerCase())) return { path: "claim", claimTxHash: "0xclaim" }
-	h.state.hubTokens.set(erc20.toLowerCase(), l2TokenOf(erc20))
-	return { path: "register,claim", claimTxHash: "0xclaim", registerTxHash: "0xregister" }
+type Emit = (body: TransferEventBody) => void
+
+function emitterOf(id: string, run: ClaimOptions): Emit {
+	let seq = 0
+	return (body) => run.onEvent?.({ id, seq: seq++, ...body })
+}
+
+/** The claim and its landing, as the SDK persists and reports them. */
+async function landClaim(record: DepositRecord, run: ClaimOptions, emit: Emit, leg: "token" | "gas"): Promise<ClaimOutcome> {
+	emit({ type: "claim-requested", leg })
+	if (h.state.promptGate) await h.state.promptGate
+	const sent = { ...record, claimTxHash: "0xclaim" }
+	await run.persist(sent, run.secrets)
+	emit({ type: "claim-sent", leg, txHash: "0xclaim", payer: "own-gas" })
+	const done = { ...sent, completedAt: Date.now() }
+	await run.persist(done, run.secrets)
+	emit({ type: "claim-landed", via: "claim", txHash: "0xclaim" })
+	emit({ type: "settled", via: "claim", txHash: "0xclaim" })
+	return { record: done, via: "claim", txHash: "0xclaim" }
+}
+
+/** `claimToken` against the faked hub: an unbound token registers first, then the claim lands. Each wallet prompt waits
+ *  while `promptGate` is shut, so the rail rests on the step that asked. */
+async function fakeClaimToken(_net: unknown, _r: unknown, _aztec: unknown, view: DepositRecord, run: ClaimOptions) {
+	const emit = emitterOf(view.id, run)
+	const erc20 = (view.token as { erc20: string }).erc20.toLowerCase()
+	emit({ type: "claimable" })
+	let record = view
+	if (!h.state.hubTokens.has(erc20)) {
+		emit({ type: "registration-requested" })
+		if (h.state.promptGate) await h.state.promptGate
+		h.state.hubTokens.set(erc20, l2TokenOf(erc20))
+		record = { ...record, registerTxHash: "0xregister" }
+		await run.persist(record, run.secrets)
+		emit({ type: "registration-sent", txHash: "0xregister" })
+	}
+	return landClaim(record, run, emit, "token")
+}
+
+async function fakeClaimFuel(_net: unknown, _r: unknown, _aztec: unknown, view: DepositRecord, run: ClaimOptions) {
+	const emit = emitterOf(view.id, run)
+	emit({ type: "claimable" })
+	return landClaim(view, run, emit, "gas")
 }
 
 interface SmokeWallet {
@@ -469,12 +511,6 @@ async function mountView() {
 	// the bridge smoke does, so the engine runs for real against fakes.
 	connectJournalDeps({
 		waitMs: async () => {},
-		l2BlockNumber: async () => 1,
-		messageReadiness: async () => ({ checkpoint: 1, anchor: 1 }),
-		claimReceiptStatus: async () => {
-			if (h.state.receiptGate) await h.state.receiptGate
-			return "success"
-		},
 		consumeSend: async () => ({ consumeTxHash: "0xconsume" }),
 		verifyConsumeIdentitySend: async () => true,
 		waitConsumeReceipt: async () => true,
@@ -523,7 +559,7 @@ describe("send wizard smoke", () => {
 		h.state.exitsPaused = false
 		h.state.l2Balance = 5n * 10n ** 8n
 		h.state.listGate = null
-		h.state.receiptGate = null
+		h.state.promptGate = null
 		h.state.order = []
 		requested.clear()
 		grantedContracts.value = []
@@ -540,13 +576,10 @@ describe("send wizard smoke", () => {
 		h.fn.depositL1.mockImplementation(fakeDepositL1)
 		h.fn.bridgeNetwork.mockImplementation(async () => ({}))
 		h.fn.assertDepositsOpen.mockImplementation(async () => {})
-		h.fn.claimViaHub.mockImplementation(async (_hub: unknown, p: { token: { erc20: string } }) => claimOutcome(p.token.erc20))
+		h.fn.claimToken.mockImplementation(fakeClaimToken)
+		h.fn.claimFuel.mockImplementation(fakeClaimFuel)
 		h.fn.exitViaHub.mockImplementation(async () => ({ receipt: { txHash: "0xexittx", blockNumber: 5 } }))
 		h.fn.preflightHubExit.mockImplementation(async () => {})
-		h.fn.buildFeeJuiceClaimDep.mockImplementation(async () => ({
-			simulate: async () => ({}),
-			send: async () => ({ txHash: "0xfjclaim" }),
-		}))
 		h.fn.readContract.mockImplementation(async (args: { functionName: string; args?: readonly string[] }) => {
 			if (args.functionName === "withdrawsPaused") return h.state.withdrawsPaused
 			if (args.functionName === "quote") return swapperQuote(args.args?.[1])
@@ -689,6 +722,8 @@ describe("send wizard smoke", () => {
 		expect(w.find(sel(TESTIDS.stepperBackground)).exists()).toBe(false)
 		expect(records()).toHaveLength(0)
 
+		// The claim then waits at its prompt, so the stepper stays up.
+		h.state.promptGate = new Promise<void>(() => {})
 		release()
 		await settle()
 		expect(h.fn.depositL1).toHaveBeenCalledTimes(1)
@@ -739,7 +774,7 @@ describe("send wizard smoke", () => {
 		await settle()
 		const rec = sendRecord()
 		expect(rec?.token?.l2Token).toBe(l2TokenOf(LIST_WBTC))
-		expect(h.fn.claimViaHub).toHaveBeenCalledTimes(1)
+		expect(h.fn.claimToken).toHaveBeenCalledTimes(1)
 		expect(rec?.registerTxHash).toBe("0xregister")
 	})
 
@@ -759,7 +794,7 @@ describe("send wizard smoke", () => {
 
 	it("a private first send shows the REGISTER step and finishes without a second click", async () => {
 		let release = (): void => {}
-		h.state.receiptGate = new Promise<void>((r) => {
+		h.state.promptGate = new Promise<void>((r) => {
 			release = r
 		})
 		const w = await mountView()
@@ -814,13 +849,14 @@ describe("send wizard smoke", () => {
 		expect(rec).toBeDefined()
 		expect(rec?.token).toBeUndefined()
 		// A gas-only send has no token leg, so its one claim secret lives in the fuel block - and the
-		// claim is built from THAT, not from a top-level copy the record never gets.
+		// claim reads THAT, not a top-level copy the record never gets.
 		expect(rec?.secret).toBeUndefined()
 		expect(rec?.fuel?.secret).toBe(PUBLIC_SECRET)
-		expect(h.fn.buildFeeJuiceClaimDep).toHaveBeenCalledTimes(1)
-		const [claimedRec, claimedSecret] = h.fn.buildFeeJuiceClaimDep.mock.calls[0] as [{ id: string }, string]
-		expect(claimedRec.id).toBe(rec?.id)
-		expect(claimedSecret).toBe(PUBLIC_SECRET)
+		expect(h.fn.claimToken).not.toHaveBeenCalled()
+		expect(h.fn.claimFuel).toHaveBeenCalledTimes(1)
+		const claimed = h.fn.claimFuel.mock.calls[0][3] as DepositRecord
+		expect(claimed.id).toBe(rec?.id)
+		expect(claimed.fuel?.secret).toBe(PUBLIC_SECRET)
 		expect(rec?.completedAt).toBeDefined()
 	})
 

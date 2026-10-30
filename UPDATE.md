@@ -157,8 +157,17 @@ on these inputs, so they move only with a new generation.
   `MessageSent` (the line's `InboxAbi` shape, or the older checkpoint shape the caller names) and recomputes each
   router deposit's leaf from the record. A bump that changes the event or the message hash leaves every deposit
   unauthenticated; rerun the discovery tests and the testnet canary.
+- **Generation records ↔ this line's builds**: each live network's record
+  (`contracts/bridge/generations/<network>/`) pins the code its generation runs, and the SDK, the app and strict
+  verification check the network against it, so a bump that moves the forge or Noir build (Foundry, the forge
+  libraries, a `Nargo.toml` tag, a recompiled hub target) leaves the live networks working.
+  `bun packages/bridge-core/scripts/generation-record.ts check <network> --build-out contracts/bridge/evm/out` reports
+  the entries this build no longer reproduces. A bump that resets the network writes the new generation's record at
+  its deploy (the skill's Branch B step 4), with the owner's tag when the build inputs moved in the arc. A bump whose
+  SDK calls something the live code lacks keeps a record-selected path until that generation is promoted
+  (`packages/sdk/src/protocol/generation-compat.test.ts`).
 - **Deploy-intent tooling**: `packages/bridge-core/scripts/live-intent.ts` (plan-pinned signer,
-  caps, candidate digest, privileged readbacks, tree gate) and `manifest-v2.ts` (a strict zod
+  caps, candidate and record digests, privileged readbacks, tree gate) and `manifest-v2.ts` (a strict zod
   manifest, re-derived on parse), with the testnet canaries. A reset re-runs the whole arc under them.
 - **Token-list URL ↔ digest ↔ CSP**: `TOKEN_LIST_URL` (`packages/bridge-core/src/token-list.ts`) is
   one exact-version file of `@uniswap/default-token-list` on jsDelivr, `TOKEN_LIST_SHA256` is that

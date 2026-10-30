@@ -24,7 +24,6 @@ import { computeSiloedPrivateInitializationNullifier } from "@aztec-labs/stdlib/
 import { resolvePackageAsset } from "@nulo-sh/resolve-asset"
 import { deriveNuloAccountKeys } from "@nulo-sh/wallet-crypto"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
 import { claimViaHub, hubAt, type HubClaimOutcome, type HubClaimParams, randomField, type SendOpts } from "@unleashed/sdk/internal"
 import { deriveHubTokenInstance, type ManifestToken, type ManifestV2, PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
 import { type DeployerNetwork, resolveDeployerKeys } from "./deployer-keys"
@@ -74,11 +73,12 @@ async function teachWallet(wallet: Wallet, instance: ContractInstanceWithAddress
  * Register (never deploy) the manifest's hub, asserting the recorded address is what its salt and
  * constructor args derive. The hub is a universal deploy, so the deployer is zero.
  */
-/** The hub instance the manifest record derives to; its address commits to every constructor arg. */
-export function deriveHubInstance(hub: ManifestHub): Promise<ContractInstanceWithAddress> {
+/** The hub instance the manifest record derives to from `artifact`; its address commits to every constructor arg and
+ *  to the artifact's class. */
+export function deriveHubInstance(hub: ManifestHub, artifact: ContractArtifact): Promise<ContractInstanceWithAddress> {
 	const [tokenClassId, factory, guardian] = hub.constructorArgs
 	return deriveInstance(
-		tokenBridgeHubArtifact,
+		artifact,
 		[Fr.fromHexString(String(tokenClassId)), EthAddress.fromString(String(factory)), AztecAddress.fromStringUnsafe(String(guardian))],
 		hub.constructorArtifact,
 		Fr.fromHexString(hub.salt),
@@ -86,11 +86,11 @@ export function deriveHubInstance(hub: ManifestHub): Promise<ContractInstanceWit
 	)
 }
 
-export async function registerHub(wallet: Wallet, hub: ManifestHub): Promise<ContractBase> {
-	const instance = await deriveHubInstance(hub)
+export async function registerHub(wallet: Wallet, hub: ManifestHub, artifact: ContractArtifact): Promise<ContractBase> {
+	const instance = await deriveHubInstance(hub, artifact)
 	assertDerived("hub", instance, hub.address)
-	await teachWallet(wallet, instance, tokenBridgeHubArtifact)
-	return hubAt(wallet, hub.address)
+	await teachWallet(wallet, instance, artifact)
+	return hubAt(wallet, hub.address, artifact)
 }
 
 /**

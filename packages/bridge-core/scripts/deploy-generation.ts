@@ -74,6 +74,8 @@ import {
 import { CANONICAL_PERMIT2 } from "@unleashed/sdk/protocol"
 import { deployAccountIfAbsent, deployerSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
+import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
+import { hubArtifactFor } from "./generation-paths"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(here, "..", "..", "..", "apps", "tools", "public")
@@ -278,7 +280,11 @@ async function commandDeploy(): Promise<void> {
 	)
 	console.log(`\n=== tokens (${mins()}) ===`)
 	const manifestTokens: ManifestToken[] = []
-	for (const erc20 of tokens) manifestTokens.push(await preCreateToken(l1, l2, gen, erc20, journal, { maxWholePerTx: 1_000_000 }))
+	// The hub this run deployed is this checkout's hub target.
+	for (const erc20 of tokens)
+		manifestTokens.push(
+			await preCreateToken(l1, l2, gen, erc20, journal, { hubArtifact: tokenBridgeHubArtifact, maxWholePerTx: 1_000_000 }),
+		)
 	console.log(`\n=== router (${mins()}) ===`)
 	await deployRouterOnly({
 		l1,
@@ -378,6 +384,7 @@ async function commandPreCreate(): Promise<void> {
 	const journal = openDeployJournal(JOURNAL_PATH, identityOf(l1, addrs))
 	const gen: GenerationRecord = { l1: bridge.l1 as GenerationRecord["l1"], l2: bridge.l2 as GenerationRecord["l2"] }
 	const token = await preCreateToken(l1, l2, gen, lc(erc20), journal, {
+		hubArtifact: hubArtifactFor(manifest),
 		register: !process.argv.includes("--no-register"),
 		// A real token has no public mint, so the app must not offer one.
 		...(process.argv.includes("--canonical") ? { source: "canonical" as const } : { maxWholePerTx: 1_000_000 }),

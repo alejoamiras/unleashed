@@ -1,10 +1,10 @@
-import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { BridgeJournalRecord, DepositFuelBlock, DepositJournalRecord } from "@unleashed/bridge-core"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
 
 const receiptStatus = vi.fn(async (_tx: string) => "pending" as "included" | "dropped" | "pending")
-const standaloneClaim = vi.fn(async () => {})
+const gasClaim = vi.fn(async (_id: string) => {})
+const lockHeld: string[] = []
 const updates: Array<{ id: string; patch: unknown }> = []
 const records = ref<BridgeJournalRecord[]>([])
 const wallet = ref<unknown>({})
@@ -12,18 +12,26 @@ const selectedAccount = ref<string | null>(null)
 
 vi.mock("./deposit-flow", () => ({
 	fuelReceiptStatus: (tx: string) => receiptStatus(tx),
-	sendStandaloneFjClaim: (...a: unknown[]) => standaloneClaim(...(a as [])),
 	// The persisted-block merge, reduced to the write it produces: the test observes the patch.
 	patchFuel: (id: string, captured: object | undefined, patch: object) => {
 		const live = (records.value.find((r) => r.id === id) as { fuel?: object } | undefined)?.fuel ?? captured
 		if (live) updates.push({ id, patch: { fuel: { ...live, ...patch } } })
 	},
 }))
-const runDepositClaim = vi.fn(async (_id: string, _opts?: unknown) => {})
 vi.mock("./useBridgeJournal", () => ({
-	useBridgeJournal: () => ({ records, runDepositClaim }),
+	useBridgeJournal: () => ({ records }),
 	currentRecord: (id: string) => records.value.find((r) => r.id === id),
 	updateRecord: (id: string, patch: unknown) => void updates.push({ id, patch }),
+	runGasClaim: (id: string) => gasClaim(id),
+	// The journal lock, observed: the write happens inside it.
+	underJournalLock: async <T>(fn: () => T): Promise<T> => {
+		lockHeld.push("held")
+		try {
+			return fn()
+		} finally {
+			lockHeld.push("released")
+		}
+	},
 }))
 vi.mock("./useBridgeWallet", () => ({ useBridgeWallet: () => ({ wallet, selectedAccount }) }))
 vi.mock("./useOpsInFlight", () => ({ withOperation: <T>(fn: () => Promise<T>) => fn() }))
@@ -32,7 +40,6 @@ import {
 	__resetFuelOverridesForTests,
 	claimFuelStandalone,
 	fuelOverrideActive,
-	launchStandaloneFuelClaim,
 	overrideFuelClaim,
 	reconcileFuelConsumed,
 } from "./fuel-recovery"
@@ -64,7 +71,8 @@ beforeEach(() => {
 	updates.length = 0
 	receiptStatus.mockClear()
 	receiptStatus.mockResolvedValue("pending")
-	standaloneClaim.mockClear()
+	gasClaim.mockClear()
+	lockHeld.length = 0
 	wallet.value = {}
 	selectedAccount.value = RECIPIENT
 	records.value = [fueled()]
@@ -93,12 +101,13 @@ describe("reconcileFuelConsumed", () => {
 		expect(receiptStatus).not.toHaveBeenCalled()
 	})
 
-	it("persists `consumed` only on an INCLUDED receipt", async () => {
+	it("persists `consumed` only on an INCLUDED receipt, under the journal lock", async () => {
 		records.value = [fueled({ fuel: { ...fueled().fuel, claimTxHash: "0xtx" } as never })]
 		receiptStatus.mockResolvedValue("included")
 		await reconcileFuelConsumed("0xrec")
 		expect(updates).toHaveLength(1)
 		expect((updates[0].patch as { fuel: { consumed: boolean } }).fuel.consumed).toBe(true)
+		expect(lockHeld).toEqual(["held", "released"])
 	})
 
 	it("leaves a dropped or still-pending attempt unsettled, so the affordance stays", async () => {
@@ -139,7 +148,7 @@ describe("claimFuelStandalone", () => {
 	it("refuses a PRIVATE record — its gas is claimed inside the private bridge", async () => {
 		records.value = [fueled({ isPrivate: true })]
 		await expect(claimFuelStandalone("0xrec")).rejects.toThrow(/standalone recovery is unavailable/)
-		expect(standaloneClaim).not.toHaveBeenCalled()
+		expect(gasClaim).not.toHaveBeenCalled()
 	})
 
 	it("refuses under a different (or unknown) active account, naming the owner", async () => {
@@ -147,39 +156,14 @@ describe("claimFuelStandalone", () => {
 		await expect(claimFuelStandalone("0xrec")).rejects.toThrow(/Switch to that account/)
 		selectedAccount.value = null
 		await expect(claimFuelStandalone("0xrec")).rejects.toThrow(/Switch to that account/)
-		expect(standaloneClaim).not.toHaveBeenCalled()
+		expect(gasClaim).not.toHaveBeenCalled()
 	})
 
-	it("a token another submitter claimed hands its completion back to the engine once the gas is claimed", async () => {
-		records.value = [fueled({ completedAt: undefined, claimedByOther: true })]
+	it("hands the record's own gas claim to the engine once every guard passed, and surfaces its failure", async () => {
 		await claimFuelStandalone("0xrec")
-		expect(standaloneClaim).toHaveBeenCalledTimes(1)
-		expect(runDepositClaim).toHaveBeenCalledWith("0xrec", { interactive: false })
-		runDepositClaim.mockClear()
-		records.value = [fueled()]
-		await claimFuelStandalone("0xrec")
-		expect(runDepositClaim).not.toHaveBeenCalled() // an ordinary completed record has nothing to hand back
-	})
-
-	it("claims the stranded message for the record's own recipient", async () => {
-		await claimFuelStandalone("0xrec")
-		expect(standaloneClaim).toHaveBeenCalledTimes(1)
-		const [, recipient, fuel, id] = standaloneClaim.mock.calls[0] as unknown as [unknown, { toString(): string }, unknown, string]
-		expect(recipient.toString()).toBe(RECIPIENT)
-		expect(id).toBe("0xrec")
-		expect(fuel).toMatchObject({ received: "9", leafIndex: "4" })
-	})
-
-	it("a second start while one is in flight joins it — one send, whichever path started it", async () => {
-		let release = (): void => {}
-		standaloneClaim.mockImplementationOnce(() => new Promise<void>((r) => (release = r)))
-		const auto = launchStandaloneFuelClaim("0xrec", {}, AztecAddress.fromStringUnsafe(RECIPIENT), fueled().fuel as DepositFuelBlock)
-		const manual = claimFuelStandalone("0xrec")
-		release()
-		await Promise.all([auto, manual])
-		expect(standaloneClaim).toHaveBeenCalledTimes(1)
-		await claimFuelStandalone("0xrec")
-		expect(standaloneClaim).toHaveBeenCalledTimes(2)
+		expect(gasClaim).toHaveBeenCalledWith("0xrec")
+		gasClaim.mockRejectedValueOnce(new Error("The bridged gas is below the safe claim floor; the private fuel claim can't self-pay."))
+		await expect(claimFuelStandalone("0xrec")).rejects.toThrow(/below the safe claim floor/)
 	})
 
 	it("names the owning account without the control characters a restore file can carry", async () => {
