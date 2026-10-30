@@ -173,7 +173,7 @@ async function simulateOrStop(interaction: FuelClaimInteraction): Promise<unknow
 
 /** The arrival gates and the claim's simulate. The Fee Juice message is consumed in private, which names the hash it
  *  found spent, so only a failure naming this message's hash counts. */
-function awaitFuelClaimable(leg: ClaimLeg, interaction: FuelClaimInteraction): Promise<"ready" | "claimed-elsewhere"> {
+function awaitFuelClaimable(leg: ClaimLeg, interaction: FuelClaimInteraction, narrated: boolean): Promise<"ready" | "claimed-elsewhere"> {
 	const messageHash = fuelOf(leg).messageHash ?? ""
 	return awaitClaimable(
 		leg,
@@ -181,21 +181,24 @@ function awaitFuelClaimable(leg: ClaimLeg, interaction: FuelClaimInteraction): P
 		() => simulateOrStop(interaction),
 		() => fuelNullifierState(leg),
 		{ messageHash, publicCounts: false },
+		narrated,
 	)
 }
 
 /** Whether the wallet's simulate of this record's gas claim fails on its Fee Juice message while the node reads the
  *  message spent: the only evidence a spent reading settles on. Asks the wallet to simulate, so never in `watchOnly`. */
 export async function fuelSpentCorroborated(leg: ClaimLeg): Promise<boolean> {
-	return (await awaitFuelClaimable(leg, await buildClaim(leg))) === "claimed-elsewhere"
+	return (await awaitFuelClaimable(leg, await buildClaim(leg), false)) === "claimed-elsewhere"
 }
 
 /**
- * Claims the record's Fee Juice, resuming whatever the record holds. `gated` waits out the arrival gates first; a
- * caller that already saw the deposit's messages land passes false. A spent reading is gated either way: it lands only
- * once the wallet's simulate fails on the message too, and a latch of ours it does not bear out is waited out as live.
+ * Claims the record's Fee Juice, resuming whatever the record holds. `gate: "arrival"` waits out the arrival gates
+ * first, narrated; `"spent"` passes them only to learn whether the wallet's simulate bears out a spent reading, quietly;
+ * a caller that already saw the deposit's messages land passes `"none"`. A spent reading of our own latch is gated
+ * either way: it lands only once the simulate fails on the message too, and one the simulate does not bear out is
+ * waited out as live.
  */
-export async function claimFuelBlock(leg: ClaimLeg, opts: { gated: boolean }): Promise<FuelLanding> {
+export async function claimFuelBlock(leg: ClaimLeg, opts: { gate: "arrival" | "spent" | "none" }): Promise<FuelLanding> {
 	const resumed = await resumeSentClaim(leg)
 	if (resumed) return resumed
 	const fuel = fuelOf(leg)
@@ -206,8 +209,9 @@ export async function claimFuelBlock(leg: ClaimLeg, opts: { gated: boolean }): P
 	if (inFlight && !spentReading) refuseInFlight(fuel)
 	assertMayPrompt(leg, "claiming the bridged gas")
 	const interaction = await buildClaim(leg)
-	if (opts.gated || spentReading) {
-		if ((await awaitFuelClaimable(leg, interaction)) === "claimed-elsewhere") return landed(leg, ours ? "claim" : "claimed-elsewhere")
+	if (opts.gate !== "none" || spentReading) {
+		const verdict = await awaitFuelClaimable(leg, interaction, opts.gate === "arrival")
+		if (verdict === "claimed-elsewhere") return landed(leg, ours ? "claim" : "claimed-elsewhere")
 		if (spentReading) refuseInFlight(fuel)
 	}
 	return sendClaim(leg, interaction)
@@ -230,5 +234,5 @@ export async function claimBridgedGas(leg: ClaimLeg, opts: { claim: boolean }): 
 	const state = await fuelNullifierState(leg)
 	if (state !== "live" && state !== "nullified")
 		throw new BridgeError("read-failed", "could not read whether the bridged gas was claimed", SUBMITTED, "after-wait")
-	await claimFuelBlock(leg, { gated: state === "nullified" })
+	await claimFuelBlock(leg, { gate: state === "nullified" ? "spent" : "none" })
 }

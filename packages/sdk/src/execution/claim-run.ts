@@ -336,7 +336,8 @@ function arrivalReporter(leg: ClaimLeg) {
 /**
  * Waits through the countdown, the checkpoint gate and the claim simulate. Resolves "ready" once the simulate passes,
  * "claimed-elsewhere" only when the simulate fails on the message `evidence` names and its nullifier, read by
- * `nullifier` ("unknown" when it cannot), is already on chain: the one verdict a spent message settles on.
+ * `nullifier` ("unknown" when it cannot), is already on chain: the one verdict a spent message settles on. An
+ * unnarrated wait emits nothing, for a check whose claim is not the one the caller is narrating.
  */
 export async function awaitClaimable(
 	leg: ClaimLeg,
@@ -344,10 +345,12 @@ export async function awaitClaimable(
 	simulate: () => Promise<unknown>,
 	nullifier: () => Promise<TokenMessageState>,
 	evidence: SpentEvidence,
+	narrated = true,
 ): Promise<"ready" | "claimed-elsewhere"> {
 	const { r, run } = leg
 	const clock = clockOf(run)
-	const report = arrivalReporter(leg)
+	const emit: Emit = narrated ? leg.emit : () => {}
+	const report = narrated ? arrivalReporter(leg) : emit
 	const reads = {
 		l2BlockNumber: async () => Number(await r.aztecNode.getBlockNumber()),
 		messageReadiness: (h: string) => l1ToL2MessageReadiness(r.aztecNode as never, h),
@@ -367,10 +370,10 @@ export async function awaitClaimable(
 		checkpointsPassed: () => report({ type: "arrival", stage: "counting", checkpointsLeft: 0 }),
 	})
 	const verdict = await awaitClaimSimulate(simulate, (e) => classifyConsumable(e, nullifier, evidence), clock, gate, {
-		consumableWait: (g) => leg.emit({ type: "arrival", stage: "wallet-sync", counted: g.counted }),
+		consumableWait: (g) => emit({ type: "arrival", stage: "wallet-sync", counted: g.counted }),
 	})
 	if (verdict === "ready") {
-		leg.emit({ type: "claimable" })
+		emit({ type: "claimable" })
 		return verdict
 	}
 	if (verdict === "claimed-elsewhere") return verdict

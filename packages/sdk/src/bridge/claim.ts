@@ -176,18 +176,20 @@ async function settleHashlessClaim(leg: ClaimLeg): Promise<void> {
 	throw new BridgeError("claim-not-visible", "an earlier claim of this deposit may still land", SUBMITTED, "after-wait")
 }
 
-/** A fuel attempt latched without its hash may have landed. It is spent only once the wallet's simulate of the gas claim
- *  fails on its message as the node reads it nullified; a private claim then pays from the credit a landed one left
- *  instead of minting a spent message again. A watching call simulates nothing, and a fee stop on that simulate proves
- *  nothing: either way the latch stays. A public latch aged past landing whose message reads live is lifted, so the
- *  ladder never waits on it forever; the private ladder ages its own. */
-async function settleHashlessAttempt(leg: ClaimLeg): Promise<void> {
+/** A fuel attempt latched without its hash may have landed, and beside a token the node reads spent, so may another
+ *  device's claim with no latch here. Either is spent only once the wallet's simulate of the gas claim fails on its
+ *  message as the node reads it nullified; the claim then pays as the ladder pays for a spent message, never embedding
+ *  it again. A watching call simulates nothing, and a fee stop on that simulate proves nothing: either way the record
+ *  stays. A public latch aged past landing whose message reads live is lifted, so the ladder never waits on it forever;
+ *  the private ladder ages its own. */
+async function settleHashlessAttempt(leg: ClaimLeg, tokenSpent: boolean): Promise<void> {
 	const fuel = leg.record.fuel
-	if (!fuel?.claimAttempt || fuel.claimTxHash !== undefined || fuel.consumed) return
+	if (!fuel || fuel.claimTxHash !== undefined || fuel.consumed) return
+	if (!fuel.claimAttempt && !(tokenSpent && fuel.received && fuel.leafIndex)) return
 	const state = await fuelNullifierState(leg)
 	if (state === "nullified" && !leg.run.watchOnly && (await spentUnlessStopped(leg)))
 		return persistClaim(leg, { fuel: { ...fuel, consumed: true } })
-	if (leg.record.isPrivate) return
+	if (leg.record.isPrivate || !fuel.claimAttempt) return
 	const aged = fuel.claimAttemptAt === undefined || Date.now() - fuel.claimAttemptAt > PRIVATE_ATTEMPT_STALE_MS
 	if (state === "live" && aged) return persistClaim(leg, { fuel: { ...fuel, claimAttempt: false } })
 }
@@ -337,7 +339,7 @@ async function claimHub(leg: ClaimLeg, bridge: TokenRoute): Promise<ClaimOutcome
 	if (!spentReading) await settleHashlessClaim(leg)
 	const bound = (await hubTokenFor(hub, token.erc20, p.from)) !== undefined
 	await resumeRegistration(leg, bound)
-	await settleHashlessAttempt(leg)
+	await settleHashlessAttempt(leg, spentReading)
 	assertMayPrompt(leg, "the claim")
 	// The record as the settling steps above left it, not as the call opened it.
 	const fee = await resolveHubClaimSendOpts(ladderEnvOf(leg), {

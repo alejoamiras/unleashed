@@ -23,7 +23,7 @@ async function claimGas(leg: ClaimLeg): Promise<ClaimOutcome> {
 	const fuel = leg.record.fuel
 	if (fuel?.consumed || fuel?.standaloneClaimed) return settle(leg, "claim", fuel.claimTxHash)
 	await ensureDepositFacts(leg)
-	const landing = await claimFuelBlock(leg, { gated: true })
+	const landing = await claimFuelBlock(leg, { gate: "arrival" })
 	return settle(leg, landing.via, landing.txHash)
 }
 

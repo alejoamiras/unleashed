@@ -875,7 +875,7 @@ describe("claimToken", () => {
 		},
 	)
 
-	it("a spent reading the wallet's simulate does not bear out sends the claim; one it bears out settles as claimed elsewhere with nothing sent", async () => {
+	it("a spent reading the wallet's simulate does not bear out sends the claim; one it bears out lands a latched claim of ours with nothing sent", async () => {
 		const { net, r, aztec } = await setup()
 		const send = claims()
 		tokenMessage.state = "nullified"
@@ -902,6 +902,32 @@ describe("claimToken", () => {
 			true,
 			1,
 		])
+	})
+
+	it("a token and its gas both claimed on another device settle as claimed elsewhere, the spent gas never embedded", async () => {
+		const fuel = publicFuel()
+		const spent = await consumedMessageNullifier(feeJuiceAddress, Fr.fromString(fuel.messageHash), Fr.fromString(fuel.secret))
+		const { net, r, aztec } = await setup({}, new Set([spent.toString()]))
+		const send = claims()
+		tokenMessage.state = "nullified"
+		fuelSends.spent = spentWording(FUEL_MESSAGE)
+		// A fee that embeds the spent gas fails on the gas message before the token's own consume.
+		vi.mocked(resolveHubClaimSendOpts).mockImplementationOnce(async (_env, { rec }) => {
+			hub.spent = rec.fuel?.consumed ? PUBLIC_SPENT : spentWording(FUEL_MESSAGE)
+			return { kind: "opts", opts: {} }
+		})
+		const rec = recorder()
+		const out = await claimToken(net, r, aztec, tokenRecord(net, { intent: "token+gas", fuel } as Partial<DepositRecord>), rec.run)
+		expect([out.via, out.record.claimedByOther, out.record.fuel?.consumed, send.mock.calls.length, fuelSends.count]).toEqual([
+			"claimed-elsewhere",
+			true,
+			true,
+			0,
+			0,
+		])
+		// The gas check narrates nothing into the token's call: one wallet sync, the token's own.
+		const syncs = rec.entries.filter((e) => "event" in e && e.event.type === "arrival" && e.event.stage === "wallet-sync")
+		expect(syncs).toHaveLength(1)
 	})
 
 	it.each(["live", "unknown"] as const)("a spent wording beside a %s nullifier reading settles nothing", async (reading) => {
