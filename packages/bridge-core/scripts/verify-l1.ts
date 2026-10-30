@@ -55,6 +55,7 @@ import {
 	pinnedContractsOf,
 	pinOfBuild,
 	SANDBOX_LIFI_CHAIN_IDS,
+	samePin,
 	readErc20Metadata,
 	FUEL_SWAP_SELECTORS,
 	LIFI_BOOK,
@@ -565,6 +566,13 @@ function freshPin(build: ForgeBuild | undefined, contract: PinnedContract): Code
 	return "out" in build ? buildPinIn(build.out, contract) : `no fresh build: ${build.why}`
 }
 
+function checkFreshBuild(build: ForgeBuild | undefined, contract: PinnedContract, recorded: CodePin): void {
+	const pin = freshPin(build, contract)
+	if (typeof pin === "string") fail(`${contract} build`, pin)
+	else if (samePin(pin, recorded)) ok(`${contract} build = ${pin.hash}`)
+	else fail(`${contract} build`, `${pin.hash} is not the record's pin ${recorded.hash} (code, immutable spans or trailer)`)
+}
+
 async function checkAgainstRecord(pub: PublicClient, m: ManifestV2, check: Extract<CodeCheck, { kind: "record" }>, strict: boolean) {
 	const { record, read, dir } = check.record
 	await guarded("generation record", async () => {
@@ -579,10 +587,7 @@ async function checkAgainstRecord(pub: PublicClient, m: ManifestV2, check: Extra
 			const entry = record.evm[contract]
 			if (!entry) continue
 			await guarded(`${contract} runtime code`, () => checkDeployed(pub, contract, address as Address, entry.pin, "the record"))
-			if (!strict || inBaseline(check.baseline, contract, address)) continue
-			const pin = freshPin(fresh, contract)
-			if (typeof pin === "string") fail(`${contract} build`, pin)
-			else same(`${contract} build`, pin.hash, entry.pin.hash, "the record's pin")
+			if (strict && !inBaseline(check.baseline, contract, address)) checkFreshBuild(fresh, contract, entry.pin)
 		}
 	} finally {
 		if (fresh && "out" in fresh) fresh.dispose()

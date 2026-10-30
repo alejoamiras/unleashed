@@ -347,8 +347,9 @@ script: an assignment after it is just another argument. `pre-create` and `calib
    - **Check the candidate record keylessly**, before the digest-recording verify:
      `bun packages/bridge-core/scripts/generation-record.ts check testnet --candidate --rpc https://ethereum-sepolia-rpc.publicnode.com --rpc https://sepolia.gateway.tenderly.co --node https://aztec-testnet.drpc.org --build-out contracts/bridge/evm/out`.
      Every entry's deployed code must match its pin on both RPCs and the hub's class its `classId`; an
-     entry this build does not reproduce is reported for the reviewer. The keyed RPC `verify` reads
-     through could lie about deployed code; these reads share no key and no provider with it.
+     entry this build does not reproduce is reported for the reviewer. It proves the masked runtime at
+     each address, not the bindings `verify` reads; the two public RPCs are a second view of L1 beside
+     the keyed one, while the hub's class comes from dRPC's keyless node, the keyed node's provider.
    - `live-intent.ts verify <intent> --candidate <candidate>`: records the manifest's and the candidate
      record's digests (the intent file changes: **commit it now**, `promote` refuses an uncommitted
      intent), checks the record's integrity and its binding to the candidate, holds every entry at a live

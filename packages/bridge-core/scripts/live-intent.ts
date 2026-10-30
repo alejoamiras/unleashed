@@ -987,12 +987,12 @@ interface CandidateRecordBytes {
 	sha256: string
 }
 
-function readCandidateRecord(net: IntentNetwork): CandidateRecordBytes {
-	const dir = GENERATION_PATHS[net.name].candidateRecord
+function readCandidateRecord(network: IntentNetwork["name"], root = repoRoot): CandidateRecordBytes {
+	const dir = GENERATION_PATHS[network].candidateRecord
 	const files = new Map<string, Buffer>()
 	const readOnce = (relative: string): Buffer => {
-		assertRealPath(repoRoot, `${dir}/${relative}`)
-		const bytes = readFileSync(join(repoRoot, dir, relative))
+		assertRealPath(root, `${dir}/${relative}`)
+		const bytes = readFileSync(join(root, dir, relative))
 		files.set(relative, bytes)
 		return bytes
 	}
@@ -1006,6 +1006,21 @@ function readCandidateRecord(net: IntentNetwork): CandidateRecordBytes {
 		return bytes
 	}
 	return { source: { dir, record, read }, files, sha256: sha256Of(raw) }
+}
+
+/** The candidate record as promote writes it: read once more, at the digest verify recorded, with every file the one
+ *  the record's digests name. verify read the files separately, so a byte moved since stops here, before a live write. */
+export async function promotableRecord(
+	network: IntentNetwork["name"],
+	recordedSha: string | undefined,
+	root = repoRoot,
+): Promise<CandidateRecordBytes> {
+	const record = readCandidateRecord(network, root)
+	if (record.sha256 !== recordedSha) {
+		throw new Error(`candidate record bytes changed between verify and promote: ${record.sha256} != recorded ${recordedSha} — STOP`)
+	}
+	await assertRecordIntegrity(record.source.record, record.source.read)
+	return record
 }
 
 function keptHubArtifact(source: RecordSource): ContractArtifact {
@@ -1082,7 +1097,7 @@ async function verifyCandidate(
 	if (intent.candidateSha256 && !intent.recordSha256) {
 		throw new Error("the intent pinned a candidate but no generation record — build a new intent; STOP")
 	}
-	const recordBytes = readCandidateRecord(networkOf(intent))
+	const recordBytes = readCandidateRecord(networkOf(intent).name)
 	if (intent.recordSha256 && intent.recordSha256 !== recordBytes.sha256) {
 		throw new Error(`candidate record digest CHANGED since recorded: ${recordBytes.sha256} != ${intent.recordSha256} — never promote`)
 	}
@@ -1335,12 +1350,7 @@ async function promote(intentPath: string, opts: { bridgeOnly?: boolean } = {}):
 
 	assertPromotablePaths(paths, bridgeOnly)
 	const bytes = readPromotionBytes(paths, bridgeOnly, intent.candidateSha256)
-	const record = readCandidateRecord(net)
-	if (record.sha256 !== intent.recordSha256) {
-		throw new Error(
-			`candidate record bytes changed between verify and promote: ${record.sha256} != recorded ${intent.recordSha256} — STOP`,
-		)
-	}
+	const record = await promotableRecord(net.name, intent.recordSha256)
 	const candidate = await candidateOf(intent, bytes.bridge.toString("utf8"), record.source)
 	// Prove the faucet candidate's derivation BEFORE any live write; otherwise a junk candidate
 	// fails only after the live file was overwritten.

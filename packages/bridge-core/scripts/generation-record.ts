@@ -37,6 +37,7 @@ import {
 	pinOfBuild,
 	type RecordBuild,
 	type RecordedContract,
+	samePin,
 } from "@unleashed/sdk/protocol"
 import { createPublicClient, type Hex, hexToBytes, http, sha256 } from "viem"
 import {
@@ -262,7 +263,7 @@ async function hubFailures(record: GenerationRecord, url: string): Promise<strin
 function reportBuild(record: GenerationRecord, out: string, root: string): void {
 	for (const [contract, entry] of Object.entries(record.evm) as Array<[PinnedContract, RecordedContract]>) {
 		const path = join(out, `${contract}.sol`, `${contract}.json`)
-		const equal = existsSync(path) && pinOfArtifact(readFileSync(path)).hash === entry.pin.hash
+		const equal = existsSync(path) && samePin(pinOfArtifact(readFileSync(path)), entry.pin)
 		console.log(equal ? `✓ ${contract} equals this build` : `— ${contract} differs from this build: rebuild at ${entry.build.commit}`)
 	}
 	const hub = record.aztec?.TokenBridgeHub

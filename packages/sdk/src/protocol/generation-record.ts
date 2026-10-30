@@ -11,7 +11,7 @@ import { type Hex, hexToBytes, sha256 } from "viem"
 import z from "zod"
 import mainnetRecord from "../../../../contracts/bridge/generations/mainnet/record.json" with { type: "json" }
 import testnetRecord from "../../../../contracts/bridge/generations/testnet/record.json" with { type: "json" }
-import { CODE_PINS, type CodePin, type ImmutableSpan, metadataTrailerSize, type PinnedContract, pinOfBuild } from "./code-hash.ts"
+import { CODE_PINS, type CodePin, type ImmutableSpan, metadataTrailerSize, type PinnedContract, pinOfBuild, samePin } from "./code-hash.ts"
 import { deepFreeze } from "./freeze.ts"
 import { SANDBOX_LIFI_CHAIN_IDS } from "./lifi-addresses.ts"
 import type { ManifestV2 } from "./manifest-v2.ts"
@@ -170,7 +170,6 @@ interface KeptForgeArtifact {
 }
 
 const digestOf = (bytes: Uint8Array) => sha256(bytes).slice(2)
-const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
  * Throws unless every entry derives from the kept artifact `read` returns for it: the file's sha256, the pin of its
@@ -184,7 +183,7 @@ export async function assertRecordIntegrity(record: GenerationRecord, read: (rel
 		const runtime = (JSON.parse(new TextDecoder().decode(bytes)) as KeptForgeArtifact).deployedBytecode
 		if (!runtime?.object || runtime.object === "0x") throw new Error(`${contract}: the kept artifact carries no runtime`)
 		const code = hexToBytes(runtime.object)
-		if (!sameJson(pinOfBuild(code, runtime.immutableReferences), entry.pin))
+		if (!samePin(pinOfBuild(code, runtime.immutableReferences), entry.pin))
 			throw new Error(`${contract}: the pin is not its kept build's`)
 		assertSolcShaped(entry.pin, code)
 	}

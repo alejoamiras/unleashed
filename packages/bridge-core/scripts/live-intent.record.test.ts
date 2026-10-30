@@ -1,4 +1,5 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
 import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
@@ -7,7 +8,7 @@ import { parseManifestV2 } from "@unleashed/sdk/protocol"
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { assertFaucetCandidateShape } from "../src/promotion"
 import { GENERATION_PATHS, hubArtifactFor, liveBaseline, RECORD_FILES, REPO_ROOT, workingTreeRecord } from "./generation-paths"
-import { assertCarried, candidateOf, writeLiveRecord } from "./live-intent"
+import { assertCarried, candidateOf, promotableRecord, writeLiveRecord } from "./live-intent"
 import { git } from "./run"
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -182,5 +183,22 @@ describe("promote's record write", () => {
 		vi.mocked(rmSync).mockReset()
 		writeLiveRecord(DIR, NEW, root)
 		expect(files(root)).toEqual(expected)
+	})
+})
+
+describe("promote's re-read of the candidate record", () => {
+	it("refuses a kept artifact that moved after verify, though record.json still matches its digest", async () => {
+		const root = join(scratch, "promotable")
+		cpSync(join(REPO_ROOT, LIVE), join(root, CANDIDATE), { recursive: true })
+		const sha = createHash("sha256")
+			.update(readFileSync(at(root, CANDIDATE, "record.json")))
+			.digest("hex")
+		await expect(promotableRecord("testnet", sha, root)).resolves.toMatchObject({ sha256: sha })
+		await expect(promotableRecord("testnet", "0".repeat(64), root)).rejects.toThrow(/changed between verify and promote/)
+		const kept = at(root, CANDIDATE, "evm/DepositRouter.sol/DepositRouter.json")
+		writeFileSync(kept, `${readFileSync(kept, "utf8")} `)
+		await expect(promotableRecord("testnet", sha, root)).rejects.toThrow(
+			/DepositRouter: the kept artifact's sha256 is not the record's/,
+		)
 	})
 })

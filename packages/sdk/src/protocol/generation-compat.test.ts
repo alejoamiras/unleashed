@@ -7,23 +7,33 @@ import { claimCapabilities } from "../capabilities.ts"
 import { FUEL_SWAPPER_QUOTE_ABI } from "../execution/fuel-quote.ts"
 import { SWAPPER_ABI } from "../execution/trust-roots.ts"
 import { MAINNET_MANIFEST, TESTNET_MANIFEST } from "../networks.ts"
-import { type AbiEntry, missingFrom } from "./abi-shape.ts"
+import { type AbiEntry, type AbiParam, missingFrom } from "./abi-shape.ts"
 import { tokenBridgeHubArtifact } from "./artifacts.ts"
 import type { PinnedContract } from "./code-hash.ts"
 import { DEPOSIT_ROUTER_ABI } from "./deposit-router-abi.ts"
 import { PORTAL_FACTORY_ABI, PORTAL_IMPL_CONSTANTS_ABI, TOKEN_PORTAL_ABI } from "./factory-abi.ts"
 import { codeOf, keptEvmArtifact, LIVE_RECORDS } from "./generation-record.ts"
+import { SWAP_TOKENS_SINGLE_V3_ABI } from "./lifi-abi.ts"
 import { parseManifestV2 } from "./manifest-v2.ts"
 
 const GENERATIONS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "contracts", "bridge", "generations")
 const abis = (...list: readonly unknown[]) => list.flatMap((abi) => abi as readonly AbiEntry[])
+const unnamedParam = (p: AbiParam): AbiParam => ({
+	type: p.type,
+	...(p.indexed !== undefined ? { indexed: p.indexed } : {}),
+	...(p.components ? { components: p.components.map(unnamedParam) } : {}),
+})
+/** An entry as deployed code answers it: parameter names change neither a selector nor an encoding, and solc leaves an
+ *  unused parameter unnamed. */
+const unnamed = (e: AbiEntry): AbiEntry => ({ ...e, inputs: e.inputs?.map(unnamedParam), outputs: e.outputs?.map(unnamedParam) })
+const answeredBy = (ours: readonly AbiEntry[], theirs: readonly AbiEntry[]) => missingFrom(ours.map(unnamed), theirs.map(unnamed))
 
 /** Every ABI the SDK calls each pinned contract through. */
 const CALLS: Readonly<Record<PinnedContract, readonly AbiEntry[]>> = {
 	DepositRouter: abis(DEPOSIT_ROUTER_ABI),
 	PortalFactory: abis(PORTAL_FACTORY_ABI),
 	TokenPortalImpl: abis(TOKEN_PORTAL_ABI, PORTAL_IMPL_CONSTANTS_ABI),
-	TestnetFuelSwapper: abis(FUEL_SWAPPER_QUOTE_ABI, SWAPPER_ABI),
+	TestnetFuelSwapper: abis(FUEL_SWAPPER_QUOTE_ABI, SWAPPER_ABI, SWAP_TOKENS_SINGLE_V3_ABI),
 	FuelOnlyGate: abis(PORTAL_FACTORY_ABI).filter((e) => e.name === "depositsPaused"),
 }
 
@@ -41,7 +51,7 @@ describe("this release against each live generation's code", () => {
 	it.each(LIVE_RECORDS.map((r) => [r.network, r] as const))("%s answers every L1 call the SDK makes", (network, record) => {
 		const missing = Object.keys(record.evm).flatMap((contract) => {
 			const kept = JSON.parse(readFileSync(join(GENERATIONS, network, keptEvmArtifact(contract as PinnedContract)), "utf8"))
-			return missingFrom(CALLS[contract as PinnedContract], kept.abi).map((entry) => `${contract}: ${entry}`)
+			return answeredBy(CALLS[contract as PinnedContract], kept.abi).map((entry) => `${contract}: ${entry}`)
 		})
 		expect(missing).toEqual([])
 	})
@@ -66,6 +76,6 @@ describe("this release against each live generation's code", () => {
 	it("would catch a call the kept code lacks", () => {
 		const kept = JSON.parse(readFileSync(join(GENERATIONS, "testnet", keptEvmArtifact("DepositRouter")), "utf8"))
 		const added = [{ type: "function", name: "depositV2", stateMutability: "nonpayable", inputs: [], outputs: [] }]
-		expect(missingFrom([...CALLS.DepositRouter, ...added], kept.abi)).toEqual(["function depositV2"])
+		expect(answeredBy([...CALLS.DepositRouter, ...added], kept.abi)).toEqual(["function depositV2"])
 	})
 })
