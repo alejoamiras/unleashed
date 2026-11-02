@@ -41,7 +41,7 @@
 		"@aztec-labs/wallets": "6.0.0",
 		"@nulo-sh/resolve-asset": "0.3.0",
 		"@nulo-sh/wallet-crypto": "0.3.0",
-		"@unleashed/sdk": "workspace:*",
+		"@unleashed-systems/sdk": "workspace:*",
 		"viem": "2.57.1",
 		"zod": "^4.4.3"
 	},

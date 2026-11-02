@@ -4,7 +4,7 @@ import { join } from "node:path"
 
 /**
  * Production sources draw every fresh field (salt, claim secret, authwit nonce) from `randomField`
- * (`@unleashed/sdk/internal`), which reads WebCrypto. This matches direct references only, so an alias
+ * (`@unleashed-systems/sdk/internal`), which reads WebCrypto. This matches direct references only, so an alias
  * escapes it; the SDK's runtime test covers `randomField` and the fuel planner's default salt. Tests and
  * the local sandbox suite are exempt.
  */

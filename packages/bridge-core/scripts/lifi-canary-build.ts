@@ -19,9 +19,9 @@ import {
 	type RouterIntent,
 	deriveBridgeSecret,
 	PRIVATE_FPC_ADDRESS,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import { acrossRouteTx, bridgeFromCallerCall as routerCall } from "../src/crosschain-route"
-import { type FuelQuoteProvider, withFuelFloor } from "@unleashed/sdk/internal"
+import { type FuelQuoteProvider, withFuelFloor } from "@unleashed-systems/sdk/internal"
 import { type DecodedRoute, type RouteExpectation, type RouteTx, verifyRoute } from "../src/lifi-decode"
 import { type CanaryBindings, CanaryRefusal, type CanaryRowShape, recoveryFloor } from "./lifi-canary-plan"
 

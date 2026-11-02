@@ -26,8 +26,14 @@ import {
 	TESTNET_FILLER,
 	verifyRoute,
 } from "@unleashed/bridge-core"
-import { deriveBridgeSecret, deriveTokenClaimSecret, type LifiChainBook, lifiBook, type RouterIntent } from "@unleashed/sdk/protocol"
-import { type FuelProbe, type FuelQuoteProvider, type FuelQuoteRefusal, randomField } from "@unleashed/sdk/internal"
+import {
+	deriveBridgeSecret,
+	deriveTokenClaimSecret,
+	type LifiChainBook,
+	lifiBook,
+	type RouterIntent,
+} from "@unleashed-systems/sdk/protocol"
+import { type FuelProbe, type FuelQuoteProvider, type FuelQuoteRefusal, randomField } from "@unleashed-systems/sdk/internal"
 import type { Address, Hex } from "viem"
 import { type ComputedRef, computed, type Ref } from "vue"
 import { GENERATION, SEND_GENERATION } from "@/contracts/bridge-generation"

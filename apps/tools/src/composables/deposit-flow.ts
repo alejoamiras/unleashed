@@ -23,8 +23,8 @@ import {
 	fuelReceiptStatus as fuelReceiptStatusOn,
 	patchFuel as patchFuelOn,
 	readFeeJuiceOrNull as readFeeJuiceOrNullOn,
-} from "@unleashed/sdk/internal"
-import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/internal"
+import { PRIVATE_FPC_ADDRESS } from "@unleashed-systems/sdk/protocol"
 import { NETWORK } from "@/lib/network"
 import { appNode } from "@/lib/aztec-node"
 import { cacheSecret, currentRecord, runOnLane, setRecordStep, underJournalLock, updateRecord, updateRecordWhen } from "./useBridgeJournal"
@@ -84,7 +84,7 @@ export async function readPublicFeeJuiceBalance(aztec: unknown, recipient: Aztec
  *  from the SDK's dedicated code-split entry (never the eager `./artifacts` barrel). `balance_of`
  *  is `abi_utility` — scoped in the combined manifest's `simulation.utilities`. */
 export async function readPrivateFeeJuiceBalance(aztec: unknown, recipient: AztecAddress): Promise<bigint> {
-	const { PrivateFPCContractArtifact } = await import("@unleashed/sdk/private-fpc-artifact")
+	const { PrivateFPCContractArtifact } = await import("@unleashed-systems/sdk/private-fpc-artifact")
 	const fpc = await Contract.at(AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS), PrivateFPCContractArtifact, aztec as never)
 	return readBalance(aztec as never, fpc, "balance_of", recipient)
 }

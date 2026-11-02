@@ -12,7 +12,7 @@ import {
 	LIFI_DENY_EXCHANGES,
 	LIFI_INTEGRATOR,
 	LIFI_TO_CONTRACT_GAS_LIMIT,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 
 const LI_QUEST = "https://li.quest/v1"
 const QUOTE_TIMEOUT_MS = 30_000

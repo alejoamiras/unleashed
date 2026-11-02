@@ -7,7 +7,7 @@ import { useAddressLookup } from "./useAddressLookup"
 
 const h = vi.hoisted(() => ({ readErc20Metadata: vi.fn() }))
 
-vi.mock("@unleashed/sdk/protocol", () => ({
+vi.mock("@unleashed-systems/sdk/protocol", () => ({
 	readErc20Metadata: h.readErc20Metadata,
 }))
 

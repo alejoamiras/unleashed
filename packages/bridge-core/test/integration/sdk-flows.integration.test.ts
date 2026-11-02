@@ -15,9 +15,9 @@ import {
 	parseNetwork,
 	type Reads,
 	type TransferEvent,
-} from "@unleashed/sdk"
-import { type BridgeQuote, claimToken, depositToken, quoteBridge, resolveToken } from "@unleashed/sdk/bridge"
-import { type ClaimOutcome, claimFuel, depositFuel, type FuelQuote, quoteFuel } from "@unleashed/sdk/fuel"
+} from "@unleashed-systems/sdk"
+import { type BridgeQuote, claimToken, depositToken, quoteBridge, resolveToken } from "@unleashed-systems/sdk/bridge"
+import { type ClaimOutcome, claimFuel, depositFuel, type FuelQuote, quoteFuel } from "@unleashed-systems/sdk/fuel"
 import { type Address, erc20Abi, type WalletClient } from "viem"
 import { beforeAll, describe, expect, it } from "vitest"
 import type { L2Ctx } from "../../scripts/generation"

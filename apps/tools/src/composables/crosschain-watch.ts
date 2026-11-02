@@ -17,8 +17,8 @@ import {
 	openDepositEnvelopeV3,
 	resealExactEnvelope,
 } from "@unleashed/bridge-core"
-import { lifiBook, predictPortal } from "@unleashed/sdk/protocol"
-import { readSendInbox } from "@unleashed/sdk/internal"
+import { lifiBook, predictPortal } from "@unleashed-systems/sdk/protocol"
+import { readSendInbox } from "@unleashed-systems/sdk/internal"
 import type { Address } from "viem"
 import { SEND_GENERATION } from "@/contracts/bridge-generation"
 import { bridgingLate } from "@/lib/crosschain-steps"

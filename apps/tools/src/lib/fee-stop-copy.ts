@@ -1,5 +1,5 @@
 /** What the user reads for each claim-side stop. The wait stop's `-send` sentence is shorter by history. */
-import type { FeeStop } from "@unleashed/sdk/internal"
+import type { FeeStop } from "@unleashed-systems/sdk/internal"
 
 export const FEE_STOP_COPY: Record<FeeStop, string> = {
 	"malformed-claim-hash":

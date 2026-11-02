@@ -67,7 +67,7 @@ import {
 	type ManifestV2,
 	toWord,
 	walletChainIdOf,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import {
 	type Binding,
 	type BridgeContracts,
@@ -80,7 +80,7 @@ import {
 	type RouterExpectation as RouterBindingExpectation,
 	routerBindings,
 	swapTargetOf,
-} from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/internal"
 import { liveBaseline, liveNetworkOf, type RecordSource, recordFor } from "./generation-paths"
 import { redactSecrets } from "./keyed-env"
 import { runKeyed } from "./keyed-run"

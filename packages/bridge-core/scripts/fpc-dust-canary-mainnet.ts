@@ -32,8 +32,8 @@ import {
 	PRIVATE_FPC_ADDRESS,
 	deriveBridgeSecret,
 	privateMintAndPayFee,
-} from "@unleashed/sdk/protocol"
-import { randomField } from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/protocol"
+import { randomField } from "@unleashed-systems/sdk/internal"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
 import { resolveDeployerKeys } from "./deployer-keys"
 import { redactSecrets } from "./keyed-env"
@@ -141,7 +141,7 @@ async function main() {
 	console.log(`deposited ${dep.amount} FJ-wei to the FPC lane, leaf ${dep.leafIndex} (${mins()})`)
 
 	// 3. The carrier-less claim, fees re-priced per attempt (the stranded-static-cap lesson).
-	const { PrivateFPCContractArtifact } = await import("@unleashed/sdk/private-fpc-artifact")
+	const { PrivateFPCContractArtifact } = await import("@unleashed-systems/sdk/private-fpc-artifact")
 	const fpcC = await Contract.at(fpc, PrivateFPCContractArtifact as never, ewallet as never)
 	const fpcBalance = async (): Promise<bigint> => {
 		const r = (await fpcC.methods.balance_of(from).simulate({ from })) as { result?: bigint } | bigint

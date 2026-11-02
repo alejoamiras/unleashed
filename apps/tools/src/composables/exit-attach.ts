@@ -7,7 +7,7 @@
  * blocks, a slow read, a reorged tip, a node on another chain — is `"incomplete"`, never `"none"`.
  */
 import type { SendWithdrawRecord } from "@unleashed/bridge-core"
-import { withdrawMessageHash } from "@unleashed/sdk/internal"
+import { withdrawMessageHash } from "@unleashed-systems/sdk/internal"
 
 /** A transaction as the node reports it inside a block body. */
 export interface AttachTxEffect {

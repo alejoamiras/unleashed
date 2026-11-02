@@ -8,7 +8,7 @@ import {
 	isCrossChainRecord,
 	isSendRecord,
 } from "@unleashed/bridge-core"
-import { SYNC_TARGET_MARGIN_BLOCKS } from "@unleashed/sdk/internal"
+import { SYNC_TARGET_MARGIN_BLOCKS } from "@unleashed-systems/sdk/internal"
 import type { BridgeStep, RecordRuntime } from "@/composables/useBridgeJournal"
 import { crossChainLogWords, crossChainPhases } from "@/lib/crosschain-steps"
 import { safeDisplay, safeSentence } from "@/lib/token-display"

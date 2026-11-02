@@ -38,8 +38,8 @@ import {
 	manifestToken,
 	parseManifestV2,
 	walletChainIdOf,
-} from "@unleashed/sdk/protocol"
-import type { L1Ctx } from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/protocol"
+import type { L1Ctx } from "@unleashed-systems/sdk/internal"
 import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 import { openDeployJournal, readCandidate, writeCandidateAtomically } from "./deploy-manifest"
 import { deployFuelRoute, type FuelRouteOptions, planFuelRoute } from "./fuel-route"
@@ -71,10 +71,10 @@ import {
 	sepoliaChain,
 	stopwatch,
 } from "./script-bootstrap"
-import { CANONICAL_PERMIT2 } from "@unleashed/sdk/protocol"
+import { CANONICAL_PERMIT2 } from "@unleashed-systems/sdk/protocol"
 import { deployAccountIfAbsent, deployerSchnorrAccount, sponsoredFpcFee } from "./script-l2"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
+import { tokenBridgeHubArtifact } from "@unleashed-systems/sdk/artifacts"
 import { hubArtifactFor } from "./generation-paths"
 
 const here = dirname(fileURLToPath(import.meta.url))

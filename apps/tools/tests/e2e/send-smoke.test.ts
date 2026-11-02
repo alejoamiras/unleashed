@@ -73,8 +73,8 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock("@/contracts/bridge-generation", async () => {
-	const protocol = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
-	const internal = await vi.importActual<typeof import("@unleashed/sdk/internal")>("@unleashed/sdk/internal")
+	const protocol = await vi.importActual<typeof import("@unleashed-systems/sdk/protocol")>("@unleashed-systems/sdk/protocol")
+	const internal = await vi.importActual<typeof import("@unleashed-systems/sdk/internal")>("@unleashed-systems/sdk/internal")
 	const { keccak256, stringToHex } = await import("viem")
 	const raw = (await import("../../../../packages/bridge-core/fixtures/sandbox-manifest.json")).default
 	const manifest = protocol.parseManifestV2(raw)
@@ -192,8 +192,8 @@ vi.mock("@/composables/useGasHeld", () => ({
 	}),
 }))
 
-vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
+vi.mock("@unleashed-systems/sdk/protocol", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/protocol")>()),
 	deriveTokenClaimSecret: (salt: unknown) => salt,
 	deriveBridgeSecret: (salt: unknown) => salt,
 	readErc20Metadata: async () => {
@@ -206,8 +206,8 @@ vi.mock("@unleashed/bridge-core", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@unleashed/bridge-core")>()),
 	loadTokenList: h.fn.loadTokenList,
 }))
-vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
+vi.mock("@unleashed-systems/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/internal")>()),
 	depositL1: h.fn.depositL1,
 	assertDepositsOpen: h.fn.assertDepositsOpen,
 	exitViaHub: h.fn.exitViaHub,
@@ -227,11 +227,14 @@ vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
 }))
 
 // The claims run on the SDK's entries, played below against the faked hub.
-vi.mock("@unleashed/sdk/bridge", async (orig) => ({
-	...(await orig<typeof import("@unleashed/sdk/bridge")>()),
+vi.mock("@unleashed-systems/sdk/bridge", async (orig) => ({
+	...(await orig<typeof import("@unleashed-systems/sdk/bridge")>()),
 	claimToken: h.fn.claimToken,
 }))
-vi.mock("@unleashed/sdk/fuel", async (orig) => ({ ...(await orig<typeof import("@unleashed/sdk/fuel")>()), claimFuel: h.fn.claimFuel }))
+vi.mock("@unleashed-systems/sdk/fuel", async (orig) => ({
+	...(await orig<typeof import("@unleashed-systems/sdk/fuel")>()),
+	claimFuel: h.fn.claimFuel,
+}))
 
 // Only the boundaries that need a live wallet or the recovery crypto; the rest of the module (the
 // journal store, the fingerprint) stays real.
@@ -255,10 +258,10 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { computeSecretHash } from "@aztec-labs/aztec.js/crypto"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { SendDepositRecord } from "@unleashed/bridge-core"
-import { BridgeError, type DepositRecord, type DepositSecrets, type RunOptions, type TransferEventBody } from "@unleashed/sdk"
-import type { ClaimOptions, ClaimOutcome } from "@unleashed/sdk/fuel"
-import type { DepositPlan } from "@unleashed/sdk/internal"
-import { deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
+import { BridgeError, type DepositRecord, type DepositSecrets, type RunOptions, type TransferEventBody } from "@unleashed-systems/sdk"
+import type { ClaimOptions, ClaimOutcome } from "@unleashed-systems/sdk/fuel"
+import type { DepositPlan } from "@unleashed-systems/sdk/internal"
+import { deriveTokenClaimSecret, predictPortal } from "@unleashed-systems/sdk/protocol"
 import { type Hex, keccak256, stringToHex } from "viem"
 import listFixture from "./fixtures/token-list.json"
 

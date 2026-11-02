@@ -36,7 +36,7 @@ import {
 	LIFI_SWAP_DATA_COMPONENTS,
 	type LifiSwapData,
 	LIFI_INTEGRATOR,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import { redactSecrets } from "./keyed-env"
 import { runKeyed } from "./keyed-run"
 import { MAINNET, recordMainnetQuotes } from "./lifi-fixtures-mainnet"

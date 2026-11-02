@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { ManifestV2 } from "@unleashed/sdk/protocol"
+import type { ManifestV2 } from "@unleashed-systems/sdk/protocol"
 import { applyFuelBudgets, type CalibrationSample, calibrateFuelBudgets } from "./calibration"
 
 const s = (shape: CalibrationSample["shape"], transactionFee: bigint, feeMode: CalibrationSample["feeMode"] = "fee-juice") => ({

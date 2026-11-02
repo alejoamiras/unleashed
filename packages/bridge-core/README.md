@@ -1,6 +1,6 @@
 # @unleashed/bridge-core
 
-The private side of the bridge, beside the protocol and flows in [`@unleashed/sdk`](../sdk/README.md): the app's
+The private side of the bridge, beside the protocol and flows in [`@unleashed-systems/sdk`](../sdk/README.md): the app's
 journal, backups and seals, the token list, the cross-chain source leg and its discovery, the deploy, verify and
 canary scripts, and the sandbox. No React, no Vue, no server. The proven reference for every flow is
 `scripts/deploy-sandbox.ts --smoke`.
@@ -15,7 +15,7 @@ target are deployed addresses the verifier cross-reads instead.
 
 | File | Purpose |
 |---|---|
-| `across-v4.ts` / `stargate.ts` | Our own testnet Across V4 builder; Stargate V2 ABIs, the LayerZero options and OFT compose decoders, the fee ceiling. The LI.FI book, its ABIs and gas budgets are the SDK's (`@unleashed/sdk/l1`). |
+| `across-v4.ts` / `stargate.ts` | Our own testnet Across V4 builder; Stargate V2 ABIs, the LayerZero options and OFT compose decoders, the fee ceiling. The LI.FI book, its ABIs and gas budgets are the SDK's (`@unleashed-systems/sdk/l1`). |
 | `source-chains.ts` | The source-chain catalogue a manifest may enable. |
 | `lifi-decode.ts` | `verifyRoute` / `verifyComposeMessage`: decode the exact transaction or compose message the user is about to sign and hold every field to a stated policy (`ROUTE_FIELD_POLICY`); fails closed on an unknown selector, a non-canonical encoding or an unpoliced field. |
 | `crosschain-route.ts` / `across-api.ts` | The bytes a cross-chain deposit signs: the router intent for its legs, its `bridgeFromCaller` call, the LI.FI message an Across deposit carries and the source transaction (`acrossRouteTx`), usable only once `verifyRoute` accepts them; Across `/suggested-fees` for our exact message, every answer bounded and checked against the request. |

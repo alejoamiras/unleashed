@@ -8,7 +8,7 @@ import { existsSync, lstatSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type ContractArtifact, loadContractArtifact } from "@aztec-labs/aztec.js/abi"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
+import { tokenBridgeHubArtifact } from "@unleashed-systems/sdk/artifacts"
 import {
 	assertRecordBinds,
 	CODE_PINS,
@@ -21,7 +21,7 @@ import {
 	parseGenerationRecord,
 	pinsOf,
 	SANDBOX_LIFI_CHAIN_IDS,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import { run } from "./run"
 
 const here = dirname(fileURLToPath(import.meta.url))

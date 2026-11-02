@@ -1,5 +1,5 @@
 import type { CatalogToken } from "@unleashed/bridge-core"
-import { parseManifestV2 } from "@unleashed/sdk/protocol"
+import { parseManifestV2 } from "@unleashed-systems/sdk/protocol"
 import type { Address } from "viem"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import rawManifest from "../../../../packages/bridge-core/fixtures/sandbox-manifest.json"

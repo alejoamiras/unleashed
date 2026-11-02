@@ -27,7 +27,7 @@ const feeAsset = vi.hoisted(() => ({
 	mint: vi.fn(async () => null),
 }))
 
-vi.mock("@unleashed/sdk/internal", () => ({
+vi.mock("@unleashed-systems/sdk/internal", () => ({
 	awaitL1Receipt: async () => ({ status: receiptStatus.value }),
 }))
 vi.mock("@/composables/useFeeAssetMint", async () => {

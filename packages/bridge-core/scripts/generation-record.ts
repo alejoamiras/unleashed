@@ -38,7 +38,7 @@ import {
 	type RecordBuild,
 	type RecordedContract,
 	samePin,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import { createPublicClient, type Hex, hexToBytes, http, sha256 } from "viem"
 import {
 	assertRealPath,

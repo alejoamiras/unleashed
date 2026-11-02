@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import type { L1Ctx } from "@unleashed/sdk/internal"
-import { predictPortal } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed-systems/sdk/internal"
+import { predictPortal } from "@unleashed-systems/sdk/protocol"
 import { approveExact, assertFactoryPortal, assertSame, type FactoryReader, retryOnRevert, sourceRpcUrl } from "./script-l1"
 
 const ROUTER = `0x${"1a".repeat(20)}` as const

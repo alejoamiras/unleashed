@@ -1,4 +1,4 @@
-# @unleashed/sdk
+# @unleashed-systems/sdk
 
 Bridge from Ethereum to Aztec inside your own app, with your user's own wallets: an Ethereum wallet (a viem
 `WalletClient`) signs the deposit, an Aztec wallet (`@aztec-labs/aztec.js` `Wallet`) signs the claim. No server of
@@ -6,8 +6,8 @@ ours sits in between. Every call is a plain promise, and each transfer reports i
 
 | Flow | Calls | Entry |
 |---|---|---|
-| Gas: the fee asset, or any token the network prices, swapped into Fee Juice and claimed as public Fee Juice or private credit | `probeFuel`, `quoteFuel` → `depositFuel` → `claimFuel` | `@unleashed/sdk/fuel` |
-| A token, or a token plus the gas to use it, claimed as a public or a private balance | `resolveToken` → `quoteBridge` → `depositToken` → `claimToken` | `@unleashed/sdk/bridge` |
+| Gas: the fee asset, or any token the network prices, swapped into Fee Juice and claimed as public Fee Juice or private credit | `probeFuel`, `quoteFuel` → `depositFuel` → `claimFuel` | `@unleashed-systems/sdk/fuel` |
+| A token, or a token plus the gas to use it, claimed as a public or a private balance | `resolveToken` → `quoteBridge` → `depositToken` → `claimToken` | `@unleashed-systems/sdk/bridge` |
 
 Runnable shapes of both, and of a resume after a reload, are in
 [`examples/`](https://github.com/alejoamiras/unleashed/tree/main/packages/sdk/examples).
@@ -15,7 +15,7 @@ Runnable shapes of both, and of a resume after a reload, are in
 ## Install
 
 ```sh
-npm install @unleashed/sdk
+npm install @unleashed-systems/sdk
 ```
 
 ESM only. The peers are the Aztec packages, at the exact versions this release names, and `viem` 2. Your app must
@@ -25,8 +25,8 @@ Aztec version cannot use this release.
 ## Networks
 
 ```ts
-import { parseNetwork, type Reads } from "@unleashed/sdk"
-import { TESTNET_MANIFEST } from "@unleashed/sdk/networks"
+import { parseNetwork, type Reads } from "@unleashed-systems/sdk"
+import { TESTNET_MANIFEST } from "@unleashed-systems/sdk/networks"
 
 const publicClient = createPublicClient({ transport: http(l1RpcUrl), ccipRead: false })
 const reads: Reads = { l1: publicClient, aztecNode: createAztecNodeClient(aztecNodeUrl) }
@@ -52,7 +52,7 @@ Every call that signs takes a `Network` and refuses one `parseNetwork` did not b
   (`contracts/bridge/generations/<network>/`, bundled with this release; a local sandbox is checked against this
   release's own builds instead), bound to the registry's canonical rollup.
 
-`@unleashed/sdk/networks` bundles the reviewed `TESTNET_MANIFEST` and `MAINNET_MANIFEST`, frozen, and
+`@unleashed-systems/sdk/networks` bundles the reviewed `TESTNET_MANIFEST` and `MAINNET_MANIFEST`, frozen, and
 `bundledManifest(l1ChainId)` names the one for a chain. They are the only manifests `parseNetwork` accepts on their
 chains, so no file fetched at run time and no RPC answer can move the root, and a new generation reaches you as an SDK
 release. Testnet (Sepolia) carries the token bridge and the gas route. The bundled mainnet
@@ -194,7 +194,7 @@ needs those three origins and `data:`, and `script-src` needs `'wasm-unsafe-eval
   then the tool's pinned venue contract swapping the rest of the slice into the fee asset), the signed floor is written
   into the swap, the router re-checks it on chain, and the signature commits to the swap's bytes. This release takes
   LI.FI gas swaps on a local sandbox's chains only (`LIFI_FUEL_CHAIN_IDS`).
-- **The network is the bundled one.** On a chain `@unleashed/sdk/networks` covers, `parseNetwork` accepts only its
+- **The network is the bundled one.** On a chain `@unleashed-systems/sdk/networks` covers, `parseNetwork` accepts only its
   manifest, and `resolveToken` accepts a registered token only at the factory's own clone.
 - **The chains are asserted before signing.** The Ethereum wallet must be on the network's chain, and the Aztec
   wallet's chain must match the network's.
@@ -227,15 +227,15 @@ The app (`apps/tools`) and `@unleashed/bridge-core` import the package from the 
 
 | Entry | What | Published |
 |---|---|---|
-| `@unleashed/sdk` | `parseNetwork` and its trust roots, `Network`, transfer records and events, `BridgeError`, `capabilitiesFor`. | yes |
-| `@unleashed/sdk/fuel` | `probeFuel`, `quoteFuel`, `depositFuel`, `claimFuel`: gas only. Never loads the hub artifact. | yes |
-| `@unleashed/sdk/bridge` | `resolveToken`, `quoteBridge`, `depositToken`, `claimToken`, `hubArtifact(net)`: a token, or a token plus gas. Uses the hub artifact `parseNetwork` loaded for the network's generation. | yes |
-| `@unleashed/sdk/protocol` | The pure layer: ABIs, derivations, the manifest, gas math, the LI.FI client and book, fee methods, code pins. | yes |
-| `@unleashed/sdk/networks` | The bundled testnet and mainnet manifests. | yes |
-| `@unleashed/sdk/artifacts` | This release's hub artifact, built from the current sources (what a sandbox runs), loaded eagerly. | workspace only |
-| `@unleashed/sdk/private-fpc-artifact` | The PrivateFPC artifact, for a dynamic `import()` only. | workspace only |
-| `@unleashed/sdk/l1` | The viem-only slice of `./protocol` (the router ABI, the LI.FI ABIs, book and gas constants): esbuild resolves every member of a barrel, so a Worker bundles this one instead. | workspace only |
-| `@unleashed/sdk/internal` | The orchestration (`execution/`): the L1 send, receipt leaves, arrival gates, claims, recovery. | workspace only |
+| `@unleashed-systems/sdk` | `parseNetwork` and its trust roots, `Network`, transfer records and events, `BridgeError`, `capabilitiesFor`. | yes |
+| `@unleashed-systems/sdk/fuel` | `probeFuel`, `quoteFuel`, `depositFuel`, `claimFuel`: gas only. Never loads the hub artifact. | yes |
+| `@unleashed-systems/sdk/bridge` | `resolveToken`, `quoteBridge`, `depositToken`, `claimToken`, `hubArtifact(net)`: a token, or a token plus gas. Uses the hub artifact `parseNetwork` loaded for the network's generation. | yes |
+| `@unleashed-systems/sdk/protocol` | The pure layer: ABIs, derivations, the manifest, gas math, the LI.FI client and book, fee methods, code pins. | yes |
+| `@unleashed-systems/sdk/networks` | The bundled testnet and mainnet manifests. | yes |
+| `@unleashed-systems/sdk/artifacts` | This release's hub artifact, built from the current sources (what a sandbox runs), loaded eagerly. | workspace only |
+| `@unleashed-systems/sdk/private-fpc-artifact` | The PrivateFPC artifact, for a dynamic `import()` only. | workspace only |
+| `@unleashed-systems/sdk/l1` | The viem-only slice of `./protocol` (the router ABI, the LI.FI ABIs, book and gas constants): esbuild resolves every member of a barrel, so a Worker bundles this one instead. | workspace only |
+| `@unleashed-systems/sdk/internal` | The orchestration (`execution/`): the L1 send, receipt leaves, arrival gates, claims, recovery. | workspace only |
 
 Source imports use `.ts` specifiers, so every consumer's tsconfig sets `allowImportingTsExtensions`. `src/` imports no
 `node:` built-in and declares every package it imports (`imports.test.ts`), and no entry reaches a hub artifact
@@ -252,13 +252,13 @@ statically (the same test): `parseNetwork` imports the one its network's generat
 | `register-hash.ts` / `claim-secret.ts` / `content-hash.ts` | The three-toolchain keystones (Solidity ↔ Noir ↔ TS): the factory's `register` message, the recipient-committed private-claim secret, the deposit/withdraw content hashes. |
 | `factory-abi.ts` / `deposit-router-abi.ts` / `legacy-router-abi.ts` / `erc20.ts` | Hand-written browser ABIs pinned against the forge artifacts (the retired router's frozen); gas-capped ERC-20 metadata reads decoded from the factory's own bytes. |
 | `l1.ts` | Permit2 `DepositWitness` typed-data and the hash `DepositRouter.hashWitness` checks (it commits to `keccak256(swapData)`), pinned to the Solidity vector in `l1.test.ts`. |
-| `lifi-addresses.ts` / `lifi-abi.ts` / `lifi-gas.ts` | The third-party contracts a LI.FI route touches per chain, with their runtime code hashes; the LI.FI swap and bridge ABIs and facet selectors; the fork-pinned gas budgets, `LIFI_INTEGRATOR` and the venue allow-list. Viem only, so a Worker can bundle them through `@unleashed/sdk/l1`. |
+| `lifi-addresses.ts` / `lifi-abi.ts` / `lifi-gas.ts` | The third-party contracts a LI.FI route touches per chain, with their runtime code hashes; the LI.FI swap and bridge ABIs and facet selectors; the fork-pinned gas budgets, `LIFI_INTEGRATOR` and the venue allow-list. Viem only, so a Worker can bundle them through `@unleashed-systems/sdk/l1`. |
 | `fuel-swap.ts` | The gas leg's swap policy, from the exact bytes: LI.FI's capped fee step, the named tool's pinned venue at the slice less that fee, the testnet swapper's one step, and the chains LI.FI gas swaps run on. One rule for the SDK's quote and `verifyRoute`. |
 | `lifi-api.ts` / `capped-fetch.ts` | The keyless li.quest client (quotes and `/v1/status`, schema-parsed and held to the request it answers) over one bounded fetch (no redirects, a streaming byte cap, one deadline, typed refusals, never throws). |
 | `gas-share.ts` | The integer gas-share math (`fjPerTx` × target [+ `fjRegister`], the signed floor, the 50 % cap). |
 | `fee-juice.ts` / `fuel.ts` / `private-fuel.ts` / `private-fpc-artifact.ts` | Fee-juice payment methods, the direct `FeeJuicePortal` lane, the Wonderland PrivateFPC (pinned address + salt policy; artifact via dynamic import only). |
 | `random-field.ts` | `randomField`: 64 WebCrypto bytes reduced mod r, the source of every fresh field the SDK draws (salts, claim secrets, authwit nonces); the Permit2 nonce stays an unreduced uint256. Exported through `./internal`. |
-| `wallet-chain-id.ts` / `artifacts.ts` | `walletChainIdOf` (`(l1 ^ rollupVersion) >>> 0`); this release's hub artifact (its own entry, `@unleashed/sdk/artifacts`). |
+| `wallet-chain-id.ts` / `artifacts.ts` | `walletChainIdOf` (`(l1 ^ rollupVersion) >>> 0`); this release's hub artifact (its own entry, `@unleashed-systems/sdk/artifacts`). |
 | `generation-record.ts` / `hub-artifact-testnet.ts` / `abi-shape.ts` | The committed record of the code each live generation runs: its schema, its binding to a manifest's addresses, its integrity against the kept artifacts, and `codeOf`, which picks by chain the pins and hub artifact `parseNetwork` checks against (the record on a live chain, this release's builds on a sandbox, a refusal on any other); the testnet generation's kept hub artifact, reached by dynamic `import()` only; the ABI shape comparison behind the compatibility test (`generation-compat.test.ts`). |
 
 #### `src/execution/` and the root

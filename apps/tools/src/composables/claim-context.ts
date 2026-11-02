@@ -6,7 +6,7 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
-import type { Network, Reads } from "@unleashed/sdk"
+import type { Network, Reads } from "@unleashed-systems/sdk"
 import type { PublicClient } from "viem"
 import { bridgeNetwork } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"

@@ -1,6 +1,6 @@
 # The pack check's consumer: a project outside the workspace that installs the SDK's peers from
 # the registry. pack-check.ts installs a scratch copy of this directory frozen with install
-# scripts off, then unpacks the tarball into its node_modules/@unleashed/sdk; the tarball never
+# scripts off, then unpacks the tarball into its node_modules/@unleashed-systems/sdk; the tarball never
 # enters this lockfile, so an SDK change cannot break the frozen install.
 
 [install]

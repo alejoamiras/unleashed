@@ -29,8 +29,8 @@ import {
 	deriveBridgeSecret,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
-} from "@unleashed/sdk/protocol"
-import { type L1Ctx, type HubClaimOutcome, type SendResult, randomField, runSend } from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/protocol"
+import { type L1Ctx, type HubClaimOutcome, type SendResult, randomField, runSend } from "@unleashed-systems/sdk/internal"
 import { runFpcGate } from "./check-fpc-version"
 import { type FueledClaimResult, settleFueledClaim } from "./fuel-claim-l2"
 import { requirePinnedSigner } from "./live-intent"

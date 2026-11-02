@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from "vitest"
 import { selfBuiltTerms } from "../src/across-self-built"
 import { ACROSS_V4_FACET_ABI } from "../src/across-v4"
 import { type AcrossRelayData, FILLED_RELAY_TOPIC } from "../src/across-relay"
-import type { L1Ctx } from "@unleashed/sdk/internal"
-import { SWAP_TOKENS_SINGLE_V3_ABI, lifiBook } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed-systems/sdk/internal"
+import { SWAP_TOKENS_SINGLE_V3_ABI, lifiBook } from "@unleashed-systems/sdk/protocol"
 import {
 	bridgeFromCallerCall,
 	crossChainExpectation,
@@ -149,7 +149,7 @@ describe("the canary's transactions", () => {
 
 	it("sign the recovery row's floor above the swapper's quote, in the intent and the swap call alike", async () => {
 		const quote = async (_: string, amountIn: bigint) => amountIn * FJ_PER_UNIT
-		const { testnetSwapperFuelProvider } = await import("@unleashed/sdk/internal")
+		const { testnetSwapperFuelProvider } = await import("@unleashed-systems/sdk/internal")
 		const provider = testnetSwapperFuelProvider({
 			reader: { quote },
 			swapper: b.fuelSwapper,
