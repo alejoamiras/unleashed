@@ -1,3 +1,4 @@
+import { NO_FROM } from "@aztec-labs/aztec.js/account"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
@@ -11,6 +12,7 @@ import {
 	type HubClaimParams,
 	hubBindingAt,
 	hubExitsPaused,
+	hubTokenFor,
 	hubTokenOfSlot,
 	isRegisterRace,
 	preflightHubExit,
@@ -51,6 +53,8 @@ interface FakeHubOpts {
 function fakeHub(opts: FakeHubOpts) {
 	const calls: string[] = []
 	const sentWith: Array<[string, Record<string, unknown>]> = []
+	/** The options each binding read simulated with. */
+	const bindingReads: unknown[] = []
 	let registered = opts.registered
 	let claimFailuresLeft = opts.claimSimulateFailures ?? 0
 	const views = (): Record<string, unknown> => ({
@@ -83,7 +87,10 @@ function fakeHub(opts: FakeHubOpts) {
 	}
 	const method = (name: string) => {
 		return (..._args: unknown[]) => ({
-			simulate: () => simulateOf(name),
+			simulate: (o?: unknown) => {
+				if (name === "token_for") bindingReads.push(o)
+				return simulateOf(name)
+			},
 			send: async (o?: Record<string, unknown>) => {
 				calls.push(name)
 				sentWith.push([name, o ?? {}])
@@ -100,7 +107,7 @@ function fakeHub(opts: FakeHubOpts) {
 		})
 	}
 	const methods = new Proxy({}, { get: (_t, name: string) => method(name) })
-	return { hub: { methods } as unknown as ContractBase, calls, sentWith }
+	return { hub: { methods } as unknown as ContractBase, calls, sentWith, bindingReads }
 }
 
 const params = (isPrivate: boolean): HubClaimParams => ({
@@ -128,6 +135,19 @@ describe("hub L2 claims", () => {
 		expect(await claimViaHub(hub, params(false), {})).toEqual({ path: "claim", claimTxHash: "0xclaim_public" })
 		expect(await claimViaHub(hub, params(true), {})).toMatchObject({ path: "claim", claimTxHash: "0xclaim_private" })
 		expect(calls).toEqual(["claim_public", "claim_private"])
+	})
+
+	it("reads the hub's binding without a sender, while the claim's own transactions still carry the claimer", async () => {
+		const { hub, sentWith, bindingReads } = fakeHub({ registered: false, registerBinds: true })
+		await probeHubClaim(hub, params(true), {}, {})
+		expect(await hubTokenFor(hub, token.erc20)).toBeUndefined()
+		await claimViaHub(hub, params(true), { from: USER })
+		expect(bindingReads.length).toBeGreaterThanOrEqual(3)
+		expect(bindingReads).toEqual(bindingReads.map(() => ({ from: NO_FROM })))
+		expect(sentWith.map(([name, o]) => [name, o.from])).toEqual([
+			["register_token", USER],
+			["claim_private", USER],
+		])
 	})
 
 	it("an unregistered token: public registers + claims in one tx, private registers in its own tx first", async () => {

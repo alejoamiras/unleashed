@@ -296,15 +296,16 @@ test("cell 30 — fees that rise between the review and the confirm stand the pr
 	await connect(page, actor)
 	await reviewExit(page, { l1ChainId: L1, erc20: usdc.erc20, amount: "5", isPrivate: true })
 
-	// From here the node's prediction triples: the wallet's next quote — the confirm's re-read — moves
-	// the ceiling. The node client namespaces the method (`aztec_…`) and batches calls into arrays,
-	// so the patch follows the request ids.
+	// From here the node's prediction rises by a quarter: past the tenth of drift the review allows, and
+	// inside the rollup-derived bound the wallet's quote is checked against, so the confirm's re-read
+	// moves the ceiling. The node client namespaces the method (`aztec_…`) and batches calls into
+	// arrays, so the patch follows the request ids.
 	type Rpc = { id?: unknown; method?: string }
 	type Fees = { feePerDaGas: string; feePerL2Gas: string }
 	type Reply = { id?: unknown; result?: Fees[] }
-	const tripled = (f: Fees): Fees => ({
-		feePerDaGas: (BigInt(f.feePerDaGas) * 3n).toString(),
-		feePerL2Gas: (BigInt(f.feePerL2Gas) * 3n).toString(),
+	const risen = (f: Fees): Fees => ({
+		feePerDaGas: ((BigInt(f.feePerDaGas) * 5n) / 4n).toString(),
+		feePerL2Gas: ((BigInt(f.feePerL2Gas) * 5n) / 4n).toString(),
 	})
 	await context.route(`${readHandle(run.artifactsDir).nodeUrl}/**`, async (route) => {
 		const body = route.request().postDataJSON() as Rpc | Rpc[] | null
@@ -312,7 +313,7 @@ test("cell 30 — fees that rise between the review and the confirm stand the pr
 		const ids = new Set(calls.filter((c) => /^(aztec_|node_)?getPredictedMinFees$/.test(c.method ?? "")).map((c) => c.id))
 		if (ids.size === 0) return route.fallback()
 		const json = (await (await route.fetch()).json()) as Reply | Reply[]
-		const patch = (r: Reply): Reply => (ids.has(r.id) && Array.isArray(r.result) ? { ...r, result: r.result.map(tripled) } : r)
+		const patch = (r: Reply): Reply => (ids.has(r.id) && Array.isArray(r.result) ? { ...r, result: r.result.map(risen) } : r)
 		const patched = Array.isArray(json) ? json.map(patch) : patch(json)
 		return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(patched) })
 	})

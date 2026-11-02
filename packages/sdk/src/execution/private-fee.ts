@@ -135,7 +135,7 @@ async function privateCreditFee(
 	const fpcAddr = AztecAddress.fromStringUnsafe(fb.fpc ?? env.privateFpc)
 	const [credit, maxFees] = await Promise.all([
 		readFeeJuiceOrNull(env, "private FJ", () => env.readPrivateFeeJuice(aztec, recipientAddr)),
-		walletFeesOrNull(env, aztec, recipientAddr, PRIVATE_HUB_CLAIM_GAS),
+		walletFeesOrNull(env, aztec, PRIVATE_HUB_CLAIM_GAS),
 	])
 	if (credit === null) return { kind: "stop", stop: "credit-unreadable" }
 	if (maxFees === null) return { kind: "stop", stop: "unpriced-by-wallet" }
@@ -176,7 +176,7 @@ async function privateFpcFee(
 	const fpcAddr = AztecAddress.fromStringUnsafe(fb.fpc ?? env.privateFpc)
 	const fuelLeaf = new Fr(BigInt(fb.leafIndex as string))
 	const spentBy = registers ? PRIVATE_HUB_REGISTER_GAS : PRIVATE_HUB_CLAIM_GAS
-	const maxFees = await walletFeesOrNull(env, aztec, recipientAddr, spentBy)
+	const maxFees = await walletFeesOrNull(env, aztec, spentBy)
 	if (maxFees === null) return { kind: "stop", stop: "unpriced-by-wallet" }
 	// The FPC asserts the bridged amount covers the COMMITTED ceiling (limits × capped fees) of the
 	// transaction that spends it, and credits only the remainder: when a registration spends it,

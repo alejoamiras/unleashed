@@ -148,6 +148,7 @@ window.__unleashedTestWallet = {
 	accounts: async () => (await boot()).getAccounts().then((list) => list.map((a) => a.item.toString())),
 	calls: () => ({ ...calls }),
 	submitted: async () => (await boot()).submitted.map((t) => ({ ...t, feeLimit: t.feeLimit.toString() })),
+	simulated: async () => (await boot()).simulated.map((t) => ({ ...t })),
 	failNext: (method, pattern, message = `test wallet: injected failure of ${method}`) => {
 		fault = { kind: "reject", method, pattern, message }
 	},

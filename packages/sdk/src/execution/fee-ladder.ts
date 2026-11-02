@@ -87,7 +87,7 @@ export async function buildFeeJuiceClaim(
 	// refund, so any fee headroom inflates max_gas_cost past the bridged amount and reverts "Amount too
 	// low to cover gas cost". Predicted-worst already looks past the proving window; a rare spike beyond
 	// it fails recoverably (a retry reprices). The figure is the WALLET's: it submits under its own max fee.
-	const claimMaxFees = await walletFeesOrNull(env, aztec, recipient, PRIVATE_HUB_CLAIM_GAS)
+	const claimMaxFees = await walletFeesOrNull(env, aztec, PRIVATE_HUB_CLAIM_GAS)
 	if (claimMaxFees === null) throw new FeeStopError("unpriced-by-wallet")
 	return buildFuelClaimInteraction(rec, {
 		aztec,
@@ -155,10 +155,12 @@ export async function ownGasFee(
 	registers: boolean,
 ): Promise<PublicClaimFee> {
 	const publicAllowed = await walletSupports(aztec, DAPP_SELF_PAY_FEATURE)
+	// A private bridge never pays from public Fee Juice (`decideOwnGasSource`), so its claim does not read it.
+	const readsPublic = publicAllowed && !rec.isPrivate
 	const [pub, credit, maxFees] = await Promise.all([
-		publicAllowed ? readFeeJuiceOrNull(env, "public FJ", () => env.readPublicFeeJuice(aztec, recipientAddr)) : Promise.resolve(0n),
+		readsPublic ? readFeeJuiceOrNull(env, "public FJ", () => env.readPublicFeeJuice(aztec, recipientAddr)) : Promise.resolve(0n),
 		readFeeJuiceOrNull(env, "private FJ", () => env.readPrivateFeeJuice(aztec, recipientAddr)),
-		walletFeesOrNull(env, aztec, recipientAddr, PRIVATE_HUB_CLAIM_GAS),
+		walletFeesOrNull(env, aztec, PRIVATE_HUB_CLAIM_GAS),
 	])
 	if (maxFees === null) return { kind: "stop", stop: "unpriced-by-wallet" }
 	const shape = { isPrivate: rec.isPrivate, registers }
