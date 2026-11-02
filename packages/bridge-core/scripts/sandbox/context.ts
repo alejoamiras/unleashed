@@ -22,7 +22,7 @@ import {
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
 	privateMintAndPayFee,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import {
 	type L1Ctx,
 	claimViaHub,
@@ -32,8 +32,8 @@ import {
 	type SendGasLeg,
 	type SendParams,
 	type SendResult,
-} from "@unleashed/sdk/internal"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+} from "@unleashed-systems/sdk/internal"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 import type { CalibrationSample } from "../calibration"
 import { feeJuiceFor } from "../fee-juice-l2"
 import { type L2Ctx, waitForL1ToL2Message } from "../generation"

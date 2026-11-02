@@ -2,9 +2,9 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
-import { TESTNET_MANIFEST } from "@unleashed/sdk/networks"
-import { parseManifestV2 } from "@unleashed/sdk/protocol"
+import { tokenBridgeHubArtifact } from "@unleashed-systems/sdk/artifacts"
+import { TESTNET_MANIFEST } from "@unleashed-systems/sdk/networks"
+import { parseManifestV2 } from "@unleashed-systems/sdk/protocol"
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { assertFaucetCandidateShape } from "../src/promotion"
 import { GENERATION_PATHS, hubArtifactFor, liveBaseline, RECORD_FILES, REPO_ROOT, workingTreeRecord } from "./generation-paths"
@@ -16,8 +16,8 @@ vi.mock("node:fs", async (importOriginal) => {
 	return { ...real, renameSync: vi.fn(real.renameSync), rmSync: vi.fn(real.rmSync) }
 })
 // This checkout's hub sources moved since the live generation deployed: its target has another class.
-vi.mock("@unleashed/sdk/artifacts", async (importOriginal) => {
-	const real = (await importOriginal<typeof import("@unleashed/sdk/artifacts")>()).tokenBridgeHubArtifact
+vi.mock("@unleashed-systems/sdk/artifacts", async (importOriginal) => {
+	const real = (await importOriginal<typeof import("@unleashed-systems/sdk/artifacts")>()).tokenBridgeHubArtifact
 	return { tokenBridgeHubArtifact: { ...real, name: `${real.name}Edited` } }
 })
 // mockReset restores the real implementation each vi.fn wraps.

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** Utils */
 import { Icon, type IconName } from "@unleashed/design"
+import { refuseRepeat } from "@/composables/useArmedPress"
 
 /**
  * A boxed state in the send flow: a tinted box, its glyph, a bold line in the tone's colour, a body and at most one
@@ -14,8 +15,10 @@ const props = defineProps<{
 	actionTestid?: string
 	/** A glyph before the action's words. */
 	actionIcon?: IconName
+	/** The action is armed to delete: its words take the lost tone on the raised fill. */
+	actionArmed?: boolean
 }>()
-const emit = defineEmits<{ act: [] }>()
+const emit = defineEmits<{ act: [event: MouseEvent] }>()
 </script>
 
 <template>
@@ -24,7 +27,15 @@ const emit = defineEmits<{ act: [] }>()
 		<span class="body">
 			<strong class="title">{{ title }}</strong>
 			<span v-if="$slots.default"><slot /></span>
-			<button v-if="action" type="button" class="action ul-notch" :data-testid="actionTestid" @click="emit('act')">
+			<button
+				v-if="action"
+				type="button"
+				class="action ul-notch"
+				:data-armed="actionArmed || undefined"
+				:data-testid="actionTestid"
+				@click="emit('act', $event)"
+				@keydown="actionArmed && refuseRepeat($event)"
+			>
 				<Icon v-if="actionIcon" :name="actionIcon" :size="12" />{{ action }}
 			</button>
 		</span>
@@ -81,5 +92,9 @@ const emit = defineEmits<{ act: [] }>()
 	font: 600 14px/1 var(--ul-font-body);
 	color: var(--ul-ink);
 	cursor: pointer;
+}
+
+.action[data-armed] {
+	color: var(--ul-lost);
 }
 </style>

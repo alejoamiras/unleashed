@@ -16,8 +16,16 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { TxStatus } from "@aztec-labs/aztec.js/tx"
 import type { Address } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
-import { ERC20_ABI, type ManifestToken } from "@unleashed/sdk/protocol"
-import { type L1Ctx, hubExitsPaused, hubTokenFor, randomField, type SendOpts, runSend, type SendGeneration } from "@unleashed/sdk/internal"
+import { ERC20_ABI, type ManifestToken } from "@unleashed-systems/sdk/protocol"
+import {
+	type L1Ctx,
+	hubExitsPaused,
+	hubTokenFor,
+	randomField,
+	type SendOpts,
+	runSend,
+	type SendGeneration,
+} from "@unleashed-systems/sdk/internal"
 import { sendGenerationOf } from "./script-send"
 import { evmAbi } from "./script-artifacts"
 import { ensureRouterPermit2 } from "./script-l1"

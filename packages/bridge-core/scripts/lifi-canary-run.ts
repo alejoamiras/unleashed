@@ -23,7 +23,7 @@ import {
 	type L1Ctx,
 	type FuelQuoteProvider,
 	testnetSwapperFuelProvider,
-} from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/internal"
 import {
 	DEPOSIT_ROUTER_ABI,
 	hashDepositWitness,
@@ -31,7 +31,7 @@ import {
 	type RouterIntent,
 	type ManifestV2,
 	PRIVATE_FPC_ADDRESS,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import type { CrossChainDepositRecord } from "../src/journal"
 import { acrossDepositFor, type RouteExpectation, type RouteTx } from "../src/lifi-decode"
 import { type AcrossClient, type AcrossLimits, acrossSuggestedFees } from "../src/across-api"

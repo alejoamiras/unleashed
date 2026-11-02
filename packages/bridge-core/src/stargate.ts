@@ -1,5 +1,5 @@
 import { bytesToBigInt, bytesToHex, type Hex, hexToBytes, isHex } from "viem"
-import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_SWAP_DATA_COMPONENTS } from "@unleashed/sdk/l1"
+import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_SWAP_DATA_COMPONENTS } from "@unleashed-systems/sdk/l1"
 
 /** `IStargate.SendParam`, field for field. */
 export const STARGATE_SEND_PARAM_COMPONENTS = [

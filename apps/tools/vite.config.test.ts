@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { bundledManifest } from "@unleashed/sdk/networks"
+import { bundledManifest } from "@unleashed-systems/sdk/networks"
 import { describe, expect, it } from "vitest"
 import { MAINNET_TARGET, TESTNET_TARGET } from "./src/lib/network-targets"
 import { makeToolsConfig } from "./vite.config"

@@ -2,12 +2,12 @@
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { codeOf, parseManifestV2 } from "@unleashed/sdk/protocol"
+import { codeOf, parseManifestV2 } from "@unleashed-systems/sdk/protocol"
 import { describe, expect, it, vi } from "vitest"
 import { hubArtifact } from "./bridge-generation"
 
 // This build's hub target, standing in for one a source edit moved: the testnet build must not load it.
-vi.mock("@unleashed/sdk/artifacts", () => ({ tokenBridgeHubArtifact: { name: "TokenBridgeHubAtHead" } }))
+vi.mock("@unleashed-systems/sdk/artifacts", () => ({ tokenBridgeHubArtifact: { name: "TokenBridgeHubAtHead" } }))
 
 const SANDBOX = join(
 	dirname(fileURLToPath(import.meta.url)),

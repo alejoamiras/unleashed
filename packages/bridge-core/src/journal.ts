@@ -23,7 +23,7 @@
  * lives under one key only.
  */
 
-import { claimRetired, type DepositRecord, type JournalTokenBlock } from "@unleashed/sdk"
+import { claimRetired, type DepositRecord, type JournalTokenBlock } from "@unleashed-systems/sdk"
 import type { Address, Hex } from "viem"
 import { validateAnyBackupRecord, validateCrossChainRecord } from "./backup"
 import { claimView, sameClaimIdentity } from "./claim-view"
@@ -444,10 +444,12 @@ export function quarantineInvalid(kv: KV): number {
 /**
  * True when nothing in the record is still needed: an Ethereum-origin record once the SDK's
  * `claimRetired` says so; a cross-chain record only once it was deposited and claimed with no outcome and no
- * extra deposit. An outcome record is never pruned or evicted: only the user's Dismiss removes it.
+ * extra deposit. An outcome record is never pruned or evicted: only the user's Dismiss removes it. Neither is a
+ * deposit completed without a claim transaction of ours: only the user's Clear removes it.
  */
 export function isRetirable(rec: AnyJournalRecord): boolean {
 	if (!claimRetired(rec)) return false
+	if (rec.direction === "deposit" && (rec.claimedByOther === true || rec.claimTxHash === undefined)) return false
 	if (!isCrossChainRecord(rec)) return true
 	return rec.leafIndex !== undefined && rec.route.outcome === undefined && !rec.route.extraDeposits?.length
 }
@@ -727,13 +729,16 @@ export function removeRecord(kv: KV, id: string): void {
 	}
 }
 
-/** Drop retirable records completed more than `olderThanMs` ago (the 7-day prune). A completion is as sound as what
- *  settled it: a claim transaction the node reported landed, or the wallet's simulate and the node agreeing that the
- *  message is spent. */
+/** Whether `pruneCompleted(kv, olderThanMs, now)` drops `rec`. */
+export function isPrunable(rec: AnyJournalRecord, olderThanMs: number, now: number): boolean {
+	return isRetirable(rec) && now - (rec.completedAt ?? now) >= olderThanMs
+}
+
+/** Drop retirable records completed more than `olderThanMs` ago (the 7-day prune). */
 export function pruneCompleted(kv: KV, olderThanMs: number, now = Date.now()): void {
 	for (const lane of LANES) {
 		const records = loadLane(kv, lane)
-		const next = records.filter((r) => !isRetirable(r) || now - (r.completedAt ?? now) < olderThanMs)
+		const next = records.filter((r) => !isPrunable(r, olderThanMs, now))
 		if (next.length !== records.length) writeLane(kv, lane, next)
 	}
 }

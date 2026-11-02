@@ -3,8 +3,8 @@
  * exit) are checked against over the same reads: the build's pinned Ethereum reader where it has one (a cross-chain
  * send leaves the wallet on its source chain), the Ethereum wallet's otherwise, and the app's Aztec node.
  */
-import type { Reads } from "@unleashed/sdk"
-import { feeBoundOf, type MaxFees } from "@unleashed/sdk/internal"
+import type { Reads } from "@unleashed-systems/sdk"
+import { feeBoundOf, type MaxFees } from "@unleashed-systems/sdk/internal"
 import type { PublicClient } from "viem"
 import { bridgeNetwork } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"

@@ -3,7 +3,7 @@
  * fills it as the exclusive filler those terms name, LI.FI's compiled receiver and Executor run it into the deposit
  * router, and the app finds it by discovery alone. Every amount stays under the fixed terms' cap of 8 whole tokens.
  */
-import { DEPOSIT_ROUTER_ABI } from "@unleashed/sdk/protocol"
+import { DEPOSIT_ROUTER_ABI } from "@unleashed-systems/sdk/protocol"
 import { FILLED_RELAY_TOPIC, TESTNET_FILLER } from "@unleashed/bridge-core"
 import { balanceOf, erc20BalanceOf, mint, SET_PAUSED_ABI, SPOKE_POOL_ABI, writeL1 } from "@unleashed/bridge-core/sandbox"
 import { type Address, decodeFunctionData, encodeFunctionData, erc20Abi, getAddress, type Hex, maxUint256, pad, zeroHash } from "viem"
@@ -280,7 +280,7 @@ test("cell 53 — deposits paused at the confirm: refused on the review before a
 	}
 	// Unpaused, the same review sends.
 	await liveTerms(page)
-	await confirmReview(page)
+	await confirmReview(page, TESTIDS.sendXcReview)
 	const sent = await bridging(page)
 	await writeL1(sandbox.clients.l1, factory, SET_PAUSED_ABI, "setPaused", [true, false])
 	try {
@@ -366,7 +366,7 @@ test("cell 56 — the same ask sent twice, the first run in the background: each
 	await expect(page.locator(tid(TESTIDS.sendStepToken)), "the wizard starts over").toBeVisible()
 	// The wallet is still on the source chain, so the review goes straight to Confirm.
 	await reviewCrossChain(page, plan)
-	await confirmReview(page)
+	await confirmReview(page, TESTIDS.sendXcReview)
 
 	await expect
 		.poll(async () => (await crossChainRecords(page)).filter((r) => r.route.srcTxHash).length, {

@@ -5,7 +5,7 @@ What already bit this repository, one line each, linking to the detail. Read it 
 - A new worktree lacks the gitignored `contracts/bridge/evm/{lib,out,cache}`, so the sandbox cannot boot: run the README's pinned `forge install` lines, each with `--no-git` (else a commit ships gitlinks), or copy `lib/` only; a copied cache names the other checkout ([phase 4](archive/unleashed-reskin/lessons/phase-4.md)).
 - A native TXE oracle crash (`Napi::Error`) mid-suite turns every later hub test into "Failed calling external resolver": re-run that block alone before suspecting code.
 - Tree-mode `git grep` skips symlink blobs; a scan of every byte a push sends reads the objects (`git cat-file --batch`), replacement refs off.
-- A fake that holds an async call forever never meets the races its writes open: let it write first ([a6](archive/sdk-1/lessons/phase-6.md)).
+- A fake that holds an async call forever never meets the races its writes open: let it write first ([a6](archive/sdk-1/lessons/phase-6.md)); a lock holder must load before the write under test ([journal-2](archive/journal-2/lessons/phase-1.md)).
 - Under `set -o pipefail`, `producer | grep -q` can SIGPIPE the producer: capture its output, then grep it.
 - Vite inlines assets under `assetsInlineLimit` (4096 B) as `data:` URIs, font subsets included: keep the build's guard ([phase 1](archive/unleashed-reskin/lessons/phase-1.md)).
 - `--ul-notch` inherits, so every notch host declares both `--ul-fill` and `--ul-notch`; the fill is an absolute `::before` on the padding box, so a notch host cannot scroll ([phase 3](archive/unleashed-reskin/lessons/phase-3.md)).

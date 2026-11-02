@@ -35,7 +35,7 @@ import {
 	DEPOSIT_ROUTER_ABI,
 	TOKEN_PORTAL_ABI,
 	LIFI_RECEIVER_MESSAGE_PARAMS,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import { acrossRelayHash } from "./across-relay"
 import {
 	type CrossChainDiscovery,
@@ -45,7 +45,7 @@ import {
 	discoverCrossChain,
 	discoveryPatch,
 } from "./crosschain-discovery"
-import { readRouterDeposit } from "@unleashed/sdk/internal"
+import { readRouterDeposit } from "@unleashed-systems/sdk/internal"
 import { type CrossChainDepositRecord, deriveCrossChainDepositStage, outcomeFinality } from "./journal"
 import { CROSSCHAIN_TOKEN, crossChainRecord } from "./test/crosschain-record"
 

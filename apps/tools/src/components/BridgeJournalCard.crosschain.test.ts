@@ -122,8 +122,32 @@ describe("BridgeJournalCard — a cross-chain send", () => {
 			fromRecordId: rec.id,
 		})
 		await w.get(sel(TESTIDS.journalXcDismiss)).trigger("click")
+		expect(discard).not.toHaveBeenCalled()
+		await w.get(sel(TESTIDS.journalXcDismissConfirm)).trigger("click")
 		expect(discard).toHaveBeenCalledWith(rec.id)
 	})
+
+	it.each([
+		{ name: "not sent", route: { outcome: "not-sent" as const }, inNotice: true },
+		{ name: "delivered", route: delivered, inNotice: false },
+		{ name: "expired", route: { outcome: "expired-on-source" as const }, inNotice: false },
+	])(
+		"$name, private: Dismiss arms with the delete warning, confirms on the second press, and the backup stays",
+		async ({ route, inNotice }) => {
+			const rec = xcRecord({ ...done, isPrivate: true, sealedEnvelope: "blob" }, route)
+			const w = card(rec)
+			expect(w.find(sel(TESTIDS.cardBackup)).exists()).toBe(true)
+			expect(w.find(sel(TESTIDS.journalDiscardWarning)).exists()).toBe(false)
+			await w.get(sel(TESTIDS.journalXcDismiss)).trigger("click")
+			expect(discard).not.toHaveBeenCalled()
+			const confirm = w.get(sel(TESTIDS.journalXcDismissConfirm))
+			expect(confirm.text()).toBe("Confirm dismiss")
+			expect(confirm.attributes("data-armed")).toBe(inNotice ? "true" : undefined)
+			expect(w.find(sel(TESTIDS.journalDiscardWarning)).exists()).toBe(true)
+			await confirm.trigger("click")
+			expect(discard).toHaveBeenCalledWith(rec.id)
+		},
+	)
 
 	it("an arrived send shows what landed, the extra deposit it found, and its receipt", async () => {
 		const extra = { txHash: `0x${"ee".repeat(32)}` as `0x${string}`, leafIndex: "8", amount: "1000000" }

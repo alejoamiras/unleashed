@@ -2,7 +2,7 @@
  * A token plus the gas to use it: any ERC-20 through the network's hub, part of it swapped into Fee Juice on the way,
  * claimed as public balances. Typechecked with the package, never run.
  */
-import { type Capability, type Network, parseNetwork, type Reads, type RunOptions } from "@unleashed/sdk"
+import { type Capability, type Network, parseNetwork, type Reads, type RunOptions } from "@unleashed-systems/sdk"
 import {
 	type AztecSigner,
 	type BridgeToken,
@@ -11,8 +11,8 @@ import {
 	depositToken,
 	quoteBridge,
 	resolveToken,
-} from "@unleashed/sdk/bridge"
-import { TESTNET_MANIFEST } from "@unleashed/sdk/networks"
+} from "@unleashed-systems/sdk/bridge"
+import { TESTNET_MANIFEST } from "@unleashed-systems/sdk/networks"
 import type { Address, WalletClient } from "viem"
 import { show } from "./fuel.ts"
 

@@ -8,7 +8,7 @@ import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Account, Address, Chain, Hex, WalletClient } from "viem"
 import { BridgeError, isUserRejection, refusal, type Submission } from "../errors.ts"
 import { type Emit, eventEmitter, type Leaves } from "../events.ts"
-import { assertNetwork, type Network, type Reads } from "../network.ts"
+import { assertNetwork, assertNoOffchainLookups, type Network, type Reads } from "../network.ts"
 import { aztecLineOf } from "../protocol/aztec-line.ts"
 import { ERC20_ABI } from "../protocol/erc20.ts"
 import { PORTAL_FACTORY_ABI } from "../protocol/factory-abi.ts"
@@ -351,6 +351,7 @@ async function confirmDeposit(leg: Leg, s: PreparedSend, txHash: Hex): Promise<v
 /** Runs the Ethereum leg of a reviewed deposit; resolves with the confirmed record. */
 export async function depositL1(net: Network, r: Reads, wallet: WalletClient, plan: DepositPlan, run: RunOptions): Promise<DepositRecord> {
 	assertNetwork(net)
+	assertNoOffchainLookups(r)
 	if (!aztecLineOf(net.l1ChainId).supported) throw refusal("unsupported-line", `this release does not run ${net.name}'s Aztec line`)
 	const route = routeOf(net, plan.intent)
 	const account = await accountOf(wallet)

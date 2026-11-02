@@ -12,9 +12,9 @@ import {
 	type RunOptions,
 	type TransferEvent,
 	type TransferEventBody,
-} from "@unleashed/sdk"
-import type { ClaimOptions } from "@unleashed/sdk/fuel"
-import type { DepositPlan, Registration } from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk"
+import type { ClaimOptions } from "@unleashed-systems/sdk/fuel"
+import type { DepositPlan, Registration } from "@unleashed-systems/sdk/internal"
 import { WaitForTransactionReceiptTimeoutError } from "viem"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { watch } from "vue"
@@ -72,8 +72,8 @@ const h = vi.hoisted(() => ({
 vi.mock("@/contracts/bridge-generation", async () => {
 	const { readFileSync } = await import("node:fs")
 	const { fileURLToPath } = await import("node:url")
-	const protocol = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
-	const internal = await vi.importActual<typeof import("@unleashed/sdk/internal")>("@unleashed/sdk/internal")
+	const protocol = await vi.importActual<typeof import("@unleashed-systems/sdk/protocol")>("@unleashed-systems/sdk/protocol")
+	const internal = await vi.importActual<typeof import("@unleashed-systems/sdk/internal")>("@unleashed-systems/sdk/internal")
 	const path = fileURLToPath(new URL("../../../../packages/bridge-core/fixtures/sandbox-manifest.json", import.meta.url))
 	const manifest = protocol.parseManifestV2(JSON.parse(readFileSync(path, "utf8")))
 	const bridge = manifest.bridge as NonNullable<typeof manifest.bridge>
@@ -169,18 +169,18 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 	}
 })
 
-vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
+vi.mock("@unleashed-systems/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/internal")>()),
 	depositL1: h.depositL1,
 	assertDepositsOpen: h.assertDepositsOpen,
 	readRegistration: h.readRegistration,
 }))
-vi.mock("@unleashed/sdk/bridge", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/bridge")>()),
+vi.mock("@unleashed-systems/sdk/bridge", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/bridge")>()),
 	claimToken: h.claimToken,
 }))
-vi.mock("@unleashed/sdk/fuel", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/fuel")>()),
+vi.mock("@unleashed-systems/sdk/fuel", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/fuel")>()),
 	claimFuel: h.claimFuel,
 }))
 
@@ -193,12 +193,13 @@ import {
 	isProvisionalRecordId,
 	patchRecord,
 	openDepositEnvelope,
-	recoveryKeyFromSignature,
+	RecoveryKey,
 	validateAnyBackupRecord,
 } from "@unleashed/bridge-core"
-import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
+import { recoveryBindingOf } from "@/lib/send-record"
+import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed-systems/sdk/protocol"
 import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
-import { type JournalLocks, memoryJournalLocks } from "@/lib/journal-locks"
+import { otherTab } from "./test/other-tab"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
 import { __resetJournalForTests, addRecord, connectJournalDeps, isSessionLive, runDepositClaim, useBridgeJournal } from "./useBridgeJournal"
 import { GAS_QUOTE_MOVED } from "./useFuelQuote"
@@ -789,46 +790,19 @@ describe("useSend", () => {
 	})
 
 	it("journals the SDK's deposit facts behind another tab's write, so neither tab's write is lost", async () => {
-		const shared = memoryJournalLocks()
-		let holder: Promise<unknown> | undefined
-		let behind = 0
-		const locks: JournalLocks = {
-			...shared,
-			journal: (fn) => {
-				if (holder) behind++
-				return shared.journal(fn)
-			},
-		}
-		// After `useSend()`, whose wiring hands the engine the browser's locks (none under node).
+		const tab = otherTab()
 		const send = useSend()
-		connectJournalDeps({ locks })
-		// The other tab's span: load the lane, then write it back with a record of its own once released.
-		let loaded: string | null = null
-		let release = () => {}
-		const hold = () => {
-			holder = locks.journal(() => {
-				loaded = localStorage.getItem(JOURNAL_KEY)
-				return new Promise<void>((r) => {
-					release = r
-				}).then(() => {
-					const lane = JSON.parse(loaded ?? "") as { records: unknown[] }
-					localStorage.setItem(
-						JOURNAL_KEY,
-						JSON.stringify({ ...lane, records: [...lane.records, journalled("0xother", readBack())] }),
-					)
-				})
-			})
-		}
+		connectJournalDeps({ locks: tab.locks })
 		h.writeContract.mockImplementation(async (call: { functionName: string }) => {
-			if (call.functionName === "bridgeWithPermit") hold()
+			if (call.functionName === "bridgeWithPermit") tab.hold(localStorage, JOURNAL_KEY, journalled("0xother", readBack()))
 			return "0xl1tx"
 		})
 		const sending = send.send(plan())
-		await vi.waitFor(() => expect(behind).toBe(1))
-		expect(localStorage.getItem(JOURNAL_KEY)).toBe(loaded)
-		release()
+		await vi.waitFor(() => expect(tab.behind).toBe(1))
+		expect(localStorage.getItem(JOURNAL_KEY)).toBe(tab.loaded)
+		const landed = tab.release()
 		const id = await sending
-		await holder
+		await landed
 		expect(recordOf(id)?.depositTxHash).toBe("0xl1tx")
 		expect(recordOf("0xother")).toBeDefined()
 	})
@@ -1285,7 +1259,10 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 		expect(rec.sealedEnvelope).toBeTypeOf("string")
 
 		// The envelope carries the salt, so a restore on another device can claim the gas privately.
-		const envelope = await openDepositEnvelope(await recoveryKeyFromSignature(SEAL_SIG), rec.sealedEnvelope as string)
+		const envelope = await openDepositEnvelope(
+			await RecoveryKey.derive(async () => SEAL_SIG, recoveryBindingOf(rec, rec.id), "site"),
+			rec.sealedEnvelope as string,
+		)
 		expect(envelope.salt).toBe(salt)
 		expect(envelope.secret).toBe(salt)
 
@@ -1306,7 +1283,10 @@ describe("useSend - private fueled sends seal and journal their gas material", (
 		expect(rec.fuel?.leafIndex).toBe("8")
 		expect(rec.secret).toBeUndefined()
 
-		const envelope = await openDepositEnvelope(await recoveryKeyFromSignature(SEAL_SIG), rec.sealedEnvelope as string)
+		const envelope = await openDepositEnvelope(
+			await RecoveryKey.derive(async () => SEAL_SIG, recoveryBindingOf(rec, rec.id), "site"),
+			rec.sealedEnvelope as string,
+		)
 		// The token credential and the gas salt are DIFFERENT secrets, and the envelope holds both.
 		expect(envelope.salt).toBe(salt)
 		expect(envelope.secret).not.toBe(salt)

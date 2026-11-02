@@ -1,4 +1,4 @@
-import type { DepositRecord } from "@unleashed/sdk"
+import type { DepositRecord } from "@unleashed-systems/sdk"
 import { describe, expect, it } from "vitest"
 import { claimView } from "./claim-view"
 import {
@@ -156,11 +156,14 @@ describe("patchRecordDelta", () => {
 
 describe("retirement", () => {
 	it("prunes by the SDK's rule, keeping a cross-chain record's outcome rule on top", () => {
-		expect(isRetirable({ ...sendRecord(), completedAt: 3 } as AnyJournalRecord)).toBe(true)
-		expect([isRetirable({ ...legacyFeeJuice(), completedAt: 3 }), isRetirable(legacyFeeJuice())]).toEqual([true, false])
+		expect(isRetirable({ ...sendRecord(), claimTxHash: "0xc", completedAt: 3 } as AnyJournalRecord)).toBe(true)
+		expect([isRetirable({ ...legacyFeeJuice(), claimTxHash: "0xc", completedAt: 3 }), isRetirable(legacyFeeJuice())]).toEqual([
+			true,
+			false,
+		])
 		expect(isRetirable(sendRecord())).toBe(false)
-		expect(isRetirable({ ...crossChain(), completedAt: 3 } as AnyJournalRecord)).toBe(true)
-		const outcome = crossChainRecord({ leafIndex: "7", completedAt: 3 }, { outcome: "delivered-to-wallet" })
+		expect(isRetirable({ ...crossChain(), claimTxHash: "0xc", completedAt: 3 } as AnyJournalRecord)).toBe(true)
+		const outcome = crossChainRecord({ leafIndex: "7", claimTxHash: "0xc", completedAt: 3 }, { outcome: "delivered-to-wallet" })
 		expect(isRetirable(outcome)).toBe(false)
 	})
 })

@@ -1,6 +1,6 @@
 /** The one route the relayer serves: Base Sepolia's pinned Across pool into the bridge's routers on Sepolia. */
 import { FILL_ROUTE, selfBuiltMaxDeposit } from "@unleashed/bridge-core/across-fill"
-import { lifiBook } from "@unleashed/sdk/l1"
+import { lifiBook } from "@unleashed-systems/sdk/l1"
 import { type Address, getAddress } from "viem"
 
 export interface RelayerRoute {

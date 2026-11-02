@@ -9,7 +9,8 @@ import { Contract } from "@aztec-labs/aztec.js/contracts"
 import {
 	type BridgeJournalRecord,
 	type DepositJournalRecord,
-	type EncryptionKey,
+	type RecoveryBinding,
+	type SiteKey,
 	type SendDepositRecord,
 	isSealTrusted,
 	markSealTrusted,
@@ -22,8 +23,8 @@ import {
 	fuelReceiptStatus as fuelReceiptStatusOn,
 	patchFuel as patchFuelOn,
 	readFeeJuiceOrNull as readFeeJuiceOrNullOn,
-} from "@unleashed/sdk/internal"
-import { PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/internal"
+import { PRIVATE_FPC_ADDRESS } from "@unleashed-systems/sdk/protocol"
 import { NETWORK } from "@/lib/network"
 import { appNode } from "@/lib/aztec-node"
 import { cacheSecret, currentRecord, runOnLane, setRecordStep, underJournalLock, updateRecord, updateRecordWhen } from "./useBridgeJournal"
@@ -83,7 +84,7 @@ export async function readPublicFeeJuiceBalance(aztec: unknown, recipient: Aztec
  *  from the SDK's dedicated code-split entry (never the eager `./artifacts` barrel). `balance_of`
  *  is `abi_utility` — scoped in the combined manifest's `simulation.utilities`. */
 export async function readPrivateFeeJuiceBalance(aztec: unknown, recipient: AztecAddress): Promise<bigint> {
-	const { PrivateFPCContractArtifact } = await import("@unleashed/sdk/private-fpc-artifact")
+	const { PrivateFPCContractArtifact } = await import("@unleashed-systems/sdk/private-fpc-artifact")
 	const fpc = await Contract.at(AztecAddress.fromStringUnsafe(PRIVATE_FPC_ADDRESS), PrivateFPCContractArtifact, aztec as never)
 	return readBalance(aztec as never, fpc, "balance_of", recipient)
 }
@@ -123,10 +124,10 @@ export async function sealPrivateRecord(ctx: {
 	tokenAmountStr: string
 	from: string
 	wallet: DepositL1Ctx["wallet"]
-	sealKeys: Map<string, EncryptionKey>
+	sealKeys: Map<string, SiteKey>
 	readBack: () => DepositJournalRecord | undefined
 	/** The recovery-key domain: a send binds to ITS token's clone and the hub, so the key is per-token. */
-	binding: { chainId: number; portal: string; bridge: string }
+	binding: Omit<RecoveryBinding, "secretHashHex">
 }): Promise<void> {
 	const { id, secretStr, recipient, tokenAmountStr, from, wallet, sealKeys, readBack, binding } = ctx
 	const provider = providerFingerprint()

@@ -17,10 +17,10 @@ const here = (name: string) => join(dirname(fileURLToPath(import.meta.url)), nam
 const SDK_SRC = here("../../sdk/src")
 /** A bundler resolves every member of a barrel it imports, used or not. */
 const SDK_ENTRIES: Record<string, string> = {
-	"@unleashed/sdk": "index.ts",
-	"@unleashed/sdk/protocol": "protocol/index.ts",
-	"@unleashed/sdk/l1": "l1.ts",
-	"@unleashed/sdk/internal": "internal.ts",
+	"@unleashed-systems/sdk": "index.ts",
+	"@unleashed-systems/sdk/protocol": "protocol/index.ts",
+	"@unleashed-systems/sdk/l1": "l1.ts",
+	"@unleashed-systems/sdk/internal": "internal.ts",
 }
 
 /** Every package specifier `entry` reaches through its relative imports and the SDK entries it imports, type-only
@@ -33,8 +33,10 @@ function packagesReached(entry: string): Set<string> {
 		if (seen.has(file) || file.endsWith(".json")) continue
 		seen.add(file)
 		const specs = specifiersIn(file)
-		for (const spec of specs.filter((s) => !s.startsWith(".") && !s.startsWith("@unleashed/sdk"))) packages.add(spec)
-		const sdk = specs.filter((s) => s.startsWith("@unleashed/sdk")).map((s) => join(SDK_SRC, SDK_ENTRIES[s] ?? `unknown entry ${s}`))
+		for (const spec of specs.filter((s) => !s.startsWith(".") && !s.startsWith("@unleashed-systems/sdk"))) packages.add(spec)
+		const sdk = specs
+			.filter((s) => s.startsWith("@unleashed-systems/sdk"))
+			.map((s) => join(SDK_SRC, SDK_ENTRIES[s] ?? `unknown entry ${s}`))
 		pending.push(...specs.filter((s) => s.startsWith(".")).map((s) => resolved(file as string, s)), ...sdk)
 	}
 	return packages

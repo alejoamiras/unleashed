@@ -6,7 +6,7 @@
  * contract that is not the Diamond, and must be refused before any prompt.
  */
 import { readFileSync } from "node:fs"
-import { SWAP_TOKENS_MULTIPLE_V3_ABI, SWAP_TOKENS_SINGLE_V3_ABI } from "@unleashed/sdk/protocol"
+import { SWAP_TOKENS_MULTIPLE_V3_ABI, SWAP_TOKENS_SINGLE_V3_ABI } from "@unleashed-systems/sdk/protocol"
 import { type Address, decodeFunctionData, encodeFunctionData, erc20Abi, type Hex, parseAbi, type PublicClient } from "viem"
 
 /** `recorded`: the route as LI.FI answered it. `hostile`: the same route, its call aimed elsewhere. */

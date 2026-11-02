@@ -16,8 +16,8 @@ vi.mock("./deposit-flow", () => ({
 		}
 	},
 }))
-vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
+vi.mock("@unleashed-systems/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/internal")>()),
 	walletSupports: async () => h.selfPay,
 }))
 

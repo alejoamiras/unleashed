@@ -117,8 +117,8 @@
 							"options": {
 								"patterns": [
 									{
-										"group": ["@unleashed/*"],
-										"message": "@unleashed/design is the lowest layer — it cannot import any @unleashed/* package"
+										"group": ["@unleashed/*", "@unleashed-systems/*"],
+										"message": "@unleashed/design is the lowest layer — it cannot import any other workspace package"
 									}
 								]
 							}
@@ -145,8 +145,8 @@
 							"options": {
 								"patterns": [
 									{
-										"group": ["@unleashed/*"],
-										"message": "@unleashed/design is the lowest layer — it cannot import any @unleashed/* package"
+										"group": ["@unleashed/*", "@unleashed-systems/*"],
+										"message": "@unleashed/design is the lowest layer — it cannot import any other workspace package"
 									},
 									{
 										"group": ["../ui/*", "../ui/**"],
@@ -177,8 +177,8 @@
 							"options": {
 								"patterns": [
 									{
-										"group": ["@unleashed/*"],
-										"message": "@unleashed/design is the lowest layer — it cannot import any @unleashed/* package"
+										"group": ["@unleashed/*", "@unleashed-systems/*"],
+										"message": "@unleashed/design is the lowest layer — it cannot import any other workspace package"
 									},
 									{
 										"group": ["../composite/*", "../composite/**"],

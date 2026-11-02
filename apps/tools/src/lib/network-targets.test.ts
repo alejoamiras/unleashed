@@ -1,5 +1,5 @@
 import { SOURCE_CHAINS, TOKEN_LIST_URL } from "@unleashed/bridge-core"
-import { LI_QUEST_API } from "@unleashed/sdk/protocol"
+import { LI_QUEST_API } from "@unleashed-systems/sdk/protocol"
 import { describe, expect, it } from "vitest"
 import { localTarget, MAINNET_TARGET, resolveToolsTarget, TESTNET_TARGET } from "./network-targets"
 
@@ -53,6 +53,11 @@ describe("cspConnectSrc", () => {
 			expect(target.cspConnectSrc.startsWith("'self' data: blob:")).toBe(true)
 		}
 	})
+})
+
+/** Recovery keys are signed over a text naming `https://<host>`: a changed host opens nothing sealed under the old one. */
+it("each shipped target keeps its host", () => {
+	expect([TESTNET_TARGET.host, MAINNET_TARGET.host]).toEqual(["testnet.app.unleashed.systems", "app.unleashed.systems"])
 })
 
 describe("local target", () => {

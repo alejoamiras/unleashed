@@ -2,8 +2,8 @@
  * The claim card's words for the SDK's claim events and failures: each maps to the step, detail, attention and note the
  * card has always shown for the same moment. Pure: the engine applies what these return.
  */
-import { type BridgeError, type DepositSearch, isBridgeError, type TransferEventBody } from "@unleashed/sdk"
-import { isReceiptRecordMismatch } from "@unleashed/sdk/internal"
+import { type BridgeError, type DepositSearch, isBridgeError, type TransferEventBody } from "@unleashed-systems/sdk"
+import { isReceiptRecordMismatch } from "@unleashed-systems/sdk/internal"
 import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
 import { humanizeWalletError } from "@/lib/wallet-errors"
 import type { BridgeStep, RecordRuntime } from "./useBridgeJournal"

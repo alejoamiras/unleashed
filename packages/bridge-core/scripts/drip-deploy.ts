@@ -25,8 +25,8 @@ import {
 	planPublicFuelDeposit,
 	type ManifestV2,
 	PUBLIC_FUEL_CLAIM_GAS,
-} from "@unleashed/sdk/protocol"
-import type { L1Ctx } from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/protocol"
+import type { L1Ctx } from "@unleashed-systems/sdk/internal"
 import {
 	assertFundingDestination,
 	type Claimable,

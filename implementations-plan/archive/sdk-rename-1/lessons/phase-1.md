@@ -1,0 +1,10 @@
+# Phase 1: rename and scope markers
+
+- Text replace: 208 files (bun.lock excluded), 402 occurrences. `bun install --frozen-lockfile` then failed ("lockfile had changes, but lockfile is frozen"), as expected.
+- `bun install` (Bun 1.4.2): `bun.lock` moved only the five SDK entries (three re-sorted inside dependency maps, since `-` sorts before `/`); no version re-resolved, and the 7-day gate refused nothing. I1 held.
+- I2 did NOT hold: Bun 1.4.2's isolated linker kept `{apps/tools,packages/bridge-core,packages/testnet-relayer}/node_modules/@unleashed/sdk`, still linked to `packages/sdk`, so a missed old import would have resolved locally. Removing every `node_modules` and running `bun install --frozen-lockfile` (what CI does) left none.
+- Biome rewrapped exactly the 10 files recon listed.
+- Mutation 1: deleting `packages/sdk/src/**` from `pr-tools-e2e.yml` fails `behavior-gating.test.ts` ("tools-e2e: dep lib 'sdk' src must be gated"). Control: the old `startsWith("@unleashed/")` filter passes 12/12 under the same mutation, so it would have lost the SDK silently. Reverted.
+- Mutation 2: `import "@unleashed-systems/sdk"` in `packages/design/src/core/icons.ts` fails `biome check` (noRestrictedImports); `import "@unleashed/legal"` still fails too. Reverted.
+- Gate step 8: `deposit-token-gas.spec.ts` at retry 0, 7/7 passed (Playwright 8.1 min; 759 s wall with sandbox boot and builds). `PLAYWRIGHT_BROWSERS_PATH` unset per lessons.md. The README's `.env` deletion `find` in `contracts/bridge/evm/lib` was skipped (the lane may not search for `.env` files); the agent-file deletion ran.
+- Round 1: Codex clean. Opus review: clean, plus one low finding, demonstrated by mutation: Biome replaces (does not merge) a narrower override's import patterns, and `boundary.test.ts` never pinned the `core` override, so dropping `@unleashed-systems/*` there let `design/src/core` import the SDK with every test green. Fixed with one test over all three design overrides; the same mutation now fails it. The two pre-existing floor/ui tests are back to trunk.

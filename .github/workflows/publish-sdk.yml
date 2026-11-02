@@ -1,6 +1,6 @@
 name: Publish SDK
 
-# Publishes @unleashed/sdk to npm through trusted publishing, by hand from `main`. A dispatch from another branch packs
+# Publishes @unleashed-systems/sdk to npm through trusted publishing, by hand from `main`. A dispatch from another branch packs
 # and checks without publishing. The job that holds the OIDC token checks out nothing and installs nothing: it uploads
 # exactly the tarball the pack job tested, by digest. Pinned by scripts/ci-cd/publish-sdk.test.ts.
 on:

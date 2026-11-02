@@ -36,7 +36,7 @@ import {
 	isIntent,
 	type RawLog,
 	tokenLeaf,
-} from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/internal"
 import {
 	type ChainBlock,
 	type CrossChainDepositRecord,
@@ -47,7 +47,7 @@ import {
 	type OutcomeObservation,
 	outcomePatch,
 } from "./journal"
-import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_RECEIVER_MESSAGE_PARAMS } from "@unleashed/sdk/protocol"
+import { LIFI_BRIDGE_DATA_COMPONENTS, LIFI_RECEIVER_MESSAGE_PARAMS } from "@unleashed-systems/sdk/protocol"
 import { STARGATE_FACET_V2_ABI } from "./stargate"
 
 // ── public types ─────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@
  * sender's own wallet, on that chain, by an exact `approve(diamond, 0)`.
  */
 import type { CrossChainDepositRecord } from "@unleashed/bridge-core"
-import { lifiBook } from "@unleashed/sdk/protocol"
+import { lifiBook } from "@unleashed-systems/sdk/protocol"
 import { type Address, encodeFunctionData, erc20Abi } from "viem"
 import { chainLabel } from "@/lib/chains"
 import { shortAddress } from "@/lib/crosschain-activity"

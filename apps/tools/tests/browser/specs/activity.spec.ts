@@ -1,4 +1,5 @@
 /** Activity (cell 39): a bridge's recovery file round-trips, and a backgrounded send reports back. */
+import { readFileSync } from "node:fs"
 import { isProvisionalRecordId } from "@unleashed/bridge-core"
 import { freshToken, mint, fuelSwapperOf, setFuelRate } from "@unleashed/bridge-core/sandbox"
 import type { Page } from "@playwright/test"
@@ -61,6 +62,12 @@ test("cell 39 — the recovery file of a finished bridge restores it into an emp
 	])
 	const file = await download.path()
 	expect(file).toBeTruthy()
+	const saved = JSON.parse(readFileSync(file, "utf8")) as { v: number; sealerL1?: string; blob: string }
+	expect([saved.v, saved.sealerL1, saved.blob.startsWith("site:")], "a new file names no account and a site-keyed blob").toEqual([
+		2,
+		undefined,
+		true,
+	])
 	await waitForReceipt(page)
 	const record = (await depositRecords(page)).at(-1)
 	expect(record?.claimTxHash).toBeTruthy()

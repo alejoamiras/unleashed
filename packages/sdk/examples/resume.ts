@@ -3,9 +3,9 @@
  * persisted, `watchOnly` so the page asks no wallet on load. The claim resumes from what the record names and never
  * sends while an earlier claim can still land. Typechecked with the package, never run.
  */
-import { type DepositRecord, type DepositSecrets, isBridgeError, type Network, type Reads, type RunOptions } from "@unleashed/sdk"
-import { claimToken } from "@unleashed/sdk/bridge"
-import { type AztecSigner, claimFuel } from "@unleashed/sdk/fuel"
+import { type DepositRecord, type DepositSecrets, isBridgeError, type Network, type Reads, type RunOptions } from "@unleashed-systems/sdk"
+import { claimToken } from "@unleashed-systems/sdk/bridge"
+import { type AztecSigner, claimFuel } from "@unleashed-systems/sdk/fuel"
 import { show } from "./fuel.ts"
 
 export interface Held {

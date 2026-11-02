@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { decodeRouterMessage, depositsIn, type SourceDeposit, TESTNET_FILLER } from "@unleashed/bridge-core/across-fill"
-import { DEPOSIT_ROUTER_ABI, LIFI_RECEIVER_MESSAGE_PARAMS } from "@unleashed/sdk/l1"
+import { DEPOSIT_ROUTER_ABI, LIFI_RECEIVER_MESSAGE_PARAMS } from "@unleashed-systems/sdk/l1"
 import { type Address, decodeAbiParameters, encodeAbiParameters, encodeFunctionData, type Hex, pad, zeroAddress } from "viem"
 import { describe, expect, it } from "vitest"
 import manifest from "../../../apps/tools/public/testnet-bridge.json"

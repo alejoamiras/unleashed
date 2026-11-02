@@ -52,7 +52,7 @@
 		"@unleashed/bridge-core": "workspace:*",
 		"@unleashed/design": "workspace:*",
 		"@unleashed/legal": "workspace:*",
-		"@unleashed/sdk": "workspace:*",
+		"@unleashed-systems/sdk": "workspace:*",
 		"viem": "^2.52.2",
 		"vue": "^3.5.38",
 		"zod": "^4.4.3"

@@ -6,11 +6,11 @@ import { Contract, type ContractInstanceWithAddress } from "@aztec-labs/aztec.js
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { type Abi, encodeDeployData, getContractAddress, type Hex, keccak256, TransactionNotFoundError } from "viem"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
-import type { L1Ctx } from "@unleashed/sdk/internal"
-import { toWord } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed-systems/sdk/internal"
+import { toWord } from "@unleashed-systems/sdk/protocol"
 import { openDeployJournal } from "./deploy-manifest"
 import type { PreCreateTokenOptions } from "./generation"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
+import { tokenBridgeHubArtifact } from "@unleashed-systems/sdk/artifacts"
 import { deriveHubInstance } from "./script-l2"
 
 vi.mock("@aztec-labs/aztec.js/deployment", () => ({
@@ -40,8 +40,8 @@ vi.mock("./script-artifacts", () => {
 		}),
 	}
 })
-vi.mock("@unleashed/sdk/internal", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@unleashed/sdk/internal")>()
+vi.mock("@unleashed-systems/sdk/internal", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@unleashed-systems/sdk/internal")>()
 	return {
 		...actual,
 		hubAt: vi.fn((wallet: FakeWallet, address: string) => ({ wallet, address })),

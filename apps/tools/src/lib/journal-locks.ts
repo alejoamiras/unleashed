@@ -21,7 +21,7 @@ export interface JournalLocks {
 }
 
 /** The production adapter over `navigator.locks`; undefined where the API is missing, so the engine
- *  keeps its process-local dedup and every guarded write its synchronous best effort. */
+ *  keeps its process-local dedup and every guarded write is a deferred, unlocked call. */
 export function webJournalLocks(manager: LockManager | undefined = globalThis.navigator?.locks): JournalLocks | undefined {
 	if (!manager) return undefined
 	return {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { type Hex, keccak256 } from "viem"
 import { describe, expect, it, vi } from "vitest"
-import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR, type LifiChainBook, parseManifestV2 } from "@unleashed/sdk/protocol"
+import { START_BRIDGE_TOKENS_VIA_ACROSS_V4_SELECTOR, type LifiChainBook, parseManifestV2 } from "@unleashed-systems/sdk/protocol"
 import { recordFor } from "./generation-paths"
 import { codeCheckOf, judgeBook, type ObservedBook, verifyL1Manifest } from "./verify-l1"
 

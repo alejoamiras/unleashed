@@ -21,6 +21,12 @@ afterEach(() => {
 	useL1Wallet().error.value = null
 })
 
+describe("useL1Wallet.publicClient", () => {
+	it("is built with ccipRead: false, so a read stays on the wallet's provider", () => {
+		expect(useL1Wallet().publicClient.ccipRead).toBe(false)
+	})
+})
+
 describe("useL1Wallet.switchChain", () => {
 	it("adds a chain the wallet does not know, with the build's own RPCs, then switches to it", async () => {
 		const { methods, request } = wallet({ code: 4902, message: "Unrecognized chain ID" })

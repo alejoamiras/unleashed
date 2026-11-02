@@ -3,11 +3,11 @@
  * `./protocol` and prints one JSON line that `scripts/pack-check.ts` holds Node and Bun to.
  */
 import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
-import * as root from "@unleashed/sdk"
-import * as bridge from "@unleashed/sdk/bridge"
-import * as fuel from "@unleashed/sdk/fuel"
-import * as networks from "@unleashed/sdk/networks"
-import * as protocol from "@unleashed/sdk/protocol"
+import * as root from "@unleashed-systems/sdk"
+import * as bridge from "@unleashed-systems/sdk/bridge"
+import * as fuel from "@unleashed-systems/sdk/fuel"
+import * as networks from "@unleashed-systems/sdk/networks"
+import * as protocol from "@unleashed-systems/sdk/protocol"
 
 const entries: Record<string, object> = { ".": root, "./fuel": fuel, "./bridge": bridge, "./protocol": protocol, "./networks": networks }
 const hub: ContractArtifact = await protocol.codeOf(protocol.parseManifestV2(networks.TESTNET_MANIFEST)).hubArtifact()
@@ -20,7 +20,7 @@ console.log(
 		entries: Object.fromEntries(
 			Object.entries(entries).map(([key, namespace]) => [
 				key,
-				{ url: import.meta.resolve(`@unleashed/sdk${key.slice(1)}`), exports: Object.keys(namespace).sort() },
+				{ url: import.meta.resolve(`@unleashed-systems/sdk${key.slice(1)}`), exports: Object.keys(namespace).sort() },
 			]),
 		),
 		hub: hub.name,

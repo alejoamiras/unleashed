@@ -3,9 +3,9 @@
  * PrivateFPC. Typechecked with the package, never run.
  */
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { type DepositSecrets, parseNetwork, type Reads, type RunOptions, type TransferEvent } from "@unleashed/sdk"
-import { type AztecSigner, type ClaimOutcome, claimFuel, depositFuel, quoteFuel } from "@unleashed/sdk/fuel"
-import { TESTNET_MANIFEST } from "@unleashed/sdk/networks"
+import { type DepositSecrets, parseNetwork, type Reads, type RunOptions, type TransferEvent } from "@unleashed-systems/sdk"
+import { type AztecSigner, type ClaimOutcome, claimFuel, depositFuel, quoteFuel } from "@unleashed-systems/sdk/fuel"
+import { TESTNET_MANIFEST } from "@unleashed-systems/sdk/networks"
 import { type Address, createPublicClient, http, type WalletClient } from "viem"
 
 /** The step-by-step progress a page shows. Events are display only: the run never waits on this. */
@@ -42,7 +42,10 @@ export async function buyGas(p: {
 	/** Stores the record, and the salts sealed apart from it, before the call goes on. */
 	persist: RunOptions["persist"]
 }): Promise<ClaimOutcome> {
-	const reads: Reads = { l1: createPublicClient({ transport: http(p.l1Rpc) }), aztecNode: createAztecNodeClient(p.aztecNodeUrl) }
+	const reads: Reads = {
+		l1: createPublicClient({ transport: http(p.l1Rpc), ccipRead: false }),
+		aztecNode: createAztecNodeClient(p.aztecNodeUrl),
+	}
 	const net = await parseNetwork(TESTNET_MANIFEST, reads)
 	const quote = await quoteFuel(net, reads, {
 		token: p.token,

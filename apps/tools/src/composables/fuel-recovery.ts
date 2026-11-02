@@ -4,7 +4,7 @@
  * protocol Fee Juice contract, so they outlive any one bridge generation.
  */
 import { type DepositJournalRecord, assetKindOf } from "@unleashed/bridge-core"
-import { decideStandaloneFuelRecovery } from "@unleashed/sdk/internal"
+import { decideStandaloneFuelRecovery } from "@unleashed-systems/sdk/internal"
 import { safeAddressText } from "@/lib/token-display"
 import { fuelReceiptStatus, patchFuel } from "./deposit-flow"
 import { currentRecord, runGasClaim, underJournalLock, useBridgeJournal } from "./useBridgeJournal"

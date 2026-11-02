@@ -9,7 +9,7 @@
  * anything is claimed against it.
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
-import { type EncryptionKey, type SendDepositRecord, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
+import { type SendDepositRecord, type SiteKey, isProvisionalRecordId, makeProvisionalDepositId } from "@unleashed/bridge-core"
 import {
 	type DepositRecord,
 	type DepositSecrets,
@@ -17,7 +17,7 @@ import {
 	type JournalTokenBlock,
 	type Reads,
 	type TransferEvent,
-} from "@unleashed/sdk"
+} from "@unleashed-systems/sdk"
 import {
 	type DepositPlan,
 	type Registration,
@@ -25,10 +25,10 @@ import {
 	assertDepositsOpen,
 	depositL1,
 	readRegistration,
-} from "@unleashed/sdk/internal"
-import { claimToken } from "@unleashed/sdk/bridge"
-import { claimFuel } from "@unleashed/sdk/fuel"
-import { deriveBridgeSecret } from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/internal"
+import { claimToken } from "@unleashed-systems/sdk/bridge"
+import { claimFuel } from "@unleashed-systems/sdk/fuel"
+import { deriveBridgeSecret } from "@unleashed-systems/sdk/protocol"
 import { type PublicClient, WaitForTransactionReceiptTimeoutError, type WalletClient } from "viem"
 import { type Ref, effectScope, ref, watch } from "vue"
 import {
@@ -48,7 +48,6 @@ import { NETWORK } from "@/lib/network"
 import { type GrantOutcome, NO_GAS_ROUTE, type SendPlan } from "@/lib/send-model"
 import { normalizeError } from "@/lib/errors"
 import { humanizeWalletError, sendFailureCopy } from "@/lib/wallet-errors"
-import { webJournalLocks } from "@/lib/journal-locks"
 import { PROMPT_WAIT_MS, PROMPTS_STALLED, promptsSettled } from "@/lib/prompt-queue"
 import { appWatchDeps } from "./crosschain-deposit-flow"
 import { resumeCrossChainWatches } from "./crosschain-watch"
@@ -89,10 +88,10 @@ import { useTokenGrant } from "./useTokenGrant"
 const log = (...args: unknown[]) => console.log("[bridge:send]", ...args)
 
 // The finalized-envelope re-seal key, held in memory only for records this session sealed.
-const sealKeys = new Map<string, EncryptionKey>()
+const sealKeys = new Map<string, SiteKey>()
 
 /** Same-session retained seal key - lets a backup export of a record sealed here skip the signature. */
-export function getRetainedSealKey(id: string): EncryptionKey | undefined {
+export function getRetainedSealKey(id: string): SiteKey | undefined {
 	return sealKeys.get(id)
 }
 
@@ -155,7 +154,6 @@ export function ensureSendJournalDeps(): void {
 		claimContext: ({ recipient, watchOnly }) => claimContextOf(bridgeWallet, l1, recipient, watchOnly),
 		withoutGas: fuelOverrideActive,
 		retainPinnedTokens: (needed) => retainPinnedHubTokens(needed),
-		locks: webJournalLocks(),
 	})
 	// Reads only: a transfer still crossing from another chain is watched without any wallet.
 	resumeCrossChainWatches(appWatchDeps())

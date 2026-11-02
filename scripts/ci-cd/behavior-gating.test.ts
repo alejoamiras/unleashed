@@ -1,6 +1,6 @@
 /**
  * Anti-drift guard for the CI paths-filter gates. Each gate's target graph is recomputed from the
- * workspace manifests and the live filter must still cover it, so a new `@unleashed/*` dependency
+ * workspace manifests and the live filter must still cover it, so a new workspace dependency
  * added without gating it, or a `!` negation (dorny's some-quantifier footgun), fails here. The
  * npm packages the workspaces import sit outside that graph: a bump moves `bun.lock`, which every
  * gate covers. The unit-test workflow runs this file on every PR; the last test pins that.
@@ -14,15 +14,15 @@ const ROOT = join(import.meta.dir, "..", "..")
 const APPS = new Set(["tools", "landing"])
 const dirOf = (pkg: string): string => (APPS.has(pkg) ? "apps" : "packages")
 
-/** Direct `@unleashed/*` workspace deps of a package (runtime + dev — what it's built/tested from). */
+/** Direct workspace deps of a package (runtime + dev — what it's built/tested from), by directory name. */
 function directDeps(pkg: string): string[] {
   const p = JSON.parse(readFileSync(join(ROOT, dirOf(pkg), pkg, "package.json"), "utf8"))
-  return Object.keys({ ...p.dependencies, ...p.devDependencies })
-    .filter((k) => k.startsWith("@unleashed/"))
-    .map((k) => k.slice("@unleashed/".length))
+  return Object.entries({ ...p.dependencies, ...p.devDependencies })
+    .filter(([, spec]) => spec.startsWith("workspace:"))
+    .map(([name]) => name.slice(name.indexOf("/") + 1))
 }
 
-/** Transitive `@unleashed/*` dependency closure of a target (EXCLUDING the target itself). */
+/** Transitive workspace dependency closure of a target (EXCLUDING the target itself). */
 function transitiveDeps(target: string): string[] {
   const seen = new Set<string>()
   const walk = (pkg: string) => {

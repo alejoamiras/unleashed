@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** Services */
-import { awaitL1Receipt } from "@unleashed/sdk/internal"
+import { awaitL1Receipt } from "@unleashed-systems/sdk/internal"
 import { BusyPixels, Tag } from "@unleashed/design"
 import { computed, ref } from "vue"
 

@@ -20,8 +20,8 @@ import {
 	privateFpcFeeLimit,
 	proposeGasShare,
 	signedMinFuelOutput,
-} from "@unleashed/sdk/protocol"
-import { type TokenState, clampGas, walletMaxFees } from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/protocol"
+import { type TokenState, clampGas, walletMaxFees } from "@unleashed-systems/sdk/internal"
 import { ref, type Ref } from "vue"
 import { FUEL } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"

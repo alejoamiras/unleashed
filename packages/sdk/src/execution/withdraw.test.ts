@@ -58,6 +58,40 @@ describe("flows — consumeWithdrawal (L2→L1 finalization)", () => {
 		expect(stages).toEqual(["proving", "consuming", "done"])
 	})
 
+	it("journals the consume hash before its receipt is awaited: an onSent that persists asynchronously is waited for", async () => {
+		vi.mocked(waitForProven).mockResolvedValue(undefined as never)
+		const node = {
+			getTxEffect: vi.fn(async () => ({ data: { l2ToL1Msgs: ["0xMSG"] } })),
+			getNodeInfo: vi.fn(async () => ({ l1ContractAddresses: { outboxAddress: "0xOUTBOX" } })),
+		}
+		vi.mocked(computeL2ToL1MembershipWitness).mockResolvedValue({
+			epochNumber: 5,
+			numCheckpointsInEpoch: 3,
+			leafIndex: 9n,
+			siblingPath: { toBufferArray: () => [] },
+		} as never)
+		const l1 = makeL1()
+		let persisted = () => {}
+		const onSent = vi.fn(() => new Promise<void>((r) => (persisted = r)))
+		const consuming = consumeWithdrawal(
+			l1 as never,
+			node as never,
+			{ txHash: "0xTX" },
+			{
+				recipientL1: "0xRECIP",
+				amount: 40n,
+				portal: "0xPORTAL",
+				portalAbi: [],
+				onSent,
+			},
+		)
+		await vi.waitFor(() => expect(onSent).toHaveBeenCalledWith("0xhash"))
+		expect(l1.pub.waitForTransactionReceipt).not.toHaveBeenCalled()
+		persisted()
+		await expect(consuming).resolves.toEqual({ consumeTxHash: "0xhash" })
+		expect(l1.pub.waitForTransactionReceipt).toHaveBeenCalledWith({ hash: "0xhash" })
+	})
+
 	it("throws when the exit produced no L2→L1 message", async () => {
 		vi.mocked(waitForProven).mockResolvedValue(undefined as never)
 		const node = { getTxEffect: vi.fn(async () => ({ data: { l2ToL1Msgs: [] } })) }

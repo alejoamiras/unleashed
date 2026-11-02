@@ -4,7 +4,7 @@
  * again right before the signature and signs the floor the user reviewed.
  */
 import type { FuelProvider } from "@unleashed/bridge-core"
-import { type FuelQuoteReads, manifestFuelProvider } from "@unleashed/sdk/internal"
+import { type FuelQuoteReads, manifestFuelProvider } from "@unleashed-systems/sdk/internal"
 import { type Address, BaseError, ContractFunctionRevertedError, type Hex, type PublicClient } from "viem"
 import { type ComputedRef, computed, type Ref } from "vue"
 import { FUEL_ASSET, MANIFEST, SEND_GENERATION } from "@/contracts/bridge-generation"

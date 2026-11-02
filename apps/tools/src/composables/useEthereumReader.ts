@@ -5,7 +5,7 @@
  * wallet's transport.
  */
 import { cappedLogs, type DiscoveryChainReads, type DiscoveryReads, keptLogs, receiptOrNext, sourceChain } from "@unleashed/bridge-core"
-import { type Erc20Client, readErc20Balances } from "@unleashed/sdk/protocol"
+import { type Erc20Client, readErc20Balances } from "@unleashed-systems/sdk/protocol"
 import { type Address, createPublicClient, fallback, http, type PublicClient } from "viem"
 import { NETWORK, readChainOf } from "@/lib/network"
 
@@ -30,7 +30,12 @@ export function readClientFor(chainId: number): PublicClient | undefined {
 		// The last endpoint's `null` receipt must stay viem's "not found", which receipt polling waits through.
 		return i < read.rpcUrls.length - 1 ? receiptOrNext(transport) : transport
 	}
-	const client = createPublicClient({ chain: read.chain, transport: fallback(read.rpcUrls.map(endpoint)) }) as PublicClient
+	// `ccipRead: false`: a read stays on the pinned RPCs, never at a URL the called contract names (EIP-3668).
+	const client = createPublicClient({
+		chain: read.chain,
+		transport: fallback(read.rpcUrls.map(endpoint)),
+		ccipRead: false,
+	}) as PublicClient
 	clients.set(chainId, client)
 	return client
 }

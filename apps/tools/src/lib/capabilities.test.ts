@@ -8,7 +8,7 @@ const USDC = AztecAddress.fromStringUnsafe("0x0000000000000000000000000000000000
 const ETH = AztecAddress.fromStringUnsafe("0x0000000000000000000000000000000000000000000000000000000000000003")
 const SPONSORED_FPC = AztecAddress.fromStringUnsafe("0x0000000000000000000000000000000000000000000000000000000000000004")
 
-import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/sdk/protocol"
+import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed-systems/sdk/protocol"
 
 describe("buildDripManifest", () => {
 	const m = buildDripManifest({
@@ -332,9 +332,9 @@ describe("fuel claim scope (canonical FeeJuice)", () => {
 // must be one that hub answers, with the parameters, return type, kind and staticness this build calls it with.
 describe("the send grant against the live testnet generation's hub", () => {
 	it("names only functions the kept hub artifact has, shaped as this build's", async () => {
-		const { codeOf, parseManifestV2 } = await import("@unleashed/sdk/protocol")
-		const { TESTNET_MANIFEST } = await import("@unleashed/sdk/networks")
-		const { tokenBridgeHubArtifact } = await import("@unleashed/sdk/artifacts")
+		const { codeOf, parseManifestV2 } = await import("@unleashed-systems/sdk/protocol")
+		const { TESTNET_MANIFEST } = await import("@unleashed-systems/sdk/networks")
+		const { tokenBridgeHubArtifact } = await import("@unleashed-systems/sdk/artifacts")
 		const testnet = parseManifestV2(TESTNET_MANIFEST)
 		const hub = AztecAddress.fromStringUnsafe(testnet.bridge?.l2.hub.address ?? "")
 		const kept = await codeOf(testnet).hubArtifact()

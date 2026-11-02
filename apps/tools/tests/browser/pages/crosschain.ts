@@ -57,7 +57,7 @@ export async function switchToSource(page: Page, srcChainId: number): Promise<vo
 /** The review asks the wallet onto the source chain, then signs there; resolves once the stepper takes over. */
 export async function signOnSource(page: Page, srcChainId: number): Promise<void> {
 	await switchToSource(page, srcChainId)
-	await confirmReview(page)
+	await confirmReview(page, TESTIDS.sendXcReview)
 }
 
 /** Every schema-4 record the page's journal holds, newest last. */

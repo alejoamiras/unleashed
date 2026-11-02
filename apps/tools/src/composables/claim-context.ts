@@ -6,7 +6,7 @@
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { Wallet } from "@aztec-labs/aztec.js/wallet"
-import type { Network } from "@unleashed/sdk"
+import type { Network } from "@unleashed-systems/sdk"
 import { bridgeNetwork } from "@/contracts/bridge-generation"
 import { appReads } from "./app-reads"
 import { type ClaimContext, runOnLane } from "./useBridgeJournal"

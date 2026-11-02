@@ -11,7 +11,7 @@
 	},
 	"dependencies": {
 		"@unleashed/bridge-core": "workspace:*",
-		"@unleashed/sdk": "workspace:*",
+		"@unleashed-systems/sdk": "workspace:*",
 		"viem": "2.57.1"
 	},
 	"devDependencies": {

@@ -1,7 +1,7 @@
 /** The manifest the sandbox ships to its consumers, and the artifacts directory a run writes. */
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { manifestPrivateFpc, type BridgeBlock, type ManifestToken, type ManifestV2, walletChainIdOf } from "@unleashed/sdk/protocol"
+import { manifestPrivateFpc, type BridgeBlock, type ManifestToken, type ManifestV2, walletChainIdOf } from "@unleashed-systems/sdk/protocol"
 import type { GenerationRecord } from "../generation"
 import { CHAIN_ID, MIN_FJ } from "./constants"
 import type { L1Deployment } from "./l1"
