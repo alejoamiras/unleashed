@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: planned (final Codex pass: approve)
+status: implemented (Codex fix loop converged in 2 rounds)
 base: main 90e3e8f
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -60,7 +60,8 @@ workspaces, the CI-gate graph still holds the SDK, and the design floor still ba
 - I1. Expected, not guaranteed: `bun install` moves only the five SDK lines of `bun.lock`. The edited manifests may
   re-gate a locked version younger than 7 days (`SECURITY.md` § Dependency policy). A clean install under the
   unchanged policy proves the case; the gate's steps 2–3 run it.
-- I2. Expected, not guaranteed: Bun removes the old links. Gate step 2 asserts it.
+- I2. Expected, not guaranteed: Bun removes the old links. Gate step 2 asserts it. **Did not hold:** Bun 1.4.2 kept
+  the three old links; a clean reinstall (what CI does) left none (`lessons/phase-1.md`).
 
 ### Asks (working assumption in force)
 
@@ -96,7 +97,7 @@ workspaces, the CI-gate graph still holds the SDK, and the design floor still ba
 
 ## Phases (arc a1)
 
-### Phase 1: rename the package and widen the scope markers
+### Phase 1: rename the package and widen the scope markers ✓
 
 1. Run `git grep -lz "@unleashed/sdk" -- ':!implementations-plan' ':!bun.lock' | xargs -0 sed -i
    's#@unleashed/sdk#@unleashed-systems/sdk#g'`.
@@ -137,6 +138,11 @@ Layers: lint, typecheck, unit, ci-gating, pack, one e2e spec. No new tests: the 
 - **D6. Keep `unleashed-sdk-consumer` and the `unleashed-sdk-pack-check` cache directory.** Neither is the
   package's name.
 - **D7. Leave `implementations-plan/` untouched,** `follow-ups.md:53` included, per the brief's boundary.
+- **D8 (implementation). Pin the scope ban on all three design overrides.** Biome replaces a narrower override's
+  import patterns, and `core` was never pinned (demonstrated by mutation). One test over the three overrides; the
+  floor and ui tests keep their trunk text.
+- **D9 (implementation). Skip the README's `.env` deletion `find` in `contracts/bridge/evm/lib`.** The lane may not
+  search for `.env` files; `lib/` is gitignored and was never read.
 
 ## Audit verdicts
 
@@ -145,6 +151,8 @@ Layers: lint, typecheck, unit, ci-gating, pack, one e2e spec. No new tests: the 
 | Codex 1 (gpt-6.1-sol, high) | conditional approve | I1 restated as expected, with the failure path (medium, plausible); gate 2 asserts absence with `find`, not `ls` (low, demonstrated: `ls` exits 0 on presence); full baseline in `recon.md` (low, demonstrated); 402 occurrences and exit 1 in gate 1 (low, demonstrated); e2e re-run after a merge that touches its inputs (low, plausible) | none; NUL-safe `git grep -z` adopted from its "fine" list |
 | Codex final (fresh session) | conditional approve | the baseline's peers line was truncated by my capture, so gate 7 could not pass: `recon.md` now holds the report byte for byte (medium, demonstrated); the e2e re-run after a merge follows the `pr-tools-e2e.yml` filter (low, plausible) | none |
 | Codex final, resumed | **approve** | both corrections verified; no remaining findings | none |
+| Impl. round 1: Codex (session 01a19e24) + Opus review | Codex clean; Opus clean with one low | Opus: the `core` override's scope ban was unpinned (low, demonstrated) → D8 | Opus: `follow-ups.md:53` (D7 holds) |
+| Impl. round 2: Codex resumed | **clean** | D8 verified, no regressions | none |
 
 ## Delivery
 
