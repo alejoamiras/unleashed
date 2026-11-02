@@ -74,8 +74,8 @@ vi.mock("@/composables/useWalletConnection", () => ({
 	retryOnUnregistered: (_s: unknown, _w: unknown, op: () => Promise<unknown>) => op(),
 }))
 
-vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
+vi.mock("@unleashed-systems/sdk/protocol", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/protocol")>()),
 	predictedWorstMinFees: vi.fn(async () => ({
 		mul: (scalar: number) => ({ _paddedBy: scalar }),
 	})),
@@ -203,7 +203,7 @@ describe("useDrip", () => {
 	})
 
 	it("fee-padding failure degrades to wallet defaults — the drip still sends", async () => {
-		const { predictedWorstMinFees } = await import("@unleashed/sdk/protocol")
+		const { predictedWorstMinFees } = await import("@unleashed-systems/sdk/protocol")
 		vi.mocked(predictedWorstMinFees).mockRejectedValueOnce(new Error("node unreachable"))
 		const w = makeWallet()
 		// biome-ignore lint/suspicious/noExplicitAny: test stub

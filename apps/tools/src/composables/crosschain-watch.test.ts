@@ -9,10 +9,10 @@ import {
 	RecoveryKey,
 	sealDepositEnvelopeV3,
 } from "@unleashed/bridge-core"
-import { BridgeError, type DepositRecord } from "@unleashed/sdk"
-import type { ClaimOptions } from "@unleashed/sdk/fuel"
+import { BridgeError, type DepositRecord } from "@unleashed-systems/sdk"
+import type { ClaimOptions } from "@unleashed-systems/sdk/fuel"
 import { recoveryBindingOf } from "@/lib/send-record"
-import { predictPortal } from "@unleashed/sdk/protocol"
+import { predictPortal } from "@unleashed-systems/sdk/protocol"
 import type { Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ask, BASE_SEPOLIA, DEST_TOKEN, memoryStorage, OUT, quotedRoute, SEPOLIA, signatureOf, USER } from "@/test/crosschain"

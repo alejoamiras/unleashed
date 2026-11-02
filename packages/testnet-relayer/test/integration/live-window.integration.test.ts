@@ -4,7 +4,7 @@
  * `getLogs` chunk on both chains, and Sepolia's fill-log span still covers the window.
  */
 import { BASE_SEPOLIA_RPC_DEFAULT, FILLED_RELAY, FUNDS_DEPOSITED, retried, SEPOLIA_RPC_DEFAULT } from "@unleashed/bridge-core/across-fill"
-import { lifiBook } from "@unleashed/sdk/l1"
+import { lifiBook } from "@unleashed-systems/sdk/l1"
 import { createPublicClient, http } from "viem"
 import { describe, expect, it } from "vitest"
 import { CHUNK_BLOCKS, FILL_LOG_BLOCKS } from "../../src/run"

@@ -23,7 +23,7 @@
  * lives under one key only.
  */
 
-import { claimRetired, type DepositRecord, type JournalTokenBlock } from "@unleashed/sdk"
+import { claimRetired, type DepositRecord, type JournalTokenBlock } from "@unleashed-systems/sdk"
 import type { Address, Hex } from "viem"
 import { validateAnyBackupRecord, validateCrossChainRecord } from "./backup"
 import { claimView, sameClaimIdentity } from "./claim-view"

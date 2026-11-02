@@ -55,6 +55,7 @@ Closed plans, still readable by path. Each plan carries an `## Outcome` block, a
 - [rpc-floor-1](rpc-floor-1/plan.md) — archived — rpc-floor-1 — old cross-chain windows read from a keyless reader that keeps them
 - [sdk-1](sdk-1/plan.md) — archived — sdk-1 — `@unleashed/sdk` with fuel and bridge entries, the app's sends and claims on it, and the mainnet fuel-only route
 - [sdk-reads-1](sdk-reads-1/plan.md) — archived — sdk-reads-1 — a refused balance read rejects instead of reading zeros; a null read of a logged deposit is incomplete
+- [sdk-rename-1](sdk-rename-1/plan.md) — archived — sdk-rename-1 — publish the SDK as @unleashed-systems/sdk
 - [send-copy-1](send-copy-1/plan.md) — archived — send-copy-1 — testnet send wording, and two refusals before any wallet prompt
 - [send-copy-2](send-copy-2/plan.md) — archived — send-copy-2 — the cross-chain pause check, a blank review, plainer testnet cross-chain copy
 - [send-wizard-ux](send-wizard-ux/plan.md) — archived — Send wizard UX redesign

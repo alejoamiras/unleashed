@@ -35,8 +35,14 @@ import {
 	TransactionNotFoundError,
 	TransactionReceiptNotFoundError,
 } from "viem"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
-import { DEPOSIT_ROUTER_ABI, PORTAL_FACTORY_ABI, deriveHubTokenInstance, type ManifestToken, fromWord } from "@unleashed/sdk/protocol"
+import { tokenBridgeHubArtifact } from "@unleashed-systems/sdk/artifacts"
+import {
+	DEPOSIT_ROUTER_ABI,
+	PORTAL_FACTORY_ABI,
+	deriveHubTokenInstance,
+	type ManifestToken,
+	fromWord,
+} from "@unleashed-systems/sdk/protocol"
 import {
 	type Registration,
 	readRegistration,
@@ -45,7 +51,7 @@ import {
 	l1ToL2MessageReadiness,
 	type SendOpts,
 	sendGasLimit,
-} from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/internal"
 import type { DeployJournal, DeployStep, DeployStepKind } from "./deploy-manifest"
 import { evmArtifact } from "./script-artifacts"
 import { FUEL_SWAPPER_ABI, ROUTER_CONSTANTS_ABI } from "./script-l1"

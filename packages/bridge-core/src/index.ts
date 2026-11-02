@@ -1,6 +1,6 @@
 /**
  * @unleashed/bridge-core — the app's private side of the bridge: the journal, backups and seals, the token list, the
- * cross-chain source leg and its discovery. The protocol and the flows live in `@unleashed/sdk`.
+ * cross-chain source leg and its discovery. The protocol and the flows live in `@unleashed-systems/sdk`.
  */
 
 export * from "./drpc-node"

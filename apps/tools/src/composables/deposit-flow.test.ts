@@ -50,7 +50,7 @@ vi.mock("./useTokenBalance", () => ({
 		return balance
 	},
 }))
-vi.mock("@unleashed/sdk/private-fpc-artifact", () => ({ PrivateFPCContractArtifact: {} }))
+vi.mock("@unleashed-systems/sdk/private-fpc-artifact", () => ({ PrivateFPCContractArtifact: {} }))
 vi.mock("@aztec-labs/aztec.js/contracts", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@aztec-labs/aztec.js/contracts")>()),
 	Contract: { at: async () => ({}) },

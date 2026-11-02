@@ -6,8 +6,8 @@
  */
 import type { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import type { Fr } from "@aztec-labs/aztec.js/fields"
-import type { JournalTokenBlock } from "@unleashed/sdk"
-import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/sdk/protocol"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
+import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed-systems/sdk/protocol"
 import type { RecoveryBinding, SendDepositRecord } from "@unleashed/bridge-core"
 import { FUEL_PORTAL, HUB } from "@/contracts/bridge-generation"
 import { NETWORK } from "@/lib/network"

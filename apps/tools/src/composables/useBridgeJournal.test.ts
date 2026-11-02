@@ -18,8 +18,8 @@ import {
 	upsertRecord,
 } from "@unleashed/bridge-core"
 import { recoveryBindingOf } from "@/lib/send-record"
-import type { DepositRecord, JournalTokenBlock } from "@unleashed/sdk"
-import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
+import type { DepositRecord, JournalTokenBlock } from "@unleashed-systems/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed-systems/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GrantOutcome } from "@/lib/send-model"
 import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"

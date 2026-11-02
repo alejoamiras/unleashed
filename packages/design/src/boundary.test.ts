@@ -15,7 +15,12 @@ import biome from "../../../biome.json"
  *     render-function sinks or helper indirection); the primary control is the API design (no
  *     primitive takes an HTML-string prop) + review. A regex tripwire still raises the bar cheaply.
  *  5. The Biome `ui`-layer rule (`packages/design/src/ui/**`) bans importing `composite` (L3).
+ *  6. Every design override bans both workspace scopes: Biome replaces, never merges, the import
+ *     patterns of a narrower override, so `core` and `ui` each repeat the floor's ban.
  */
+
+const WORKSPACE_SCOPES = ["@unleashed/*", "@unleashed-systems/*"]
+const DESIGN_OVERRIDES = ["packages/design/src/**", "packages/design/src/core/**", "packages/design/src/ui/**"]
 
 type BiomeOverride = {
 	includes?: string[]
@@ -96,5 +101,17 @@ describe("@unleashed/design platform-agnostic boundary", () => {
 		expect(patterns.some((p) => p.group?.includes("@unleashed/*"))).toBe(true)
 		expect(patterns.some((p) => p.group?.some((g) => g.includes("composite")))).toBe(true)
 		expect(style?.noRestrictedGlobals?.options?.deniedGlobals?.chrome).toBeTruthy()
+	})
+
+	test("every design override bans both workspace scopes", () => {
+		const overrides = (biome as unknown as { overrides: BiomeOverride[] }).overrides
+		for (const layer of DESIGN_OVERRIDES) {
+			const patterns =
+				overrides.find((o) => o.includes?.includes(layer))?.linter?.rules?.style?.noRestrictedImports?.options?.patterns ?? []
+			expect(
+				patterns.some((p) => WORKSPACE_SCOPES.every((scope) => p.group?.includes(scope))),
+				layer,
+			).toBe(true)
+		}
 	})
 })

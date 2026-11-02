@@ -50,10 +50,10 @@ import {
 	type TransferEvent,
 	claimRetired,
 	isBridgeError,
-} from "@unleashed/sdk"
-import type { AztecSigner, ClaimOptions, ClaimOutcome } from "@unleashed/sdk/fuel"
-import { isWellFormedTxHash } from "@unleashed/sdk/internal"
-import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk"
+import type { AztecSigner, ClaimOptions, ClaimOutcome } from "@unleashed-systems/sdk/fuel"
+import { isWellFormedTxHash } from "@unleashed-systems/sdk/internal"
+import { feeJuiceAddress, predictPortal } from "@unleashed-systems/sdk/protocol"
 import type { GrantOutcome } from "@/lib/send-model"
 import { NETWORK } from "@/lib/network"
 import { computed, ref, watch } from "vue"

@@ -10,7 +10,7 @@ import {
 	validateBackupRecord,
 } from "./backup"
 import type { DepositJournalRecord, SendDepositRecord, SendWithdrawRecord, WithdrawJournalRecord } from "./journal"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 import { type RecoveryBinding, RecoveryKey, keyTextOf } from "./recovery-crypto"
 
 const SEALER = "0xef4d9e1f4e9e2dd9e747b53f4be3d04bfa935f2d"

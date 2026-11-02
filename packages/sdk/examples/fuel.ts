@@ -3,9 +3,9 @@
  * PrivateFPC. Typechecked with the package, never run.
  */
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { type DepositSecrets, parseNetwork, type Reads, type RunOptions, type TransferEvent } from "@unleashed/sdk"
-import { type AztecSigner, type ClaimOutcome, claimFuel, depositFuel, quoteFuel } from "@unleashed/sdk/fuel"
-import { TESTNET_MANIFEST } from "@unleashed/sdk/networks"
+import { type DepositSecrets, parseNetwork, type Reads, type RunOptions, type TransferEvent } from "@unleashed-systems/sdk"
+import { type AztecSigner, type ClaimOutcome, claimFuel, depositFuel, quoteFuel } from "@unleashed-systems/sdk/fuel"
+import { TESTNET_MANIFEST } from "@unleashed-systems/sdk/networks"
 import { type Address, createPublicClient, http, type WalletClient } from "viem"
 
 /** The step-by-step progress a page shows. Events are display only: the run never waits on this. */

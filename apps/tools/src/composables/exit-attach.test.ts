@@ -4,7 +4,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { computeL2ToL1MessageHash } from "@aztec-labs/stdlib/hash"
 import type { SendWithdrawRecord } from "@unleashed/bridge-core"
-import { withdrawContentHash } from "@unleashed/sdk/protocol"
+import { withdrawContentHash } from "@unleashed-systems/sdk/protocol"
 import { describe, expect, it, vi } from "vitest"
 import {
 	type AttachBlock,

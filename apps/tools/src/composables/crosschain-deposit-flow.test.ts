@@ -5,7 +5,7 @@ import {
 	deriveCrossChainDepositStage,
 	openDepositEnvelopeV3,
 } from "@unleashed/bridge-core"
-import { ERC20_ABI } from "@unleashed/sdk/protocol"
+import { ERC20_ABI } from "@unleashed-systems/sdk/protocol"
 import { type Address, decodeFunctionData, type Hex } from "viem"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { watch } from "vue"

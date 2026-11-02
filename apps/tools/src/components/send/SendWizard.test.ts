@@ -368,7 +368,7 @@ vi.mock("@/composables/useHubExit", () => ({
 	useHubExit: () => ({ exit: exitFn, busy: ref(false), error: exitError, paused: exitPaused, dispose: exitDispose }),
 }))
 
-import { predictPortal } from "@unleashed/sdk/protocol"
+import { predictPortal } from "@unleashed-systems/sdk/protocol"
 import BridgeReceipt from "@/components/BridgeReceipt.vue"
 import { EXIT_TOKEN_NOT_REGISTERED } from "@/composables/useHubExit"
 import { __resetShellForTests, useShell } from "@/composables/useShell"

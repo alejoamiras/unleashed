@@ -14,7 +14,7 @@ import {
 	type ManifestToken,
 	type ManifestV2,
 	parseManifestV2,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import type { AcrossClient } from "../src/across-api"
 import type { ChainReads } from "./lifi-canary-run"
 

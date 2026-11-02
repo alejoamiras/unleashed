@@ -1,8 +1,8 @@
 /** The run handle: strings only, so it crosses a process boundary and vitest's `provide()` intact.
  *  `openSandbox` turns it back into connected clients for whichever process holds it. */
 import z from "zod"
-import type { L1Ctx } from "@unleashed/sdk/internal"
-import { type ManifestV2, manifestV2Schema } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed-systems/sdk/internal"
+import { type ManifestV2, manifestV2Schema } from "@unleashed-systems/sdk/protocol"
 import { createL1Clients, stopwatch } from "../script-bootstrap"
 import { privateKeyToAccount } from "viem/accounts"
 import { readFileSync } from "node:fs"

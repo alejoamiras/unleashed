@@ -4,8 +4,8 @@
  * and every step component speaks these types; none of them re-declares a token shape of its own.
  */
 import type { FuelProvider } from "@unleashed/bridge-core"
-import type { GasShareResult } from "@unleashed/sdk/protocol"
-import type { Registration, TokenState } from "@unleashed/sdk/internal"
+import type { GasShareResult } from "@unleashed-systems/sdk/protocol"
+import type { Registration, TokenState } from "@unleashed-systems/sdk/internal"
 import type { Address, Hex } from "viem"
 import { formatCompact } from "./format"
 

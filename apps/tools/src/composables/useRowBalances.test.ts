@@ -18,8 +18,8 @@ import { useRowBalances } from "./useRowBalances"
 
 const h = vi.hoisted(() => ({ readErc20Balances: vi.fn() }))
 
-vi.mock("@unleashed/sdk/protocol", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/protocol")>()),
+vi.mock("@unleashed-systems/sdk/protocol", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/protocol")>()),
 	readErc20Balances: h.readErc20Balances,
 }))
 
@@ -130,7 +130,7 @@ describe("useRowBalances", () => {
 
 	/** A viem client whose node answers every `aggregate3` with balances 1, 2, 3…, or fails while `down` is set. */
 	async function nodeClient() {
-		const actual = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
+		const actual = await vi.importActual<typeof import("@unleashed-systems/sdk/protocol")>("@unleashed-systems/sdk/protocol")
 		h.readErc20Balances.mockImplementation(actual.readErc20Balances)
 		const node = { calls: 0, down: false }
 		const pub = createPublicClient({

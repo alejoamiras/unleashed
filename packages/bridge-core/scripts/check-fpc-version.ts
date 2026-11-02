@@ -45,7 +45,7 @@ import { getContractClassFromArtifact, getContractInstanceFromInstantiationParam
 import { Fr } from "@aztec-labs/foundation/curves/bn254"
 
 import { postNodeRpc, readNodeRpcBody } from "../src/drpc-node"
-import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed/sdk/protocol"
+import { PRIVATE_FPC_ADDRESS, PRIVATE_FPC_SALT } from "@unleashed-systems/sdk/protocol"
 import { keyedNodeUrl, runKeyed } from "./keyed-run"
 
 type GateNetwork = "testnet" | "mainnet"

@@ -1,4 +1,4 @@
-import type { DepositRecord } from "@unleashed/sdk"
+import type { DepositRecord } from "@unleashed-systems/sdk"
 import type { AnyJournalRecord } from "./journal"
 
 /**

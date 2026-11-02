@@ -18,9 +18,9 @@ import {
 	PRIVATE_HUB_REGISTER_GAS,
 	privateFeeJuicePayment,
 	privateMintAndPayFee,
-} from "@unleashed/sdk/protocol"
-import { claimViaHub, type HubClaimOutcome, hubTokenFor } from "@unleashed/sdk/internal"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+} from "@unleashed-systems/sdk/protocol"
+import { claimViaHub, type HubClaimOutcome, hubTokenFor } from "@unleashed-systems/sdk/internal"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 

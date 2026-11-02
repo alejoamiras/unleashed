@@ -205,6 +205,6 @@ graph or the `e2e:tools` label), `bridge-contracts.yml` (`bridge-contracts-statu
 Noir, TXE, the sandbox integration suite), `actionlint.yml`. Every PR workflow opens with a
 `changes` paths-filter job; `workflow_dispatch` bypasses it. A PR run restores only its own caches
 and main's, so `warm-caches.yml` saves main's copies whenever a push to main can move a cache key.
-`publish-sdk.yml` publishes `@unleashed/sdk`, by hand from `main` only: one job tests and packs, and
+`publish-sdk.yml` publishes `@unleashed-systems/sdk`, by hand from `main` only: one job tests and packs, and
 the job that alone holds npm's OIDC token checks out and installs nothing
 ([`packages/sdk/README.md`](packages/sdk/README.md) § Releasing).

@@ -11,7 +11,7 @@
  * app bundle. The Chain object is target-driven (Sepolia for the testnet build, mainnet otherwise).
  */
 import { type EnabledSource, enabledSources, SOURCE_CHAINS, type SourceChain } from "@unleashed/bridge-core"
-import { type ManifestV2, registerSandboxLifi } from "@unleashed/sdk/protocol"
+import { type ManifestV2, registerSandboxLifi } from "@unleashed-systems/sdk/protocol"
 import { type Chain, defineChain } from "viem"
 import { arbitrum, base, baseSepolia, foundry, mainnet, optimism, sepolia } from "viem/chains"
 import { resolveToolsTarget } from "./network-targets"

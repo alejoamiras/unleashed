@@ -4,7 +4,7 @@
  * Extracted so the fund-adjacent checks are unit-testable without live RPC plumbing.
  */
 import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
-import { type ManifestV2, parseManifestV2Strict } from "@unleashed/sdk/protocol"
+import { type ManifestV2, parseManifestV2Strict } from "@unleashed-systems/sdk/protocol"
 
 /**
  * Strict-parses a candidate — both halves, the hub derived from `hubArtifact`, the one its generation

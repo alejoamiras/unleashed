@@ -9,8 +9,8 @@
  * PXO is portal-only.
  */
 import type { ContractBase } from "@aztec-labs/aztec.js/contracts"
-import { ERC20_ABI } from "@unleashed/sdk/protocol"
-import type { Registration } from "@unleashed/sdk/internal"
+import { ERC20_ABI } from "@unleashed-systems/sdk/protocol"
+import type { Registration } from "@unleashed-systems/sdk/internal"
 import { type Address, encodeFunctionData, type Hex, numberToHex, pad, type PublicClient, stringToHex } from "viem"
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
 import rawManifest from "../../../../packages/bridge-core/fixtures/sandbox-manifest.json"
@@ -18,8 +18,8 @@ import type { SelectableToken } from "@/lib/send-model"
 import { useTokenSelection } from "./useTokenSelection"
 
 vi.mock("@/contracts/bridge-generation", async () => {
-	const protocol = await import("@unleashed/sdk/protocol")
-	const internal = await import("@unleashed/sdk/internal")
+	const protocol = await import("@unleashed-systems/sdk/protocol")
+	const internal = await import("@unleashed-systems/sdk/internal")
 	const { AztecAddress } = await import("@aztec-labs/aztec.js/addresses")
 	const m = protocol.parseManifestV2((await import("../../../../packages/bridge-core/fixtures/sandbox-manifest.json")).default)
 	const bridge = m.bridge
