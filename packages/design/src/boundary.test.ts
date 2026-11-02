@@ -6,7 +6,7 @@ import biome from "../../../biome.json"
  *  1. No chrome.* reaches the source, including the indirections Biome's `noRestrictedGlobals`
  *     misses: dot + bracket access on any host global (`window`/`self`/`globalThis`) +
  *     `webextension-polyfill`.
- *  2. The Biome floor for `packages/design/src/**` still bans both workspace scopes + `chrome` — so a PR can't
+ *  2. The Biome floor for `packages/design/src/**` still bans `@unleashed/*` + `chrome` — so a PR can't
  *     silently weaken the boundary in the same diff that exploits it.
  *  3. No `vue-router` import — router purity is a locked design-system decision (router seams live in
  *     the consuming app's wrappers, never in the package).
@@ -15,9 +15,12 @@ import biome from "../../../biome.json"
  *     render-function sinks or helper indirection); the primary control is the API design (no
  *     primitive takes an HTML-string prop) + review. A regex tripwire still raises the bar cheaply.
  *  5. The Biome `ui`-layer rule (`packages/design/src/ui/**`) bans importing `composite` (L3).
+ *  6. Every design override bans both workspace scopes: Biome replaces, never merges, the import
+ *     patterns of a narrower override, so `core` and `ui` each repeat the floor's ban.
  */
 
 const WORKSPACE_SCOPES = ["@unleashed/*", "@unleashed-systems/*"]
+const DESIGN_OVERRIDES = ["packages/design/src/**", "packages/design/src/core/**", "packages/design/src/ui/**"]
 
 type BiomeOverride = {
 	includes?: string[]
@@ -54,14 +57,14 @@ describe("@unleashed/design platform-agnostic boundary", () => {
 		expect(offenders).toEqual([])
 	})
 
-	test("biome floor for packages/design/src/** still bans both workspace scopes and chrome", () => {
+	test("biome floor for packages/design/src/** still bans @unleashed/* and chrome", () => {
 		const overrides = (biome as unknown as { overrides: BiomeOverride[] }).overrides
 		const floor = overrides.find((o) => o.includes?.includes("packages/design/src/**"))
 		expect(floor, "floor override for packages/design/src/** must exist").toBeDefined()
 
 		const style = floor?.linter?.rules?.style
 		const patterns = style?.noRestrictedImports?.options?.patterns ?? []
-		expect(patterns.some((p) => WORKSPACE_SCOPES.every((scope) => p.group?.includes(scope)))).toBe(true)
+		expect(patterns.some((p) => p.group?.includes("@unleashed/*"))).toBe(true)
 		expect(style?.noRestrictedGlobals?.options?.deniedGlobals?.chrome).toBeTruthy()
 	})
 
@@ -88,15 +91,27 @@ describe("@unleashed/design platform-agnostic boundary", () => {
 		expect(offenders).toEqual([])
 	})
 
-	test("biome ui-layer rule for packages/design/src/ui/** bans composite + both workspace scopes + chrome", () => {
+	test("biome ui-layer rule for packages/design/src/ui/** bans composite + @unleashed/* + chrome", () => {
 		const overrides = (biome as unknown as { overrides: BiomeOverride[] }).overrides
 		const ui = overrides.find((o) => o.includes?.includes("packages/design/src/ui/**"))
 		expect(ui, "ui-layer override for packages/design/src/ui/** must exist").toBeDefined()
 
 		const style = ui?.linter?.rules?.style
 		const patterns = style?.noRestrictedImports?.options?.patterns ?? []
-		expect(patterns.some((p) => WORKSPACE_SCOPES.every((scope) => p.group?.includes(scope)))).toBe(true)
+		expect(patterns.some((p) => p.group?.includes("@unleashed/*"))).toBe(true)
 		expect(patterns.some((p) => p.group?.some((g) => g.includes("composite")))).toBe(true)
 		expect(style?.noRestrictedGlobals?.options?.deniedGlobals?.chrome).toBeTruthy()
+	})
+
+	test("every design override bans both workspace scopes", () => {
+		const overrides = (biome as unknown as { overrides: BiomeOverride[] }).overrides
+		for (const layer of DESIGN_OVERRIDES) {
+			const patterns =
+				overrides.find((o) => o.includes?.includes(layer))?.linter?.rules?.style?.noRestrictedImports?.options?.patterns ?? []
+			expect(
+				patterns.some((p) => WORKSPACE_SCOPES.every((scope) => p.group?.includes(scope))),
+				layer,
+			).toBe(true)
+		}
 	})
 })
