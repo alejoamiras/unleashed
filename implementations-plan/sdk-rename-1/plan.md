@@ -7,10 +7,26 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: implemented (Codex fix loop converged in 2 rounds)
+status: completed (PR #126)
 base: main 90e3e8f
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
+
+## Outcome
+
+- **Status:** completed; delivered in PR #126 (one arc), awaiting the orchestrator's merge. Delivers ask52.
+- **Shipped:** `@unleashed/sdk` → `@unleashed-systems/sdk` in 208 files plus `bun.lock` (five SDK entries); the
+  four scope markers (D3–D5), and one test pinning the scope ban on all three design overrides (D8).
+  `pack:check` matches the trunk report except the tarball name.
+- **Changed in review:** planning corrected I1, the stale-link check, the pack baseline and the counts.
+  Implementation added D8. I2 did not hold: Bun 1.4.2 keeps a renamed workspace's old links until a clean
+  reinstall. Rejected: renaming `follow-ups.md:53` (D7).
+- **Lessons:** none promoted; `lessons.md` is over its budget. The Bun stale-link and Biome override facts live in
+  `lessons/phase-1.md` and in `boundary.test.ts`'s header.
+- **Known limits:** none.
+- **Open items:** none. Owner's steps: the first `npm publish` under `@unleashed-systems`, its trusted-publisher
+  entry and the `npm-publish` environment. PR #121 re-runs the rename on its own imports after this merges.
+- **Seeds:** the `/goal` and `/loop` seeds at the end are retired; they are history, not instructions.
 
 # sdk-rename-1: publish the SDK as @unleashed-systems/sdk
 
