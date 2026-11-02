@@ -1,0 +1,5 @@
+# Phase 0: planning consults
+
+- Recon: one Sonnet explorer on scope couplings. It confirmed the four marker sites and `pack-check.ts:164`. Its claim that no single `--filter` glob matches both scopes was wrong: `@unleashed*/*` and `@unleashed{,-systems}/*` both select all seven workspaces (trial run, reverted).
+- Codex plan audit 1 (gpt-6.1-sol, high, session 01a19e13): conditional approve. Accepted all five: I1 restated (re-gating per SECURITY.md is possible), stale-link check by `find` not `ls` (ls exits 0 on presence, verified), full pack baseline in recon, counts 402/395/209 and exit 1 for gate 1, e2e re-run when a merge touches its inputs. Adopted `git grep -z | xargs -0`.
+- Codex final fresh pass (gpt-6.1-sol, high, session 01a19e18): conditional approve. Accepted: the recon baseline peers line was cut by my `cut -c1-220` capture (dropped private-fee-juice and viem), restored byte for byte; e2e re-run after a merge follows the pr-tools-e2e.yml filter. Resumed: approve, no remaining findings.
