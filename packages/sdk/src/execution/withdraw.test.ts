@@ -13,16 +13,42 @@ import { waitForProven } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { OutboxContract } from "@aztec-labs/ethereum/contracts"
 import { computeL2ToL1MembershipWitness } from "@aztec-labs/stdlib/messaging"
-import { consumeWithdrawal, isOutboxMessageConsumed } from "./flows.ts"
+import { encodeFunctionData, type Hex, type ReplacementReturnType } from "viem"
+import { TOKEN_PORTAL_ABI } from "../protocol/factory-abi.ts"
+import { consumeWithdrawal, isOutboxMessageConsumed, sameWithdrawCall } from "./flows.ts"
+
+type WaitArgs = { hash: Hex; onReplaced?: (r: ReplacementReturnType) => void }
 
 const makeL1 = () => ({
 	account: { address: "0xL1ACC" },
 	pub: {
 		simulateContract: vi.fn(async (_a: unknown) => ({ request: { sentinel: true } })),
-		waitForTransactionReceipt: vi.fn(async () => ({})),
+		waitForTransactionReceipt: vi.fn(async ({ hash }: WaitArgs) => ({ transactionHash: hash, status: "success" })),
 	},
 	wallet: { writeContract: vi.fn(async () => "0xhash") },
 })
+
+const PORTAL = "0x00000000000000000000000000000000000000a1"
+const RECIPIENT = "0x00000000000000000000000000000000000000c0"
+const withdrawArgs = (amount = 40n) => [RECIPIENT, amount, false, 5n, 3n, 9n, [`0x${"11".repeat(32)}`]] as const
+const withdrawInput = (amount?: bigint) =>
+	encodeFunctionData({ abi: TOKEN_PORTAL_ABI, functionName: "withdraw", args: withdrawArgs(amount) })
+const call = (input: Hex, to: string | null = PORTAL) => ({ to: to as Hex | null, input })
+
+/** A node and witness that let the consume reach its L1 send. */
+function reachSend() {
+	vi.mocked(waitForProven).mockResolvedValue(undefined as never)
+	vi.mocked(computeL2ToL1MembershipWitness).mockResolvedValue({
+		epochNumber: 5,
+		numCheckpointsInEpoch: 3,
+		leafIndex: 9n,
+		siblingPath: { toBufferArray: () => [] },
+	} as never)
+	return {
+		getTxEffect: vi.fn(async () => ({ data: { l2ToL1Msgs: ["0xMSG"] } })),
+		getNodeInfo: vi.fn(async () => ({ l1ContractAddresses: { outboxAddress: "0xOUTBOX" } })),
+	}
+}
 
 describe("flows — consumeWithdrawal (L2→L1 finalization)", () => {
 	it("waits for proof, builds the witness, consumes on L1 with the witness args", async () => {
@@ -88,9 +114,36 @@ describe("flows — consumeWithdrawal (L2→L1 finalization)", () => {
 		await vi.waitFor(() => expect(onSent).toHaveBeenCalledWith("0xhash"))
 		expect(l1.pub.waitForTransactionReceipt).not.toHaveBeenCalled()
 		persisted()
-		await expect(consuming).resolves.toEqual({ consumeTxHash: "0xhash" })
-		expect(l1.pub.waitForTransactionReceipt).toHaveBeenCalledWith({ hash: "0xhash" })
+		await expect(consuming).resolves.toEqual({ consumeTxHash: "0xhash", mined: { txHash: "0xhash", status: "success" } })
+		expect(l1.pub.waitForTransactionReceipt).toHaveBeenCalledWith(expect.objectContaining({ hash: "0xhash" }))
 	})
+
+	it.each([
+		{ by: "a sped-up copy of the call", replacement: call(withdrawInput()), status: "success", replacedBy: "same-finish" },
+		{ by: "a cancel", replacement: call("0x", "0x00000000000000000000000000000000000000ac"), status: "success", replacedBy: "other" },
+		{ by: "another withdraw", replacement: call(withdrawInput(41n)), status: "reverted", replacedBy: "other" },
+	] as const)(
+		"a finish replaced by $by returns the replacement's receipt and whether it still pays this withdraw",
+		async ({ replacement, status, replacedBy }) => {
+			const l1 = makeL1()
+			l1.pub.waitForTransactionReceipt.mockImplementation(async ({ onReplaced }: WaitArgs) => {
+				onReplaced?.({ replacedTransaction: call(withdrawInput()), transaction: replacement } as never)
+				return { transactionHash: "0xreplacement", status }
+			})
+			const out = await consumeWithdrawal(
+				l1 as never,
+				reachSend() as never,
+				{ txHash: "0xTX" },
+				{
+					recipientL1: RECIPIENT,
+					amount: 40n,
+					portal: PORTAL,
+					portalAbi: TOKEN_PORTAL_ABI as never,
+				},
+			)
+			expect(out).toEqual({ consumeTxHash: "0xhash", mined: { txHash: "0xreplacement", status, replacedBy } })
+		},
+	)
 
 	it("throws when the exit produced no L2→L1 message", async () => {
 		vi.mocked(waitForProven).mockResolvedValue(undefined as never)
@@ -108,6 +161,32 @@ describe("flows — consumeWithdrawal (L2→L1 finalization)", () => {
 				},
 			),
 		).rejects.toThrow(/no L2→L1 message/)
+	})
+})
+
+describe("flows — sameWithdrawCall", () => {
+	const sent = call(withdrawInput())
+
+	it.each([
+		{ what: "the same bytes", replacement: call(withdrawInput()), same: true },
+		{ what: "the same call encoded with trailing bytes", replacement: call(`${withdrawInput()}${"00".repeat(32)}`), same: true },
+		{
+			what: "the same call on another target",
+			replacement: call(withdrawInput(), "0x00000000000000000000000000000000000000a2"),
+			same: false,
+		},
+		{ what: "no target", replacement: call(withdrawInput(), null), same: false },
+		{
+			what: "another portal function",
+			replacement: call(
+				encodeFunctionData({ abi: TOKEN_PORTAL_ABI, functionName: "depositToAztecPrivate", args: [40n, `0x${"22".repeat(32)}`] }),
+			),
+			same: false,
+		},
+		{ what: "other withdraw arguments", replacement: call(withdrawInput(41n)), same: false },
+		{ what: "undecodable calldata", replacement: call("0xdeadbeef"), same: false },
+	] as const)("$what: $same", ({ replacement, same }) => {
+		expect(sameWithdrawCall(sent, replacement, TOKEN_PORTAL_ABI as never)).toBe(same)
 	})
 })
 
