@@ -32,7 +32,13 @@ const h = vi.hoisted(() => ({
 		receipt: { txHash: EXIT_TX, blockNumber: 42 },
 	})),
 	consumeWithdrawal: vi.fn(
-		async (_l1: unknown, _node: unknown, _receipt: unknown, _p: { portal: string; recipientL1: string; amount: bigint }) => ({
+		async (
+			_l1: unknown,
+			_node: unknown,
+			_receipt: unknown,
+			_p: { portal: string; recipientL1: string; amount: bigint },
+			_onStage?: (stage: string) => void,
+		) => ({
 			consumeTxHash: "0xconsume" as `0x${string}`,
 			mined: { txHash: "0xconsume" as `0x${string}`, status: "success" as const },
 		}),
@@ -750,17 +756,23 @@ describe("useHubExit", () => {
 		expect(exit.error.value).toMatch(/confirmation window timed out/)
 	})
 
-	it("a fresh finish's replacement seen across a chain change settles nothing: the sent hash gets its own wait", async () => {
-		h.consumeWithdrawal.mockImplementation(async () => {
-			h.chainChanges.value++
+	it.each([
+		{ switched: "while proving", wait: 0, rec: [999, "0xreplacement"] },
+		{ switched: "after the send", wait: 1, rec: [undefined, undefined] },
+	])("a fresh finish's sped-up replacement with the chain switched $switched", async ({ switched, wait, rec }) => {
+		h.consumeWithdrawal.mockImplementation(async (_l1, _node, _receipt, _p, onStage) => {
+			if (switched === "while proving") h.chainChanges.value++
+			onStage?.("consuming")
+			if (switched === "after the send") h.chainChanges.value++
 			return { consumeTxHash: "0xconsume", mined: { txHash: "0xreplacement", status: "success", replacedBy: "same-finish" } }
 		})
 		const exit = useHubExit()
 		const waitConsumeReceipt = vi.fn(async () => "unconfirmed" as const)
 		connectJournalDeps({ waitConsumeReceipt })
 		const id = await exit.exit(plan())
-		expect(waitConsumeReceipt).toHaveBeenCalledWith("0xconsume")
-		expect([recordOf(id)?.completedAt, recordOf(id)?.consumeTxHash]).toEqual([undefined, undefined])
+		// Only a switch after the send leaves the replacement unjudged, so the sent hash gets its own wait.
+		expect(waitConsumeReceipt).toHaveBeenCalledTimes(wait)
+		expect([recordOf(id)?.completedAt, recordOf(id)?.consumeTxHash]).toEqual(rec)
 	})
 
 	it.each([
@@ -802,7 +814,7 @@ describe("the finish's receipt wait, through viem's own wait over a scripted cha
 		transactionIndex: null,
 		...over,
 	})
-	const receipt = (hash: Hex, status: "0x1" | "0x0") => ({
+	const receipt = (hash: Hex, status: string) => ({
 		transactionHash: hash,
 		status,
 		blockNumber: HEAD,
@@ -819,13 +831,22 @@ describe("the finish's receipt wait, through viem's own wait over a scripted cha
 		contractAddress: null,
 	})
 
-	/** The sent finish is pending, as viem first fetches it; `mined` holds the receipts the chain has, and the head block
-	 *  holds `inBlock`. `onRead` runs before each answer. */
-	function chain(opts: { mined: Record<string, "0x1" | "0x0">; inBlock?: ReturnType<typeof tx>[]; onRead?: (method: string) => void }) {
+	/** The sent finish is pending, as viem first fetches it; `mined` holds the receipts the chain has, the first
+	 *  `lagging` receipt reads answer none, and the head block holds `inBlock`. `onRead` runs before each answer. */
+	function chain(opts: {
+		mined: Record<string, string>
+		inBlock?: ReturnType<typeof tx>[]
+		lagging?: number
+		onRead?: (method: string) => void
+	}) {
+		let receiptReads = 0
 		const answers = new Map<string, (hash: Hex) => unknown>([
 			["eth_blockNumber", () => HEAD],
 			["eth_getTransactionByHash", (hash) => (hash === SENT ? tx(SENT) : (opts.inBlock?.find((t) => t.hash === hash) ?? null))],
-			["eth_getTransactionReceipt", (hash) => (opts.mined[hash] ? receipt(hash, opts.mined[hash]) : null)],
+			[
+				"eth_getTransactionReceipt",
+				(hash) => (++receiptReads > (opts.lagging ?? 0) && opts.mined[hash] ? receipt(hash, opts.mined[hash]) : null),
+			],
 			["eth_getBlockByNumber", () => ({ number: HEAD, hash: `0x${"cc".repeat(32)}`, transactions: opts.inBlock ?? [] })],
 		])
 		const request = async ({ method, params }: { method: string; params?: unknown }) => {
@@ -837,10 +858,14 @@ describe("the finish's receipt wait, through viem's own wait over a scripted cha
 		return { publicClient: createPublicClient({ transport: custom({ request }) }), chainChanges: { value: 0 } }
 	}
 	const replacedBy = (replacement: ReturnType<typeof tx>) => ({ mined: { [replacement.hash]: "0x1" as const }, inBlock: [replacement] })
+	/** The sent finish mined, but receipt reads lag the block that holds it: viem reports it as its own replacement. */
+	const lateReceipt = { mined: { [SENT]: "0x1" }, inBlock: [tx(SENT, { blockNumber: HEAD })], lagging: 2 }
 
 	it.each([
 		{ mined: "the sent finish", reads: { mined: { [SENT]: "0x1" as const } }, wait: { txHash: SENT, status: "success" } },
 		{ mined: "the sent finish, reverted", reads: { mined: { [SENT]: "0x0" as const } }, wait: { txHash: SENT, status: "reverted" } },
+		{ mined: "the sent finish, read late", reads: lateReceipt, wait: { txHash: SENT, status: "success" } },
+		{ mined: "a receipt with no known status", reads: { mined: { [SENT]: "0x2" } }, wait: "unconfirmed" },
 		{
 			mined: "a sped-up copy",
 			reads: replacedBy(tx(OTHER, { blockNumber: HEAD })),
@@ -871,7 +896,7 @@ describe("the finish's receipt wait, through viem's own wait over a scripted cha
 			onRead: (m) => m === "eth_getBlockByNumber" && replaced.chainChanges.value++,
 		})
 		await expect(waitFinishReceipt(replaced as never, SENT)).resolves.toBe("unconfirmed")
-		const own = chain({ mined: { [SENT]: "0x1" }, onRead: () => own.chainChanges.value++ })
+		const own = chain({ ...lateReceipt, onRead: () => own.chainChanges.value++ })
 		await expect(waitFinishReceipt(own as never, SENT)).resolves.toEqual({ txHash: SENT, status: "success" })
 	})
 

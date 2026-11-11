@@ -119,16 +119,36 @@ describe("flows — consumeWithdrawal (L2→L1 finalization)", () => {
 	})
 
 	it.each([
-		{ by: "a sped-up copy of the call", replacement: call(withdrawInput()), status: "success", replacedBy: "same-finish" },
-		{ by: "a cancel", replacement: call("0x", "0x00000000000000000000000000000000000000ac"), status: "success", replacedBy: "other" },
-		{ by: "another withdraw", replacement: call(withdrawInput(41n)), status: "reverted", replacedBy: "other" },
+		{
+			by: "a sped-up copy of the call",
+			replacement: call(withdrawInput()),
+			receiptHash: "0xreplacement",
+			status: "success",
+			replacedBy: "same-finish",
+		},
+		{
+			by: "a cancel",
+			replacement: call("0x", "0x00000000000000000000000000000000000000ac"),
+			receiptHash: "0xreplacement",
+			status: "success",
+			replacedBy: "other",
+		},
+		{
+			by: "another withdraw",
+			replacement: call(withdrawInput(41n)),
+			receiptHash: "0xreplacement",
+			status: "reverted",
+			replacedBy: "other",
+		},
+		// viem reports the sent transaction as its own replacement when its receipt read lags the block holding it.
+		{ by: "itself", replacement: call(withdrawInput()), receiptHash: "0xhash", status: "success", replacedBy: undefined },
 	] as const)(
-		"a finish replaced by $by returns the replacement's receipt and whether it still pays this withdraw",
-		async ({ replacement, status, replacedBy }) => {
+		"a finish replaced by $by returns the receipt it resolved with and whether another transaction still pays this withdraw",
+		async ({ replacement, receiptHash, status, replacedBy }) => {
 			const l1 = makeL1()
 			l1.pub.waitForTransactionReceipt.mockImplementation(async ({ onReplaced }: WaitArgs) => {
 				onReplaced?.({ replacedTransaction: call(withdrawInput()), transaction: replacement } as never)
-				return { transactionHash: "0xreplacement", status }
+				return { transactionHash: receiptHash, status }
 			})
 			const out = await consumeWithdrawal(
 				l1 as never,
@@ -141,7 +161,7 @@ describe("flows — consumeWithdrawal (L2→L1 finalization)", () => {
 					portalAbi: TOKEN_PORTAL_ABI as never,
 				},
 			)
-			expect(out).toEqual({ consumeTxHash: "0xhash", mined: { txHash: "0xreplacement", status, replacedBy } })
+			expect(out).toEqual({ consumeTxHash: "0xhash", mined: { txHash: receiptHash, status, replacedBy } })
 		},
 	)
 

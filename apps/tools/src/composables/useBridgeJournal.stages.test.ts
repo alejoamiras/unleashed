@@ -275,9 +275,9 @@ describe("journal engine — stage pins", () => {
 
 	const PRIOR = "0x001700000000000000000000000000000000000000006f6c64636f6e73756d65"
 	const OTHER = "0x00160000000000000000000000000000000000000000007265706c61636564"
-	const replaced = (replacedBy?: FinishReceipt["replacedBy"]): FinishWait => ({
+	const replaced = (replacedBy?: FinishReceipt["replacedBy"], status: FinishReceipt["status"] = "success"): FinishWait => ({
 		txHash: OTHER,
-		status: "success",
+		status,
 		...(replacedBy && { replacedBy }),
 	})
 	/** The fresh tail settles what its own wait saw; the resumed tail settles the prior hash's wait. */
@@ -304,6 +304,7 @@ describe("journal engine — stage pins", () => {
 		tails.flatMap((t) => [
 			{ ...t, mined: "a cancel or another call", observed: replaced("other") },
 			{ ...t, mined: "another hash with no verdict", observed: replaced() },
+			{ ...t, mined: "the same withdraw, reverted", observed: replaced("same-finish", "reverted") },
 		]),
 	)(
 		"(h) $tail: $mined at the finish's nonce never completes, and clears with the failed copy",

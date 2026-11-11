@@ -18,6 +18,7 @@ import {
 	encodeFunctionData,
 	type Hex,
 	type PublicClient,
+	type ReplacementReturnType,
 	type WalletClient,
 } from "viem"
 import { withdrawContentHash } from "../protocol/content-hash.ts"
@@ -79,6 +80,18 @@ export function sameWithdrawCall(
 	return a !== undefined && a === canonical(replacement.input)
 }
 
+/** The verdict on what `onReplaced` reported, when the receipt is another transaction's: viem also reports the sent
+ *  transaction as its own replacement when a receipt read lags the block that holds it. */
+export function replacedByOf(
+	sent: Hex,
+	receipt: { transactionHash: Hex },
+	replacement: ReplacementReturnType | undefined,
+	portalAbi: Abi,
+): Pick<FinishReceipt, "replacedBy"> {
+	if (!replacement || receipt.transactionHash.toLowerCase() === sent.toLowerCase()) return {}
+	return { replacedBy: sameWithdrawCall(replacement.replacedTransaction, replacement.transaction, portalAbi) ? "same-finish" : "other" }
+}
+
 /**
  * Finalize an L2→L1 withdraw once the `exit_to_l1` tx has landed on L2: wait for it to be
  * proven, build the L2→L1 membership witness, and consume it on the L1 Outbox via the portal's
@@ -120,16 +133,23 @@ export async function consumeWithdrawal(
 	})
 	const consumeTxHash = (await l1.wallet.writeContract(req.request as never)) as Hex
 	await p.onSent?.(consumeTxHash)
-	let replacedBy: FinishReceipt["replacedBy"]
+	let replacement: ReplacementReturnType | undefined
 	// One confirmation: viem then reports a replacement before it resolves with that replacement's receipt.
 	const receipt = await l1.pub.waitForTransactionReceipt({
 		hash: consumeTxHash,
 		onReplaced: (r) => {
-			replacedBy = sameWithdrawCall(r.replacedTransaction, r.transaction, p.portalAbi) ? "same-finish" : "other"
+			replacement = r
 		},
 	})
 	onStage?.("done")
-	return { consumeTxHash, mined: { txHash: receipt.transactionHash, status: receipt.status, replacedBy } }
+	return {
+		consumeTxHash,
+		mined: {
+			txHash: receipt.transactionHash,
+			status: receipt.status,
+			...replacedByOf(consumeTxHash, receipt, replacement, p.portalAbi),
+		},
+	}
 }
 
 const ZERO_L1 = `0x${"0".repeat(40)}`

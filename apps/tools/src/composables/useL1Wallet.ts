@@ -65,8 +65,8 @@ function onAccountsChanged(accounts: readonly string[]) {
 			? createWalletClient({ account: address.value, chain: NETWORK.viemChain, transport: custom(provider) })
 			: null
 }
-/** Counts every `chainChanged` the provider reported — a scan that spans one, even away and back,
- *  read from more than one chain. */
+/** Counts every `chainChanged` the provider reported, and every disconnect, after which none is heard — a scan that
+ *  spans one, even away and back, may have read from more than one chain. */
 const chainChanges = ref(0)
 function onChainChanged(hexChainId: string) {
 	chainId.value = Number.parseInt(hexChainId, 16)
@@ -98,6 +98,7 @@ async function connect() {
 }
 
 function disconnect() {
+	chainChanges.value++
 	const provider = getProvider()
 	provider?.removeListener("accountsChanged", onAccountsChanged)
 	provider?.removeListener("chainChanged", onChainChanged)

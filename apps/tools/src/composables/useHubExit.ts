@@ -33,7 +33,7 @@ import {
 	preflightHubExit,
 	randomField,
 	clampGas,
-	sameWithdrawCall,
+	replacedByOf,
 	walletMaxFees,
 } from "@unleashed-systems/sdk/internal"
 import {
@@ -250,27 +250,25 @@ function judged(l1: FinishReader, chainTick: number, mined: FinishReceipt): Fini
 	return mined.replacedBy && l1.chainChanges.value !== chainTick ? "unconfirmed" : mined
 }
 
-/** The resumed finish's receipt wait. A throw other than a revert, the wait giving up included, is `unconfirmed`. */
+/** The resumed finish's receipt wait. A throw other than a revert, the wait giving up included, and a receipt with
+ *  no known status are `unconfirmed`. */
 export async function waitFinishReceipt(l1: FinishReader, txHash: string): Promise<FinishWait> {
+	const sent = txHash as `0x${string}`
 	const chainTick = l1.chainChanges.value
 	let replacement: ReplacementReturnType | undefined
 	const mined = (hash: `0x${string}`, status: FinishReceipt["status"]): FinishWait =>
 		judged(l1, chainTick, {
 			txHash: hash,
 			status,
-			...(replacement && {
-				replacedBy: sameWithdrawCall(replacement.replacedTransaction, replacement.transaction, TOKEN_PORTAL_ABI as never)
-					? "same-finish"
-					: "other",
-			}),
+			...replacedByOf(sent, { transactionHash: hash }, replacement, TOKEN_PORTAL_ABI as never),
 		})
 	try {
-		const receipt = await awaitL1Receipt(l1.publicClient, txHash as `0x${string}`, {
+		const receipt = await awaitL1Receipt(l1.publicClient, sent, {
 			onReplaced: (r) => {
 				replacement = r
 			},
 		})
-		return mined(receipt.transactionHash, "success")
+		return receipt.status === "success" ? mined(receipt.transactionHash, "success") : "unconfirmed"
 	} catch (e) {
 		return e instanceof L1TransactionRevertedError ? mined(e.txHash, "reverted") : "unconfirmed"
 	}
@@ -284,7 +282,6 @@ async function runSendConsume(
 	const wallet = l1.ensureWalletClient()
 	const account = l1.address.value
 	if (!wallet || !account) throw new Error("Connect your Ethereum wallet to finish the withdraw.")
-	const chainTick = l1.chainChanges.value
 	await assertL1Chain(l1)
 	const node = createAztecNodeClient(NODE_URL)
 	const receipt = await awaitExitBlock(node, rec, onProgress)
@@ -296,17 +293,27 @@ async function runSendConsume(
 	const ctx = { pub: l1.publicClient, wallet, account } as unknown as L1Ctx
 	// A failed consume surfaces as itself even when its message reads as spent: an identical exit carries the same
 	// message, so a consumed one never proves this record finished.
+	// Counted from just before the send, whose wallet client asserts the chain: a switch during proving reads nothing.
+	let chainTick = l1.chainChanges.value
 	try {
 		// The consume runs against THIS token's clone: one portal per ERC-20, and a message from
 		// one clone can never be finished on another.
-		const { consumeTxHash, mined } = await consumeWithdrawal(ctx, node as never, receipt, {
-			recipientL1: rec.recipientL1 as `0x${string}`,
-			amount: BigInt(rec.amount),
-			portal: rec.token.portal as `0x${string}`,
-			portalAbi: TOKEN_PORTAL_ABI as never,
-			provenTimeoutSec: PROVEN_TIMEOUT_SEC,
-			onSent: (hash) => underJournalLock(() => updateRecord(rec.id, { consumeTxHash: hash })),
-		})
+		const { consumeTxHash, mined } = await consumeWithdrawal(
+			ctx,
+			node as never,
+			receipt,
+			{
+				recipientL1: rec.recipientL1 as `0x${string}`,
+				amount: BigInt(rec.amount),
+				portal: rec.token.portal as `0x${string}`,
+				portalAbi: TOKEN_PORTAL_ABI as never,
+				provenTimeoutSec: PROVEN_TIMEOUT_SEC,
+				onSent: (hash) => underJournalLock(() => updateRecord(rec.id, { consumeTxHash: hash })),
+			},
+			(stage) => {
+				if (stage === "consuming") chainTick = l1.chainChanges.value
+			},
+		)
 		return { consumeTxHash, mined: judged(l1, chainTick, mined) }
 	} finally {
 		clearInterval(pollTimer)
