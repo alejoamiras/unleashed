@@ -1,80 +1,90 @@
 # exit-finish-1: owner asks
 
-Each entry: the surface, the options with their copy, a recommendation, and what ships while it is open. The surface
-is the exit's Activity card (`BridgeJournalCard`): status badge, the Exit · Prove · Finish · Confirm rail, note,
-guidance line, links, and the Finish / Retry button. Pictures: the real card on the testnet dev build with a seeded
-journal, light theme, 1280 and 390 px, named `<entry>-<option>-<width>.png` (beside the plan, not committed; the
-orchestrator has the folder). Copy for states the code cannot reach yet is set in the page for the picture.
+Each entry: the surface, today's state, the options with their copy, a recommendation, and what ships while it is
+open. Surfaces: the exit's Activity card (`BridgeJournalCard`: badge, the Exit · Prove · Finish · Confirm rail, note,
+guidance line, links, button), the dock row (`ActivityRow`), and the wizard's full stepper (`BridgeStepper`).
+Pictures: the real components on the testnet dev build with a seeded journal, light theme, named
+`<entry>-<option>-<width>.png` at 1280 and 390 px, beside the plan in `design/` (not committed). Copy for states the
+code cannot reach yet is set in the page for the picture; the dock exists only at desktop widths, so its pictures
+are 1280 only.
 
-**What ships while these are open**: nothing. Arc a1 waits for E0; arc a2 waits for E1–E4.
+## Answered (page 19)
 
-## E0. Two outcome changes in arc a1, using only today's cards
+- **E0 → P19-01 A**: a finish the wallet sped up while the app watched completes on today's done card ("Arrived",
+  Finish tx link to the transaction that landed); one cancelled in the wallet shows today's "The finish transaction
+  failed — finish again from this card. Nothing was lost." instead of "Arrived". Arc a1 is approved.
+- **E1 → P19-02 B**, signed together with ask60: "Still confirming on Ethereum. Press Finish to keep checking —
+  nothing is sent again, and your funds are safe either way." **This revision changes it** (W1, W2): ask60 asks the
+  app to keep checking by itself, and the control that resumes watching is not labelled Finish.
+- **E2 → P19-03 A**: today's done card, "Arrived", the Finish tx link to the transaction that landed, the toast
+  "Released <amount> to Ethereum · View tx". Unchanged; it can now appear without a press.
+- **E3 → P19-04 D**: store the finish's sender and nonce (two fields, also in backups); used and unpaid at one block
+  → "Your finish transaction didn't go through — it was cancelled, replaced or reverted. Finish again from this
+  card. Nothing was lost." Unchanged in words and control (Retry); it can now appear during the watch.
+- **E4 → P19-05 A**: "Ethereum shows this withdrawal's message already used, but the app can't verify which
+  transaction finished it — for example one you sped up in your wallet. Check your Ethereum wallet; this record
+  stays open.", Retry. Unchanged in words and control; it can now appear during the watch, and ends it.
 
-The app now reads which transaction actually mined at the finish's nonce.
+**What ships while W1–W5 are open**: arc a1 only (approved). Arc a2 waits for all five.
 
-- **(i) A finish the wallet sped up while the app watched**: today, after about 12 minutes, "The finish transaction
-  failed — finish again…", then an error on the new finish. With a1: today's done card, "Arrived", its Finish tx
-  link pointing at the sped-up transaction (`e2-a`).
-- **(ii) A finish cancelled in the wallet while the app watched**: today it can show "Arrived" although nothing was
-  paid (the record is then pruned after 7 days). With a1: today's "The (prior) finish transaction failed — finish
-  again from this card. Nothing was lost." (`e3-a`).
-- Recommendation: approve both. Ships now: nothing.
+## W1. The card while the app keeps checking by itself
 
-## E1. The card when Ethereum has not confirmed the finish after the app's wait
+After the first wait (about 3 minutes) the app checks again by itself, through the build's own Ethereum reader, with
+no wallet needed, for up to 30 minutes while a page is open. The card is busy throughout (no button, no Discard),
+the rail on Confirm.
 
-Today the first wait (3 minutes) ends with viem's own text and Retry (`e1-today-3min`), rendered as "Timed out while
-waiting for transaction with hash "0x…" to be confirmed.Version: viem@2.57.1. Your funds are not lost — retry from
-this card." Retry waits about 12 more minutes, then clears the finish (`e1-today`): "Lost signal", the rail failed at
-Finish, "The finish transaction failed — finish again from this card. Nothing was lost." A new finish then reverts
-if the first one lands.
+- **Today** (`g1-today`, stepper `h1-today`): the step line "waiting for the Ethereum confirmation" for about 12
+  more minutes, then "Lost signal" and "The finish transaction failed — finish again from this card."
+- **(a)** (`g1-a`, stepper `h1-a`): "Not confirmed yet. The app checks again by itself for up to 30 minutes while
+  this page is open; nothing is sent again."
+- **(b)** (`g1-b`): "Still confirming on Ethereum — checking by itself for up to 30 minutes."
+- Recommendation: (a). It says that the finish has not confirmed, that the app is the one checking, until when,
+  under what condition (an open page), and that nothing is sent again.
+- Ships now: nothing (a2 waits).
 
-- **(a) The existing "Finish sent" card** (`e1-a`): the hash is kept; rail on Confirm; guidance "Finish sent — press
-  *Finish* to keep watching it confirm."; button Finish; no new string.
-- **(b) As (a), plus a calm note** (`e1-b`), like the deposit card's 30-minute note: "Still confirming on Ethereum.
-  Press Finish to keep checking — nothing is sent again, and your funds are safe either way."
-- **(c) Error style** (`e1-c`): "Lost signal", rail failed at Confirm, button Retry, "Your finish transaction hasn't
-  confirmed yet — press Retry to keep watching it. Nothing was lost."
-- Recommendation: (b). It says why the card stopped moving without calling anything a failure.
+## W2. The card after the bound: its note, its control, and the bound itself
 
-## E2. The card once a late or sped-up finish is found
+The app stops checking after the bound; the finish's hash is kept; nothing is cleared or called failed.
 
-- **(a) Today's done card** (`e2-a`): "Arrived", the Finish tx link to the transaction that landed, the toast
-  "Released <amount> to Ethereum · View tx".
-- **(b) As (a), plus a line** (`e2-b`): "Confirmed after the app stopped waiting."
-- Recommendation: (a).
+- **Today**: the failed card above (`e1-today`).
+- **Bound**: **(i) 30 minutes per page visit** (the deposit card's soft cap, which P19-02 B names); (ii) 60
+  minutes; (iii) the tab's life (no bound; a forgotten tab polls the shared public endpoints every 4 s forever).
+- **Note**: **(a)** (`g2-a`): "Not confirmed after 30 minutes of checking. Nothing is sent again, and your funds are
+  safe either way." **(b)** (`g2-b`): as (a), plus "If you speed it up in your wallet, the app follows it when it
+  can; otherwise this record stays open with a note." (a replacement that mines between two of the app's waits, or
+  while no page is open, cannot be followed).
+- **Control and guidance**: **(a) "Check again"** (`g2-a`), guidance "Finish sent — press *Check again* to keep
+  watching it confirm."; (b) "Keep checking" (`g2-b`), same guidance with that label. Notes and labels combine freely.
+- Recommendation: bound (i), note (a), control (a). (b) is true but hedged; the speed-up path is explained by
+  P19-05 A's note if it is ever reached.
+- Ships now: nothing (a2 waits).
 
-## E3. Ethereum cannot find the finish transaction, and the funds have not moved
+## W3. A second tab while the first one checks
 
-The wallet's provider no longer knows the transaction. That can mean it was cancelled or dropped, or only that this
-provider has not seen it; nothing the app holds today tells these apart, and a finish that is still alive can land
-later. This is a retry policy, not only copy.
+- **Today** (`g3-today`): "Lost signal" style, "Another tab is finishing this exit — try again in a moment.", Retry;
+  the second tab never takes over.
+- **(a)** (`g3-a`): busy, no button, "Another tab is checking this finish. This page takes over if that tab closes."
+  The tab retries about every 3 minutes within its own 30-minute window.
+- **(b)** keep today's card.
+- Recommendation: (a). Today's Retry in that tab only repeats the refusal.
+- Ships now: nothing (a2 waits).
 
-- **(a) Keep waiting** (`e1-b` or `e1-a`): the card stays "Finish sent". A really cancelled finish then sits there
-  until you discard the record.
-- **(b) Forget it and offer a new finish** (`e3-a`): today's "failed — finish again" note. If the first one lands
-  after all, the new finish is refused before it is sent (or, when both are in flight, one reverts and its gas is
-  lost), and the record ends with an error, as in #100.
-- **(c) Ask the user** (`e3-c`): note "Ethereum can't find your finish transaction. If you cancelled it in your
-  wallet, press Send again; otherwise press Finish to keep waiting." and a second button, Send again (the
-  picture's button is a sketch; its style would follow the card's secondary button). A wrong press can end as in
-  (b).
-- **(d) Let the app prove it** (`e3-d`): the app stores the finish's sender and nonce with the record (two new
-  stored fields, also in backups). It reads, at one Ethereum block, whether that nonce is used and whether this
-  withdrawal is paid. Used and unpaid means no transaction can still pay it through that nonce, so the card says:
-  "Your finish transaction didn't go through — it was cancelled, replaced or reverted. Finish again from this card.
-  Nothing was lost." Otherwise it keeps waiting as (a). Records from before this change keep waiting as (a).
-- Recommendation: (d). It is the only option that decides on evidence; it needs your yes because it stores data.
+## W4. The dock row's button for a finish already sent
 
-## E4. The finish transaction is gone, and Ethereum shows this withdrawal's message already used
+- **Today** (`g4-today`): "Finish", which only resumes watching.
+- **(a)** (`g4-a`): the label W2 picks ("Check again"). A record without a sent finish keeps "Finish"; errors keep
+  "Retry".
+- Recommendation: (a). ask60 rules out Finish for this control.
+- Ships now: nothing (a2 waits).
 
-This is a finish sped up while the app was not watching, or one another transaction beat. The app cannot verify
-which transaction paid: the Aztec node names the message's position, and the security fix in #81, with your
-decision that such a finish stays open, forbids completing on that alone. Marking it done is therefore not offered.
+## W5. The wizard's full stepper after the bound
 
-- **Today** (`e4-today`): "The recorded finish transaction doesn't match this withdrawal — not marking it done. Your
-  exited funds stay claimable on Ethereum.", forever; on a new finish, the raw revert text.
-- **(a) Stay open with an accurate note** (`e4-a`), button Retry: "Ethereum shows this withdrawal's message already
-  used, but the app can't verify which transaction finished it — for example one you sped up in your wallet. Check
-  your Ethereum wallet; this record stays open."
-- **(b) Known limit**: keep today's notes; file it as a closed `known-limit` issue.
-- Recommendation: (a). It is true, and it never closes a record on the node's word.
+The send wizard shows a full stepper for the exit it started. Its rail offers a button only on a failed phase, so
+after the bound a2 alone would show the Confirm phase with "Waiting for the Ethereum confirmation…" and "usually
+under 2 min", and no control (`h2-today`), which is untrue after 30 minutes.
+
+- **(a)** (`h2-a`): the Confirm phase shows W2's note in place of the prompt, drops the estimate, and offers W2's
+  control (Check again).
+- **(b)** (`h2-b`): the note without a control; the dock row (W4) and "Run in background" lead to the card's control.
+- Recommendation: (a). The screen the user is looking at should carry its own next step.
+- Ships now: nothing (a2 waits).
