@@ -4,6 +4,7 @@
  */
 import type { DepositJournalRecord, KV, SendDepositRecord, SendWithdrawRecord } from "@unleashed/bridge-core"
 import type { JournalTokenBlock } from "@unleashed-systems/sdk"
+import type { FinishReceipt } from "@unleashed-systems/sdk/internal"
 import { feeJuiceAddress, predictPortal } from "@unleashed-systems/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -18,6 +19,7 @@ import {
 	runDepositClaim,
 	runWithdrawConsume,
 	useBridgeJournal,
+	type FinishWait,
 } from "./useBridgeJournal"
 import { bridgeError, CLAIM_TX, type ClaimScript, failsWith, fakeClaimSdk, type ScriptedCall, sendsClaim } from "./test/fake-claim-sdk"
 
@@ -93,6 +95,13 @@ function mkWithdraw(id: string, over: Partial<SendWithdrawRecord> = {}): SendWit
 	}
 }
 
+const FRESH = "0x0015000000000000000000000000000000000000000000636f6e73756d657478"
+
+/** A finish whose own transaction mined with `status`. */
+const landed = (txHash: string, status: FinishReceipt["status"] = "success"): FinishWait => ({ txHash: txHash as `0x${string}`, status })
+/** What a fresh finish returns when its wait saw `mined`. */
+const sent = (consumeTxHash: string, mined: FinishWait = landed(consumeTxHash)) => ({ consumeTxHash, mined })
+
 function baseDeps(kv: KV) {
 	return {
 		kv,
@@ -101,12 +110,12 @@ function baseDeps(kv: KV) {
 		connectedL1: () => SEALER,
 		connectedAztec: () => RECIPIENT,
 		signL1: vi.fn(async () => SIG),
-		waitConsumeReceipt: vi.fn(async () => true),
+		waitConsumeReceipt: vi.fn(async (txHash: string): Promise<FinishWait> => landed(txHash)),
 		sendBinding: () => ({ factory: FACTORY, implementation: IMPLEMENTATION, hub: HUB, feeJuicePortal: FJ_PORTAL }),
 		validateTokenBlock: vi.fn(async () => null as string | null),
 		ensureTokenGrant: vi.fn(async () => "granted" as const),
 		verifyConsumeIdentitySend: vi.fn(async () => true),
-		consumeSend: vi.fn(async () => ({ consumeTxHash: "0x0015000000000000000000000000000000000000000000636f6e73756d657478" })),
+		consumeSend: vi.fn(async () => sent(FRESH)),
 	}
 }
 
@@ -232,14 +241,15 @@ describe("journal engine — stage pins", () => {
 		const deps = baseDeps(kv)
 		const { records, runtime } = useBridgeJournal()
 		let hashAtWait: string | undefined
+		deps.consumeSend.mockImplementation(async () => sent(FRESH, "unconfirmed"))
 		deps.waitConsumeReceipt.mockImplementation(async () => {
 			hashAtWait = (records.value.find((r) => r.id === "0xwd") as SendWithdrawRecord | undefined)?.consumeTxHash
-			return false
+			return "unconfirmed"
 		})
 		connectJournalDeps(deps)
 		addRecord(mkWithdraw("0xwd"))
 		await runWithdrawConsume("0xwd")
-		expect(hashAtWait).toBe("0x0015000000000000000000000000000000000000000000636f6e73756d657478")
+		expect(hashAtWait).toBe(FRESH)
 		expect((records.value.find((r) => r.id === "0xwd") as SendWithdrawRecord | undefined)?.consumeTxHash).toBeUndefined()
 		expect(runtime.value["0xwd"]?.note).toMatch(/The finish transaction failed/)
 	})
@@ -247,7 +257,7 @@ describe("journal engine — stage pins", () => {
 	it("(h) prior-hash receipt failure clears the hash with the PRIOR copy; a fresh consume success completes", async () => {
 		const deps = baseDeps(kv)
 		const { records, runtime } = useBridgeJournal()
-		deps.waitConsumeReceipt.mockResolvedValue(false)
+		deps.waitConsumeReceipt.mockResolvedValue(landed("0x001700000000000000000000000000000000000000006f6c64636f6e73756d65", "reverted"))
 		connectJournalDeps(deps)
 		addRecord(mkWithdraw("0xwprior", { consumeTxHash: "0x001700000000000000000000000000000000000000006f6c64636f6e73756d65" }))
 		await runWithdrawConsume("0xwprior")
@@ -255,21 +265,80 @@ describe("journal engine — stage pins", () => {
 		expect(runtime.value["0xwprior"]?.note).toMatch(/The prior finish transaction failed/)
 
 		// Fresh consume success: hash journaled, receipt ok, completion from the post-wait reread.
-		deps.waitConsumeReceipt.mockResolvedValue(true)
 		connectJournalDeps(deps)
 		addRecord(mkWithdraw("0xwfresh"))
 		await runWithdrawConsume("0xwfresh")
 		const fresh = records.value.find((r) => r.id === "0xwfresh") as SendWithdrawRecord | undefined
 		expect(fresh?.completedAt).toBe(999)
-		expect(fresh?.consumeTxHash).toBe("0x0015000000000000000000000000000000000000000000636f6e73756d657478")
+		expect(fresh?.consumeTxHash).toBe(FRESH)
+	})
+
+	const PRIOR = "0x001700000000000000000000000000000000000000006f6c64636f6e73756d65"
+	const OTHER = "0x00160000000000000000000000000000000000000000007265706c61636564"
+	const replaced = (replacedBy?: FinishReceipt["replacedBy"]): FinishWait => ({
+		txHash: OTHER,
+		status: "success",
+		...(replacedBy && { replacedBy }),
+	})
+	/** The fresh tail settles what its own wait saw; the resumed tail settles the prior hash's wait. */
+	const tails = [
+		{ tail: "fresh", seed: {}, sentHash: FRESH, note: /^The finish transaction failed/ },
+		{ tail: "resumed", seed: { consumeTxHash: PRIOR }, sentHash: PRIOR, note: /^The prior finish transaction failed/ },
+	]
+	const settle = (tail: string, deps: ReturnType<typeof baseDeps>, observed: FinishWait) =>
+		tail === "fresh" ? deps.consumeSend.mockResolvedValue(sent(FRESH, observed)) : deps.waitConsumeReceipt.mockResolvedValue(observed)
+
+	it.each(tails)("(h) $tail: a replacement making the same withdraw completes with its own hash and toast", async ({ tail, seed }) => {
+		const deps = baseDeps(kv)
+		settle(tail, deps, replaced("same-finish"))
+		connectJournalDeps(deps)
+		addRecord(mkWithdraw("0xwsped", seed))
+		await runWithdrawConsume("0xwsped")
+		const { records, lastCompleted } = useBridgeJournal()
+		const rec = records.value.find((r) => r.id === "0xwsped") as SendWithdrawRecord | undefined
+		expect([rec?.completedAt, rec?.consumeTxHash, lastCompleted.value?.txHash]).toEqual([999, OTHER, OTHER])
+		if (tail === "fresh") expect(deps.waitConsumeReceipt).not.toHaveBeenCalled()
+	})
+
+	it.each(
+		tails.flatMap((t) => [
+			{ ...t, mined: "a cancel or another call", observed: replaced("other") },
+			{ ...t, mined: "another hash with no verdict", observed: replaced() },
+		]),
+	)(
+		"(h) $tail: $mined at the finish's nonce never completes, and clears with the failed copy",
+		async ({ tail, seed, note, observed }) => {
+			const deps = baseDeps(kv)
+			settle(tail, deps, observed)
+			connectJournalDeps(deps)
+			addRecord(mkWithdraw("0xwcancel", seed))
+			await runWithdrawConsume("0xwcancel")
+			const { records, runtime, lastCompleted } = useBridgeJournal()
+			const rec = records.value.find((r) => r.id === "0xwcancel") as SendWithdrawRecord | undefined
+			expect([rec?.completedAt, rec?.consumeTxHash, lastCompleted.value]).toEqual([undefined, undefined, null])
+			expect(runtime.value["0xwcancel"]?.note).toMatch(note)
+			if (tail === "fresh") expect(deps.waitConsumeReceipt).not.toHaveBeenCalled()
+		},
+	)
+
+	it.each(tails)("(h) $tail: the sent finish landing completes with its own hash (control)", async ({ tail, seed, sentHash }) => {
+		const deps = baseDeps(kv)
+		connectJournalDeps(deps)
+		addRecord(mkWithdraw("0xwown", seed))
+		await runWithdrawConsume("0xwown")
+		const { records, lastCompleted } = useBridgeJournal()
+		const rec = records.value.find((r) => r.id === "0xwown") as SendWithdrawRecord | undefined
+		expect([rec?.completedAt, rec?.consumeTxHash, lastCompleted.value?.txHash]).toEqual([999, sentHash, sentHash])
+		expect(deps.waitConsumeReceipt).toHaveBeenCalledTimes(tail === "fresh" ? 0 : 1)
 	})
 
 	it("(h) completion uses the POST-WAIT reread: a record discarded during the receipt wait is not resurrected", async () => {
 		const deps = baseDeps(kv)
 		const { records } = useBridgeJournal()
-		deps.waitConsumeReceipt.mockImplementation(async () => {
+		deps.consumeSend.mockImplementation(async () => sent(FRESH, "unconfirmed"))
+		deps.waitConsumeReceipt.mockImplementation(async (txHash: string) => {
 			discard("0xwgone")
-			return true
+			return landed(txHash)
 		})
 		connectJournalDeps(deps)
 		addRecord(mkWithdraw("0xwgone"))
@@ -286,7 +355,7 @@ describe("journal engine — stage pins", () => {
 		deps.consumeSend.mockImplementation((async (_rec: unknown, onProgress: (p: Record<string, number>) => void) => {
 			onProgress({ targetBlock: 10 })
 			onProgress({ provenBlock: 10 })
-			return { consumeTxHash: "0x0013000000000000000000000000000000000000000000000000000000006332" }
+			return sent("0x0013000000000000000000000000000000000000000000000000000000006332")
 		}) as never)
 		connectJournalDeps(noVerify as never)
 		addRecord(mkWithdraw("0xwd2", { consumeTxHash: "0x00190000000000000000000000000000000000007265646973636f7665726564" }))
@@ -314,7 +383,7 @@ describe("journal engine — stage pins", () => {
 				onProgress({ provenBlock })
 				anchors.push(runtime.value["0xwd4"]?.provenFrom)
 			}
-			return { consumeTxHash: "0x0013000000000000000000000000000000000000000000000000000000006333" }
+			return sent("0x0013000000000000000000000000000000000000000000000000000000006333")
 		}) as never)
 		connectJournalDeps(deps)
 		addRecord(mkWithdraw("0xwd4"))

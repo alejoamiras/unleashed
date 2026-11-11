@@ -21,7 +21,9 @@ import { computeL2ToL1MembershipWitness } from "@aztec-labs/stdlib/messaging"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
 import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 import {
+	type FinishReceipt,
 	type L1Ctx,
+	L1TransactionRevertedError,
 	awaitL1Receipt,
 	consumeWithdrawal,
 	exitViaHub,
@@ -31,6 +33,7 @@ import {
 	preflightHubExit,
 	randomField,
 	clampGas,
+	sameWithdrawCall,
 	walletMaxFees,
 } from "@unleashed-systems/sdk/internal"
 import {
@@ -42,7 +45,7 @@ import {
 	privateFpcFeeLimit,
 } from "@unleashed-systems/sdk/protocol"
 import { type SendWithdrawRecord, makeProvisionalWithdrawId } from "@unleashed/bridge-core"
-import { decodeFunctionData } from "viem"
+import { decodeFunctionData, type ReplacementReturnType } from "viem"
 import { type Ref, ref } from "vue"
 import { HUB, hubArtifact, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { appNode } from "@/lib/aztec-node"
@@ -57,6 +60,7 @@ import {
 	addRecord,
 	connectJournalDeps,
 	discard,
+	type FinishWait,
 	flagRecordError,
 	markSessionLive,
 	attachAndConsume,
@@ -237,14 +241,50 @@ async function awaitExitBlock(node: AztecNode, rec: SendWithdrawRecord, onProgre
 	return receipt
 }
 
+type FinishReader = Pick<ReturnType<typeof useL1Wallet>, "publicClient" | "chainChanges">
+
+/** A replacement is found by sender and nonce in a block of whatever chain the provider answers for, so one seen
+ *  across a `chainChanged` settles nothing. The sent hash's own receipt needs no such guard: the hash commits to the
+ *  chain id it was signed for. */
+function judged(l1: FinishReader, chainTick: number, mined: FinishReceipt): FinishWait {
+	return mined.replacedBy && l1.chainChanges.value !== chainTick ? "unconfirmed" : mined
+}
+
+/** The resumed finish's receipt wait. A throw other than a revert, the wait giving up included, is `unconfirmed`. */
+export async function waitFinishReceipt(l1: FinishReader, txHash: string): Promise<FinishWait> {
+	const chainTick = l1.chainChanges.value
+	let replacement: ReplacementReturnType | undefined
+	const mined = (hash: `0x${string}`, status: FinishReceipt["status"]): FinishWait =>
+		judged(l1, chainTick, {
+			txHash: hash,
+			status,
+			...(replacement && {
+				replacedBy: sameWithdrawCall(replacement.replacedTransaction, replacement.transaction, TOKEN_PORTAL_ABI as never)
+					? "same-finish"
+					: "other",
+			}),
+		})
+	try {
+		const receipt = await awaitL1Receipt(l1.publicClient, txHash as `0x${string}`, {
+			onReplaced: (r) => {
+				replacement = r
+			},
+		})
+		return mined(receipt.transactionHash, "success")
+	} catch (e) {
+		return e instanceof L1TransactionRevertedError ? mined(e.txHash, "reverted") : "unconfirmed"
+	}
+}
+
 async function runSendConsume(
 	l1: ReturnType<typeof useL1Wallet>,
 	rec: SendWithdrawRecord,
 	onProgress: ExitProgress,
-): Promise<{ consumeTxHash: string }> {
+): Promise<{ consumeTxHash: string; mined: FinishWait }> {
 	const wallet = l1.ensureWalletClient()
 	const account = l1.address.value
 	if (!wallet || !account) throw new Error("Connect your Ethereum wallet to finish the withdraw.")
+	const chainTick = l1.chainChanges.value
 	await assertL1Chain(l1)
 	const node = createAztecNodeClient(NODE_URL)
 	const receipt = await awaitExitBlock(node, rec, onProgress)
@@ -259,7 +299,7 @@ async function runSendConsume(
 	try {
 		// The consume runs against THIS token's clone: one portal per ERC-20, and a message from
 		// one clone can never be finished on another.
-		return await consumeWithdrawal(ctx, node as never, receipt, {
+		const { consumeTxHash, mined } = await consumeWithdrawal(ctx, node as never, receipt, {
 			recipientL1: rec.recipientL1 as `0x${string}`,
 			amount: BigInt(rec.amount),
 			portal: rec.token.portal as `0x${string}`,
@@ -267,6 +307,7 @@ async function runSendConsume(
 			provenTimeoutSec: PROVEN_TIMEOUT_SEC,
 			onSent: (hash) => underJournalLock(() => updateRecord(rec.id, { consumeTxHash: hash })),
 		})
+		return { consumeTxHash, mined: judged(l1, chainTick, mined) }
 	} finally {
 		clearInterval(pollTimer)
 	}
@@ -310,13 +351,7 @@ export function ensureHubExitDeps(): void {
 		validateTokenBlock: (token) => validateTokenBlock(token, l1),
 		consumeSend: (rec, onProgress) => runSendConsume(l1, rec, onProgress),
 		verifyConsumeIdentitySend: (rec, txHash) => verifySendConsume(l1, rec, txHash),
-		waitConsumeReceipt: async (txHash) => {
-			try {
-				return (await awaitL1Receipt(l1.publicClient, txHash as `0x${string}`)).status === "success"
-			} catch {
-				return false
-			}
-		},
+		waitConsumeReceipt: (txHash) => waitFinishReceipt(l1, txHash),
 	})
 }
 

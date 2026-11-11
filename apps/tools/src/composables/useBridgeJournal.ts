@@ -52,7 +52,7 @@ import {
 	isBridgeError,
 } from "@unleashed-systems/sdk"
 import type { AztecSigner, ClaimOptions, ClaimOutcome } from "@unleashed-systems/sdk/fuel"
-import { isWellFormedTxHash } from "@unleashed-systems/sdk/internal"
+import { type FinishReceipt, isWellFormedTxHash } from "@unleashed-systems/sdk/internal"
 import { feeJuiceAddress, predictPortal } from "@unleashed-systems/sdk/protocol"
 import type { GrantOutcome } from "@/lib/send-model"
 import { NETWORK } from "@/lib/network"
@@ -192,6 +192,9 @@ export interface ClaimContext {
 	network: () => Promise<Network>
 }
 
+/** What a finish's receipt wait saw mine, or `unconfirmed` when it saw nothing it can settle on. */
+export type FinishWait = FinishReceipt | "unconfirmed"
+
 /**
  * Chain/wallet boundaries injected so the engine is unit-testable with plain fakes. Production
  * wiring lives in the composables that own the real clients (useSend / useHubExit) and passes these
@@ -204,14 +207,14 @@ export interface JournalEngineDeps {
 	signL1?: (message: string) => Promise<string>
 	connectedL1?: () => string | null
 	connectedAztec?: () => string | null
-	/** Drive a withdraw record's proven-wait → witness → L1 consume. Returns the consume tx hash.
-	 *  onProgress streams { provenBlock, targetBlock } for the countdown. */
+	/** Drive a withdraw record's proven-wait → witness → L1 consume. Returns the consume tx hash and what its wait saw
+	 *  mine. onProgress streams { provenBlock, targetBlock } for the countdown. */
 	consume?: (
 		rec: WithdrawJournalRecord,
 		onProgress: (p: { provenBlock?: number; targetBlock?: number }) => void,
-	) => Promise<{ consumeTxHash: string }>
-	/** Wait for an already-submitted consume tx; true = success. */
-	waitConsumeReceipt?: (txHash: string) => Promise<boolean>
+	) => Promise<{ consumeTxHash: string; mined: FinishWait }>
+	/** Wait for an already-submitted consume tx. */
+	waitConsumeReceipt?: (txHash: string) => Promise<FinishWait>
 	/** Verify a rediscovered consume tx actually consumes THIS record's exit (identity check). */
 	verifyConsumeIdentity?: (rec: WithdrawJournalRecord, txHash: string) => Promise<boolean>
 	/** The generation every schema-3 record must belong to. Absent ⇒ this network has no send
@@ -228,7 +231,7 @@ export interface JournalEngineDeps {
 	consumeSend?: (
 		rec: SendWithdrawRecord,
 		onProgress: (p: { provenBlock?: number; targetBlock?: number }) => void,
-	) => Promise<{ consumeTxHash: string }>
+	) => Promise<{ consumeTxHash: string; mined: FinishWait }>
 	/** The identity check for a rediscovered schema-3 consume tx (its `to` is the token's clone). */
 	verifyConsumeIdentitySend?: (rec: SendWithdrawRecord, txHash: string) => Promise<boolean>
 	/** Re-pin the wallet's grant set from the tokens the journal still holds. Called whenever a
@@ -1083,12 +1086,13 @@ function finishDeposit(rec: ClaimRecord): void {
 	log("deposit complete", rec.id)
 }
 
-/** Completes once, on the stored copy. The in-memory side shares the write's span: its reload wakes the form's
- *  watchers before the caller resumes, and `foreground` is read before they release the takeover. */
-async function completeWithdraw(rec: ExitRecord | undefined, consumeTxHash?: string): Promise<void> {
+/** Completes once, on the stored copy, keeping `consumeTxHash` (the finish that landed, a replacement's included) in
+ *  place of the one sent. The in-memory side shares the write's span: its reload wakes the form's watchers before the
+ *  caller resumes, and `foreground` is read before they release the takeover. */
+async function completeWithdraw(rec: ExitRecord | undefined, consumeTxHash: string): Promise<void> {
 	if (!rec) return
 	await underJournalLock(() => {
-		if (!updateRecordWhen(rec.id, (current) => !current.completedAt, { completedAt: deps.now() })) return
+		if (!updateRecordWhen(rec.id, (current) => !current.completedAt, { completedAt: deps.now(), consumeTxHash })) return
 		setRuntime(rec.id, { attention: undefined, note: undefined })
 		receiptRounds.delete(rec.id)
 		lastCompleted.value = {
@@ -1754,17 +1758,28 @@ async function finishSubmittedConsume(rec: ExitRecord, id: string): Promise<void
 	}
 	log("consume already submitted - waiting on it", { id, consumeTxHash: rec.consumeTxHash })
 	setStep(id, "confirming", "waiting for the Ethereum confirmation")
+	const sent = rec.consumeTxHash as string
 	// Read-at-call-time (parity with the original direct call under the caller's dep gate).
-	if (await (deps.waitConsumeReceipt as NonNullable<typeof deps.waitConsumeReceipt>)(rec.consumeTxHash as string)) {
-		await completeWithdraw(rec, rec.consumeTxHash as string)
+	const observed = await (deps.waitConsumeReceipt as NonNullable<typeof deps.waitConsumeReceipt>)(sent)
+	await settleFinish(id, sent, observed, "The prior finish transaction failed — finish again from this card. Nothing was lost.")
+}
+
+/** Only a successful receipt of the sent finish, or of a replacement the wait judged to make the same withdraw call,
+ *  completes the exit: a replacement shares the sent one's sender and nonce, not its effect. */
+function finishLanded(sent: string, observed: FinishWait): observed is FinishReceipt {
+	if (observed === "unconfirmed" || observed.status !== "success") return false
+	return observed.txHash.toLowerCase() === sent.toLowerCase() || observed.replacedBy === "same-finish"
+}
+
+/** Completes the exit from a fresh reread when its finish landed; otherwise clears the sent hash with `failedNote`. */
+async function settleFinish(id: string, sent: string, observed: FinishWait, failedNote: string): Promise<void> {
+	if (finishLanded(sent, observed)) {
+		await completeWithdraw(engineRecords().find((r) => r.id === id) as ExitRecord | undefined, observed.txHash)
 		return
 	}
 	await underJournalLock(() => {
 		patchRecord(id, { consumeTxHash: undefined })
-		setRuntime(id, {
-			attention: "error",
-			note: "The prior finish transaction failed — finish again from this card. Nothing was lost.",
-		})
+		setRuntime(id, { attention: "error", note: failedNote })
 	})
 }
 
@@ -1891,8 +1906,8 @@ function noteProveProgress(id: string, p: { provenBlock?: number; targetBlock?: 
 }
 
 /** The lock-held consume sequence: journal-first latch — a fresh consumeTxHash is PERSISTED
- *  before its receipt wait; success completes from a FRESH reread; prior-hash and fresh-hash
- *  receipt failures both clear the hash, each with its own copy. */
+ *  before its receipt wait; what mined settles it (`settleFinish`), with copy for a prior hash
+ *  apart from a fresh one. */
 async function runWithdrawConsumeLocked(id: string): Promise<void> {
 	const rec = engineRecords().find((r) => r.id === id && r.direction === "withdraw") as ExitRecord | undefined
 	if (!rec || rec.completedAt) return
@@ -1907,17 +1922,14 @@ async function runWithdrawConsumeLocked(id: string): Promise<void> {
 	if (rec.consumeTxHash) return finishSubmittedConsume(rec, id)
 
 	setStep(id, "confirming", "waiting for the proven epoch, then one Ethereum confirmation")
-	const { consumeTxHash } = (await exitConsume(rec, (p) => noteProveProgress(id, p))) as { consumeTxHash: string }
+	const { consumeTxHash, mined } = (await exitConsume(rec, (p) => noteProveProgress(id, p))) as {
+		consumeTxHash: string
+		mined: FinishWait
+	}
 	await underJournalLock(() => patchRecord(id, { consumeTxHash }))
 	setStep(id, "confirming", "waiting for the Ethereum confirmation")
-	if (await deps.waitConsumeReceipt(consumeTxHash)) {
-		await completeWithdraw(engineRecords().find((r) => r.id === id) as ExitRecord | undefined, consumeTxHash)
-	} else {
-		await underJournalLock(() => {
-			patchRecord(id, { consumeTxHash: undefined })
-			setRuntime(id, { attention: "error", note: "The finish transaction failed — finish again from this card. Nothing was lost." })
-		})
-	}
+	const observed = mined === "unconfirmed" ? await deps.waitConsumeReceipt(consumeTxHash) : mined
+	await settleFinish(id, consumeTxHash, observed, "The finish transaction failed — finish again from this card. Nothing was lost.")
 }
 
 /** Whether (and how) a record participates in session resume. "skip" covers completed records,

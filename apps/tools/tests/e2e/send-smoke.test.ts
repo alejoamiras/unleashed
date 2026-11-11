@@ -514,9 +514,9 @@ async function mountView() {
 	// the bridge smoke does, so the engine runs for real against fakes.
 	connectJournalDeps({
 		waitMs: async () => {},
-		consumeSend: async () => ({ consumeTxHash: "0xconsume" }),
+		consumeSend: async () => ({ consumeTxHash: "0xconsume", mined: { txHash: "0xconsume", status: "success" } }),
 		verifyConsumeIdentitySend: async () => true,
-		waitConsumeReceipt: async () => true,
+		waitConsumeReceipt: async (txHash) => ({ txHash: txHash as `0x${string}`, status: "success" }),
 	})
 	return w
 }
