@@ -143,7 +143,7 @@ const signable = computed(() => props.state === null && props.walletChainId === 
 				<dd class="visibility">
 					<span class="eye" :data-private="plan.isPrivate || undefined"><Icon :name="plan.isPrivate ? 'eye-off' : 'eye'" :size="12" /></span>
 					<strong>{{ plan.isPrivate ? "Private" : "Public" }}</strong>
-					<span class="soft">— {{ plan.isPrivate ? "only you can see it" : "visible on Aztec" }}</span>
+					<span class="soft">— {{ plan.isPrivate ? "your account stays hidden" : "visible on Aztec" }}</span>
 				</dd>
 			</div>
 			<div class="line" :data-testid="TESTIDS.sendReviewNetworkFee">
