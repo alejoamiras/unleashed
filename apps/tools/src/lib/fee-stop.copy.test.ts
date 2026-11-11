@@ -1,4 +1,4 @@
-import type { FeeStop } from "@unleashed/sdk/internal"
+import type { FeeStop } from "@unleashed-systems/sdk/internal"
 import { expect, test } from "vitest"
 import { FEE_STOP_COPY } from "./fee-stop-copy"
 

@@ -1,5 +1,5 @@
 import { SOURCE_CHAINS, TOKEN_LIST_URL } from "@unleashed/bridge-core"
-import { LI_QUEST_API } from "@unleashed/sdk/protocol"
+import { LI_QUEST_API } from "@unleashed-systems/sdk/protocol"
 import { describe, expect, it } from "vitest"
 import { localTarget, MAINNET_TARGET, resolveToolsTarget, TESTNET_TARGET } from "./network-targets"
 

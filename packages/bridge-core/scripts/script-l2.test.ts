@@ -5,9 +5,9 @@ import type { Wallet } from "@aztec-labs/aztec.js/wallet"
 import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { computeSiloedPrivateInitializationNullifier } from "@aztec-labs/stdlib/hash"
 import { describe, expect, it } from "vitest"
-import { tokenBridgeHubArtifact } from "@unleashed/sdk/artifacts"
-import type { HubClaimParams } from "@unleashed/sdk/internal"
-import { deriveHubTokenInstance, type ManifestToken, PRIVATE_FPC_ADDRESS } from "@unleashed/sdk/protocol"
+import { tokenBridgeHubArtifact } from "@unleashed-systems/sdk/artifacts"
+import type { HubClaimParams } from "@unleashed-systems/sdk/internal"
+import { deriveHubTokenInstance, type ManifestToken, PRIVATE_FPC_ADDRESS } from "@unleashed-systems/sdk/protocol"
 import {
 	claimTokensUntilSynced,
 	deployAccountIfAbsent,

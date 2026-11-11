@@ -1,4 +1,4 @@
-import { BridgeError, type TransferEventBody } from "@unleashed/sdk"
+import { BridgeError, type TransferEventBody } from "@unleashed-systems/sdk"
 import { describe, expect, it } from "vitest"
 import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
 import { claimFailure, failureText, narrateClaim, newScene } from "./claim-narration"

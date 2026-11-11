@@ -60,8 +60,8 @@ vi.mock("@/contracts/bridge-generation", () => ({
 	hubArtifact: async () => ({ name: "TokenBridgeHub" }),
 }))
 
-vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
+vi.mock("@unleashed-systems/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/internal")>()),
 	hubAt: () => ({ address: h.HUB_ADDR }),
 	hubExitsPaused: h.exitsPaused,
 	hubTokenFor: async () => h.hubBinding.value,
@@ -170,7 +170,7 @@ vi.mock("@/composables/useSend", () => ({
 }))
 
 import { JOURNAL_KEY, type SendWithdrawRecord, validateAnyBackupRecord } from "@unleashed/bridge-core"
-import { feeJuiceAddress } from "@unleashed/sdk/protocol"
+import { feeJuiceAddress } from "@unleashed-systems/sdk/protocol"
 import { watch } from "vue"
 import { memoryJournalLocks } from "@/lib/journal-locks"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"

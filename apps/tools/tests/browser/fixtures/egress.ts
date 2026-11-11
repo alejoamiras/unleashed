@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs"
 import type { BrowserContext } from "@playwright/test"
 import { TOKEN_LIST_URL } from "@unleashed/bridge-core"
-import { LI_QUEST_API } from "@unleashed/sdk/protocol"
+import { LI_QUEST_API } from "@unleashed-systems/sdk/protocol"
 
 /** Which fixture answers the community token list: the well-formed one, or one with hostile entries. */
 export type TokenListFixture = "community" | "hostile"

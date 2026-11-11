@@ -12,9 +12,9 @@ import {
 	type RunOptions,
 	type TransferEvent,
 	type TransferEventBody,
-} from "@unleashed/sdk"
-import type { ClaimOptions } from "@unleashed/sdk/fuel"
-import type { DepositPlan, Registration } from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk"
+import type { ClaimOptions } from "@unleashed-systems/sdk/fuel"
+import type { DepositPlan, Registration } from "@unleashed-systems/sdk/internal"
 import { WaitForTransactionReceiptTimeoutError } from "viem"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { watch } from "vue"
@@ -72,8 +72,8 @@ const h = vi.hoisted(() => ({
 vi.mock("@/contracts/bridge-generation", async () => {
 	const { readFileSync } = await import("node:fs")
 	const { fileURLToPath } = await import("node:url")
-	const protocol = await vi.importActual<typeof import("@unleashed/sdk/protocol")>("@unleashed/sdk/protocol")
-	const internal = await vi.importActual<typeof import("@unleashed/sdk/internal")>("@unleashed/sdk/internal")
+	const protocol = await vi.importActual<typeof import("@unleashed-systems/sdk/protocol")>("@unleashed-systems/sdk/protocol")
+	const internal = await vi.importActual<typeof import("@unleashed-systems/sdk/internal")>("@unleashed-systems/sdk/internal")
 	const path = fileURLToPath(new URL("../../../../packages/bridge-core/fixtures/sandbox-manifest.json", import.meta.url))
 	const manifest = protocol.parseManifestV2(JSON.parse(readFileSync(path, "utf8")))
 	const bridge = manifest.bridge as NonNullable<typeof manifest.bridge>
@@ -169,18 +169,18 @@ vi.mock("@/composables/deposit-flow", async (orig) => {
 	}
 })
 
-vi.mock("@unleashed/sdk/internal", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/internal")>()),
+vi.mock("@unleashed-systems/sdk/internal", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/internal")>()),
 	depositL1: h.depositL1,
 	assertDepositsOpen: h.assertDepositsOpen,
 	readRegistration: h.readRegistration,
 }))
-vi.mock("@unleashed/sdk/bridge", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/bridge")>()),
+vi.mock("@unleashed-systems/sdk/bridge", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/bridge")>()),
 	claimToken: h.claimToken,
 }))
-vi.mock("@unleashed/sdk/fuel", async (importOriginal) => ({
-	...(await importOriginal<typeof import("@unleashed/sdk/fuel")>()),
+vi.mock("@unleashed-systems/sdk/fuel", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@unleashed-systems/sdk/fuel")>()),
 	claimFuel: h.claimFuel,
 }))
 
@@ -197,7 +197,7 @@ import {
 	validateAnyBackupRecord,
 } from "@unleashed/bridge-core"
 import { recoveryBindingOf } from "@/lib/send-record"
-import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed/sdk/protocol"
+import { PRIVATE_FPC_ADDRESS, deriveBridgeSecret, deriveTokenClaimSecret, predictPortal } from "@unleashed-systems/sdk/protocol"
 import { FUEL_PORTAL, HUB, SEND_GENERATION } from "@/contracts/bridge-generation"
 import { otherTab } from "./test/other-tab"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"

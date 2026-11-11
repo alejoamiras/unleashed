@@ -4,7 +4,7 @@
  * has no code here, so the pool pays it without running the message; the bridge-core sandbox suite runs that leg.
  */
 import { depositsIn, type FillWallet, relayHashOf, SPOKE_POOL_ABI, type SourceDeposit } from "@unleashed/bridge-core/across-fill"
-import { lifiBook } from "@unleashed/sdk/l1"
+import { lifiBook } from "@unleashed-systems/sdk/l1"
 import {
 	type Address,
 	createPublicClient,

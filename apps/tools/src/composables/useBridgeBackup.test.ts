@@ -12,8 +12,8 @@ import {
 	sealDepositEnvelope,
 	upsertRecord,
 } from "@unleashed/bridge-core"
-import type { JournalTokenBlock } from "@unleashed/sdk"
-import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed-systems/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ref } from "vue"
 

@@ -10,8 +10,8 @@
  */
 import { FeeJuicePortalAbi, RegistryAbi, RollupAbi } from "@aztec-foundation/l1-artifacts"
 import type { Address } from "viem"
-import type { L1Ctx } from "@unleashed/sdk/internal"
-import { lifiBook, type FuelRouteBlock, type ManifestV2 } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed-systems/sdk/internal"
+import { lifiBook, type FuelRouteBlock, type ManifestV2 } from "@unleashed-systems/sdk/protocol"
 import { type DeployJournal, openDeployJournal, readDeployJournal, writeCandidateAtomically } from "./deploy-manifest"
 import {
 	type AdoptableDeploy,

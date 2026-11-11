@@ -4,8 +4,15 @@
  * writes (`run.persist`, a refusal surfacing as `persist-failed`) and the stop signal (`aborted` at the next checkpoint
  * after it fires).
  */
-import { BridgeError, type BridgeErrorCode, type DepositRecord, type Network, type Reads, type TransferEventBody } from "@unleashed/sdk"
-import type { AztecSigner, ClaimOptions, ClaimOutcome } from "@unleashed/sdk/fuel"
+import {
+	BridgeError,
+	type BridgeErrorCode,
+	type DepositRecord,
+	type Network,
+	type Reads,
+	type TransferEventBody,
+} from "@unleashed-systems/sdk"
+import type { AztecSigner, ClaimOptions, ClaimOutcome } from "@unleashed-systems/sdk/fuel"
 import { type Mock, vi } from "vitest"
 import type { ClaimContext, ClaimEntry } from "../useBridgeJournal"
 

@@ -11,7 +11,7 @@ import {
 	isProvisionalRecordId,
 	isProvisionalWithdrawId,
 } from "./journal"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 import { type KeyText, type RecoveryKey, type SiteKey, keyTextOf } from "./recovery-crypto"
 
 /**

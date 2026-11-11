@@ -161,7 +161,7 @@ function unpack(tarball: string, scratch: string): string {
 	const unpacked = join(scratch, "unpacked")
 	mkdirSync(unpacked)
 	exec("tar", ["-xzf", tarball, "-C", unpacked], scratch)
-	const installed = join(scratch, "node_modules", "@unleashed", "sdk")
+	const installed = join(scratch, "node_modules", "@unleashed-systems", "sdk")
 	mkdirSync(dirname(installed), { recursive: true })
 	renameSync(join(unpacked, "package"), installed)
 	return installed
@@ -202,7 +202,7 @@ function typecheck(scratch: string, config: string): void {
 	const tsc = join(scratch, "node_modules", "typescript", "bin", "tsc")
 	const result = spawn("node", [tsc, "-p", config, "--pretty", "false"], scratch)
 	const diagnostics = result.stdout.split(/\n(?=\S)/).filter((line) => line.trim() !== "")
-	const ours = diagnostics.filter((d) => !d.startsWith("node_modules/") || d.startsWith("node_modules/@unleashed/sdk/"))
+	const ours = diagnostics.filter((d) => !d.startsWith("node_modules/") || d.startsWith("node_modules/@unleashed-systems/sdk/"))
 	if (ours.length > 0 || (result.status !== 0 && diagnostics.length === 0)) {
 		fail(`tsc -p ${config} exited ${result.status ?? result.signal}\n${ours.join("\n")}${result.stderr}`)
 	}

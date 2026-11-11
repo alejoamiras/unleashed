@@ -17,7 +17,7 @@ import {
 	type JournalTokenBlock,
 	type Reads,
 	type TransferEvent,
-} from "@unleashed/sdk"
+} from "@unleashed-systems/sdk"
 import {
 	type DepositPlan,
 	type Registration,
@@ -25,10 +25,10 @@ import {
 	assertDepositsOpen,
 	depositL1,
 	readRegistration,
-} from "@unleashed/sdk/internal"
-import { claimToken } from "@unleashed/sdk/bridge"
-import { claimFuel } from "@unleashed/sdk/fuel"
-import { deriveBridgeSecret } from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/internal"
+import { claimToken } from "@unleashed-systems/sdk/bridge"
+import { claimFuel } from "@unleashed-systems/sdk/fuel"
+import { deriveBridgeSecret } from "@unleashed-systems/sdk/protocol"
 import { type PublicClient, WaitForTransactionReceiptTimeoutError, type WalletClient } from "viem"
 import { type Ref, effectScope, ref, watch } from "vue"
 import {

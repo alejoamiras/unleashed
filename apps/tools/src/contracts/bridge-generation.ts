@@ -11,9 +11,9 @@ import {
 	type ManifestToken,
 	type ManifestV2,
 	parseManifestV2,
-} from "@unleashed/sdk/protocol"
-import { legacyRoutersOf, type SendGeneration, sendGenerationOf } from "@unleashed/sdk/internal"
-import { type Network, parseNetwork, type Reads } from "@unleashed/sdk"
+} from "@unleashed-systems/sdk/protocol"
+import { legacyRoutersOf, type SendGeneration, sendGenerationOf } from "@unleashed-systems/sdk/internal"
+import { type Network, parseNetwork, type Reads } from "@unleashed-systems/sdk"
 import rawTestnetConfig from "../../public/testnet-bridge.json"
 
 /*

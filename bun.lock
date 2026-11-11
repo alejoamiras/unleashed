@@ -50,10 +50,10 @@
         "@nulo-sh/resolve-asset": "0.3.0",
         "@nulo-sh/wallet-crypto": "0.3.0",
         "@nulo-sh/wallet-sdk-schema-patch": "0.3.0",
+        "@unleashed-systems/sdk": "workspace:*",
         "@unleashed/bridge-core": "workspace:*",
         "@unleashed/design": "workspace:*",
         "@unleashed/legal": "workspace:*",
-        "@unleashed/sdk": "workspace:*",
         "viem": "^2.52.2",
         "vue": "^3.5.38",
         "zod": "^4.4.3",
@@ -93,7 +93,7 @@
         "@aztec-labs/wallets": "6.0.0",
         "@nulo-sh/resolve-asset": "0.3.0",
         "@nulo-sh/wallet-crypto": "0.3.0",
-        "@unleashed/sdk": "workspace:*",
+        "@unleashed-systems/sdk": "workspace:*",
         "viem": "2.57.1",
         "zod": "^4.4.3",
       },
@@ -129,7 +129,7 @@
       },
     },
     "packages/sdk": {
-      "name": "@unleashed/sdk",
+      "name": "@unleashed-systems/sdk",
       "version": "0.1.0",
       "dependencies": {
         "@alejoamiras/private-fee-juice": "6.0.0",
@@ -154,8 +154,8 @@
       "name": "@unleashed/testnet-relayer",
       "version": "0.1.0",
       "dependencies": {
+        "@unleashed-systems/sdk": "workspace:*",
         "@unleashed/bridge-core": "workspace:*",
-        "@unleashed/sdk": "workspace:*",
         "viem": "2.57.1",
       },
       "devDependencies": {
@@ -744,6 +744,8 @@
 
     "@types/tough-cookie": ["@types/tough-cookie@4.0.5", "", {}, "sha512-/Ad8+nIOV7Rl++6f1BdKxFSMgmoqEoYbHRpPcx3JEfv8VRsQe9Z4mCXeJBzxs7mbHY/XOZZuXlRNfhpVPbs6ZA=="],
 
+    "@unleashed-systems/sdk": ["@unleashed-systems/sdk@workspace:packages/sdk"],
+
     "@unleashed/bridge-core": ["@unleashed/bridge-core@workspace:packages/bridge-core"],
 
     "@unleashed/design": ["@unleashed/design@workspace:packages/design"],
@@ -751,8 +753,6 @@
     "@unleashed/landing": ["@unleashed/landing@workspace:apps/landing"],
 
     "@unleashed/legal": ["@unleashed/legal@workspace:packages/legal"],
-
-    "@unleashed/sdk": ["@unleashed/sdk@workspace:packages/sdk"],
 
     "@unleashed/testnet-relayer": ["@unleashed/testnet-relayer@workspace:packages/testnet-relayer"],
 

@@ -5,7 +5,7 @@
  * wallet's transport.
  */
 import { cappedLogs, type DiscoveryChainReads, type DiscoveryReads, keptLogs, receiptOrNext, sourceChain } from "@unleashed/bridge-core"
-import { type Erc20Client, readErc20Balances } from "@unleashed/sdk/protocol"
+import { type Erc20Client, readErc20Balances } from "@unleashed-systems/sdk/protocol"
 import { type Address, createPublicClient, fallback, http, type PublicClient } from "viem"
 import { NETWORK, readChainOf } from "@/lib/network"
 

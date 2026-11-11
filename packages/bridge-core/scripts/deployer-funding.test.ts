@@ -2,8 +2,8 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { computeSecretHash } from "@aztec-labs/stdlib/hash"
 import { encodeFunctionData, type Hex } from "viem"
 import { describe, expect, it, vi } from "vitest"
-import type { L1Ctx } from "@unleashed/sdk/internal"
-import { FeeJuicePortalAbi } from "@unleashed/sdk/protocol"
+import type { L1Ctx } from "@unleashed-systems/sdk/internal"
+import { FeeJuicePortalAbi } from "@unleashed-systems/sdk/protocol"
 import { mainnetPlaceholderManifest } from "../test/fixtures/frozen-manifests"
 import {
 	assertFundingDestination,

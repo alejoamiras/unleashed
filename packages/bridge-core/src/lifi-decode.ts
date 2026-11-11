@@ -47,7 +47,7 @@ import {
 	LIFI_MIN_COMPOSE_GAS,
 	START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR,
 	SWAP_AND_START_BRIDGE_TOKENS_VIA_STARGATE_SELECTOR,
-} from "@unleashed/sdk/l1"
+} from "@unleashed-systems/sdk/l1"
 import { decodeLzOptions, decodeOftComposeMessage, type LzExecutorOption, type OftComposeMessage, STARGATE_FACET_V2_ABI } from "./stargate"
 
 const BRIDGE_FROM_CALLER_SELECTOR: Hex = toFunctionSelector(getAbiItem({ abi: DEPOSIT_ROUTER_ABI, name: "bridgeFromCaller" }))

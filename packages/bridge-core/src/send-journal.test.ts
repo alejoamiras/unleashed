@@ -11,7 +11,7 @@ import {
 	type SendWithdrawRecord,
 	upsertRecord,
 } from "./journal"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 
 const HUB = `0x${"ab".repeat(32)}`
 const PORTAL_A = "0x00000000000000000000000000000000000000a1"

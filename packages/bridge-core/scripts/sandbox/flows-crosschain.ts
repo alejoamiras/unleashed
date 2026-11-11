@@ -28,11 +28,11 @@ import {
 	PUBLIC_FUEL_CLAIM_GAS,
 	privateFpcFeeLimit,
 	privateMintAndPayFee,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import { type CrossChainDiscovery, discoverCrossChain } from "../../src/crosschain-discovery"
-import { type DepositedFacts, type FuelQuote, testnetSwapperFuelProvider, type SendResult } from "@unleashed/sdk/internal"
+import { type DepositedFacts, type FuelQuote, testnetSwapperFuelProvider, type SendResult } from "@unleashed-systems/sdk/internal"
 import type { CrossChainDepositRecord, DepositFuelBlock } from "../../src/journal"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 import type { FillDeps } from "../fill-testnet"
 import { waitForL1ToL2Message } from "../generation"
 import { evmArtifact } from "../script-artifacts"

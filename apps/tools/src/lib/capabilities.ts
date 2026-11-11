@@ -1,6 +1,6 @@
-import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed/sdk/protocol"
-import type { Capability } from "@unleashed/sdk"
-import { claimCapabilities } from "@unleashed/sdk/internal"
+import { PRIVATE_FPC_ADDRESS, feeJuiceAddress } from "@unleashed-systems/sdk/protocol"
+import type { Capability } from "@unleashed-systems/sdk"
+import { claimCapabilities } from "@unleashed-systems/sdk/internal"
 
 /** The canonical L2 FeeJuice protocol contract (identical on every network). */
 const FEE_JUICE_L2 = AztecAddress.fromStringUnsafe(feeJuiceAddress)

@@ -53,9 +53,9 @@ import {
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_FPC_SALT,
 	walletChainIdOf,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import { assertFaucetCandidateShape, assertZeroSeed } from "../src/promotion"
-import { legacyRoutersOf } from "@unleashed/sdk/internal"
+import { legacyRoutersOf } from "@unleashed-systems/sdk/internal"
 import { type DeployIdentity, type DeployStep, readDeployJournal } from "./deploy-manifest"
 import {
 	assertRealPath,

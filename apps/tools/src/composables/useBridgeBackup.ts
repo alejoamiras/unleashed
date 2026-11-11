@@ -12,7 +12,7 @@ import {
 	parseBackupFile,
 	sealBridgeBackup,
 } from "@unleashed/bridge-core"
-import { feeJuiceAddress } from "@unleashed/sdk/protocol"
+import { feeJuiceAddress } from "@unleashed-systems/sdk/protocol"
 import { NETWORK } from "@/lib/network"
 import { FUEL_PORTAL } from "@/contracts/bridge-generation"
 import { sendView } from "@/lib/crosschain-activity"

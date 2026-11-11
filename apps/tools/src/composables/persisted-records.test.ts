@@ -3,8 +3,8 @@
  * its claim view, and a claim's writes land on the stored record in its own shape.
  */
 import { type AnyJournalRecord, type KV, claimView, loadAllRecords } from "@unleashed/bridge-core"
-import type { JournalTokenBlock } from "@unleashed/sdk"
-import { feeJuiceAddress, predictPortal } from "@unleashed/sdk/protocol"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
+import { feeJuiceAddress, predictPortal } from "@unleashed-systems/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { FEE_STOP_COPY } from "@/lib/fee-stop-copy"
 import { xcRecord } from "@/test/crosschain-record"

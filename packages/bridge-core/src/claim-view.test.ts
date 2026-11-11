@@ -1,4 +1,4 @@
-import type { DepositRecord } from "@unleashed/sdk"
+import type { DepositRecord } from "@unleashed-systems/sdk"
 import { describe, expect, it } from "vitest"
 import { claimView } from "./claim-view"
 import {

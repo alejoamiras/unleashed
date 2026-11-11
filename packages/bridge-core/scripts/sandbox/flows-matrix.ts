@@ -14,7 +14,7 @@ import {
 	ownGasTxs,
 	PRIVATE_FPC_ADDRESS,
 	PRIVATE_HUB_CLAIM_GAS,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import {
 	consumeWithdrawal,
 	isOutboxMessageConsumed,
@@ -23,8 +23,8 @@ import {
 	type HubExitParams,
 	preflightHubExit,
 	manifestFuelProvider,
-} from "@unleashed/sdk/internal"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+} from "@unleashed-systems/sdk/internal"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 import { waitForL1ToL2Message } from "../generation"
 import { ensureRouterPermit2 } from "../script-l1"
 import { planFuelLeg } from "../script-send"

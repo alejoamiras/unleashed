@@ -1,5 +1,5 @@
 import { TESTNET_FILLER } from "@unleashed/bridge-core/across-fill"
-import { parseManifestV2 } from "@unleashed/sdk/protocol"
+import { parseManifestV2 } from "@unleashed-systems/sdk/protocol"
 import { describe, expect, it } from "vitest"
 import manifest from "../../../apps/tools/public/testnet-bridge.json"
 import mainnet from "../../../apps/tools/public/mainnet-bridge.json"

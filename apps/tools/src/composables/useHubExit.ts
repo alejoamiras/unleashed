@@ -19,7 +19,7 @@ import { TxHash, TxStatus } from "@aztec-labs/aztec.js/tx"
 import { OutboxContract } from "@aztec-labs/ethereum/contracts"
 import { computeL2ToL1MembershipWitness } from "@aztec-labs/stdlib/messaging"
 import { TokenContractArtifact } from "@aztec-foundation/aztec-standards/artifacts/src/artifacts/Token.js"
-import type { JournalTokenBlock } from "@unleashed/sdk"
+import type { JournalTokenBlock } from "@unleashed-systems/sdk"
 import {
 	type L1Ctx,
 	awaitL1Receipt,
@@ -32,7 +32,7 @@ import {
 	randomField,
 	clampGas,
 	walletMaxFees,
-} from "@unleashed/sdk/internal"
+} from "@unleashed-systems/sdk/internal"
 import {
 	PORTAL_FACTORY_ABI,
 	PRIVATE_FPC_ADDRESS,
@@ -40,7 +40,7 @@ import {
 	TOKEN_PORTAL_ABI,
 	privateFeeJuicePayment,
 	privateFpcFeeLimit,
-} from "@unleashed/sdk/protocol"
+} from "@unleashed-systems/sdk/protocol"
 import { type SendWithdrawRecord, makeProvisionalWithdrawId } from "@unleashed/bridge-core"
 import { decodeFunctionData } from "viem"
 import { type Ref, ref } from "vue"

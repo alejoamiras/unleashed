@@ -15,7 +15,7 @@ import {
 import type { RecordRuntime } from "@/composables/useBridgeJournal"
 import { isTerminalAttention } from "@/lib/bridge-steps"
 import { type CrossChainPhase, crossChainPhase, sendView } from "@/lib/crosschain-activity"
-import { decideStandaloneFuelRecovery, type StandaloneFuelRecovery } from "@unleashed/sdk/internal"
+import { decideStandaloneFuelRecovery, type StandaloneFuelRecovery } from "@unleashed-systems/sdk/internal"
 
 export type RecordStage = ReturnType<typeof deriveDepositStage> | ReturnType<typeof deriveWithdrawStage>
 
