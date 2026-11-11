@@ -77,6 +77,7 @@ describe("CrossChainReview", () => {
 		expect(w.find(sel(TESTIDS.sendReviewSend)).text()).toContain("5.00USDCfrom BASE Base Sepolia")
 		expect(w.find(sel(TESTIDS.sendXcLimits)).text()).toBe("Across's testnet limits: at least ≈ 1.95, at most ≈ 8.00 USDC per send")
 		expect(w.find(sel(TESTIDS.sendReviewArrives)).text()).toBe("Arrives≈ 4.51 USDC on Aztec")
+		expect(w.find(sel(TESTIDS.sendReviewVisibility)).text()).toBe("VisibilityPublic— visible on Aztec")
 		expect(w.find(sel(TESTIDS.sendReviewNetworkFee)).text()).toContain("≈ 0.49 USDC · 9.8 %")
 		expect(w.find(sel(TESTIDS.sendXcYouSign)).text()).toBe(
 			"You signOn Base Sepolia: approve exactly 5.00 USDC, then send. Later, one prompt on Aztec to claim.",
@@ -136,6 +137,7 @@ describe("CrossChainReview", () => {
 	it("adds the gas leg, its venue and the private seal to what the user signs", async () => {
 		const w = review({ plan: GAS_PLAN, figures: GAS_FIGURES, ask: ask({ isPrivate: true }), txCovered: 20 })
 		expect(w.find(sel(TESTIDS.sendReviewGas)).text()).toBe("≈ 230 FJ gas on Aztec for ≈ 20 transactions · from 1.00 USDC")
+		expect(w.find(sel(TESTIDS.sendReviewVisibility)).text()).toBe("VisibilityPrivate— your account stays hidden")
 		expect(w.find(sel(TESTIDS.sendXcYouSign)).text()).toContain(
 			"On Base Sepolia: a free signature that locks the recovery secret on this device (not a transaction, costs nothing), then approve exactly 5.00 USDC",
 		)
