@@ -10,3 +10,4 @@
 - 2026-11-11 a1: merged origin/main (0a164b2) into the lane; F1–F4 hold on the merged tree.
 - 2026-11-11 a1 phase 1 gate: pass on c5822b4 — lint, typecheck:all, test:all, audit:tools exit 0; `e2e:tools -- specs/exits.spec.ts --retries=0` 7 passed (14.4m).
 - 2026-11-11 a1 post-impl: Codex round 1 reject (disconnect tick), Opus diff review beside it (self-reported replacement, tick before proving, null status, two test rows); all accepted (f7e40eb). Round 2 reject (pre-send reset erased a disconnect), fixed (3ba33f9). Round 3 approve.
+- 2026-11-11 a1 final gates on 4f692b4: pass — lint, typecheck:all, test:all, audit:tools exit 0; `e2e:tools -- specs/exits.spec.ts --retries=0` 7 passed (11.6m).
