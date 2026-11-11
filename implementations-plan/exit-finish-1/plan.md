@@ -7,7 +7,7 @@ codex_model: sol
 code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
-status: a1 approved (P19-01 A); a2 revised for ask60 and audited, awaiting the orchestrator and the owner's W1–W5
+status: a1 built and reviewed (P19-01 A), its PR open; a2 revised for ask60 and audited, awaiting the owner's W1–W5
 base: main 7de51e7 (merged into the lane; F1–F4 re-traced, line numbers unchanged)
 budget: "recon: 1 Sonnet explorer; code-review: off; Codex gpt-6.1-sol at high"
 ---
@@ -172,7 +172,7 @@ one card); drop the SDK's wait (scripts need it); an L1 log scan for replacement
 
 ## Phases
 
-### Phase 1 (a1): classify what mined ☐ (approved: P19-01 A)
+### Phase 1 (a1): classify what mined ☑ (approved: P19-01 A)
 
 1. In the SDK, add `onReplaced` to `awaitL1Receipt`, `sameWithdrawCall`, `mined` to `consumeWithdrawal`, and the
    revert error with its hash; extend `withdraw.test.ts` and `l1-receipt.test.ts`.
@@ -186,6 +186,24 @@ replacement; `sameWithdrawCall` refuses another target, function or arguments.
 
 **Gate**: `bun run lint`, `bun run typecheck:all`, `bun run test:all`, `bun run audit:tools` exit 0;
 `bun run e2e:tools -- specs/exits.spec.ts --retries=0` green (cells 27, 28, 31b, 31c use the new tails).
+
+**As built (deviations, tree over plan)**:
+
+- **Chain-change guard on replacements only**: `judged` (`useHubExit.ts`) makes a verdict under another hash
+  `unconfirmed` across a tick, never the sent hash's own receipt, which commits to its chain id. Read literally, the
+  rule would clear a landed finish whenever the wallet changed chains mid-wait, since a1's `unconfirmed` still clears.
+- **Fresh tail**: settles wait A's verdict; only an `unconfirmed` one falls back to the recorded hash's own wait.
+- **`replacedByOf`** (sdk `./internal`, beside `sameWithdrawCall`): a verdict only when the receipt is another
+  transaction's. viem also reports the sent transaction as its own `repriced` replacement when a receipt read lags the
+  block holding it (reproduced over a scripted transport). The SDK and the app share it.
+- **The fresh tick** restarts at `onStage("consuming")`, just before the chain-asserted send, and only while the
+  captured account is still connected. `useL1Wallet.disconnect` counts as a tick, since no `chainChanged` is heard
+  after it (a file outside the map). A receipt with no known status is `unconfirmed`.
+- **Tests**: the scripted-chain cases drive the real `awaitL1Receipt` and viem wait through the exported
+  `waitFinishReceipt`; the hub-exit test no longer replaces `awaitL1Receipt`.
+- **Residue, closed by a2 step 1**: a resumed wait in a page whose L1 wallet never connected has no `chainChanged`
+  listener. A wrong-chain completion then still needs the user's own identical `withdraw` to the same address at the
+  same nonce on another chain (needs unsupported conditions); a2's pinned Sepolia reader removes the case.
 
 ### Phase 2 (a2): the app watches a pending finish ☐ (starts on the owner's W1–W5)
 
@@ -242,6 +260,9 @@ close-out. Release steps: none.
 | Revision for ask60, Codex 1 (fresh, gpt-6.1-sol, high) | reject | X1 ten rounds are not 30 minutes when rounds end early → in-memory deadline, paced rounds. X2 the control showed between rounds → the window reads busy throughout. X3 a lagging first endpoint's `null` hid H → "not found" asks every pinned endpoint. X4 "press first, then speed up" overpromised (gaps between waits) → W2(b) reworded, limit widened. X5 a stale round could clear a newer hash without Web Locks → hash-conditional settle writes. X6 a tab open before H was sent never watched it → windows armed on `storage` reloads. P2 wording: a provider, not a connected account. All verified in the tree and accepted. |
 | Codex 1, resumed (verification) | reject | X1, X2, X4, X5, X6 closed. X3 incomplete: a receipt only the second endpoint holds was still ignored → the per-endpoint probe asks for H's receipt too and settles what it finds. Verified and accepted. |
 | Codex 1, resumed (last verification) | **approve** | X3 closed; no new material defect. |
+| a1 diff, Codex round 1 (fresh, gpt-6.1-sol, high), with an Opus diff review beside it | reject | Codex: a disconnect drops the `chainChanged` listener without a tick → `disconnect()` counts one. Opus: A viem self-reports a lagging own receipt as `repriced`, so a tick cleared a landed finish → `replacedByOf`; B tick taken before proving → re-taken before the send; C null status read as success → `unconfirmed`; gaps: reverted `same-finish` row, lagging-receipt row. All traced and accepted. |
+| a1, Codex round 2 (resumed) | reject | The pre-send reset erased a disconnect during proving → reset only while the account is connected (the send is unchanged: refusing it would change what the product does). |
+| a1, Codex round 3 (resumed) | **approve** | Fixes verified; no new material defect. |
 
 Size: about 250 lines against light's 150; the overrun is P1–P4 and the a2 detail the revision had to state (bound,
 why, what follows, what cannot be automatic, the signed decisions it changes) and this ledger.

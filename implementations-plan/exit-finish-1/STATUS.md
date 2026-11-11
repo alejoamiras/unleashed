@@ -7,3 +7,6 @@
 - light step 3: Codex final pass reject (N1, N2), resumed verification reject (V1, V2), last verification approve. Plan audited; OWNER-ASKS E0–E4 open; stopping at the approval gate.
 - revision for ask60: merged origin/main (7de51e7) into the lane; F1–F4 re-traced, unchanged. Owner answered E0–E4 (P19-01 A … P19-05 A, ask60). a1 stands, approved. a2 redesigned: a wallet-independent watch, 30-minute bound per page visit, boot resume without the Aztec-wallet gate, second-tab takeover, "Check again". New asks W1–W5; mocks g1–g4, h1–h2.
 - revision audit: Codex fresh round reject (X1–X6, all verified and accepted), resumed reject (X3 widened), resumed approve. Plan committed; OWNER-ASKS W1–W5 open; stopping at the approval gate.
+- 2026-11-11 a1: merged origin/main (0a164b2) into the lane; F1–F4 hold on the merged tree.
+- 2026-11-11 a1 phase 1 gate: pass on c5822b4 — lint, typecheck:all, test:all, audit:tools exit 0; `e2e:tools -- specs/exits.spec.ts --retries=0` 7 passed (14.4m).
+- 2026-11-11 a1 post-impl: Codex round 1 reject (disconnect tick), Opus diff review beside it (self-reported replacement, tick before proving, null status, two test rows); all accepted (f7e40eb). Round 2 reject (pre-send reset erased a disconnect), fixed (3ba33f9). Round 3 approve.
