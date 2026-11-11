@@ -294,6 +294,7 @@ async function runSendConsume(
 	// A failed consume surfaces as itself even when its message reads as spent: an identical exit carries the same
 	// message, so a consumed one never proves this record finished.
 	// Counted from just before the send, whose wallet client asserts the chain: a switch during proving reads nothing.
+	// A disconnect stops chainChanged reports for good, so the count restarts only while the account is connected.
 	let chainTick = l1.chainChanges.value
 	try {
 		// The consume runs against THIS token's clone: one portal per ERC-20, and a message from
@@ -311,7 +312,7 @@ async function runSendConsume(
 				onSent: (hash) => underJournalLock(() => updateRecord(rec.id, { consumeTxHash: hash })),
 			},
 			(stage) => {
-				if (stage === "consuming") chainTick = l1.chainChanges.value
+				if (stage === "consuming" && l1.address.value === account) chainTick = l1.chainChanges.value
 			},
 		)
 		return { consumeTxHash, mined: judged(l1, chainTick, mined) }

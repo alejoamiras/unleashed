@@ -759,9 +759,15 @@ describe("useHubExit", () => {
 	it.each([
 		{ switched: "while proving", wait: 0, rec: [999, "0xreplacement"] },
 		{ switched: "after the send", wait: 1, rec: [undefined, undefined] },
+		{ switched: "after a disconnect while proving", wait: 1, rec: [undefined, undefined] },
 	])("a fresh finish's sped-up replacement with the chain switched $switched", async ({ switched, wait, rec }) => {
 		h.consumeWithdrawal.mockImplementation(async (_l1, _node, _receipt, _p, onStage) => {
 			if (switched === "while proving") h.chainChanges.value++
+			if (switched === "after a disconnect while proving") {
+				// What disconnect() does; the captured wallet client still sends, and no later switch is heard.
+				h.address.value = null
+				h.chainChanges.value++
+			}
 			onStage?.("consuming")
 			if (switched === "after the send") h.chainChanges.value++
 			return { consumeTxHash: "0xconsume", mined: { txHash: "0xreplacement", status: "success", replacedBy: "same-finish" } }
