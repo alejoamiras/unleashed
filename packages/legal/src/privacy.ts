@@ -3,7 +3,7 @@ import type { LegalDocument } from "./document.ts"
 export const PRIVACY: LegalDocument = {
 	id: "unleashed-privacy-policy",
 	title: "Privacy Policy",
-	updated: "29 October 2026",
+	updated: "11 November 2026",
 	sections: [
 		{
 			heading: "Who we are and what this covers",
@@ -130,7 +130,7 @@ export const PRIVACY: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "The app can save a backup of a deposit record as a file that you download and keep. The record inside is encrypted with a key that only your Ethereum wallet's signature can recreate. The file's label is not encrypted: it shows the network, the contracts, the direction, the record's identifier and the Ethereum address that made the backup. We never receive your backup files.",
+					text: "The app can save a backup of a deposit record as a file that you download and keep. The record inside is encrypted with a key that only your Ethereum wallet's signature can recreate. The file's label is not encrypted: it shows the network, the contracts, the direction and the record's identifier. We never receive your backup files.",
 				},
 			],
 		},
