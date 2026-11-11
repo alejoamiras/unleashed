@@ -32,6 +32,8 @@ const h = vi.hoisted(() => {
 		witness: [] as unknown[],
 		/** What the deposit router's receipt reader authenticates, or the refusal it throws. */
 		depositLeaves: {} as Record<string, unknown> | Error,
+		/** The highest max fees per gas a quote may carry: above the node's 10/20 unless a case tightens it. */
+		bound: { feePerDaGas: 10n, feePerL2Gas: 60n },
 	}
 })
 
@@ -148,8 +150,12 @@ const env = (): FeeLadderEnv => ({
 	privateFpc: PRIVATE_FPC_ADDRESS,
 	fuel: undefined,
 	minFloorFj: 1000n,
-	readPublicFeeJuice: async () => balance("balance_of_public", h.publicFj),
+	readPublicFeeJuice: async () => {
+		h.t("readPublicFeeJuice")
+		return balance("balance_of_public", h.publicFj)
+	},
 	readPrivateFeeJuice: async () => balance("balance_of", h.privateFj),
+	feeBound: async () => h.bound,
 	log: () => {},
 })
 
@@ -176,6 +182,7 @@ beforeEach(() => {
 	h.persisted = undefined
 	h.sendThrows = undefined
 	h.witness = []
+	h.bound = { feePerDaGas: 10n, feePerL2Gas: 60n }
 	node = fakeNode()
 	vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000)
 })
@@ -334,6 +341,24 @@ describe("private fuel fee — the sealed salt is authoritative", () => {
 		).fee.gasSettings
 		expect({ daGas: gas.gasLimits.daGas, l2Gas: gas.gasLimits.l2Gas }).toEqual(PRIVATE_HUB_CLAIM_GAS)
 		expect(gas.maxFeesPerGas.feePerL2Gas).toBe(20n)
+	})
+
+	test("a private claim stops before any prompt when the wallet's fee is over the bound, and pays within it", async () => {
+		h.bound = { feePerDaGas: 10n, feePerL2Gas: 19n }
+		expect(await resolvePrivateFuelFee(env(), fueled(SEALED_SALT), recipient, SEALED_SALT)).toEqual({
+			kind: "stop",
+			stop: "unpriced-by-wallet",
+		})
+		h.privateFj = 999_000_000n
+		expect(
+			await resolvePrivateFuelFee(env(), fueled(SEALED_SALT, { consumed: true }), recipient, SEALED_SALT, { aztec: wallet() }),
+		).toEqual({
+			kind: "stop",
+			stop: "unpriced-by-wallet",
+		})
+		expect(h.calls.some(([n]) => n === "privateMintAndPayFee" || n === "privateFeeJuicePayment")).toBe(false)
+		h.bound = { feePerDaGas: 10n, feePerL2Gas: 20n }
+		expect((await resolvePrivateFuelFee(env(), fueled(SEALED_SALT), recipient, SEALED_SALT)).kind).toBe("fee")
 	})
 
 	test("a bridged amount under the committed ceiling stops before the FPC can reject it", async () => {
@@ -598,6 +623,7 @@ describe("own gas - a claim with no Fee Juice message of its own pays from the p
 		expect(r.opts.fee?.paymentMethod).toEqual({ kind: "self-paid-fj" })
 		expect(r.opts.fee?.gasSettings).toEqual({ maxFeesPerGas: { feePerDaGas: 10n, feePerL2Gas: 20n } })
 		expect(h.calls.find(([n]) => n === "selfPaidFeeJuicePayment")?.[1]).toEqual({ payer: RECIPIENT })
+		expect(h.calls.some(([n]) => n === "readPublicFeeJuice")).toBe(true)
 	})
 
 	test("a private record pays only from its private balance: public Fee Juice never pays it, and the stop says why", async () => {
@@ -610,6 +636,10 @@ describe("own gas - a claim with no Fee Juice message of its own pays from the p
 		h.privateFj = 0n
 		expect(await resolve(noFuel(true), false)).toEqual({ kind: "stop", stop: "private-own-gas-none" })
 		expect(h.calls.some(([n]) => n === "selfPaidFeeJuicePayment")).toBe(false)
+		expect(
+			h.calls.some(([n]) => n === "readPublicFeeJuice"),
+			"a private record never reads public Fee Juice",
+		).toBe(false)
 	})
 
 	test("a wallet that cannot route a public payer never gets one, whatever the public balance", async () => {

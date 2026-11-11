@@ -6,6 +6,7 @@
  * register leaf and the claim is retried as a plain one — the deposit is never stranded on a race.
  */
 import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
+import { NO_FROM } from "@aztec-labs/aztec.js/account"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract, type ContractBase } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
@@ -51,11 +52,10 @@ export async function hubBindingAt(
 	return value.isZero() ? undefined : value.toString()
 }
 
-/** The hub's binding for an ERC-20, or undefined when it has not registered it. */
-export async function hubTokenFor(hub: ContractBase, erc20: string, from: string): Promise<string | undefined> {
-	const r = (await hub.methods
-		.token_for(EthAddress.fromString(erc20))
-		.simulate({ from: AztecAddress.fromStringUnsafe(from) } as never)) as { result?: unknown }
+/** The hub's binding for an ERC-20, or undefined when it has not registered it. Simulated from `NO_FROM`:
+ *  the wallet's node sees a public view of the ERC-20 with no sender or fee payer naming the account. */
+export async function hubTokenFor(hub: ContractBase, erc20: string): Promise<string | undefined> {
+	const r = (await hub.methods.token_for(EthAddress.fromString(erc20)).simulate({ from: NO_FROM } as never)) as { result?: unknown }
 	const addr = String(r.result ?? r)
 	return addr.toLowerCase() === ZERO_FIELD ? undefined : addr
 }
@@ -258,7 +258,7 @@ async function awaitClaimVisible(hub: ContractBase, p: HubClaimParams, claim: Se
 
 /** The hub's binding for the block's ERC-20, refused when it names a different L2 token than the block. */
 async function registeredTokenOf(hub: ContractBase, p: HubClaimParams): Promise<string | undefined> {
-	const bound = await hubTokenFor(hub, p.token.erc20, p.from)
+	const bound = await hubTokenFor(hub, p.token.erc20)
 	if (bound !== undefined && bound.toLowerCase() !== p.token.l2Token.toLowerCase()) {
 		throw new Error(`hub claim: the hub binds ${p.token.erc20} to ${bound}, the journal says ${p.token.l2Token} — refusing to claim`)
 	}
@@ -343,7 +343,7 @@ export async function probeHubClaim(
 	wallet: unknown,
 	retry?: FuelClaimRetry,
 ): Promise<unknown> {
-	if (!(await hubTokenFor(hub, p.token.erc20, p.from))) {
+	if (!(await hubTokenFor(hub, p.token.erc20))) {
 		const registerFee = opts.registerFee as { paymentMethod: unknown } | undefined
 		return registerFee ? simulateFeePayload(wallet, AztecAddress.fromStringUnsafe(p.recipient), registerFee, retry) : {}
 	}
