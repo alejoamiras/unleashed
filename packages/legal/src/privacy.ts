@@ -36,7 +36,7 @@ export const PRIVACY: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "The unleashed.systems website stores nothing in your browser, and neither does the app's holding page. Once the app offers the gas flow, it may store these items in your browser's local storage, on your device only:",
+					text: "The unleashed.systems website stores nothing in your browser. The app keeps what it needs in your browser's local storage, on your device only. Today its holding page keeps one item, your acceptance of these documents. Once the app offers the gas flow, it may keep all of these:",
 				},
 				{
 					kind: "list",
@@ -47,7 +47,7 @@ export const PRIVACY: LegalDocument = {
 						"Which wallet software produced a signature the app checked, so it does not ask twice.",
 						"A copy of a public token list, refreshed after a day.",
 						"Your theme and panel preferences.",
-						"Your acceptance of these documents, once the app asks for it.",
+						"Your acceptance of these documents: the Ethereum address that signed it, the signature, and the versions you accepted.",
 					],
 				},
 				{
@@ -90,7 +90,7 @@ export const PRIVACY: LegalDocument = {
 			blocks: [
 				{
 					kind: "p",
-					text: "The app talks to the wallet software on your device. It asks your Aztec wallet for your accounts and asks it to approve and send transactions, and it asks your Ethereum wallet to sign messages and send transactions. To show you balances and wait for transactions, the app also reads the Ethereum network through your Ethereum wallet, which uses its own network provider. What your wallets and their providers do with this is governed by their own terms and policies.",
+					text: "The app talks to the wallet software on your device. Before you use the app, it asks your Ethereum wallet for your address and for a signature on its acceptance message. It asks your Aztec wallet for your accounts and asks it to approve and send transactions, and it asks your Ethereum wallet to sign messages and send transactions. To show you balances and wait for transactions, the app also reads the Ethereum network through your Ethereum wallet, which uses its own network provider. What your wallets and their providers do with this is governed by their own terms and policies.",
 				},
 			],
 		},
