@@ -27,6 +27,21 @@ describe("useL1Wallet.publicClient", () => {
 	})
 })
 
+describe("useL1Wallet.chainChanges", () => {
+	it("counts a disconnect, after which no chainChanged is heard", async () => {
+		vi.stubGlobal("ethereum", {
+			request: vi.fn(async () => ["0x00000000000000000000000000000000000000e1"]),
+			on: vi.fn(),
+			removeListener: vi.fn(),
+		})
+		const l1 = useL1Wallet()
+		await l1.connect()
+		const before = l1.chainChanges.value
+		l1.disconnect()
+		expect(l1.chainChanges.value).toBe(before + 1)
+	})
+})
+
 describe("useL1Wallet.switchChain", () => {
 	it("adds a chain the wallet does not know, with the build's own RPCs, then switches to it", async () => {
 		const { methods, request } = wallet({ code: 4902, message: "Unrecognized chain ID" })

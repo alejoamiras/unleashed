@@ -10,7 +10,17 @@ import { EthAddress } from "@aztec-labs/foundation/eth-address"
 import { computeL2ToL1MessageHash } from "@aztec-labs/stdlib/hash"
 import { computeL2ToL1MembershipWitness, getL2ToL1MessageLeafId } from "@aztec-labs/stdlib/messaging"
 import { OutboxContract } from "@aztec-labs/ethereum/contracts"
-import type { Abi, Account, Address, Hex, PublicClient, WalletClient } from "viem"
+import {
+	type Abi,
+	type Account,
+	type Address,
+	decodeFunctionData,
+	encodeFunctionData,
+	type Hex,
+	type PublicClient,
+	type ReplacementReturnType,
+	type WalletClient,
+} from "viem"
 import { withdrawContentHash } from "../protocol/content-hash.ts"
 import { PORTAL_IMPL_CONSTANTS_ABI } from "../protocol/factory-abi.ts"
 
@@ -40,11 +50,56 @@ export interface WithdrawConsumeParams {
 	onSent?: (txHash: Hex) => void | Promise<void>
 }
 
+/** The receipt a finish's wait resolved with. `replacedBy` is set when another transaction took the sent one's
+ *  sender and nonce: `same-finish` when it makes the same `withdraw` call, else `other`. */
+export interface FinishReceipt {
+	txHash: Hex
+	status: "success" | "reverted"
+	replacedBy?: "same-finish" | "other"
+}
+
+/** Whether `replacement` makes `sent`'s portal call: the same target, and both decode as `withdraw` with equal
+ *  arguments however each is encoded. Anything undecodable is another call. */
+export function sameWithdrawCall(
+	sent: { to?: Address | null; input: Hex },
+	replacement: { to?: Address | null; input: Hex },
+	portalAbi: Abi,
+): boolean {
+	if (!sent.to || sent.to.toLowerCase() !== replacement.to?.toLowerCase()) return false
+	const canonical = (input: Hex): Hex | undefined => {
+		try {
+			const call = decodeFunctionData({ abi: portalAbi, data: input })
+			return call.functionName === "withdraw"
+				? encodeFunctionData({ abi: portalAbi, functionName: "withdraw", args: call.args })
+				: undefined
+		} catch {
+			return undefined
+		}
+	}
+	const a = canonical(sent.input)
+	return a !== undefined && a === canonical(replacement.input)
+}
+
+/** The verdict on what `onReplaced` reported, when the receipt is another transaction's: viem also reports the sent
+ *  transaction as its own replacement when a receipt read lags the block that holds it. */
+export function replacedByOf(
+	sent: Hex,
+	receipt: { transactionHash: Hex },
+	replacement: ReplacementReturnType | undefined,
+	portalAbi: Abi,
+): Pick<FinishReceipt, "replacedBy"> {
+	if (!replacement || receipt.transactionHash.toLowerCase() === sent.toLowerCase()) return {}
+	return { replacedBy: sameWithdrawCall(replacement.replacedTransaction, replacement.transaction, portalAbi) ? "same-finish" : "other" }
+}
+
 /**
  * Finalize an L2→L1 withdraw once the `exit_to_l1` tx has landed on L2: wait for it to be
  * proven, build the L2→L1 membership witness, and consume it on the L1 Outbox via the portal's
  * `withdraw`. Identical for public + private exits — only the L2 burn authwit (done by the
  * caller before the exit) differs. The sandbox smoke runs exactly this tail for both flows.
+ *
+ * `mined` is the receipt the wait resolved with: a replacement's when the wallet replaced the sent transaction, with
+ * `replacedBy` saying whether it still pays this withdraw. A wait that times out throws after `onSent`.
  */
 export async function consumeWithdrawal(
 	l1: L1Ctx,
@@ -52,7 +107,7 @@ export async function consumeWithdrawal(
 	exitReceipt: { txHash: unknown },
 	p: WithdrawConsumeParams,
 	onStage?: (s: WithdrawFlowStage) => void,
-): Promise<{ consumeTxHash: Hex }> {
+): Promise<{ consumeTxHash: Hex; mined: FinishReceipt }> {
 	onStage?.("proving")
 	await waitForProven(node, exitReceipt as never, (p.provenTimeoutSec ? { provenTimeout: p.provenTimeoutSec } : undefined) as never)
 	const eff = await node.getTxEffect(exitReceipt.txHash as never)
@@ -78,9 +133,23 @@ export async function consumeWithdrawal(
 	})
 	const consumeTxHash = (await l1.wallet.writeContract(req.request as never)) as Hex
 	await p.onSent?.(consumeTxHash)
-	await l1.pub.waitForTransactionReceipt({ hash: consumeTxHash })
+	let replacement: ReplacementReturnType | undefined
+	// One confirmation: viem then reports a replacement before it resolves with that replacement's receipt.
+	const receipt = await l1.pub.waitForTransactionReceipt({
+		hash: consumeTxHash,
+		onReplaced: (r) => {
+			replacement = r
+		},
+	})
 	onStage?.("done")
-	return { consumeTxHash }
+	return {
+		consumeTxHash,
+		mined: {
+			txHash: receipt.transactionHash,
+			status: receipt.status,
+			...replacedByOf(consumeTxHash, receipt, replacement, p.portalAbi),
+		},
+	}
 }
 
 const ZERO_L1 = `0x${"0".repeat(40)}`

@@ -19,6 +19,7 @@ import {
 } from "@unleashed/bridge-core"
 import { recoveryBindingOf } from "@/lib/send-record"
 import type { DepositRecord, JournalTokenBlock } from "@unleashed-systems/sdk"
+import type { FinishReceipt } from "@unleashed-systems/sdk/internal"
 import { feeJuiceAddress, predictPortal } from "@unleashed-systems/sdk/protocol"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { GrantOutcome } from "@/lib/send-model"
@@ -56,6 +57,7 @@ import {
 	updateRecord,
 	updateRecordWhen,
 	useBridgeJournal,
+	type FinishWait,
 } from "./useBridgeJournal"
 import {
 	bridgeError,
@@ -148,6 +150,11 @@ function mkWithdraw(id: string, over: Partial<SendWithdrawRecord> = {}): SendWit
 	}
 }
 
+/** A finish whose own transaction mined with `status`. */
+const landed = (txHash: string, status: FinishReceipt["status"] = "success"): FinishWait => ({ txHash: txHash as `0x${string}`, status })
+/** What a fresh finish returns when its wait saw `mined`. */
+const sent = (consumeTxHash: string, mined: FinishWait = landed(consumeTxHash)) => ({ consumeTxHash, mined })
+
 function baseDeps(kv: KV) {
 	return {
 		kv,
@@ -156,12 +163,12 @@ function baseDeps(kv: KV) {
 		connectedL1: () => SEALER,
 		connectedAztec: () => RECIPIENT,
 		signL1: vi.fn(async () => SIG),
-		waitConsumeReceipt: vi.fn(async () => true),
+		waitConsumeReceipt: vi.fn(async (txHash: string): Promise<FinishWait> => landed(txHash)),
 		sendBinding: () => ({ factory: FACTORY, implementation: IMPLEMENTATION, hub: HUB, feeJuicePortal: FJ_PORTAL }),
 		validateTokenBlock: vi.fn(async () => null as string | null),
 		ensureTokenGrant: vi.fn(async () => "granted" as GrantOutcome),
 		verifyConsumeIdentitySend: vi.fn(async () => true),
-		consumeSend: vi.fn(async () => ({ consumeTxHash: "0x0015000000000000000000000000000000000000000000636f6e73756d657478" })),
+		consumeSend: vi.fn(async () => sent("0x0015000000000000000000000000000000000000000000636f6e73756d657478")),
 	}
 }
 
@@ -728,7 +735,7 @@ function sendDeps() {
 		sendBinding: () => ({ factory: FACTORY, implementation: IMPLEMENTATION, hub: HUB, feeJuicePortal: FJ_PORTAL }),
 		validateTokenBlock: vi.fn(async () => null as string | null),
 		ensureTokenGrant: vi.fn(async () => "granted" as GrantOutcome),
-		consumeSend: vi.fn(async () => ({ consumeTxHash: "0xhubconsume" })),
+		consumeSend: vi.fn(async () => sent("0xhubconsume")),
 		verifyConsumeIdentitySend: vi.fn(async () => true),
 	}
 }
@@ -1536,7 +1543,7 @@ describe("useBridgeJournal - a hash-less exit attached by its recomputed message
 	it("a second FINISH during the consume is refused by the hash's lock", async () => {
 		let release: () => void = () => {}
 		const deps = attachDeps(kv, found, {
-			consumeSend: vi.fn(() => new Promise<{ consumeTxHash: string }>((r) => (release = () => r({ consumeTxHash: "0xhubconsume" })))),
+			consumeSend: vi.fn(() => new Promise<ReturnType<typeof sent>>((r) => (release = () => r(sent("0xhubconsume"))))),
 		})
 		connectJournalDeps(deps)
 		addRecord(pending())
@@ -1866,25 +1873,26 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 			write: "the consume hash",
 			seed: mkWithdraw("0xfresh"),
 			wire: (d: Deps, arm: () => Promise<void>) => {
-				d.consumeSend = armed(arm, { consumeTxHash: HASH })
+				d.consumeSend = armed(arm, sent(HASH))
 			},
 			run: () => runWithdrawConsume("0xfresh"),
 			check: () => expect(stored("0xfresh")?.consumeTxHash).toBe(HASH),
 		},
 		{
 			write: "the completion",
-			seed: mkWithdraw("0xfresh"),
+			seed: mkWithdraw("0xexit", { consumeTxHash: PRIOR }),
 			wire: (d: Deps, arm: () => Promise<void>) => {
-				d.waitConsumeReceipt = armed(arm, true)
+				d.waitConsumeReceipt = armed(arm, landed(PRIOR))
 			},
-			run: () => runWithdrawConsume("0xfresh"),
-			check: () => expect(stored("0xfresh")?.completedAt).toBe(999),
+			run: () => runWithdrawConsume("0xexit"),
+			check: () => expect(stored("0xexit")?.completedAt).toBe(999),
 		},
 		{
 			write: "a failed receipt's clear",
 			seed: mkWithdraw("0xfresh"),
 			wire: (d: Deps, arm: () => Promise<void>) => {
-				d.waitConsumeReceipt = armed(arm, false)
+				d.consumeSend = vi.fn(async () => sent(HASH, "unconfirmed"))
+				d.waitConsumeReceipt = armed(arm, "unconfirmed")
 			},
 			run: () => runWithdrawConsume("0xfresh"),
 			check: () => expect([stored("0xfresh")?.exitTxHash, stored("0xfresh")?.consumeTxHash]).toEqual(["0xfresh", undefined]),
@@ -1893,7 +1901,7 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 			write: "a prior hash's clear",
 			seed: mkWithdraw("0xexit", { consumeTxHash: PRIOR }),
 			wire: (d: Deps, arm: () => Promise<void>) => {
-				d.waitConsumeReceipt = armed(arm, false)
+				d.waitConsumeReceipt = armed(arm, "unconfirmed")
 			},
 			run: () => runWithdrawConsume("0xexit"),
 			check: () => expect([stored("0xexit")?.exitTxHash, stored("0xexit")?.consumeTxHash]).toEqual(["0xexit", undefined]),
@@ -1919,10 +1927,10 @@ describe("useBridgeJournal - the engine's own writes under the journal lock", ()
 		{ remote: undefined, completedAt: 999, raised: true },
 	])("a completion another tab stored ($remote) is kept, and only this tab's own raises one", async ({ remote, completedAt, raised }) => {
 		const deps = baseDeps(kv)
-		deps.waitConsumeReceipt = vi.fn(async () => {
+		deps.consumeSend = vi.fn(async () => {
 			// Another tab finished the exit; no storage event has reached this tab.
 			if (remote !== undefined) upsertRecord(kv, { ...(stored("0xfresh") as SendWithdrawRecord), completedAt: remote })
-			return true
+			return sent(HASH)
 		})
 		connectJournalDeps(deps)
 		addRecord(mkWithdraw("0xfresh"))

@@ -32,8 +32,15 @@ const h = vi.hoisted(() => ({
 		receipt: { txHash: EXIT_TX, blockNumber: 42 },
 	})),
 	consumeWithdrawal: vi.fn(
-		async (_l1: unknown, _node: unknown, _receipt: unknown, _p: { portal: string; recipientL1: string; amount: bigint }) => ({
-			consumeTxHash: "0xconsume",
+		async (
+			_l1: unknown,
+			_node: unknown,
+			_receipt: unknown,
+			_p: { portal: string; recipientL1: string; amount: bigint },
+			_onStage?: (stage: string) => void,
+		) => ({
+			consumeTxHash: "0xconsume" as `0x${string}`,
+			mined: { txHash: "0xconsume" as `0x${string}`, status: "success" as const },
 		}),
 	),
 	createPublicAuthwit: vi.fn(async (_w: unknown, _from: unknown, _intent: { caller: { toString(): string } }, _pub: boolean) => ({
@@ -47,6 +54,7 @@ const h = vi.hoisted(() => ({
 	status: { value: "connected" as string },
 	contractsReady: { value: true },
 	error: { value: null as { message: string } | null },
+	chainChanges: { value: 0 },
 }))
 
 vi.mock("@/contracts/bridge-generation", () => ({
@@ -69,7 +77,6 @@ vi.mock("@unleashed-systems/sdk/internal", async (importOriginal) => ({
 	exitViaHub: h.exitViaHub,
 	consumeWithdrawal: h.consumeWithdrawal,
 	isOutboxMessageConsumed: h.outboxConsumed,
-	awaitL1Receipt: async () => ({ status: "success" }),
 }))
 
 // The Token the burn spends: the two balance reads the preflight makes, plus the two burn calls the
@@ -158,6 +165,7 @@ vi.mock("@/composables/useL1Wallet", () => ({
 			getTransaction: async () => null,
 		},
 		ensureWalletClient: () => ({ writeContract: async () => "0xl1" }),
+		chainChanges: h.chainChanges,
 	}),
 }))
 
@@ -171,12 +179,14 @@ vi.mock("@/composables/useSend", () => ({
 
 import { JOURNAL_KEY, type SendWithdrawRecord, validateAnyBackupRecord } from "@unleashed/bridge-core"
 import { feeJuiceAddress } from "@unleashed-systems/sdk/protocol"
+import { TOKEN_PORTAL_ABI } from "@unleashed-systems/sdk/protocol"
+import { createPublicClient, custom, encodeFunctionData, type Hex } from "viem"
 import { watch } from "vue"
 import { memoryJournalLocks } from "@/lib/journal-locks"
 import { __resetPromptQueueForTests, enqueuePrompt, PROMPT_WAIT_MS, PROMPTS_STALLED } from "@/lib/prompt-queue"
 import { __resetJournalForTests, connectJournalDeps, isSessionLive, runWithdrawConsume, useBridgeJournal } from "./useBridgeJournal"
 import { __resetOpsInFlightForTests, useOpsInFlight } from "./useOpsInFlight"
-import { __resetHubExitDepsForTests, buildExitSendOpts, useHubExit } from "./useHubExit"
+import { __resetHubExitDepsForTests, buildExitSendOpts, useHubExit, waitFinishReceipt } from "./useHubExit"
 import { otherTab } from "./test/other-tab"
 
 const HUB_ADDR = h.HUB_ADDR
@@ -258,6 +268,7 @@ describe("useHubExit", () => {
 		__resetOpsInFlightForTests()
 		__resetPromptQueueForTests()
 		h.withdrawsPaused = false
+		h.chainChanges.value = 0
 		h.order = []
 		h.publicBalance = 5_000_000_000n
 		h.privateBalance = 5_000_000_000n
@@ -267,7 +278,10 @@ describe("useHubExit", () => {
 		h.assertL1Chain.mockImplementation(async () => {})
 		h.isGranted.mockImplementation(() => true)
 		h.outboxConsumed.mockImplementation(async () => false)
-		h.consumeWithdrawal.mockImplementation(async () => ({ consumeTxHash: "0xconsume" }))
+		h.consumeWithdrawal.mockImplementation(async () => ({
+			consumeTxHash: "0xconsume",
+			mined: { txHash: "0xconsume", status: "success" },
+		}))
 		h.createPublicAuthwit.mockImplementation(async () => ({
 			send: vi.fn(async () => {
 				h.order.push("authwit")
@@ -292,7 +306,10 @@ describe("useHubExit", () => {
 		h.status.value = "connected"
 		h.contractsReady.value = true
 		h.error.value = null
-		connectJournalDeps({ now: () => 999, waitConsumeReceipt: async () => true })
+		connectJournalDeps({
+			now: () => 999,
+			waitConsumeReceipt: async (txHash) => ({ txHash: txHash as `0x${string}`, status: "success" }),
+		})
 	})
 
 	it("while contracts are still registering the exit refuses with SETUP_PENDING - no authwit, no record", async () => {
@@ -408,7 +425,7 @@ describe("useHubExit", () => {
 		h.consumeWithdrawal.mockImplementation(async (_l1, _node, _receipt, p) => {
 			if (at === "consume") await hold()
 			await (p as { onSent?: (hash: string) => unknown }).onSent?.("0xconsume")
-			return { consumeTxHash: "0xconsume" }
+			return { consumeTxHash: "0xconsume", mined: { txHash: "0xconsume", status: "success" } }
 		})
 		const exiting = exit.exit(plan())
 		await vi.waitFor(() => expect(tab.behind).toBe(1))
@@ -519,7 +536,10 @@ describe("useHubExit", () => {
 		expect(() => validateAnyBackupRecord(consumed as never)).not.toThrow()
 
 		__resetJournalForTests()
-		connectJournalDeps({ now: () => 999, waitConsumeReceipt: async () => true })
+		connectJournalDeps({
+			now: () => 999,
+			waitConsumeReceipt: async (txHash) => ({ txHash: txHash as `0x${string}`, status: "success" }),
+		})
 		const privateId = await exit.exit(plan({ isPrivate: true }))
 		expect(() => validateAnyBackupRecord(recordOf(privateId) as never)).not.toThrow()
 	})
@@ -737,6 +757,31 @@ describe("useHubExit", () => {
 	})
 
 	it.each([
+		{ switched: "while proving", wait: 0, rec: [999, "0xreplacement"] },
+		{ switched: "after the send", wait: 1, rec: [undefined, undefined] },
+		{ switched: "after a disconnect while proving", wait: 1, rec: [undefined, undefined] },
+	])("a fresh finish's sped-up replacement with the chain switched $switched", async ({ switched, wait, rec }) => {
+		h.consumeWithdrawal.mockImplementation(async (_l1, _node, _receipt, _p, onStage) => {
+			if (switched === "while proving") h.chainChanges.value++
+			if (switched === "after a disconnect while proving") {
+				// What disconnect() does; the captured wallet client still sends, and no later switch is heard.
+				h.address.value = null
+				h.chainChanges.value++
+			}
+			onStage?.("consuming")
+			if (switched === "after the send") h.chainChanges.value++
+			return { consumeTxHash: "0xconsume", mined: { txHash: "0xreplacement", status: "success", replacedBy: "same-finish" } }
+		})
+		const exit = useHubExit()
+		const waitConsumeReceipt = vi.fn(async () => "unconfirmed" as const)
+		connectJournalDeps({ waitConsumeReceipt })
+		const id = await exit.exit(plan())
+		// Only a switch after the send leaves the replacement unjudged, so the sent hash gets its own wait.
+		expect(waitConsumeReceipt).toHaveBeenCalledTimes(wait)
+		expect([recordOf(id)?.completedAt, recordOf(id)?.consumeTxHash]).toEqual(rec)
+	})
+
+	it.each([
 		[
 			"a humanized sentence",
 			"timed out waiting for window",
@@ -750,5 +795,125 @@ describe("useHubExit", () => {
 		const exit = useHubExit()
 		const id = await exit.exit(plan())
 		expect(useBridgeJournal().runtime.value[id]).toMatchObject({ attention: "error", note })
+	})
+})
+
+describe("the finish's receipt wait, through viem's own wait over a scripted chain", () => {
+	const SENDER = "0x00000000000000000000000000000000000005e0"
+	const SENT = `0x${"a1".repeat(32)}` as Hex
+	const OTHER = `0x${"b2".repeat(32)}` as Hex
+	const HEAD = "0x10"
+	const input = (amount = 40_000_000n) =>
+		encodeFunctionData({ abi: TOKEN_PORTAL_ABI, functionName: "withdraw", args: [L1_ACCOUNT, amount, false, 5n, 3n, 9n, []] })
+	const tx = (hash: Hex, over: { to?: string; input?: Hex; blockNumber?: string | null } = {}) => ({
+		hash,
+		from: SENDER,
+		to: PORTAL,
+		nonce: "0x7",
+		value: "0x0",
+		gas: "0x5208",
+		gasPrice: "0x1",
+		type: "0x0",
+		input: input(),
+		blockNumber: null,
+		blockHash: null,
+		transactionIndex: null,
+		...over,
+	})
+	const receipt = (hash: Hex, status: string) => ({
+		transactionHash: hash,
+		status,
+		blockNumber: HEAD,
+		blockHash: `0x${"cc".repeat(32)}`,
+		from: SENDER,
+		to: PORTAL,
+		logs: [],
+		logsBloom: `0x${"00".repeat(256)}`,
+		gasUsed: "0x1",
+		cumulativeGasUsed: "0x1",
+		effectiveGasPrice: "0x1",
+		transactionIndex: "0x0",
+		type: "0x0",
+		contractAddress: null,
+	})
+
+	/** The sent finish is pending, as viem first fetches it; `mined` holds the receipts the chain has, the first
+	 *  `lagging` receipt reads answer none, and the head block holds `inBlock`. `onRead` runs before each answer. */
+	function chain(opts: {
+		mined: Record<string, string>
+		inBlock?: ReturnType<typeof tx>[]
+		lagging?: number
+		onRead?: (method: string) => void
+	}) {
+		let receiptReads = 0
+		const answers = new Map<string, (hash: Hex) => unknown>([
+			["eth_blockNumber", () => HEAD],
+			["eth_getTransactionByHash", (hash) => (hash === SENT ? tx(SENT) : (opts.inBlock?.find((t) => t.hash === hash) ?? null))],
+			[
+				"eth_getTransactionReceipt",
+				(hash) => (++receiptReads > (opts.lagging ?? 0) && opts.mined[hash] ? receipt(hash, opts.mined[hash]) : null),
+			],
+			["eth_getBlockByNumber", () => ({ number: HEAD, hash: `0x${"cc".repeat(32)}`, transactions: opts.inBlock ?? [] })],
+		])
+		const request = async ({ method, params }: { method: string; params?: unknown }) => {
+			opts.onRead?.(method)
+			const answer = answers.get(method)
+			if (!answer) throw new Error(`unscripted ${method}`)
+			return answer(((params ?? []) as [Hex])[0])
+		}
+		return { publicClient: createPublicClient({ transport: custom({ request }) }), chainChanges: { value: 0 } }
+	}
+	const replacedBy = (replacement: ReturnType<typeof tx>) => ({ mined: { [replacement.hash]: "0x1" as const }, inBlock: [replacement] })
+	/** The sent finish mined, but receipt reads lag the block that holds it: viem reports it as its own replacement. */
+	const lateReceipt = { mined: { [SENT]: "0x1" }, inBlock: [tx(SENT, { blockNumber: HEAD })], lagging: 2 }
+
+	it.each([
+		{ mined: "the sent finish", reads: { mined: { [SENT]: "0x1" as const } }, wait: { txHash: SENT, status: "success" } },
+		{ mined: "the sent finish, reverted", reads: { mined: { [SENT]: "0x0" as const } }, wait: { txHash: SENT, status: "reverted" } },
+		{ mined: "the sent finish, read late", reads: lateReceipt, wait: { txHash: SENT, status: "success" } },
+		{ mined: "a receipt with no known status", reads: { mined: { [SENT]: "0x2" } }, wait: "unconfirmed" },
+		{
+			mined: "a sped-up copy",
+			reads: replacedBy(tx(OTHER, { blockNumber: HEAD })),
+			wait: { txHash: OTHER, status: "success", replacedBy: "same-finish" },
+		},
+		{
+			mined: "the same withdraw, encoded differently",
+			reads: replacedBy(tx(OTHER, { blockNumber: HEAD, input: `${input()}${"00".repeat(32)}` })),
+			wait: { txHash: OTHER, status: "success", replacedBy: "same-finish" },
+		},
+		{
+			mined: "a cancel",
+			reads: replacedBy(tx(OTHER, { blockNumber: HEAD, to: SENDER, input: "0x" })),
+			wait: { txHash: OTHER, status: "success", replacedBy: "other" },
+		},
+		{
+			mined: "another withdraw",
+			reads: replacedBy(tx(OTHER, { blockNumber: HEAD, input: input(1n) })),
+			wait: { txHash: OTHER, status: "success", replacedBy: "other" },
+		},
+	])("$mined maps to its verdict", async ({ reads, wait }) => {
+		await expect(waitFinishReceipt(chain(reads) as never, SENT)).resolves.toEqual(wait)
+	})
+
+	it("a replacement found across a chain change is unconfirmed; the sent finish's own receipt is not", async () => {
+		const replaced = chain({
+			...replacedBy(tx(OTHER, { blockNumber: HEAD })),
+			onRead: (m) => m === "eth_getBlockByNumber" && replaced.chainChanges.value++,
+		})
+		await expect(waitFinishReceipt(replaced as never, SENT)).resolves.toBe("unconfirmed")
+		const own = chain({ ...lateReceipt, onRead: () => own.chainChanges.value++ })
+		await expect(waitFinishReceipt(own as never, SENT)).resolves.toEqual({ txHash: SENT, status: "success" })
+	})
+
+	it("a finish nothing mined for is unconfirmed once the wait gives up", async () => {
+		vi.useFakeTimers()
+		try {
+			const waiting = waitFinishReceipt(chain({ mined: {} }) as never, SENT)
+			await vi.advanceTimersByTimeAsync(15 * 60_000)
+			await expect(waiting).resolves.toBe("unconfirmed")
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 })

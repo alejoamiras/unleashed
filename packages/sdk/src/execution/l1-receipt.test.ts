@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { awaitL1Receipt } from "./l1-receipt.ts"
+import { awaitL1Receipt, L1TransactionRevertedError } from "./l1-receipt.ts"
 
 const HASH = "0xabc" as `0x${string}`
 const RECEIPT = { status: "success" }
@@ -50,6 +50,27 @@ describe("awaitL1Receipt", () => {
 				{ waitMs: noWait },
 			),
 		).rejects.toThrow(/reverted on-chain/)
+	})
+
+	test("a replacement is reported before its receipt, and its revert names the replacement's hash", async () => {
+		const replacement = { reason: "replaced" } as never
+		const seen: unknown[] = []
+		const thrown = await awaitL1Receipt(
+			{
+				waitForTransactionReceipt: async ({ onReplaced }) => {
+					onReplaced?.(replacement)
+					return { status: "reverted", transactionHash: "0xreplacement" }
+				},
+				getTransactionReceipt: async () => {
+					throw new Error("must not be called")
+				},
+			},
+			HASH,
+			{ waitMs: noWait, onReplaced: (r) => seen.push(r) },
+		).catch((e: unknown) => e)
+		expect(thrown).toBeInstanceOf(L1TransactionRevertedError)
+		expect((thrown as L1TransactionRevertedError).txHash).toBe("0xreplacement")
+		expect(seen).toEqual([replacement])
 	})
 
 	test("a reverted receipt recovered via the direct read ALSO throws (not returned as mined)", async () => {
